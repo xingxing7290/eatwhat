@@ -1,0 +1,65 @@
+// 主题颜色
+$primary-color: #3ca55c;
+$secondary-color: #b5ac49;
+
+// 文字颜色
+$text-primary: #333333;
+$text-secondary: #666666;
+
+// 背景颜色
+$bg-primary: #ffffff;
+$bg-secondary: #f8f9fa;
+
+// 边框和阴影
+$border-color: #e4e7ed;
+$shadow-color: rgba(0, 0, 0, 0.1);
+
+// 布局尺寸
+$header-height: 60px;
+$max-content-width: 1400px;
+
+// 断点
+$breakpoint-sm: 576px;
+$breakpoint-md: 768px;
+$breakpoint-lg: 992px;
+$breakpoint-xl: 1200px;
+
+// 通用混入
+@mixin flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@mixin flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+@mixin gradient-text {
+  background: linear-gradient(to right, $primary-color, $secondary-color);
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+// 媒体查询混入
+@mixin respond-to($breakpoint) {
+  @if $breakpoint == sm {
+    @media (max-width: $breakpoint-sm) {
+      @content;
+    }
+  } @else if $breakpoint == md {
+    @media (max-width: $breakpoint-md) {
+      @content;
+    }
+  } @else if $breakpoint == lg {
+    @media (max-width: $breakpoint-lg) {
+      @content;
+    }
+  } @else if $breakpoint == xl {
+    @media (max-width: $breakpoint-xl) {
+      @content;
+    }
+  }
+} 

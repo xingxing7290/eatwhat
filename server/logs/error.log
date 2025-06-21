@@ -1,0 +1,55 @@
+[2025-06-21 01:14:09] ERROR: 数据库连接失败: Socket 'connect' timed out after 29971ms (connectTimeoutMS: 30000)
+[2025-06-21 11:15:27] ERROR: 响应状态码: 400
+[2025-06-21 11:15:27] ERROR: 处理时间: 40ms
+[2025-06-21 11:52:17] ERROR: 响应状态码: 400
+[2025-06-21 11:52:17] ERROR: 处理时间: 14ms
+[2025-06-21 11:52:29] ERROR: 响应状态码: 400
+[2025-06-21 11:52:29] ERROR: 处理时间: 19ms
+[2025-06-21 12:01:01] ERROR: 响应状态码: 404
+[2025-06-21 12:01:01] ERROR: 处理时间: 14ms
+[2025-06-21 13:36:26] ERROR: 数据库连接失败: connect ECONNREFUSED 82.156.158.28:27017
+[2025-06-21 13:37:38] ERROR: 数据库连接失败: connect ECONNREFUSED 82.156.158.28:27017
+[2025-06-21 13:58:05] ERROR: 创建菜品失败: Meal validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750485485786-343973478.png 不是有效的图片URL!
+[2025-06-21 13:58:05] ERROR: 错误: Meal validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750485485786-343973478.png 不是有效的图片URL!
+[2025-06-21 13:58:05] ERROR: 响应状态码: 500
+[2025-06-21 13:58:05] ERROR: 处理时间: 29ms
+[2025-06-21 13:58:08] ERROR: 创建菜品失败: Meal validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750485488170-497320263.png 不是有效的图片URL!
+[2025-06-21 13:58:08] ERROR: 错误: Meal validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750485488170-497320263.png 不是有效的图片URL!
+[2025-06-21 13:58:08] ERROR: 响应状态码: 500
+[2025-06-21 13:58:08] ERROR: 处理时间: 12ms
+[2025-06-21 14:00:43] ERROR: 更新菜品失败: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750485643197-470121070.png 不是有效的图片URL!
+[2025-06-21 14:00:43] ERROR: 错误: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750485643197-470121070.png 不是有效的图片URL!
+[2025-06-21 14:00:43] ERROR: 响应状态码: 500
+[2025-06-21 14:00:43] ERROR: 处理时间: 29ms
+[2025-06-21 14:05:56] ERROR: 响应状态码: 404
+[2025-06-21 14:05:56] ERROR: 处理时间: 2ms
+[2025-06-21 14:08:55] ERROR: 更新菜品失败: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486135729-801605915.png 不是有效的图片URL!
+[2025-06-21 14:08:55] ERROR: 错误: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486135729-801605915.png 不是有效的图片URL!
+[2025-06-21 14:08:55] ERROR: 响应状态码: 500
+[2025-06-21 14:08:55] ERROR: 处理时间: 18ms
+[2025-06-21 14:09:00] ERROR: 更新菜品失败: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486140385-441534015.png 不是有效的图片URL!
+[2025-06-21 14:09:00] ERROR: 错误: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486140385-441534015.png 不是有效的图片URL!
+[2025-06-21 14:09:00] ERROR: 响应状态码: 500
+[2025-06-21 14:09:00] ERROR: 处理时间: 12ms
+[2025-06-21 14:09:31] ERROR: 更新菜品失败: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486171422-269994852.png 不是有效的图片URL!
+[2025-06-21 14:09:31] ERROR: 错误: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486171422-269994852.png 不是有效的图片URL!
+[2025-06-21 14:09:31] ERROR: 响应状态码: 500
+[2025-06-21 14:09:31] ERROR: 处理时间: 15ms
+[2025-06-21 14:12:45] ERROR: 更新菜品失败: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486365413-897541978.png 不是有效的图片URL!
+[2025-06-21 14:12:45] ERROR: 错误: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486365413-897541978.png 不是有效的图片URL!
+[2025-06-21 14:12:45] ERROR: 响应状态码: 500
+[2025-06-21 14:12:45] ERROR: 处理时间: 13ms
+[2025-06-21 14:13:12] ERROR: 响应状态码: 404
+[2025-06-21 14:13:12] ERROR: 处理时间: 1ms
+[2025-06-21 14:14:57] ERROR: 更新菜品失败: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486497819-914468204.png 不是有效的图片URL!
+[2025-06-21 14:14:57] ERROR: 错误: Validation failed: imageUrl: http://82.156.158.28:3000/uploads/image-1750486497819-914468204.png 不是有效的图片URL!
+[2025-06-21 14:14:57] ERROR: 响应状态码: 500
+[2025-06-21 14:14:57] ERROR: 处理时间: 13ms
+[2025-06-21 14:18:56] ERROR: 响应状态码: 404
+[2025-06-21 14:18:56] ERROR: 处理时间: 3ms
+[2025-06-21 15:01:39] ERROR: 响应状态码: 400
+[2025-06-21 15:01:39] ERROR: 处理时间: 9ms
+[2025-06-21 15:03:14] ERROR: 响应状态码: 400
+[2025-06-21 15:03:14] ERROR: 处理时间: 1ms
+[2025-06-21 15:05:35] ERROR: 响应状态码: 400
+[2025-06-21 15:05:35] ERROR: 处理时间: 1ms
