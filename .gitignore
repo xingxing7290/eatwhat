@@ -1,0 +1,5 @@
+# Log files
+server/logs/
+client/node_modules/
+server/node_modules/
+/client/dist 
