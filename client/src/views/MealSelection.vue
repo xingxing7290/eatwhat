@@ -238,15 +238,35 @@ const goToNewMeal = () => {
   router.push({ name: 'mealEditor' });
 };
 
-onMounted(() => {
+onMounted(async () => {
   // 检查必要参数
   if (!date.value || !mealType.value) {
     ElMessage.error('缺少必要参数');
     router.push({ name: 'calendar' });
     return;
   }
-  
-  fetchAllMeals();
+
+  isLoading.value = true;
+  try {
+    // 确保菜品列表已加载
+    if (mealStore.meals.length === 0) {
+      await mealStore.fetchAllMeals();
+    }
+    
+    // 优先处理从URL传入的ID (编辑模式)
+    const mealIdsFromQuery = route.query.currentMealIds;
+    if (mealIdsFromQuery) {
+      const ids = mealIdsFromQuery.split(',').filter(id => id); // 过滤空字符串
+      const preSelected = mealStore.getMealsByIds(ids);
+      selectedMeals.value = preSelected;
+    }
+    
+  } catch (error) {
+    console.error('加载菜品或预选安排失败:', error);
+    ElMessage.error('加载页面数据失败');
+  } finally {
+    isLoading.value = false;
+  }
 });
 </script>
 

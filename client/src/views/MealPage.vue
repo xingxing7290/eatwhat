@@ -217,6 +217,10 @@ onMounted(() => {
   <div class="meal-page">
     <div class="page-header">
       <h2 class="page-title">菜品管理</h2>
+      <el-button type="primary" @click="handleAddMeal">
+        <el-icon><Plus /></el-icon>
+        添加新菜品
+      </el-button>
     </div>
     
     <div class="filters-container">

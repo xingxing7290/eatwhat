@@ -73,6 +73,22 @@ const fetchMonthSchedules = async () => {
   }
 };
 
+// 新增：处理编辑日程的函数
+const handleEditSchedule = (date, mealType) => {
+  const formattedDate = format(date, 'yyyy-MM-dd');
+  const schedule = getDateSchedule(date);
+  const currentMealIds = schedule?.meals?.[mealType]?.map(meal => meal._id || meal.id) || [];
+  
+  router.push({
+    name: 'MealSelection',
+    query: {
+      date: formattedDate,
+      mealType: mealType,
+      currentMealIds: currentMealIds.join(',')
+    }
+  });
+};
+
 // 跳转到菜品选择页面
 const navigateToMealSelection = (date, type) => {
   const formattedDate = format(date, 'yyyy-MM-dd');
@@ -223,15 +239,26 @@ onMounted(() => {
                           <component :is="mealType.icon" />
                         </el-icon>
                         <span class="meal-label" :style="{ color: mealType.color }">{{ mealType.label }}</span>
-                        <el-button 
-                          class="delete-btn" 
-                          type="danger" 
-                          size="small" 
-                          circle
-                          @click.stop="handleDeleteSchedule(day, mealType.key)"
-                        >
-                          <el-icon><Delete /></el-icon>
-                        </el-button>
+                        <div class="meal-actions">
+                           <el-button 
+                            class="action-btn"
+                            type="primary"
+                            size="small" 
+                            circle
+                            @click.stop="handleEditSchedule(day, mealType.key)"
+                          >
+                            <el-icon><Edit /></el-icon>
+                          </el-button>
+                          <el-button 
+                            class="action-btn" 
+                            type="danger" 
+                            size="small" 
+                            circle
+                            @click.stop="handleDeleteSchedule(day, mealType.key)"
+                          >
+                            <el-icon><Delete /></el-icon>
+                          </el-button>
+                        </div>
                       </div>
                       
                       <div class="meal-items">
@@ -272,12 +299,12 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .calendar-page {
-  padding: 0;
-  height: calc(100vh - var(--header-height) - 40px);
+  padding: 20px;
   display: flex;
   flex-direction: column;
   max-width: 1600px; // 增加日历最大宽度
   margin: 0 auto; // 使日历居中
+  height: calc(100vh - var(--header-height)); // 确保页面占满视口高度
 }
 
 .calendar-header {
@@ -333,7 +360,7 @@ onMounted(() => {
   flex-direction: column;
   background-color: var(--bg-primary);
   border-radius: 12px;
-  overflow: hidden;
+  overflow-y: auto; // 允许垂直滚动
   box-shadow: 0 4px 20px var(--shadow-color);
   
   .calendar-header-row {
@@ -341,6 +368,9 @@ onMounted(() => {
     grid-template-columns: repeat(7, 1fr);
     background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
     color: white;
+    position: sticky; // 使表头在滚动时固定
+    top: 0;
+    z-index: 10;
     
     .weekday-cell {
       padding: 12px;
@@ -353,7 +383,7 @@ onMounted(() => {
   .calendar-body {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    flex: 1;
+    flex: 1; // 移除flex: 1，让内容自然撑开
     
     .date-cell {
       position: relative;
@@ -473,12 +503,20 @@ onMounted(() => {
                 font-weight: 600;
               }
               
-              .delete-btn {
+              .meal-actions {
+                display: flex;
+                gap: 5px;
+                opacity: 0;
+                transition: opacity 0.2s;
+              }
+
+              .delete-btn { // for backward compatibility if any
                 opacity: 0;
                 transition: opacity 0.2s;
               }
             }
             
+            &:hover .planned-meal-header .meal-actions,
             &:hover .planned-meal-header .delete-btn {
               opacity: 1;
             }

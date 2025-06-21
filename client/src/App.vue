@@ -129,7 +129,6 @@ const handleKeyDown = (e) => {
           <nav class="main-nav">
             <router-link to="/" class="nav-link">日历</router-link>
             <router-link to="/meals" class="nav-link">菜品</router-link>
-            <router-link to="/meals/add" class="nav-link">添加菜品</router-link>
             <el-button 
               v-if="$route.path === '/meals' && !hasMeals" 
               type="success" 
