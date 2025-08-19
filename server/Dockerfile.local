@@ -1,0 +1,26 @@
+# 后端应用Dockerfile - 使用本地预构建
+FROM node:18-alpine
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制预构建的node_modules和源代码
+COPY node_modules/ ./node_modules/
+COPY . .
+
+# 创建uploads目录
+RUN mkdir -p uploads
+
+# 设置环境变量
+ENV NODE_ENV=production
+ENV PORT=3000
+
+# 暴露端口
+EXPOSE 3000
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:3000/ || exit 1
+
+# 启动应用
+CMD ["npm", "start"] 

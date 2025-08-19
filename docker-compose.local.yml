@@ -1,0 +1,47 @@
+# 本地构建部署配置
+# 使用方法: docker-compose -f docker-compose.yml -f docker-compose.local.yml up -d
+
+version: '3.8'
+
+services:
+  # 前端应用服务 - 使用本地预构建
+  frontend:
+    image: eatwhat-frontend
+    container_name: eatwhat-frontend-local
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - eatwhat-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # 后端应用服务 - 使用本地预构建
+  backend:
+    image: eatwhat-backend-local
+    container_name: eatwhat-backend-local
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - MONGO_URI=mongodb://admin:password123@mongodb:27017/whateat?authSource=admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./server/uploads:/app/uploads
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - eatwhat-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3 

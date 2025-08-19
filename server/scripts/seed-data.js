@@ -44,7 +44,7 @@ const mealData = [
 ];
 
 // 连接数据库
-const MONGO_URI = process.env.MONGO_URI || 'mongodb://82.156.158.28:27017/whateat';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb://192.168.27.135:27017/whateat';
 
 // 初始化数据函数
 const seedData = async () => {
