@@ -77,7 +77,7 @@ const logAPI = (type, url, data, status) => {
 };
 
 // 直接使用固定的后端API地址
-const computedBaseURL = 'http://192.168.27.135:3000';
+const computedBaseURL = (import.meta?.env?.VITE_API_BASE_URL) || '/api';
 
 // 创建axios实例
 const api = axios.create({
@@ -89,6 +89,12 @@ const api = axios.create({
 // 请求拦截器
 api.interceptors.request.use(
 	config => {
+		// 注入token
+		const token = localStorage.getItem('token');
+		if (token) {
+			config.headers = config.headers || {};
+			config.headers.Authorization = `Bearer ${token}`;
+		}
 		// 打印请求信息
 		logAPI('request', `${config.method.toUpperCase()} ${config.url}`, config.data);
 		
@@ -264,7 +270,24 @@ export const mealApi = {
 	}
 };
 
+// 认证相关API
+export const authApi = {
+	// 登录
+	login: (payload) => {
+		return api.post('/auth/login', payload);
+	},
+	// 注册
+	register: (payload) => {
+		return api.post('/auth/register', payload);
+	},
+	// 获取当前用户
+	me: () => {
+		return api.get('/auth/me');
+	}
+};
+
 export default {
 	schedule: scheduleApi,
-	meal: mealApi
+	meal: mealApi,
+	auth: authApi
 }; 

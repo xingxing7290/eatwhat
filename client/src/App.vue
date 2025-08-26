@@ -32,7 +32,7 @@ watch(isDarkMode, (newVal) => {
   document.documentElement.classList.toggle('dark', isDarkMode.value);
 });
 
-const appName = "安排吃啥"
+const appName = "安排吃啥22"
 
 const mealStore = useMealStore();
 const hasMeals = computed(() => mealStore.meals.length > 0);

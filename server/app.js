@@ -11,6 +11,7 @@ const logger = require('./utils/logger');
 const mealRoutes = require('./routes/mealRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
 const debugRoutes = require('./routes/debugRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 // 加载环境变量
 dotenv.config();
@@ -70,6 +71,7 @@ app.use((req, res, next) => {
 });
 
 // 注册路由
+app.use('/auth', authRoutes);
 app.use('/meals', mealRoutes);
 app.use('/schedules', scheduleRoutes);
 app.use('/debug', debugRoutes);
