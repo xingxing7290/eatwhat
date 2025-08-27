@@ -65,6 +65,7 @@ const imageUrl = computed(() => {
     :class="cardClass" 
     :shadow="selectable ? 'hover' : 'always'" 
     @click="selectable ? handleSelect() : null"
+    class="meal-card-wrapper"
   >
     <div class="meal-card-content">
       <div class="meal-image-container">
@@ -77,12 +78,34 @@ const imageUrl = computed(() => {
         <div v-if="selected" class="selected-overlay">
           <el-icon><Check /></el-icon>
         </div>
+        
+        <!-- 移动端操作按钮 -->
+        <div v-if="showActions" class="mobile-actions">
+          <el-button 
+            type="primary" 
+            size="small" 
+            circle 
+            @click.stop="emit('edit', meal)"
+            class="mobile-edit-btn"
+          >
+            <el-icon><Edit /></el-icon>
+          </el-button>
+          <el-button 
+            type="danger" 
+            size="small" 
+            circle 
+            @click.stop="emit('delete', meal)"
+            class="mobile-delete-btn"
+          >
+            <el-icon><Delete /></el-icon>
+          </el-button>
+        </div>
       </div>
       
       <div class="meal-info">
         <div class="meal-header">
           <h3 class="meal-name">{{ meal.name }}</h3>
-          <div v-if="showActions" class="meal-actions">
+          <div v-if="showActions" class="meal-actions desktop-actions">
             <el-button 
               type="primary" 
               size="small" 
@@ -102,55 +125,51 @@ const imageUrl = computed(() => {
           </div>
         </div>
         
-        <p v-if="meal.description" class="meal-description">{{ meal.description }}</p>
+        <p v-if="meal.description" class="meal-description">
+          {{ meal.description }}
+        </p>
         
-        <div v-if="meal.tags && meal.tags.length" class="meal-tags">
+        <div v-if="meal.tags && meal.tags.length > 0" class="meal-tags">
           <el-tag 
-            v-for="(tag, index) in meal.tags" 
-            :key="index" 
+            v-for="tag in meal.tags.slice(0, 3)"
+            :key="tag"
             size="small" 
             effect="light"
-            class="tag"
+            class="meal-tag"
           >
             {{ tag }}
           </el-tag>
+          <span v-if="meal.tags.length > 3" class="more-tags">
+            +{{ meal.tags.length - 3 }}
+          </span>
         </div>
         
-        <div v-if="meal.ingredients && meal.ingredients.length" class="meal-ingredients">
-          <h4>食材:</h4>
-          <ul>
-            <li v-for="(ingredient, index) in meal.ingredients" :key="index">
-              {{ ingredient.name }}: {{ ingredient.amount }}
-            </li>
-          </ul>
+        <div v-if="meal.ingredients && meal.ingredients.length > 0" class="meal-ingredients">
+          <div class="ingredients-title">主要食材:</div>
+          <div class="ingredients-list">
+            <span 
+              v-for="(ingredient, index) in meal.ingredients.slice(0, 4)" 
+              :key="index"
+              class="ingredient-item"
+            >
+              {{ ingredient.name || ingredient }}
+            </span>
+            <span v-if="meal.ingredients.length > 4" class="more-ingredients">
+              等{{ meal.ingredients.length }}种
+            </span>
+          </div>
         </div>
       </div>
     </div>
   </el-card>
 </template>
 
-<style lang="scss" scoped>
-.meal-card {
-  position: relative;
+<style scoped>
+.meal-card-wrapper {
   transition: all 0.3s ease;
+  border-radius: 12px;
+  overflow: hidden;
   height: 100%;
-  
-  &.selectable {
-    cursor: pointer;
-    
-    &:hover {
-      transform: translateY(-5px);
-      box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
-    }
-  }
-  
-  &.selected {
-    box-shadow: 0 0 0 2px var(--primary-color), 0 10px 20px rgba(0, 0, 0, 0.1);
-    transform: translateY(-5px);
-    
-    .dark-mode & {
-      box-shadow: 0 0 0 2px var(--primary-color), 0 10px 20px rgba(0, 0, 0, 0.3);
-    }
   }
   
   .meal-card-content {
@@ -161,10 +180,11 @@ const imageUrl = computed(() => {
   
   .meal-image-container {
     position: relative;
-    height: 180px;
+  width: 100%;
+  height: 200px;
     overflow: hidden;
-    border-radius: 8px;
-    margin-bottom: 15px;
+  border-radius: 8px 8px 0 0;
+}
     
     .meal-image {
       width: 100%;
@@ -172,95 +192,360 @@ const imageUrl = computed(() => {
       object-fit: cover;
       transition: transform 0.3s ease;
     }
+
+.meal-card-wrapper:hover .meal-image {
+  transform: scale(1.05);
+}
     
     .selected-overlay {
       position: absolute;
       top: 0;
       left: 0;
-      width: 100%;
-      height: 100%;
+  right: 0;
+  bottom: 0;
+  background: rgba(60, 165, 92, 0.8);
       display: flex;
       align-items: center;
       justify-content: center;
-      background-color: rgba(60, 165, 92, 0.5);
-      
-      .el-icon {
-        font-size: 40px;
         color: white;
-      }
-    }
-  }
-  
-  &:hover .meal-image {
-    transform: scale(1.05);
+  font-size: 32px;
+}
+
+/* 移动端操作按钮 */
+.mobile-actions {
+  display: none;
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  gap: 8px;
+}
+
+.mobile-edit-btn,
+.mobile-delete-btn {
+  width: 32px;
+  height: 32px;
+  font-size: 14px;
+  backdrop-filter: blur(10px);
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.2);
   }
   
   .meal-info {
     flex: 1;
+  padding: 16px;
     display: flex;
     flex-direction: column;
+  gap: 12px;
+}
     
     .meal-header {
       display: flex;
+  align-items: flex-start;
       justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 10px;
+  gap: 12px;
+}
       
       .meal-name {
         font-size: 18px;
         font-weight: 600;
         color: var(--text-primary);
         margin: 0;
+  line-height: 1.3;
         flex: 1;
+  min-width: 0;
       }
       
       .meal-actions {
         display: flex;
-        gap: 5px;
-      }
+  gap: 8px;
+  flex-shrink: 0;
     }
     
     .meal-description {
       color: var(--text-secondary);
       font-size: 14px;
-      margin-bottom: 15px;
+  line-height: 1.5;
+  margin: 0;
       display: -webkit-box;
       -webkit-line-clamp: 2;
       -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
     }
     
     .meal-tags {
       display: flex;
       flex-wrap: wrap;
-      gap: 5px;
-      margin-bottom: 15px;
-      
-      .tag {
-        border-radius: 20px;
-      }
+  gap: 6px;
+  align-items: center;
+}
+
+.meal-tag {
+  border-radius: 16px;
+  font-size: 12px;
+  padding: 4px 8px;
+  height: auto;
+  line-height: 1.2;
+}
+
+.more-tags {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 4px;
     }
     
     .meal-ingredients {
       margin-top: auto;
-      
-      h4 {
-        font-size: 14px;
-        margin-bottom: 5px;
+}
+
+.ingredients-title {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.ingredients-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.ingredient-item {
+  font-size: 12px;
         color: var(--text-primary);
-      }
-      
-      ul {
-        padding-left: 20px;
-        margin: 0;
-        
-        li {
+  background: var(--bg-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.more-ingredients {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+
+/* 选择状态样式 */
+.meal-card-wrapper.selectable {
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.meal-card-wrapper.selectable:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px var(--shadow-color);
+}
+
+.meal-card-wrapper.selectable.selected {
+  border: 2px solid var(--primary-color);
+  transform: translateY(-2px);
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .meal-image-container {
+    height: 160px;
+  }
+  
+  .meal-info {
+    padding: 12px;
+    gap: 10px;
+  }
+  
+  .meal-name {
+    font-size: 16px;
+  }
+  
+  .meal-description {
           font-size: 13px;
-          color: var(--text-secondary);
-        }
-      }
-    }
+    -webkit-line-clamp: 2;
+  }
+  
+  .meal-tags {
+    gap: 4px;
+  }
+  
+  .meal-tag {
+    font-size: 11px;
+    padding: 3px 6px;
+  }
+  
+  .ingredients-title {
+    font-size: 11px;
+  }
+  
+  .ingredient-item {
+    font-size: 11px;
+    padding: 1px 4px;
+  }
+  
+  .desktop-actions {
+    display: none;
+  }
+  
+  .mobile-actions {
+    display: flex;
+  }
+  
+  .mobile-edit-btn,
+  .mobile-delete-btn {
+    width: 28px;
+    height: 28px;
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .meal-image-container {
+    height: 140px;
+  }
+  
+  .meal-info {
+    padding: 10px;
+    gap: 8px;
+  }
+  
+  .meal-name {
+    font-size: 15px;
+  }
+  
+  .meal-description {
+    font-size: 12px;
+  }
+  
+  .meal-tags {
+    gap: 3px;
+  }
+  
+  .meal-tag {
+    font-size: 10px;
+    padding: 2px 5px;
+  }
+  
+  .ingredients-title {
+    font-size: 10px;
+  }
+  
+  .ingredient-item {
+    font-size: 10px;
+    padding: 1px 3px;
+  }
+  
+  .mobile-edit-btn,
+  .mobile-delete-btn {
+    width: 24px;
+    height: 24px;
+    font-size: 10px;
+  }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+  .meal-card-wrapper.selectable:hover {
+    transform: none;
+  }
+  
+  .meal-card-wrapper.selectable:active {
+    transform: translateY(-2px);
+  }
+  
+  .mobile-edit-btn,
+  .mobile-delete-btn {
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .meal-actions .el-button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* 暗色模式适配 */
+.dark-mode {
+  .meal-card-wrapper {
+    background: var(--bg-primary);
+    border-color: var(--border-color);
+  }
+  
+  .meal-image-container {
+    background: var(--bg-secondary);
+  }
+  
+  .mobile-edit-btn,
+  .mobile-delete-btn {
+    background: rgba(0, 0, 0, 0.8);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+  
+  .ingredient-item {
+    background: var(--bg-secondary);
+    border-color: var(--border-color);
+  }
+}
+
+/* 移动端列表布局优化 */
+@media (max-width: 768px) {
+  .meal-card-wrapper {
+    margin-bottom: 16px;
+  }
+  
+  .meal-card-content {
+    flex-direction: row;
+  }
+  
+  .meal-image-container {
+    width: 120px;
+    height: 120px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  
+  .meal-info {
+    flex: 1;
+    min-width: 0;
+  }
+  
+  .meal-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .meal-name {
+    font-size: 16px;
+    line-height: 1.2;
+  }
+  
+  .meal-description {
+    -webkit-line-clamp: 3;
+  }
+  
+  .meal-ingredients {
+    margin-top: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .meal-image-container {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .meal-info {
+    padding: 8px;
+    gap: 6px;
+  }
+  
+  .meal-name {
+    font-size: 15px;
+  }
+  
+  .meal-description {
+    font-size: 12px;
+    -webkit-line-clamp: 2;
   }
 }
 </style> 

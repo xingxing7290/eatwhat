@@ -3,29 +3,55 @@
 
 /* 全局样式 */
 :root {
-  --primary-color: #3ca55c;
-  --secondary-color: #b5ac49;
-  --text-primary: #333333;
-  --text-secondary: #666666;
+  --primary-color: #667eea;
+  --secondary-color: #764ba2;
+  --accent-color: #f093fb;
+  --success-color: #4cd964;
+  --warning-color: #ff9500;
+  --error-color: #ff3b30;
+  
+  --text-primary: #2c3e50;
+  --text-secondary: #7f8c8d;
+  --text-muted: #95a5a6;
+  
   --bg-primary: #ffffff;
   --bg-secondary: #f8f9fa;
-  --border-color: #e4e7ed;
-  --shadow-color: rgba(0, 0, 0, 0.1);
+  --bg-tertiary: #f1f3f4;
+  
+  --border-color: #e1e8ed;
+  --border-light: #f1f3f4;
+  --shadow-color: rgba(0, 0, 0, 0.08);
+  --shadow-heavy: rgba(0, 0, 0, 0.12);
   
   --header-height: 60px;
   --max-content-width: 1400px;
+  
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --gradient-accent: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
 }
 
 /* 暗色主题变量 */
 html.dark {
-  --primary-color: #4cd964;
-  --secondary-color: #e6d74c;
+  --primary-color: #667eea;
+  --secondary-color: #764ba2;
+  --accent-color: #f093fb;
+  --success-color: #4cd964;
+  --warning-color: #ff9500;
+  --error-color: #ff3b30;
+  
   --text-primary: #f5f5f7;
   --text-secondary: #a1a1a6;
+  --text-muted: #86868b;
+  
   --bg-primary: #1a1a1a;
   --bg-secondary: #2c2c2e;
+  --bg-tertiary: #3a3a3c;
+  
   --border-color: #424242;
+  --border-light: #3a3a3c;
   --shadow-color: rgba(0, 0, 0, 0.3);
+  --shadow-heavy: rgba(0, 0, 0, 0.5);
   
   color-scheme: dark;
 }

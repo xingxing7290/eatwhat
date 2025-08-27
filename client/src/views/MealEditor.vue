@@ -445,7 +445,7 @@ onBeforeUnmount(() => {
       font-size: 24px;
       font-weight: 600;
       color: var(--text-primary);
-      background: linear-gradient(to right, var(--primary-color), var(--secondary-color));
+      background: var(--gradient-primary);
       -webkit-background-clip: text;
       color: transparent;
     }
