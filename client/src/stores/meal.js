@@ -116,7 +116,7 @@ export const useMealStore = defineStore('meal', {
       
       try {
         const updatedMeal = await mealApi.updateMeal(id, mealData);
-        const index = this.meals.findIndex(meal => meal.id === id);
+        const index = this.meals.findIndex(meal => String(meal._id || meal.id) === String(id));
         
         if (index !== -1) {
           this.meals[index] = updatedMeal;

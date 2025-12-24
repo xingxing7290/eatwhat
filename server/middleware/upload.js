@@ -4,12 +4,23 @@
  */
 const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
+
+// 统一的上传目录（绝对路径，指向 /app/uploads）
+const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
 
 // 配置存储引擎
 const storage = multer.diskStorage({
   // 定义文件存储位置
   destination: function (req, file, cb) {
-    cb(null, 'uploads/');
+    try {
+      if (!fs.existsSync(UPLOAD_DIR)) {
+        fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+      }
+    } catch (e) {
+      return cb(e);
+    }
+    cb(null, UPLOAD_DIR);
   },
   // 定义文件名
   filename: function (req, file, cb) {

@@ -7,6 +7,37 @@ const fs = require('fs');
 const path = require('path');
 const router = express.Router();
 const logger = require('../utils/logger');
+const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+
+// GET /debug/env - 查看关键环境变量
+router.get('/env', (req, res) => {
+  try {
+    const data = {
+      NODE_ENV: process.env.NODE_ENV || null,
+      PORT: process.env.PORT || null,
+      PUBLIC_BASE_URL: process.env.PUBLIC_BASE_URL || null,
+      CORS_ORIGIN: process.env.CORS_ORIGIN || null,
+    };
+    res.json(data);
+  } catch (error) {
+    logger.error(`获取环境变量失败: ${error.message}`);
+    res.status(500).json({ error: '获取环境变量失败' });
+  }
+});
+
+// 新增：GET /debug/uploads - 查看上传目录下的文件
+router.get('/uploads', (req, res) => {
+  try {
+    if (!fs.existsSync(UPLOAD_DIR)) {
+      return res.status(200).json({ exists: false, dir: UPLOAD_DIR, files: [] });
+    }
+    const files = fs.readdirSync(UPLOAD_DIR).sort((a, b) => a.localeCompare(b));
+    res.json({ exists: true, dir: UPLOAD_DIR, count: files.length, files });
+  } catch (error) {
+    logger.error(`读取上传目录失败: ${error.message}`);
+    res.status(500).json({ error: '读取上传目录失败', message: error.message, dir: UPLOAD_DIR });
+  }
+});
 
 // GET /debug/logs - 获取最新日志
 router.get('/logs', (req, res) => {

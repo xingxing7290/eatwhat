@@ -217,12 +217,12 @@ const loadMealData = async () => {
       // 填充表单数据
       formData.name = mealData.name || '';
       formData.description = mealData.description || '';
-      formData.imageUrl = mealData.image || ''; // 注意，后端返回的字段可能是 image
+      formData.imageUrl = mealData.imageUrl || '';
       formData.tags = [...(mealData.tags || [])];
       formData.ingredients = [...(mealData.ingredients || [])];
       
       // 设置图片预览
-      imageUrl.value = mealData.image || '';
+      imageUrl.value = mealData.imageUrl || '';
       
       // 保存原始数据用于检测变更
       originalData.value = JSON.stringify(formData);

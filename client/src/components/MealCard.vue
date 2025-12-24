@@ -28,7 +28,21 @@ const defaultImage = ref(defaultImageSrc);
 
 // 图片加载错误处理
 const handleImageError = (e) => {
-  e.target.src = defaultImage.value;
+  const img = e.target;
+  const src = img?.src || '';
+  const hasRetried = img?.dataset?.retry === '1';
+  // 若是/uploads路径且尚未重试，则尝试切换到/api/uploads再试一次
+  try {
+    const u = new URL(src, window.location.origin);
+    const isUploads = u.pathname.startsWith('/uploads/');
+    if (isUploads && !hasRetried) {
+      img.dataset.retry = '1';
+      img.src = `${window.location.origin}/api${u.pathname}`;
+      return;
+    }
+  } catch (_) {}
+  // 最终回退到占位图
+  img.src = defaultImage.value;
 };
 
 // 处理选择事件
@@ -48,15 +62,26 @@ const cardClass = computed(() => ({
 
 // 计算图片URL
 const imageUrl = computed(() => {
-  const imagePath = props.meal.imageUrl || props.meal.image; // 兼容 imageUrl 和 image 字段
+  const imagePath = props.meal.imageUrl || props.meal.image;
   if (!imagePath) return defaultImage.value;
   
-  // 检查图片URL是否为绝对路径
-  if (imagePath.startsWith('http')) {
+  // 支持绝对URL或以/开头的相对路径（例如 /uploads/xxx.jpg）
+  if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
+    try {
+      // 若为绝对URL但缺失端口且指向当前主机的 /uploads，规范化为当前origin
+      if (imagePath.startsWith('http')) {
+        const u = new URL(imagePath);
+        const isUploads = u.pathname.startsWith('/uploads/');
+        const sameHost = u.hostname === window.location.hostname;
+        const hasPort = !!u.port;
+        if (isUploads && sameHost && !hasPort) {
+          return `${window.location.origin}${u.pathname}`;
+        }
+      }
+    } catch (_) {}
     return imagePath;
-  } else {
-    return defaultImage.value;
   }
+  return defaultImage.value;
 });
 </script>
 

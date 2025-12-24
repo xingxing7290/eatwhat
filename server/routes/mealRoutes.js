@@ -10,6 +10,9 @@ const router = express.Router();
 // GET /meals - 获取所有菜品
 router.get('/', mealController.getAllMeals);
 
+// 新增：GET /meals/:id - 获取单个菜品
+router.get('/:id', mealController.getMealById);
+
 // POST /meals - 创建新菜品 (带图片上传)
 router.post('/', upload.single('image'), mealController.validateMeal, mealController.createMeal);
 

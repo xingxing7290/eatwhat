@@ -41,7 +41,8 @@ app.use(cors({
 app.use(express.json()); // 解析 JSON 请求体
 
 // 静态文件托管 (用于访问上传的图片)
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
+app.use('/api/uploads', express.static(require('path').join(__dirname, 'uploads')));
 
 // 增强的请求日志记录中间件
 app.use((req, res, next) => {

@@ -87,15 +87,41 @@ const allTags = computed(() => {
 // 获取菜品图片
 const getMealImage = (meal) => {
   const imagePath = meal.imageUrl || meal.image;
-  if (!imagePath || !imagePath.startsWith('http')) {
+  if (!imagePath) {
     return '/src/assets/meal-placeholder.png';
   }
-  return imagePath;
+  if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
+    try {
+      if (imagePath.startsWith('http')) {
+        const u = new URL(imagePath);
+        const isUploads = u.pathname.startsWith('/uploads/');
+        const sameHost = u.hostname === window.location.hostname;
+        const hasPort = !!u.port;
+        if (isUploads && sameHost && !hasPort) {
+          return `${window.location.origin}${u.pathname}`;
+        }
+      }
+    } catch (_) {}
+    return imagePath;
+  }
+  return '/src/assets/meal-placeholder.png';
 };
 
 // 图片加载错误处理
 const handleImageError = (e) => {
-  e.target.src = '/src/assets/meal-placeholder.png';
+  const img = e.target;
+  const src = img?.src || '';
+  const hasRetried = img?.dataset?.retry === '1';
+  try {
+    const u = new URL(src, window.location.origin);
+    const isUploads = u.pathname.startsWith('/uploads/');
+    if (isUploads && !hasRetried) {
+      img.dataset.retry = '1';
+      img.src = `${window.location.origin}/api${u.pathname}`;
+      return;
+    }
+  } catch (_) {}
+  img.src = '/src/assets/meal-placeholder.png';
 };
 
 // 加载所有菜品
@@ -154,13 +180,16 @@ const handleAddMeal = async () => {
     try {
       isSubmitting.value = true;
       
-      const mealData = {
-        name: newMealForm.name,
-        description: newMealForm.description,
-        tags: newMealForm.tags
-      };
+      // 使用 FormData 携带文本与图片
+      const fd = new FormData();
+      fd.append('name', newMealForm.name);
+      fd.append('description', newMealForm.description || '');
+      fd.append('tags', JSON.stringify(newMealForm.tags || []));
+      if (imageFileToUpload.value?.raw) {
+        fd.append('image', imageFileToUpload.value.raw);
+      }
       
-      await mealStore.createMeal(mealData);
+      await mealStore.createMeal(fd);
       
       ElMessage.success('添加成功');
       addMealDialogVisible.value = false;
@@ -170,6 +199,7 @@ const handleAddMeal = async () => {
       newMealForm.description = '';
       newMealForm.tags = [];
       newMealImagePreviewUrl.value = '';
+      imageFileToUpload.value = null;
       
       // 重新获取菜品列表
       await fetchMeals();
@@ -239,21 +269,21 @@ onMounted(async () => {
             @click="addMealDialogVisible = true"
             class="add-meal-btn"
           >
-            <el-icon><Plus /></el-icon>
+        <el-icon><Plus /></el-icon>
             <span class="btn-text">添加菜品</span>
-          </el-button>
+      </el-button>
         </div>
       </div>
     </div>
-
+    
     <!-- 搜索和过滤区域 -->
     <div class="filter-section">
       <div class="filter-row">
         <div class="search-box">
-          <el-input
-            v-model="searchQuery"
+        <el-input
+          v-model="searchQuery"
             placeholder="搜索菜品名称或描述..."
-            clearable
+          clearable
             class="search-input"
             :prefix-icon="Search"
           />
@@ -285,11 +315,11 @@ onMounted(async () => {
           @click="clearFilters"
           class="clear-filters-btn"
         >
-          清除筛选
-        </el-button>
+            清除筛选
+          </el-button>
       </div>
-    </div>
-
+        </div>
+        
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-container">
       <el-skeleton :rows="3" animated />
@@ -352,30 +382,30 @@ onMounted(async () => {
             
             <div class="meal-list-meta">
               <div v-if="meal.tags && meal.tags.length > 0" class="meal-list-tags">
-                <el-tag
+          <el-tag
                   v-for="tag in meal.tags.slice(0, 3)"
-                  :key="tag"
+            :key="tag"
                   size="small"
-                  effect="light"
+            effect="light"
                   class="meal-tag"
-                >
-                  {{ tag }}
-                </el-tag>
+          >
+            {{ tag }}
+          </el-tag>
                 <span v-if="meal.tags.length > 3" class="more-tags">
                   +{{ meal.tags.length - 3 }}
                 </span>
-              </div>
+        </div>
               
               <div v-if="meal.ingredients && meal.ingredients.length > 0" class="meal-list-ingredients">
                 <span class="ingredients-count">
                   {{ meal.ingredients.length }} 种食材
                 </span>
-              </div>
-            </div>
+      </div>
+    </div>
           </div>
         </div>
-      </div>
-      
+          </div>
+          
       <!-- 表格布局 -->
       <div v-else-if="currentView === 'table'" class="meals-table">
         <el-table 
@@ -390,8 +420,8 @@ onMounted(async () => {
                   :src="getMealImage(row)" 
                   :alt="row.name"
                   @error="handleImageError"
-                />
-              </div>
+              />
+            </div>
             </template>
           </el-table-column>
           
@@ -405,7 +435,7 @@ onMounted(async () => {
             <template #default="{ row }">
               <div class="table-description">
                 {{ row.description || '暂无描述' }}
-              </div>
+          </div>
             </template>
           </el-table-column>
           
@@ -463,14 +493,14 @@ onMounted(async () => {
 
       <!-- 分页器 (仅桌面端) -->
       <div v-if="totalPages > 1" class="pagination-container desktop-only">
-        <el-pagination
-          v-model:current-page="currentPage"
+            <el-pagination
+              v-model:current-page="currentPage"
           :page-size="pageSize"
           :total="filteredMeals.length"
           layout="prev, pager, next, jumper"
-          @current-change="handlePageChange"
-        />
-      </div>
+              @current-change="handlePageChange"
+            />
+          </div>
     </div>
 
     <!-- 空状态 -->
@@ -515,9 +545,9 @@ onMounted(async () => {
         </el-form-item>
         
         <el-form-item label="描述" prop="description">
-          <el-input
-            v-model="newMealForm.description"
-            type="textarea"
+          <el-input 
+            v-model="newMealForm.description" 
+            type="textarea" 
             :rows="3"
             placeholder="请输入菜品描述"
             class="form-input"
@@ -590,9 +620,9 @@ onMounted(async () => {
   background: var(--bg-secondary);
   padding: 0;
 }
-
+  
 /* 页面标题和操作栏 */
-.page-header {
+  .page-header {
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-color);
   margin: -20px -20px 20px -20px;
@@ -601,22 +631,22 @@ onMounted(async () => {
 }
 
 .header-content {
-  display: flex;
-  align-items: center;
+    display: flex;
+    align-items: center;
   justify-content: space-between;
   max-width: 1200px;
   margin: 0 auto;
 }
-
-.page-title {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 600;
-  color: var(--text-primary);
+    
+    .page-title {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 600;
+      color: var(--text-primary);
   background: var(--gradient-primary);
-  -webkit-background-clip: text;
-  color: transparent;
-}
+      -webkit-background-clip: text;
+      color: transparent;
+    }
 
 .header-actions {
   display: flex;
@@ -672,16 +702,16 @@ onMounted(async () => {
 /* 搜索和过滤区域 */
 .filter-section {
   background: var(--bg-primary);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 20px;
   box-shadow: 0 2px 8px var(--shadow-color);
-}
-
+    }
+    
 .filter-row {
-  display: flex;
+        display: flex;
   gap: 16px;
-  align-items: center;
+        align-items: center;
   margin-bottom: 16px;
 }
 
@@ -708,7 +738,7 @@ onMounted(async () => {
 }
 
 .clear-filters-btn {
-  font-size: 14px;
+          font-size: 14px;
 }
 
 /* 加载状态 */
@@ -733,7 +763,7 @@ onMounted(async () => {
 
 /* 列表布局样式 */
 .meals-list {
-  display: flex;
+        display: flex;
   flex-direction: column;
   gap: 16px;
 }
@@ -745,9 +775,9 @@ onMounted(async () => {
   overflow: hidden;
   box-shadow: 0 2px 8px var(--shadow-color);
   transition: all 0.3s ease;
-  
-  &:hover {
-    transform: translateY(-2px);
+
+          &:hover {
+            transform: translateY(-2px);
     box-shadow: 0 4px 16px var(--shadow-color);
   }
 }
@@ -762,7 +792,7 @@ onMounted(async () => {
     width: 100%;
     height: 100%;
     object-fit: cover;
-  }
+          }
 }
 
 .meal-list-info {
@@ -803,15 +833,15 @@ onMounted(async () => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
+          }
 
 .meal-list-meta {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
-}
-
+  }
+  
 .meal-list-tags {
   display: flex;
   gap: 6px;
@@ -886,8 +916,8 @@ onMounted(async () => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-}
-
+    }
+    
 .table-tags {
   display: flex;
   gap: 4px;
@@ -901,8 +931,8 @@ onMounted(async () => {
   padding: 2px 6px;
   height: auto;
   line-height: 1.2;
-}
-
+    }
+    
 .table-ingredients {
   color: var(--text-secondary);
   font-size: 14px;
@@ -915,10 +945,10 @@ onMounted(async () => {
 }
 
 /* 分页器 */
-.pagination-container {
+    .pagination-container {
   display: flex;
   justify-content: center;
-  margin-top: 30px;
+      margin-top: 30px;
   padding: 20px;
   background: var(--bg-primary);
   border-radius: 12px;
@@ -927,9 +957,9 @@ onMounted(async () => {
 
 /* 空状态 */
 .empty-state {
-  display: flex;
+      display: flex;
   align-items: center;
-  justify-content: center;
+      justify-content: center;
   min-height: 400px;
   background: var(--bg-primary);
   border-radius: 12px;
@@ -976,24 +1006,24 @@ onMounted(async () => {
 }
 
 .form-input {
-  width: 100%;
-}
+    width: 100%;
+  }
 
 .image-upload {
-  width: 100%;
+    width: 100%;
 }
 
 .upload-area {
   border: 2px dashed var(--border-color);
-  border-radius: 8px;
+    border-radius: 8px;
   padding: 40px 20px;
   text-align: center;
   cursor: pointer;
   transition: all 0.3s ease;
   background: var(--bg-secondary);
-  
-  &:hover {
-    border-color: var(--primary-color);
+
+    &:hover {
+      border-color: var(--primary-color);
     background: var(--bg-primary);
   }
 }
@@ -1002,12 +1032,12 @@ onMounted(async () => {
   font-size: 48px;
   color: var(--text-secondary);
   margin-bottom: 16px;
-}
+  }
 
-.image-preview {
+  .image-preview {
   width: 120px;
   height: 120px;
-  object-fit: cover;
+      object-fit: cover;
   border-radius: 8px;
   margin-bottom: 16px;
 }
@@ -1018,7 +1048,7 @@ onMounted(async () => {
 }
 
 .dialog-footer {
-  display: flex;
+      display: flex;
   justify-content: flex-end;
   gap: 12px;
   padding-top: 20px;
@@ -1062,7 +1092,7 @@ onMounted(async () => {
   }
   
   .view-switcher .el-radio-button__inner {
-    justify-content: center;
+      justify-content: center;
     padding: 10px 12px;
   }
   
@@ -1073,13 +1103,13 @@ onMounted(async () => {
   .add-meal-btn {
     width: 100%;
     justify-content: center;
-  }
-  
+    }
+
   .filter-section {
     padding: 16px;
     margin-bottom: 16px;
   }
-  
+
   .filter-row {
     flex-direction: column;
     gap: 12px;
@@ -1266,8 +1296,8 @@ onMounted(async () => {
   .search-input :deep(.el-input__wrapper),
   .tag-select :deep(.el-input__wrapper) {
     min-height: 44px;
-  }
-  
+    }
+    
   .upload-area {
     min-height: 120px;
   }
@@ -1319,7 +1349,7 @@ onMounted(async () => {
   .meal-list-item {
     background: var(--bg-primary);
     box-shadow: 0 2px 8px var(--shadow-color);
-  }
+    }
   
   .meal-list-item:hover {
     box-shadow: 0 4px 16px var(--shadow-color);

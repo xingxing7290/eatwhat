@@ -6,6 +6,46 @@ const Meal = require('../models/mealModel');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 
+// 构建图片URL（优先使用环境变量指定的公共基址）
+function buildImageUrl(req, filename) {
+  const publicBase = process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.trim();
+  if (publicBase) {
+    const base = publicBase.replace(/\/$/, '');
+    return `${base}/uploads/${filename}`;
+  }
+
+  // 尝试从反向代理头推断（例如前端Nginx在8081端口）
+  try {
+    const xfProto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString();
+    const xfHostRaw = (req.headers['x-forwarded-host'] || req.headers['host'] || '').toString();
+    const xfPort = (req.headers['x-forwarded-port'] || '').toString();
+
+    let host = xfHostRaw;
+    let portFromHost = '';
+
+    if (host.includes(':')) {
+      const [h, p] = host.split(':');
+      host = h;
+      portFromHost = p;
+    }
+
+    let port = xfPort || portFromHost;
+
+    // 标准端口不附加
+    const isStandardPort = (xfProto === 'https' && port === '443') || (xfProto === 'http' && port === '80');
+    const portSuffix = port && !isStandardPort ? `:${port}` : '';
+
+    if (host) {
+      return `${xfProto}://${host}${portSuffix}/uploads/${filename}`;
+    }
+  } catch (_) {
+    // 忽略错误，回退到相对路径
+  }
+
+  // 回退：相对路径，适用于同域反向代理
+  return `/api/uploads/${filename}`;
+}
+
 // 验证中间件
 exports.validateMeal = [
   body('name')
@@ -27,6 +67,20 @@ exports.getAllMeals = async (req, res, next) => {
     res.status(200).json(meals);
   } catch (error) {
     logger.error(`获取菜品失败: ${error.message}`);
+    next(error);
+  }
+};
+
+// 新增：获取单个菜品
+exports.getMealById = async (req, res, next) => {
+  try {
+    const meal = await Meal.findById(req.params.id);
+    if (!meal) {
+      return res.status(404).json({ error: '未找到指定菜品' });
+    }
+    res.status(200).json(meal);
+  } catch (error) {
+    logger.error(`获取菜品详情失败: ${error.message}`);
     next(error);
   }
 };
@@ -57,9 +111,8 @@ exports.createMeal = async (req, res, next) => {
 
     // 如果有文件上传，则生成图片URL
     if (req.file) {
-      // 将 Windows 风格的路径分隔符 \ 替换为 /
-      const filePath = req.file.path.replace(/\\/g, '/');
-      mealData.imageUrl = `${req.protocol}://${req.get('host')}/${filePath}`;
+      const filename = req.file.filename;
+      mealData.imageUrl = buildImageUrl(req, filename);
     }
 
     // 创建新菜品
@@ -99,9 +152,8 @@ exports.updateMeal = async (req, res, next) => {
 
     // 如果有新文件上传，则更新图片URL
     if (req.file) {
-      // 将 Windows 风格的路径分隔符 \ 替换为 /
-      const filePath = req.file.path.replace(/\\/g, '/');
-      updateData.imageUrl = `${req.protocol}://${req.get('host')}/${filePath}`;
+      const filename = req.file.filename;
+      updateData.imageUrl = buildImageUrl(req, filename);
       // 注意：这里可以添加逻辑来删除旧图片
     }
 
