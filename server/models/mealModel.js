@@ -12,6 +12,16 @@ const mealSchema = new mongoose.Schema({
     trim: true,
     maxlength: [100, '菜品名称不能超过100个字符']
   },
+  category: {
+    type: String,
+    trim: true,
+    index: true
+  },
+  subcategory: {
+    type: String,
+    trim: true,
+    index: true
+  },
   imageUrl: {
     type: String,
     trim: true
@@ -22,18 +32,28 @@ const mealSchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, '菜品描述不能超过500个字符']
   },
-  // 新增 tags 字段
   tags: {
     type: [String],
     default: []
   },
-  // 新增 ingredients 字段
   ingredients: {
     type: [{
       name: String,
       amount: String
     }],
     default: []
+  },
+  steps: {
+    type: [String],
+    default: []
+  },
+  source: {
+    type: String,
+    trim: true
+  },
+  sourcePath: {
+    type: String,
+    trim: true
   },
   createdAt: {
     type: Date,
@@ -44,4 +64,4 @@ const mealSchema = new mongoose.Schema({
 // 创建菜品模型
 const Meal = mongoose.model('Meal', mealSchema);
 
-module.exports = Meal; 
+module.exports = Meal;

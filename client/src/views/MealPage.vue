@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import MealCard from '../components/MealCard.vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
-import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit } from '@element-plus/icons-vue';
+import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const mealStore = useMealStore();
@@ -12,6 +12,8 @@ const mealStore = useMealStore();
 // 状态 - 列表过滤和分页
 const searchQuery = ref('');
 const selectedTag = ref('');
+const selectedCategory = ref('');
+const selectedSubcategory = ref('');
 const currentPage = ref(1);
 const pageSize = ref(8);
 const loading = ref(false);
@@ -55,8 +57,62 @@ const filteredMeals = computed(() => {
       meal.tags && meal.tags.includes(selectedTag.value)
     );
   }
+
+  if (selectedCategory.value) {
+    result = result.filter(meal => (meal.category || '') === selectedCategory.value);
+  }
+
+  if (selectedSubcategory.value) {
+    result = result.filter(meal => (meal.subcategory || '') === selectedSubcategory.value);
+  }
   
   return result;
+});
+
+const categoryOptions = computed(() => {
+  const set = new Set();
+  const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
+    ? mealStore.categories
+    : mealStore.meals.map(m => ({ category: m.category || '' }));
+  rows.forEach(r => {
+    if (r.category) set.add(r.category);
+  });
+  return Array.from(set);
+});
+
+const subcategoryOptions = computed(() => {
+  if (!selectedCategory.value) return [];
+  const set = new Set();
+  const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
+    ? mealStore.categories
+    : mealStore.meals.map(m => ({ category: m.category || '', subcategory: m.subcategory || '' }));
+  rows.forEach(r => {
+    if (r.category === selectedCategory.value && r.subcategory) set.add(r.subcategory);
+  });
+  return Array.from(set);
+});
+
+const groupedMeals = computed(() => {
+  const groups = new Map();
+  for (const meal of filteredMeals.value) {
+    const c = meal.category || '未分类';
+    const s = meal.subcategory || '其它';
+    if (!groups.has(c)) groups.set(c, new Map());
+    const subMap = groups.get(c);
+    if (!subMap.has(s)) subMap.set(s, []);
+    subMap.get(s).push(meal);
+  }
+  const out = [];
+  for (const [category, subMap] of groups.entries()) {
+    const subs = [];
+    for (const [subcategory, meals] of subMap.entries()) {
+      subs.push({ subcategory, meals });
+    }
+    subs.sort((a, b) => a.subcategory.localeCompare(b.subcategory, 'zh'));
+    out.push({ category, subs });
+  }
+  out.sort((a, b) => a.category.localeCompare(b.category, 'zh'));
+  return out;
 });
 
 // 计算属性：分页菜品
@@ -221,6 +277,8 @@ const handleImageChange = (file) => {
 const clearFilters = () => {
   searchQuery.value = '';
   selectedTag.value = '';
+  selectedCategory.value = '';
+  selectedSubcategory.value = '';
   currentPage.value = 1;
 };
 
@@ -230,12 +288,19 @@ const handlePageChange = (page) => {
 };
 
 // 监听筛选条件变化，重置分页
-watch([searchQuery, selectedTag], () => {
+watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory], () => {
   currentPage.value = 1;
+});
+
+watch(selectedCategory, () => {
+  selectedSubcategory.value = '';
 });
 
 onMounted(async () => {
   await fetchMeals();
+  try {
+    await mealStore.fetchMealCategories();
+  } catch (_) {}
 });
 </script>
 
@@ -260,6 +325,10 @@ onMounted(async () => {
               <el-radio-button value="table">
                 <el-icon><Document /></el-icon>
                 <span class="view-label">表格</span>
+              </el-radio-button>
+              <el-radio-button value="grouped">
+                <el-icon><Menu /></el-icon>
+                <span class="view-label">分组</span>
               </el-radio-button>
             </el-radio-group>
           </div>
@@ -304,12 +373,45 @@ onMounted(async () => {
             />
           </el-select>
         </div>
+
+        <div class="tag-filter">
+          <el-select
+            v-model="selectedCategory"
+            placeholder="选择分类"
+            clearable
+            class="tag-select"
+          >
+            <el-option
+              v-for="c in categoryOptions"
+              :key="c"
+              :label="c"
+              :value="c"
+            />
+          </el-select>
+        </div>
+
+        <div class="tag-filter">
+          <el-select
+            v-model="selectedSubcategory"
+            placeholder="选择子类"
+            clearable
+            class="tag-select"
+            :disabled="!selectedCategory"
+          >
+            <el-option
+              v-for="s in subcategoryOptions"
+              :key="s"
+              :label="s"
+              :value="s"
+            />
+          </el-select>
+        </div>
       </div>
       
       <!-- 移动端过滤按钮 -->
       <div class="mobile-filter-actions">
         <el-button 
-          v-if="searchQuery || selectedTag"
+          v-if="searchQuery || selectedTag || selectedCategory || selectedSubcategory"
           type="info" 
           size="small"
           @click="clearFilters"
@@ -327,8 +429,36 @@ onMounted(async () => {
 
     <!-- 菜品列表 -->
     <div v-else-if="filteredMeals.length > 0" class="meals-container">
+      <div v-if="currentView === 'grouped'" class="meals-grouped">
+        <el-collapse accordion>
+          <el-collapse-item
+            v-for="group in groupedMeals"
+            :key="group.category"
+            :title="`${group.category}（${group.subs.reduce((acc, s) => acc + s.meals.length, 0)}）`"
+          >
+            <el-collapse accordion>
+              <el-collapse-item
+                v-for="sub in group.subs"
+                :key="`${group.category}-${sub.subcategory}`"
+                :title="`${sub.subcategory}（${sub.meals.length}）`"
+              >
+                <div class="meals-grid">
+                  <MealCard
+                    v-for="meal in sub.meals"
+                    :key="meal._id || meal.id"
+                    :meal="meal"
+                    @edit="handleEditMeal"
+                    @delete="handleDeleteMeal"
+                  />
+                </div>
+              </el-collapse-item>
+            </el-collapse>
+          </el-collapse-item>
+        </el-collapse>
+      </div>
+
       <!-- 网格布局 -->
-      <div v-if="currentView === 'grid'" class="meals-grid">
+      <div v-else-if="currentView === 'grid'" class="meals-grid">
         <MealCard
           v-for="meal in paginatedMeals"
           :key="meal._id || meal.id"
@@ -492,7 +622,7 @@ onMounted(async () => {
       </div>
 
       <!-- 分页器 (仅桌面端) -->
-      <div v-if="totalPages > 1" class="pagination-container desktop-only">
+      <div v-if="currentView !== 'grouped' && totalPages > 1" class="pagination-container desktop-only">
             <el-pagination
               v-model:current-page="currentPage"
           :page-size="pageSize"

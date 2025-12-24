@@ -25,6 +25,9 @@ services:
 
   # 后端API服务
   backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
     image: eatwhat-backend-local:latest
     container_name: eatwhat-backend
     restart: unless-stopped

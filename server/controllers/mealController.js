@@ -70,6 +70,35 @@ exports.getAllMeals = async (req, res, next) => {
     next(error);
   }
 };
+exports.getMealCategories = async (req, res, next) => {
+  try {
+    const rows = await Meal.aggregate([
+      {
+        $group: {
+          _id: {
+            category: { $ifNull: ['$category', ''] },
+            subcategory: { $ifNull: ['$subcategory', ''] }
+          },
+          count: { $sum: 1 }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          category: '$_id.category',
+          subcategory: '$_id.subcategory',
+          count: 1
+        }
+      },
+      { $sort: { category: 1, subcategory: 1 } }
+    ]);
+
+    res.status(200).json(rows);
+  } catch (error) {
+    logger.error(`获取菜品分类失败: ${error.message}`);
+    next(error);
+  }
+};
 
 // 新增：获取单个菜品
 exports.getMealById = async (req, res, next) => {

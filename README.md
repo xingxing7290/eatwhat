@@ -615,3 +615,15 @@ docker-compose down && docker-compose up -d
 ### 本地开发
 
 ```
+
+```
+docker compose build backend
+docker compose up -d --no-deps backend
+```
+
+
+如果你还要重新导入 CookLikeHOC（例如你更新了菜谱文件）：
+
+依然可以在容器内跑：
+docker cp /srv/eatwhat/CookLikeHOC eatwhat-backend:/tmp/CookLikeHOC
+docker compose exec backend node /app/scripts/import-cooklikehoc.js --source /tmp/CookLikeHOC

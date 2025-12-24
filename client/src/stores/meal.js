@@ -6,6 +6,7 @@ export const useMealStore = defineStore('meal', {
   state: () => ({
     meals: [],
     currentMeal: null,
+    categories: [],
     loading: false,
     error: null,
     totalMeals: 0
@@ -43,6 +44,22 @@ export const useMealStore = defineStore('meal', {
   },
   
   actions: {
+    async fetchMealCategories() {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const res = await mealApi.getMealCategories();
+        this.categories = res.data;
+        return this.categories;
+      } catch (err) {
+        this.error = err.message || '获取菜品分类失败';
+        ElMessage.error(this.error);
+        throw err;
+      } finally {
+        this.loading = false;
+      }
+    },
     // 获取所有菜品
     async fetchAllMeals(params = {}) {
       this.loading = true;
@@ -72,7 +89,7 @@ export const useMealStore = defineStore('meal', {
         this.currentMeal = meal;
         
         // 更新本地缓存
-        const index = this.meals.findIndex(m => m.id === id);
+        const index = this.meals.findIndex(m => String(m._id || m.id) === String(id));
         if (index !== -1) {
           this.meals[index] = meal;
         } else {
@@ -141,10 +158,10 @@ export const useMealStore = defineStore('meal', {
       
       try {
         await mealApi.deleteMeal(id);
-        this.meals = this.meals.filter(meal => meal.id !== id);
+        this.meals = this.meals.filter(meal => String(meal._id || meal.id) !== String(id));
         this.totalMeals--;
         
-        if (this.currentMeal && this.currentMeal.id === id) {
+        if (this.currentMeal && String(this.currentMeal._id || this.currentMeal.id) === String(id)) {
           this.currentMeal = null;
         }
         

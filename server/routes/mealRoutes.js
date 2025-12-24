@@ -9,6 +9,7 @@ const router = express.Router();
 
 // GET /meals - 获取所有菜品
 router.get('/', mealController.getAllMeals);
+router.get('/categories', mealController.getMealCategories);
 
 // 新增：GET /meals/:id - 获取单个菜品
 router.get('/:id', mealController.getMealById);

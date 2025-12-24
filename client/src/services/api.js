@@ -208,6 +208,13 @@ export const mealApi = {
 				};
 			});
 	},
+	getMealCategories: () => {
+		if (USE_MOCK) {
+			return mockResponse({ data: [] });
+		}
+		return api.get('/meals/categories')
+			.then(data => ({ data: Array.isArray(data) ? data : [] }));
+	},
 	
 	// 获取菜品详情
 	getMealById: (id) => {

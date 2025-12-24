@@ -1,11 +1,12 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import { useScheduleStore } from '../stores/schedule';
 import MealCard from '../components/MealCard.vue';
 import { ElMessage } from 'element-plus';
 import { format } from 'date-fns';
+import { Grid, Menu, Search } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -21,6 +22,9 @@ const selectedMeals = ref([]);
 const currentPage = ref(1);
 const pageSize = ref(8);
 const selectedTag = ref('');
+const selectedCategory = ref('');
+const selectedSubcategory = ref('');
+const currentView = ref('grouped');
 
 // 计算餐食类型的中文名
 const mealTypeText = computed(() => {
@@ -69,8 +73,62 @@ const filteredMeals = computed(() => {
       meal.tags && meal.tags.includes(selectedTag.value)
     );
   }
+
+  if (selectedCategory.value) {
+    result = result.filter(meal => (meal.category || '') === selectedCategory.value);
+  }
+
+  if (selectedSubcategory.value) {
+    result = result.filter(meal => (meal.subcategory || '') === selectedSubcategory.value);
+  }
   
   return result;
+});
+
+const categoryOptions = computed(() => {
+  const set = new Set();
+  const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
+    ? mealStore.categories
+    : mealStore.meals.map(m => ({ category: m.category || '' }));
+  rows.forEach(r => {
+    if (r.category) set.add(r.category);
+  });
+  return Array.from(set);
+});
+
+const subcategoryOptions = computed(() => {
+  if (!selectedCategory.value) return [];
+  const set = new Set();
+  const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
+    ? mealStore.categories
+    : mealStore.meals.map(m => ({ category: m.category || '', subcategory: m.subcategory || '' }));
+  rows.forEach(r => {
+    if (r.category === selectedCategory.value && r.subcategory) set.add(r.subcategory);
+  });
+  return Array.from(set);
+});
+
+const groupedMeals = computed(() => {
+  const groups = new Map();
+  for (const meal of filteredMeals.value) {
+    const c = meal.category || '未分类';
+    const s = meal.subcategory || '其它';
+    if (!groups.has(c)) groups.set(c, new Map());
+    const subMap = groups.get(c);
+    if (!subMap.has(s)) subMap.set(s, []);
+    subMap.get(s).push(meal);
+  }
+  const out = [];
+  for (const [category, subMap] of groups.entries()) {
+    const subs = [];
+    for (const [subcategory, meals] of subMap.entries()) {
+      subs.push({ subcategory, meals });
+    }
+    subs.sort((a, b) => a.subcategory.localeCompare(b.subcategory, 'zh'));
+    out.push({ category, subs });
+  }
+  out.sort((a, b) => a.category.localeCompare(b.category, 'zh'));
+  return out;
 });
 
 // 计算分页后的菜品
@@ -220,6 +278,8 @@ const handleTagClick = (tag) => {
 const clearFilters = () => {
   searchQuery.value = '';
   selectedTag.value = '';
+  selectedCategory.value = '';
+  selectedSubcategory.value = '';
   currentPage.value = 1;
 };
 
@@ -232,6 +292,14 @@ const handleSearch = () => {
 const handlePageChange = (page) => {
   currentPage.value = page;
 };
+
+watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory], () => {
+  currentPage.value = 1;
+});
+
+watch(selectedCategory, () => {
+  selectedSubcategory.value = '';
+});
 
 // 进入新增菜品
 const goToNewMeal = () => {
@@ -252,6 +320,10 @@ onMounted(async () => {
     if (mealStore.meals.length === 0) {
       await mealStore.fetchAllMeals();
     }
+
+    try {
+      await mealStore.fetchMealCategories();
+    } catch (_) {}
     
     // 优先处理从URL传入的ID (编辑模式)
     const mealIdsFromQuery = route.query.currentMealIds;
@@ -296,7 +368,7 @@ onMounted(async () => {
       <div class="selected-meals" v-if="selectedMeals.length > 0">
         <el-tag 
           v-for="meal in selectedMeals" 
-          :key="meal.id"
+          :key="meal._id || meal.id"
           closable
           @close="toggleMealSelection(meal)"
           class="selected-meal-tag"
@@ -307,6 +379,17 @@ onMounted(async () => {
     </div>
     
     <div class="filters-container">
+      <div class="view-toggle" style="margin-bottom: 12px;">
+        <el-radio-group v-model="currentView" size="small">
+          <el-radio-button value="grouped">
+            <el-icon><Menu /></el-icon>
+          </el-radio-button>
+          <el-radio-button value="grid">
+            <el-icon><Grid /></el-icon>
+          </el-radio-button>
+        </el-radio-group>
+      </div>
+
       <div class="search-container">
         <el-input
           v-model="searchQuery"
@@ -320,11 +403,39 @@ onMounted(async () => {
           </template>
         </el-input>
       </div>
+
+      <div class="search-container" style="margin-top: 12px;">
+        <el-select v-model="selectedCategory" placeholder="选择分类" clearable style="width: 100%;">
+          <el-option
+            v-for="c in categoryOptions"
+            :key="c"
+            :label="c"
+            :value="c"
+          />
+        </el-select>
+      </div>
+
+      <div class="search-container" style="margin-top: 12px;">
+        <el-select
+          v-model="selectedSubcategory"
+          placeholder="选择子类"
+          clearable
+          style="width: 100%;"
+          :disabled="!selectedCategory"
+        >
+          <el-option
+            v-for="s in subcategoryOptions"
+            :key="s"
+            :label="s"
+            :value="s"
+          />
+        </el-select>
+      </div>
       
       <div class="tags-filter">
         <div class="tags-header">
           <span>按标签筛选:</span>
-          <el-button type="text" @click="clearFilters" v-if="searchQuery || selectedTag">
+          <el-button type="text" @click="clearFilters" v-if="searchQuery || selectedTag || selectedCategory || selectedSubcategory">
             清除筛选
           </el-button>
         </div>
@@ -357,35 +468,75 @@ onMounted(async () => {
             </el-empty>
           </div>
           
-          <div v-else class="meals-grid">
-            <div v-for="meal in paginatedMeals" :key="meal.id" class="meal-item">
-              <MealCard 
-                :meal="meal" 
-                :showActions="false"
-                :selected="isMealSelected(meal)"
-                :selectable="true"
-                @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
-              />
-              <el-button 
-                type="primary" 
-                size="small" 
-                style="margin-top: 10px; width: 100%;" 
-                @click="toggleMealSelection(meal)"
-              >
-                测试选择
-              </el-button>
+          <div v-else>
+            <div v-if="currentView === 'grouped'" class="meals-grouped">
+              <el-collapse accordion>
+                <el-collapse-item
+                  v-for="group in groupedMeals"
+                  :key="group.category"
+                  :title="`${group.category}（${group.subs.reduce((acc, s) => acc + s.meals.length, 0)}）`"
+                >
+                  <el-collapse accordion>
+                    <el-collapse-item
+                      v-for="sub in group.subs"
+                      :key="`${group.category}-${sub.subcategory}`"
+                      :title="`${sub.subcategory}（${sub.meals.length}）`"
+                    >
+                      <div class="meals-grid">
+                        <div v-for="meal in sub.meals" :key="meal._id || meal.id" class="meal-item">
+                          <MealCard
+                            :meal="meal"
+                            :showActions="false"
+                            :selected="isMealSelected(meal)"
+                            :selectable="true"
+                            @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
+                          />
+                          <el-button
+                            type="primary"
+                            size="small"
+                            style="margin-top: 10px; width: 100%;"
+                            @click="toggleMealSelection(meal)"
+                          >
+                            测试选择
+                          </el-button>
+                        </div>
+                      </div>
+                    </el-collapse-item>
+                  </el-collapse>
+                </el-collapse-item>
+              </el-collapse>
             </div>
-          </div>
-          
-          <div class="pagination-container" v-if="filteredMeals.length > 0">
-            <el-pagination
-              layout="prev, pager, next"
-              :total="filteredMeals.length"
-              :page-size="pageSize"
-              v-model:current-page="currentPage"
-              @current-change="handlePageChange"
-              background
-            />
+
+            <div v-else class="meals-grid">
+              <div v-for="meal in paginatedMeals" :key="meal._id || meal.id" class="meal-item">
+                <MealCard 
+                  :meal="meal" 
+                  :showActions="false"
+                  :selected="isMealSelected(meal)"
+                  :selectable="true"
+                  @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
+                />
+                <el-button 
+                  type="primary" 
+                  size="small" 
+                  style="margin-top: 10px; width: 100%;" 
+                  @click="toggleMealSelection(meal)"
+                >
+                  测试选择
+                </el-button>
+              </div>
+            </div>
+
+            <div class="pagination-container" v-if="currentView !== 'grouped' && filteredMeals.length > 0">
+              <el-pagination
+                layout="prev, pager, next"
+                :total="filteredMeals.length"
+                :page-size="pageSize"
+                v-model:current-page="currentPage"
+                @current-change="handlePageChange"
+                background
+              />
+            </div>
           </div>
         </template>
       </el-skeleton>
