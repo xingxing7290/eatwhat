@@ -7,9 +7,11 @@ export const useMealStore = defineStore('meal', {
     meals: [],
     currentMeal: null,
     categories: [],
+    tags: [],
     loading: false,
     error: null,
-    totalMeals: 0
+    totalMeals: 0,
+		allLoaded: false
   }),
   
   getters: {
@@ -44,6 +46,22 @@ export const useMealStore = defineStore('meal', {
   },
   
   actions: {
+    async fetchMealTags() {
+      this.loading = true;
+      this.error = null;
+
+      try {
+        const res = await mealApi.getMealTags();
+        this.tags = res.data;
+        return this.tags;
+      } catch (err) {
+        this.error = err.message || '获取菜品标签失败';
+        ElMessage.error(this.error);
+        throw err;
+      } finally {
+        this.loading = false;
+      }
+    },
     async fetchMealCategories() {
       this.loading = true;
       this.error = null;
@@ -68,7 +86,13 @@ export const useMealStore = defineStore('meal', {
       try {
         const res = await mealApi.getAllMeals(params);
         this.meals = res.data;
-        this.totalMeals = res.total || res.data.length;
+        this.totalMeals = (typeof res.total === 'number') ? res.total : res.data.length;
+		// 只有在“无任何查询参数”的情况下才认为已加载全量菜品列表。
+		// 其他页面可能会使用筛选/分页请求覆盖 meals，这里避免误判导致日历显示“未知菜品”。
+		const safeParams = params || {};
+		const hasPagination = Object.prototype.hasOwnProperty.call(safeParams, 'page') || Object.prototype.hasOwnProperty.call(safeParams, 'limit');
+		const isUnfilteredFullLoad = !hasPagination && Object.keys(safeParams).length === 0;
+		this.allLoaded = isUnfilteredFullLoad;
         return this.meals;
       } catch (err) {
         this.error = err.message || '获取菜品列表失败';

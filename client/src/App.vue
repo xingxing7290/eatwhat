@@ -6,7 +6,7 @@ import { RouterLink, RouterView } from 'vue-router'
 import { onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import ApiLogger from './components/ApiLogger.vue';
-import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food } from '@element-plus/icons-vue';
+import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
 
 const route = useRoute();
@@ -166,6 +166,7 @@ const handleResize = () => {
           <nav class="main-nav desktop-nav">
             <router-link to="/" class="nav-link" @click="closeMobileMenu">日历</router-link>
             <router-link to="/meals" class="nav-link" @click="closeMobileMenu">菜品</router-link>
+            <router-link to="/settings" class="nav-link" @click="closeMobileMenu">设置</router-link>
             <el-button 
               v-if="$route.path === '/meals' && !hasMeals" 
               type="success" 
@@ -234,6 +235,10 @@ const handleResize = () => {
           <router-link to="/meals" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Food /></el-icon>
             <span>菜品</span>
+          </router-link>
+          <router-link to="/settings" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><User /></el-icon>
+            <span>设置</span>
           </router-link>
         </nav>
         

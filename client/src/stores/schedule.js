@@ -21,7 +21,7 @@ export const useScheduleStore = defineStore('schedule', {
     hasMealScheduled: (state) => (date, mealType) => {
       const schedule = state.schedules.find(s => s.date === date);
       if (schedule) {
-        return schedule[mealType] && schedule[mealType].length > 0;
+        return schedule.meals && schedule.meals[mealType] && schedule.meals[mealType].length > 0;
       }
       return false;
     },
@@ -30,12 +30,18 @@ export const useScheduleStore = defineStore('schedule', {
     getMealIdsByDateAndType: (state) => (date, mealType) => {
       const schedule = state.schedules.find(s => s.date === date);
       if (schedule && schedule.meals && schedule.meals[mealType]) {
-        // 如果是新API格式（包含完整菜品对象），提取ID
-        if (schedule.meals[mealType].length > 0 && typeof schedule.meals[mealType][0] === 'object') {
-          return schedule.meals[mealType].map(meal => meal._id || meal.id);
-        }
-        // 如果已经是ID列表，直接返回
-        return schedule.meals[mealType];
+        return schedule.meals[mealType]
+          .map(item => {
+            if (item && typeof item === 'object') {
+              if (item.meal) {
+                const m = item.meal;
+                return m._id || m.id || m;
+              }
+              return item._id || item.id || item;
+            }
+            return item;
+          })
+          .filter(Boolean);
       }
       return [];
     }
@@ -76,26 +82,14 @@ export const useScheduleStore = defineStore('schedule', {
           : [];
           
         console.log(`保存餐食安排: ${date} ${mealType}`, validMealIds);
-        const result = await scheduleApi.setMeal(date, mealType, validMealIds);
-        
-        // 更新本地状态
+        const schedule = await scheduleApi.setMeal(date, mealType, validMealIds);
+
+        // 更新本地状态：以服务端返回为准（包含 meal + addedBy 信息）
         const index = this.schedules.findIndex(s => s.date === date);
         if (index !== -1) {
-          // 更新现有日期的餐食
-          const updatedSchedule = { ...this.schedules[index] };
-          if (!updatedSchedule.meals) {
-            updatedSchedule.meals = { breakfast: [], lunch: [], dinner: [] };
-          }
-          updatedSchedule.meals[mealType] = validMealIds; // 注意这里现在操作的是 meals 对象
-          this.schedules[index] = updatedSchedule;
+          this.schedules[index] = schedule;
         } else {
-          // 创建新的日期餐食记录
-          const newSchedule = { 
-            date,
-            meals: { breakfast: [], lunch: [], dinner: [] }
-          };
-          newSchedule.meals[mealType] = validMealIds;
-          this.schedules.push(newSchedule);
+          this.schedules.push(schedule);
         }
         
         ElMessage.success(`${date} 的${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐'}安排已保存`);

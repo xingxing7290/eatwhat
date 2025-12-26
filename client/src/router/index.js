@@ -32,6 +32,11 @@ const router = createRouter({
         date: route.query.date,
         mealType: route.query.mealType
       })
+    },
+    {
+      path: '/settings',
+      name: 'settings',
+      component: () => import('../views/UserSettings.vue')
     }
   ]
 })

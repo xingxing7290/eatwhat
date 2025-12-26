@@ -4,12 +4,13 @@
  */
 const express = require('express');
 const scheduleController = require('../controllers/scheduleController');
+const auth = require('../middleware/auth');
 const router = express.Router();
 
 // GET /schedules?year=YYYY&month=M - 获取特定月份的餐食安排
-router.get('/', scheduleController.validateSchedulesQuery, scheduleController.getSchedules);
+router.get('/', auth(), scheduleController.validateSchedulesQuery, scheduleController.getSchedules);
 
 // PUT /schedules/:date/:mealType - 更新特定日期和餐食类型的安排
-router.put('/:date/:mealType', scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
+router.put('/:date/:mealType', auth(), scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
 
-module.exports = router; 
+module.exports = router;

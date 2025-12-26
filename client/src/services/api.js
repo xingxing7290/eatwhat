@@ -197,16 +197,35 @@ export const mealApi = {
 				total: mockData.meals.length
 			});
 		}
-		return api.get('/meals')
+		return api.get('/meals', { params })
 			.then(data => {
-				// 确保data是数组
-				const mealsArray = Array.isArray(data) ? data : [];
-				console.log('获取到的菜品数据:', mealsArray);
+				// 兼容两种后端返回：
+				// 1) 旧版：直接返回 meals 数组
+				// 2) 新版：返回 { data, total, page, limit, totalPages }
+				if (Array.isArray(data)) {
+					return {
+						data,
+						total: data.length
+					};
+				}
+
+				const list = Array.isArray(data?.data) ? data.data : [];
+				const total = typeof data?.total === 'number' ? data.total : list.length;
 				return {
-					data: mealsArray,
-					total: mealsArray.length
+					data: list,
+					total,
+					page: data?.page,
+					limit: data?.limit,
+					totalPages: data?.totalPages
 				};
 			});
+	},
+	getMealTags: () => {
+		if (USE_MOCK) {
+			return mockResponse({ data: [] });
+		}
+		return api.get('/meals/tags')
+			.then(data => ({ data: Array.isArray(data) ? data : [] }));
 	},
 	getMealCategories: () => {
 		if (USE_MOCK) {
@@ -290,6 +309,16 @@ export const authApi = {
 	// 获取当前用户
 	me: () => {
 		return api.get('/auth/me');
+	},
+	// 更新用户资料
+	updateProfile: (payload) => {
+		return api.put('/auth/profile', payload, {
+			headers: { 'Content-Type': 'application/json' }
+		});
+	},
+	// 上传头像
+	uploadAvatar: (formData) => {
+		return api.post('/auth/avatar', formData);
 	}
 };
 

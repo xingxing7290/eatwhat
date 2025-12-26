@@ -4,8 +4,54 @@
  */
 const Schedule = require('../models/scheduleModel');
 const Meal = require('../models/mealModel');
+const mongoose = require('mongoose');
 const { body, param, query, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
+
+function normalizeMealItems(scheduleDoc) {
+	if (!scheduleDoc || !scheduleDoc.meals) return;
+	for (const mealType of ['breakfast', 'lunch', 'dinner']) {
+		const arr = scheduleDoc.meals[mealType];
+		if (!Array.isArray(arr)) continue;
+		scheduleDoc.meals[mealType] = arr
+			.map(item => {
+				if (!item) return null;
+
+				// New shape already
+				if (typeof item === 'object' && item.meal !== undefined) return item;
+
+				// Some legacy data may be a populated meal doc or an ObjectId/string
+				return { meal: item, addedBy: null };
+			})
+			.filter(Boolean);
+	}
+}
+
+function fillMissingAddedBy(scheduleDoc, uid) {
+	if (!uid || !scheduleDoc || !scheduleDoc.meals) return false;
+	const uidObj = mongoose.Types.ObjectId.isValid(uid) ? new mongoose.Types.ObjectId(uid) : null;
+	if (!uidObj) return false;
+	let changed = false;
+	for (const mealType of ['breakfast', 'lunch', 'dinner']) {
+		const arr = scheduleDoc.meals[mealType];
+		if (!Array.isArray(arr)) continue;
+		for (const item of arr) {
+			if (!item || typeof item !== 'object') continue;
+			if (!item.addedBy) {
+				item.addedBy = uidObj;
+				changed = true;
+			}
+		}
+	}
+	return changed;
+}
+
+function toObjectIdOrNull(v) {
+	if (!v) return null;
+	if (v instanceof mongoose.Types.ObjectId) return v;
+	if (typeof v === 'string' && mongoose.Types.ObjectId.isValid(v)) return new mongoose.Types.ObjectId(v);
+	return null;
+}
 
 // 按月查询的验证中间件
 exports.validateSchedulesQuery = [
@@ -49,6 +95,7 @@ exports.getSchedules = async (req, res, next) => {
     }
 
     const { year, month } = req.query;
+    const uid = req.user && req.user.uid;
 
     // 计算查询月份的开始和结束日期
     const startDate = new Date(year, month - 1, 1);
@@ -60,7 +107,20 @@ exports.getSchedules = async (req, res, next) => {
         $gte: startDate.toISOString().split('T')[0],
         $lte: endDate.toISOString().split('T')[0]
       }
-    }).populate('meals.breakfast meals.lunch meals.dinner');
+    });
+
+    // 兼容旧数据：先把旧结构归一化成 { meal, addedBy }，再做 populate
+    schedulesInDb.forEach(s => normalizeMealItems(s));
+    schedulesInDb.forEach(s => fillMissingAddedBy(s, uid));
+
+    await Schedule.populate(schedulesInDb, [
+      { path: 'meals.breakfast.meal' },
+      { path: 'meals.lunch.meal' },
+      { path: 'meals.dinner.meal' },
+      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
+      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
+      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
+    ]);
 
     // 创建一个Map，方便通过日期快速查找已存在的日程
     const scheduleMap = new Map(schedulesInDb.map(s => [s.date, s]));
@@ -107,17 +167,29 @@ exports.updateSchedule = async (req, res, next) => {
 
     const { date, mealType } = req.params;
     const { mealIds } = req.body;
+
+    const uid = req.user && req.user.uid;
+    const mealItems = Array.isArray(mealIds)
+      ? mealIds.map(mealId => ({ meal: mealId, addedBy: uid || null }))
+      : [];
     
     // 使用 upsert 选项，如果不存在则创建
     const updateData = {};
-    updateData[`meals.${mealType}`] = mealIds;
+    updateData[`meals.${mealType}`] = mealItems;
     
     // 查找并更新（或创建）餐食安排
     const schedule = await Schedule.findOneAndUpdate(
       { date },
       { $set: updateData },
       { new: true, upsert: true, runValidators: true }
-    ).populate(`meals.${mealType}`);
+    ).populate([
+      { path: 'meals.breakfast.meal' },
+      { path: 'meals.lunch.meal' },
+      { path: 'meals.dinner.meal' },
+      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
+      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
+      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
+    ]);
     
     res.status(200).json(schedule);
   } catch (error) {

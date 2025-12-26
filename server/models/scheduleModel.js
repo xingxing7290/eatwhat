@@ -4,6 +4,19 @@
  */
 const mongoose = require('mongoose');
 
+const scheduleMealItemSchema = new mongoose.Schema({
+  meal: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Meal',
+    required: true
+  },
+  addedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null
+  }
+}, { _id: false });
+
 // 餐食日程模式定义
 const scheduleSchema = new mongoose.Schema({
   // 日期 (ISO 8601 格式: "YYYY-MM-DD")
@@ -25,20 +38,17 @@ const scheduleSchema = new mongoose.Schema({
   meals: {
     // 早餐
     breakfast: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Meal'
+      type: scheduleMealItemSchema
     }],
 
     // 午餐
     lunch: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Meal'
+      type: scheduleMealItemSchema
     }],
 
     // 晚餐 
     dinner: [{
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Meal'
+      type: scheduleMealItemSchema
     }]
   }
 });

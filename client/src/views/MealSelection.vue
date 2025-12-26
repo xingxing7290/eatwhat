@@ -6,7 +6,7 @@ import { useScheduleStore } from '../stores/schedule';
 import MealCard from '../components/MealCard.vue';
 import { ElMessage } from 'element-plus';
 import { format } from 'date-fns';
-import { Grid, Menu, Search } from '@element-plus/icons-vue';
+import { Grid, Menu, Search, Filter } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const router = useRouter();
@@ -25,6 +25,11 @@ const selectedTag = ref('');
 const selectedCategory = ref('');
 const selectedSubcategory = ref('');
 const currentView = ref('grouped');
+const showAdvancedFilters = ref(false);
+
+const hasActiveFilters = computed(() => {
+  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value);
+});
 
 // 计算餐食类型的中文名
 const mealTypeText = computed(() => {
@@ -153,33 +158,25 @@ const isMealSelected = (meal) => {
 
 // 切换菜品选中状态
 const toggleMealSelection = (meal) => {
-  console.log('MealSelection - 接收到的菜品对象:', meal);
-  
   if (!meal) {
-    console.error('无效的菜品对象:', meal);
     return;
   }
   
   // 使用_id或id，兼容两种情况
   const mealId = meal._id || meal.id;
   if (!mealId) {
-    console.error('菜品对象缺少ID:', meal);
     return;
   }
-  
-  console.log('切换菜品选中状态:', meal.name, mealId);
+
   const index = selectedMeals.value.findIndex(m => {
     const selectedId = m._id || m.id;
     return String(selectedId) === String(mealId);
   });
-  console.log('查找结果索引:', index, '当前选中菜品数量:', selectedMeals.value.length);
   
   if (index === -1) {
     selectedMeals.value.push(meal);
-    console.log('添加菜品后选中数量:', selectedMeals.value.length);
   } else {
     selectedMeals.value.splice(index, 1);
-    console.log('移除菜品后选中数量:', selectedMeals.value.length);
   }
 };
 
@@ -189,8 +186,8 @@ const loadExistingSchedule = async () => {
     const schedule = scheduleStore.getScheduleByDate(date.value);
     
     // 如果有已经安排的餐食，预选中这些菜品
-    if (schedule && schedule[mealType.value]?.length > 0) {
-      const mealIds = schedule[mealType.value];
+    const mealIds = scheduleStore.getMealIdsByDateAndType(date.value, mealType.value);
+    if (mealIds.length > 0) {
       const meals = mealStore.getMealsByIds(mealIds);
       
       if (meals.length > 0) {
@@ -230,14 +227,10 @@ const saveSelection = async () => {
   isLoading.value = true;
   
   try {
-    console.log('保存前的选中菜品:', selectedMeals.value);
-    
     // 过滤掉null或undefined的ID，优先使用_id，其次使用id
     const mealIds = selectedMeals.value
       .map(meal => meal._id || meal.id)
       .filter(id => id !== null && id !== undefined);
-    
-    console.log('处理后的菜品ID列表:', mealIds);
     
     // 如果没有选择有效的菜品，则提示用户
     if (mealIds.length === 0 && selectedMeals.value.length > 0) {
@@ -252,7 +245,6 @@ const saveSelection = async () => {
     router.push({ name: 'calendar' });
     
   } catch (error) {
-    console.error('保存餐食安排失败:', error);
     ElMessage.error('保存餐食安排失败');
   } finally {
     isLoading.value = false;
@@ -264,22 +256,13 @@ const handleCancel = () => {
   router.push({ name: 'calendar' });
 };
 
-// 切换标签过滤
-const handleTagClick = (tag) => {
-  if (selectedTag.value === tag) {
-    selectedTag.value = '';
-  } else {
-    selectedTag.value = tag;
-  }
-  currentPage.value = 1; // 重置为第一页
-};
-
 // 清除过滤
 const clearFilters = () => {
   searchQuery.value = '';
   selectedTag.value = '';
   selectedCategory.value = '';
   selectedSubcategory.value = '';
+  showAdvancedFilters.value = false;
   currentPage.value = 1;
 };
 
@@ -377,19 +360,7 @@ onMounted(async () => {
         </el-tag>
       </div>
     </div>
-    
-    <div class="filters-container">
-      <div class="view-toggle" style="margin-bottom: 12px;">
-        <el-radio-group v-model="currentView" size="small">
-          <el-radio-button value="grouped">
-            <el-icon><Menu /></el-icon>
-          </el-radio-button>
-          <el-radio-button value="grid">
-            <el-icon><Grid /></el-icon>
-          </el-radio-button>
-        </el-radio-group>
-      </div>
-
+        <div class="filters-container">
       <div class="search-container">
         <el-input
           v-model="searchQuery"
@@ -404,55 +375,71 @@ onMounted(async () => {
         </el-input>
       </div>
 
-      <div class="search-container" style="margin-top: 12px;">
-        <el-select v-model="selectedCategory" placeholder="选择分类" clearable style="width: 100%;">
-          <el-option
-            v-for="c in categoryOptions"
-            :key="c"
-            :label="c"
-            :value="c"
-          />
-        </el-select>
-      </div>
+      <div class="toolbar-row">
+        <el-radio-group v-model="currentView" size="small">
+          <el-radio-button value="grouped">
+            <el-icon><Menu /></el-icon>
+          </el-radio-button>
+          <el-radio-button value="grid">
+            <el-icon><Grid /></el-icon>
+          </el-radio-button>
+        </el-radio-group>
 
-      <div class="search-container" style="margin-top: 12px;">
-        <el-select
-          v-model="selectedSubcategory"
-          placeholder="选择子类"
-          clearable
-          style="width: 100%;"
-          :disabled="!selectedCategory"
-        >
-          <el-option
-            v-for="s in subcategoryOptions"
-            :key="s"
-            :label="s"
-            :value="s"
-          />
-        </el-select>
-      </div>
-      
-      <div class="tags-filter">
-        <div class="tags-header">
-          <span>按标签筛选:</span>
-          <el-button type="text" @click="clearFilters" v-if="searchQuery || selectedTag || selectedCategory || selectedSubcategory">
-            清除筛选
+        <div class="toolbar-actions">
+          <el-button size="small" @click="showAdvancedFilters = !showAdvancedFilters">
+            <el-icon><Filter /></el-icon>
+            筛选
+          </el-button>
+          <el-button v-if="hasActiveFilters" size="small" type="info" @click="clearFilters">
+            清除
           </el-button>
         </div>
-        
-        <div class="tags-list">
-          <el-tag
-            v-for="tag in allTags"
-            :key="tag"
-            :class="{ 'selected-tag': selectedTag === tag }"
-            @click="handleTagClick(tag)"
-            effect="light"
-            class="tag-item"
-          >
-            {{ tag }}
-          </el-tag>
-        </div>
       </div>
+
+      <el-collapse-transition>
+        <div v-show="showAdvancedFilters" class="advanced-filters">
+          <div class="filter-item">
+            <el-select v-model="selectedCategory" placeholder="选择分类" clearable style="width: 100%;">
+              <el-option
+                v-for="c in categoryOptions"
+                :key="c"
+                :label="c"
+                :value="c"
+              />
+            </el-select>
+          </div>
+
+          <div class="filter-item">
+            <el-select
+              v-model="selectedSubcategory"
+              placeholder="选择子类"
+              clearable
+              style="width: 100%;"
+              :disabled="!selectedCategory"
+            >
+              <el-option
+                v-for="s in subcategoryOptions"
+                :key="s"
+                :label="s"
+                :value="s"
+              />
+            </el-select>
+          </div>
+
+          <div class="filter-item">
+            <el-select v-model="selectedTag" placeholder="选择标签" clearable style="width: 100%;">
+              <el-option
+                v-for="tag in allTags"
+                :key="tag"
+                :label="tag"
+                :value="tag"
+              />
+            </el-select>
+          </div>
+        </div>
+      </el-collapse-transition>
+      
+      <div v-if="false"></div>
     </div>
     
     <div class="meals-container">
@@ -491,14 +478,6 @@ onMounted(async () => {
                             :selectable="true"
                             @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
                           />
-                          <el-button
-                            type="primary"
-                            size="small"
-                            style="margin-top: 10px; width: 100%;"
-                            @click="toggleMealSelection(meal)"
-                          >
-                            测试选择
-                          </el-button>
                         </div>
                       </div>
                     </el-collapse-item>
@@ -516,14 +495,6 @@ onMounted(async () => {
                   :selectable="true"
                   @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
                 />
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  style="margin-top: 10px; width: 100%;" 
-                  @click="toggleMealSelection(meal)"
-                >
-                  测试选择
-                </el-button>
               </div>
             </div>
 
@@ -609,6 +580,31 @@ onMounted(async () => {
     .search-container {
       margin-bottom: 15px;
     }
+
+    .toolbar-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    .toolbar-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .advanced-filters {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-top: 12px;
+    }
+
+    .filter-item {
+      min-width: 0;
+    }
     
     .tags-filter {
       .tags-header {
@@ -668,6 +664,12 @@ onMounted(async () => {
 
 @media (max-width: 768px) {
   .meal-selection {
+    .filters-container {
+      .advanced-filters {
+        grid-template-columns: 1fr;
+      }
+    }
+
     .meals-container {
       .meals-grid {
         grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));

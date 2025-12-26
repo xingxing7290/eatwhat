@@ -212,8 +212,6 @@ const loadMealData = async () => {
     }
     
     if (mealData) {
-      console.log('加载菜品数据:', mealData);
-      
       // 填充表单数据
       formData.name = mealData.name || '';
       formData.description = mealData.description || '';
@@ -275,17 +273,19 @@ onBeforeUnmount(() => {
 <template>
   <div class="meal-editor">
     <div class="page-header">
-      <h2 class="page-title">{{ pageTitle }}</h2>
-      <div class="header-actions">
-        <el-button @click="handleCancel">取消</el-button>
-        <el-button 
-          type="primary" 
-          @click="submitForm" 
-          :loading="isSubmitting" 
-          :disabled="isSubmitting"
-        >
-          保存
-        </el-button>
+      <div class="header-content">
+        <h2 class="page-title">{{ pageTitle }}</h2>
+        <div class="header-actions">
+          <el-button @click="handleCancel">取消</el-button>
+          <el-button 
+            type="primary" 
+            @click="submitForm" 
+            :loading="isSubmitting" 
+            :disabled="isSubmitting"
+          >
+            保存
+          </el-button>
+        </div>
       </div>
     </div>
     
@@ -434,11 +434,25 @@ onBeforeUnmount(() => {
 
 <style lang="scss" scoped>
 .meal-editor {
+  min-height: 100vh;
+  background: var(--bg-secondary);
+  padding: 0;
+
   .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+    margin: -20px -20px 20px -20px;
+    padding: 20px;
+    box-shadow: 0 2px 8px var(--shadow-color);
+
+    .header-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+      gap: 16px;
+    }
     
     .page-title {
       margin: 0;
@@ -457,6 +471,8 @@ onBeforeUnmount(() => {
   }
   
   .form-container {
+    max-width: 1200px;
+    margin: 0 auto;
     background-color: var(--bg-primary);
     border-radius: 12px;
     padding: 20px;
@@ -597,6 +613,32 @@ onBeforeUnmount(() => {
           }
         }
       }
+    }
+  }
+
+  @media (max-width: 768px) {
+    .page-header {
+      margin: -16px -16px 16px -16px;
+      padding: 16px;
+
+      .header-content {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+
+      .page-title {
+        font-size: 20px;
+        text-align: center;
+      }
+
+      .header-actions {
+        justify-content: flex-end;
+      }
+    }
+
+    .form-container {
+      padding: 16px;
     }
   }
 }

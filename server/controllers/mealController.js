@@ -3,6 +3,7 @@
  * 处理与菜品相关的业务逻辑
  */
 const Meal = require('../models/mealModel');
+const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 
@@ -61,10 +62,66 @@ exports.validateMeal = [
 // 获取所有菜品
 exports.getAllMeals = async (req, res, next) => {
   try {
-    // 查询所有菜品
-    const meals = await Meal.find().sort({ createdAt: -1 });
-    
-    res.status(200).json(meals);
+    const {
+      search,
+      tag,
+      category,
+      subcategory,
+      page,
+      limit
+    } = req.query;
+
+    const query = {};
+
+    if (search && String(search).trim()) {
+      const q = String(search).trim();
+      query.$or = [
+        { name: { $regex: q, $options: 'i' } },
+        { description: { $regex: q, $options: 'i' } }
+      ];
+    }
+
+    if (tag && String(tag).trim()) {
+      query.tags = String(tag).trim();
+    }
+
+    if (category && String(category).trim()) {
+      query.category = String(category).trim();
+    }
+
+    if (subcategory && String(subcategory).trim()) {
+      query.subcategory = String(subcategory).trim();
+    }
+
+    const pageNum = Number.parseInt(page, 10);
+    const limitNumRaw = Number.parseInt(limit, 10);
+    const hasPagination = Number.isFinite(pageNum) || Number.isFinite(limitNumRaw);
+
+    // 保持兼容：如果没有分页参数，返回原来的数组
+    if (!hasPagination) {
+      const meals = await Meal.find(query).sort({ createdAt: -1 });
+      return res.status(200).json(meals);
+    }
+
+    const safePage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
+    const safeLimitRaw = Number.isFinite(limitNumRaw) && limitNumRaw > 0 ? limitNumRaw : 20;
+    const safeLimit = Math.min(safeLimitRaw, 200);
+
+    const total = await Meal.countDocuments(query);
+    const meals = await Meal.find(query)
+      .sort({ createdAt: -1 })
+      .skip((safePage - 1) * safeLimit)
+      .limit(safeLimit);
+
+    const totalPages = safeLimit ? Math.ceil(total / safeLimit) : 1;
+
+    return res.status(200).json({
+      data: meals,
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages
+    });
   } catch (error) {
     logger.error(`获取菜品失败: ${error.message}`);
     next(error);
@@ -100,9 +157,26 @@ exports.getMealCategories = async (req, res, next) => {
   }
 };
 
+exports.getMealTags = async (req, res, next) => {
+  try {
+    const tags = await Meal.distinct('tags');
+    const out = (Array.isArray(tags) ? tags : [])
+      .filter(t => t && String(t).trim())
+      .map(t => String(t).trim())
+      .sort((a, b) => a.localeCompare(b, 'zh'));
+    res.status(200).json(out);
+  } catch (error) {
+    logger.error(`获取菜品标签失败: ${error.message}`);
+    next(error);
+  }
+};
+
 // 新增：获取单个菜品
 exports.getMealById = async (req, res, next) => {
   try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: '无效的菜品ID' });
+    }
     const meal = await Meal.findById(req.params.id);
     if (!meal) {
       return res.status(404).json({ error: '未找到指定菜品' });

@@ -75,7 +75,8 @@ const fetchMonthSchedules = async () => {
     await scheduleStore.fetchSchedulesByMonth(year, month);
     
     // 获取所有菜品数据，用于展示菜品名称
-    if (mealStore.meals.length === 0) {
+    // 注意：其他页面可能使用分页请求覆盖了 mealStore.meals，导致日历查不到而显示“未知菜品”
+    if (!mealStore.allLoaded) {
       await mealStore.fetchAllMeals();
     }
     meals.value = mealStore.meals;
@@ -89,8 +90,7 @@ const fetchMonthSchedules = async () => {
 // 新增：处理编辑日程的函数
 const handleEditSchedule = (date, mealType) => {
   const formattedDate = format(date, 'yyyy-MM-dd');
-  const schedule = getDateSchedule(date);
-  const currentMealIds = schedule?.meals?.[mealType]?.map(meal => meal._id || meal.id) || [];
+  const currentMealIds = scheduleStore.getMealIdsByDateAndType(formattedDate, mealType);
   
   router.push({
     name: 'MealSelection',
@@ -183,9 +183,37 @@ watch(
 // 根据菜品ID查找菜品信息
 const findMealById = (id) => {
   if (typeof id === 'object' && id !== null) {
-    return id; // 如果传入的已经是菜品对象，直接返回
+    if (id.meal !== undefined) {
+      const m = id.meal;
+      if (m && typeof m === 'object' && m.name) return m;
+      const mId = (m && typeof m === 'object') ? (m._id || m.id) : m;
+      return meals.value.find(meal => String(meal._id || meal.id) === String(mId)) || { name: '未知菜品' };
+    }
+
+    if (id && typeof id === 'object' && id.name) return id;
+
+    const rawId = id._id || id.id;
+    if (rawId) {
+      return meals.value.find(meal => String(meal._id || meal.id) === String(rawId)) || { name: '未知菜品' };
+    }
+
+    return { name: '未知菜品' };
   }
-  return meals.value.find(meal => (meal._id || meal.id) === id) || { name: '未知菜品' };
+  return meals.value.find(meal => String(meal._id || meal.id) === String(id)) || { name: '未知菜品' };
+};
+
+const getAddedBy = (item) => {
+  if (item && typeof item === 'object') {
+    return item.addedBy || null;
+  }
+  return null;
+};
+
+const getAddedByInitial = (item) => {
+  const u = getAddedBy(item);
+  if (!u) return '';
+  const name = (u.displayName || u.username || '').trim();
+  return name ? name.slice(0, 1).toUpperCase() : '';
 };
 
 // 删除餐食安排
@@ -375,12 +403,20 @@ onMounted(() => {
                       
                       <div class="meal-items">
                         <div 
-                          v-for="meal in getDateSchedule(day).meals[mealType.key]" 
-                          :key="meal._id || meal.id"
+                          v-for="item in getDateSchedule(day).meals[mealType.key]" 
+                          :key="(item.meal && (item.meal._id || item.meal.id)) || item._id || item.id"
                           class="meal-item"
                           :style="{ 'background-color': mealType.color }"
                         >
-                          {{ findMealById(meal).name }}
+                          <span
+                            v-if="getAddedBy(item)?.avatarUrl"
+                            class="added-by-avatar"
+                          >
+                            <img :src="getAddedBy(item).avatarUrl" alt="avatar" />
+                          </span>
+                          <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
+                          <span v-else class="added-by-avatar placeholder"></span>
+                          {{ findMealById(item).name }}
                         </div>
                       </div>
                     </div>
@@ -458,12 +494,20 @@ onMounted(() => {
                   <!-- 如果已有安排 -->
                   <div v-if="getDateSchedule(day)?.meals?.[mealType.key]?.length" class="mobile-meal-items">
                     <div 
-                      v-for="meal in getDateSchedule(day).meals[mealType.key]" 
-                      :key="meal._id || meal.id"
+                      v-for="item in getDateSchedule(day).meals[mealType.key]" 
+                      :key="(item.meal && (item.meal._id || item.meal.id)) || item._id || item.id"
                       class="mobile-meal-item"
                       :style="{ 'background-color': mealType.color }"
                     >
-                      <span class="meal-name">{{ findMealById(meal).name }}</span>
+                      <span
+                        v-if="getAddedBy(item)?.avatarUrl"
+                        class="added-by-avatar"
+                      >
+                        <img :src="getAddedBy(item).avatarUrl" alt="avatar" />
+                      </span>
+                      <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
+                      <span v-else class="added-by-avatar placeholder"></span>
+                      <span class="meal-name">{{ findMealById(item).name }}</span>
                     </div>
                   </div>
 
@@ -778,6 +822,8 @@ onMounted(() => {
               gap: 4px;
               
               .meal-item {
+                display: inline-flex;
+                align-items: center;
                 color: white;
                 border-radius: 4px;
                 padding: 2px 8px;
@@ -786,6 +832,32 @@ onMounted(() => {
                 overflow: hidden;
                 text-overflow: ellipsis;
                 max-width: 100%;
+
+                .added-by-avatar {
+                  width: 16px;
+                  height: 16px;
+                  border-radius: 999px;
+                  overflow: hidden;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  margin-right: 6px;
+                  background: rgba(255, 255, 255, 0.25);
+                  flex: 0 0 16px;
+
+                  img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    display: block;
+                  }
+
+                  &.placeholder {
+                    font-size: 10px;
+                    font-weight: 700;
+                    color: rgba(255, 255, 255, 0.9);
+                  }
+                }
               }
             }
           }
@@ -894,6 +966,32 @@ onMounted(() => {
             padding: 10px; /* 原12 改为10 */
             border-radius: 8px;
             color: white;
+
+            .added-by-avatar {
+              width: 18px;
+              height: 18px;
+              border-radius: 999px;
+              overflow: hidden;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              margin-right: 8px;
+              background: rgba(255, 255, 255, 0.25);
+              flex: 0 0 18px;
+
+              img {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+              }
+
+              &.placeholder {
+                font-size: 11px;
+                font-weight: 700;
+                color: rgba(255, 255, 255, 0.9);
+              }
+            }
             
             .meal-name {
               font-size: 13px; /* 原14 改为13 */

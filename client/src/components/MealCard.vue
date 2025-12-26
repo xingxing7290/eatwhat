@@ -48,7 +48,6 @@ const handleImageError = (e) => {
 // 处理选择事件
 const handleSelect = () => {
   if (props.selectable) {
-    console.log('MealCard - 发出select事件，菜品:', props.meal);
     emit('select', props.meal);
   }
 };

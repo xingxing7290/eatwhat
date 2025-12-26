@@ -2,6 +2,11 @@
 
 一个帮助用户安排每日饮食的Web应用，包含前端Vue.js应用和后端Node.js API服务。
 
+## 目录说明
+
+- **client/**：前端程序（Vue 3 + Vite）
+- **server/**：后端程序（Node.js + Express + MongoDB）
+
 ## 项目特性
 
 - 🍽️ 餐食管理和分类
@@ -614,11 +619,23 @@ docker-compose down && docker-compose up -d
 
 ### 本地开发
 
-```
+后端（你已执行过）：
 
-```
+```bash
 docker compose build backend
 docker compose up -d --no-deps backend
+```
+
+前端（本仓库的 `docker-compose.yml` 前端服务使用 `./client/dist` 挂载静态文件，因此前端代码变更后需要先重新构建 dist，再重启前端容器）：
+
+```bash
+# 1) 在 Docker 内构建前端 dist（输出到 ./client/dist）
+docker run --rm -v $(pwd)/client:/app -w /app node:18-alpine npm install
+docker run --rm -v $(pwd)/client:/app -w /app node:18-alpine npm run build
+
+# 2) 重启前端（以及可选的 nginx 反代）
+docker compose up -d --no-deps --force-recreate frontend
+docker compose up -d --no-deps --force-recreate nginx
 ```
 
 
