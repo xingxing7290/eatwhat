@@ -46,6 +46,10 @@
             class="custom-input"
           />
         </el-form-item>
+
+        <div class="login-options">
+          <el-checkbox v-model="rememberPassword">记住密码</el-checkbox>
+        </div>
         
         <el-button 
           type="primary" 
@@ -61,50 +65,59 @@
 
       <!-- 底部提示 -->
       <div class="footer-tips">
-        <p>还没有账号？<a href="#" @click.prevent="showRegister = true">立即注册</a></p>
+        <p>还没有账号？<RouterLink to="/apply-account">申请账号</RouterLink></p>
       </div>
     </div>
 
-    <!-- 注册弹窗 -->
-    <el-dialog v-model="showRegister" title="用户注册" width="400px" center>
-      <el-form :model="registerForm" :rules="registerRules" ref="registerFormRef" label-width="80px">
-        <el-form-item label="用户名" prop="username">
-          <el-input v-model="registerForm.username" placeholder="请输入用户名" />
-        </el-form-item>
-        <el-form-item label="密码" prop="password">
-          <el-input v-model="registerForm.password" type="password" placeholder="请输入密码" show-password />
-        </el-form-item>
-        <el-form-item label="确认密码" prop="confirmPassword">
-          <el-input v-model="registerForm.confirmPassword" type="password" placeholder="请再次输入密码" show-password />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showRegister = false">取消</el-button>
-          <el-button type="primary" @click="onRegister" :loading="registerLoading">注册</el-button>
-        </span>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
+const REMEMBER_LOGIN_KEY = 'eatwhat_remember_login'
+
+const route = useRoute()
+const router = useRouter()
 const formRef = ref()
-const registerFormRef = ref()
 const loading = ref(false)
-const registerLoading = ref(false)
-const showRegister = ref(false)
 const form = ref({ username: '', password: '' })
-const registerForm = ref({ 
-  username: '', 
-  password: '', 
-  confirmPassword: '' 
-})
+const rememberPassword = ref(false)
+
+const loadRememberedLogin = () => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(REMEMBER_LOGIN_KEY) || '{}')
+    if (saved?.remember) {
+      rememberPassword.value = true
+      form.value.username = saved.username || ''
+      form.value.password = saved.password || ''
+    }
+  } catch (_) {
+    localStorage.removeItem(REMEMBER_LOGIN_KEY)
+  }
+
+  const usernameFromApply = typeof route.query.username === 'string' ? route.query.username : ''
+  if (usernameFromApply) {
+    form.value.username = usernameFromApply
+  }
+}
+
+const persistRememberedLogin = () => {
+  if (!rememberPassword.value) {
+    localStorage.removeItem(REMEMBER_LOGIN_KEY)
+    return
+  }
+
+  localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({
+    remember: true,
+    username: form.value.username,
+    password: form.value.password
+  }))
+}
 
 const onSubmit = async () => {
   await formRef.value?.validate(async (valid) => {
@@ -114,34 +127,14 @@ const onSubmit = async () => {
       const res = await api.auth.login(form.value)
       localStorage.setItem('token', res.token)
       localStorage.setItem('user', JSON.stringify(res.user))
+      persistRememberedLogin()
       ElMessage.success('登录成功')
-      window.location.href = '/'
+      const redirect = typeof route.query.redirect === 'string' && route.query.redirect ? route.query.redirect : '/'
+      router.replace(redirect)
     } catch (e) {
       ElMessage.error(e?.error || '登录失败')
     } finally {
       loading.value = false
-    }
-  })
-}
-
-const onRegister = async () => {
-  await registerFormRef.value?.validate(async (valid) => {
-    if (!valid) return
-    try {
-      registerLoading.value = true
-      await api.auth.register({
-        username: registerForm.value.username,
-        password: registerForm.value.password
-      })
-      ElMessage.success('注册成功，请登录')
-      showRegister.value = false
-      // 自动填充用户名
-      form.value.username = registerForm.value.username
-      registerForm.value = { username: '', password: '', confirmPassword: '' }
-    } catch (e) {
-      ElMessage.error(e?.error || '注册失败')
-    } finally {
-      registerLoading.value = false
     }
   })
 }
@@ -151,29 +144,7 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
-const registerRules = {
-  username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度在 3 到 20 个字符', trigger: 'blur' }
-  ],
-  password: [
-    { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能少于 6 个字符', trigger: 'blur' }
-  ],
-  confirmPassword: [
-    { required: true, message: '请再次输入密码', trigger: 'blur' },
-    {
-      validator: (rule, value, callback) => {
-        if (value !== registerForm.value.password) {
-          callback(new Error('两次输入密码不一致'))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'blur'
-    }
-  ]
-}
+onMounted(loadRememberedLogin)
 </script>
 
 <style scoped>
@@ -301,7 +272,25 @@ const registerRules = {
 
 /* 登录表单 */
 .login-form {
-  margin-bottom: 24px;
+  margin-bottom: 20px;
+}
+
+.login-options {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  margin: -4px 0 18px;
+  color: var(--text-secondary);
+}
+
+.login-options :deep(.el-checkbox__label) {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.login-options :deep(.el-checkbox__input.is-checked .el-checkbox__inner) {
+  background-color: var(--primary-color);
+  border-color: var(--primary-color);
 }
 
 .custom-input :deep(.el-input__wrapper) {

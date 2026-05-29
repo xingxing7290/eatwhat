@@ -6,7 +6,14 @@ const router = createRouter({
     {
       path: '/login',
       name: 'login',
-      component: () => import('../views/LoginPage.vue')
+      component: () => import('../views/LoginPage.vue'),
+      meta: { title: '登录' }
+    },
+    {
+      path: '/apply-account',
+      name: 'accountApply',
+      component: () => import('../views/AccountApply.vue'),
+      meta: { title: '申请账号' }
     },
     {
       path: '/',
@@ -42,7 +49,7 @@ const router = createRouter({
 })
 
 router.beforeEach((to, from, next) => {
-  if (to.name === 'login') return next()
+  if (to.name === 'login' || to.name === 'accountApply') return next()
   const token = localStorage.getItem('token')
   if (!token) return next({ name: 'login', query: { redirect: to.fullPath } })
   next()

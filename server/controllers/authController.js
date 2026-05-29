@@ -51,13 +51,15 @@ function toSafeUser(userDoc) {
 
 exports.register = async (req, res, next) => {
 	try {
-		const { username, password } = req.body;
-		if (!username || !password) return res.status(400).json({ error: '用户名和密码必填' });
-		const existed = await User.findOne({ username });
+		const { username, password, displayName } = req.body;
+		const safeUsername = typeof username === 'string' ? username.trim() : '';
+		const safeDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
+		if (!safeUsername || !password) return res.status(400).json({ error: '用户名和密码必填' });
+		const existed = await User.findOne({ username: safeUsername });
 		if (existed) return res.status(409).json({ error: '用户名已存在' });
 		const passwordHash = await bcrypt.hash(password, 10);
-		const user = await User.create({ username, passwordHash });
-		return res.status(201).json({ id: user._id, username: user.username });
+		const user = await User.create({ username: safeUsername, displayName: safeDisplayName, passwordHash });
+		return res.status(201).json({ id: user._id, username: user.username, displayName: user.displayName });
 	} catch (err) { next(err); }
 };
 
