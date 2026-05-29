@@ -31,11 +31,14 @@ const mealSchema = new mongoose.Schema({
   spiceLevel: { type: Number, default: 0, min: 0, max: 5 },
   source: { type: String, trim: true, default: '' },
   sourcePath: { type: String, trim: true, default: '' },
+  isDefault: { type: Boolean, default: false, index: true },
+  defaultKey: { type: String, trim: true, default: '', index: true },
   favorite: { type: Boolean, default: false },
   rating: { type: Number, default: 0, min: 0, max: 5 }
 }, { timestamps: true });
 
 mealSchema.index({ householdId: 1, createdAt: -1 });
 mealSchema.index({ householdId: 1, category: 1, subcategory: 1 });
+mealSchema.index({ householdId: 1, isDefault: 1, defaultKey: 1 });
 
 module.exports = mongoose.model('Meal', mealSchema);

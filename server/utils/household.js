@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const Household = require('../models/householdModel');
 const User = require('../models/userModel');
+const { seedDefaultMealsForHousehold } = require('./defaultMeals');
 
 async function generateInviteCode() {
   for (let i = 0; i < 20; i++) {
@@ -12,12 +13,14 @@ async function generateInviteCode() {
 }
 
 async function createHousehold(name, createdBy = null) {
-  return Household.create({
+  const household = await Household.create({
     name: (name || '我们的温馨小家').trim(),
     inviteCode: await generateInviteCode(),
     members: createdBy ? [createdBy] : [],
     createdBy
   });
+  await seedDefaultMealsForHousehold(household._id, createdBy);
+  return household;
 }
 
 async function getOrCreateDefaultHousehold() {
@@ -30,6 +33,7 @@ async function getOrCreateDefaultHousehold() {
       createdBy: null
     });
   }
+  await seedDefaultMealsForHousehold(household._id, household.createdBy || null);
   return household;
 }
 
