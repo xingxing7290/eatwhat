@@ -1,15 +1,16 @@
 <script setup>
 import { ref, watch, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs';
 import { RouterLink, RouterView } from 'vue-router'
 import { onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import ApiLogger from './components/ApiLogger.vue';
-import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present } from '@element-plus/icons-vue';
+import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present, SwitchButton, ArrowDown } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
 
 const route = useRoute();
+const router = useRouter();
 const isDarkMode = ref(localStorage.getItem('darkMode') === 'true');
 const locale = ref(zhCn);
 
@@ -18,6 +19,8 @@ const showApiLogger = ref(false);
 
 // 移动端导航菜单
 const showMobileMenu = ref(false);
+const authToken = ref(localStorage.getItem('token') || '');
+const authUser = ref(null);
 
 // 获取当前页面标题
 const pageTitle = computed(() => {
@@ -46,14 +49,58 @@ const closeMobileMenu = () => {
 };
 
 // 监听暗黑模式变化
-watch(isDarkMode, (newVal) => {
+watch(isDarkMode, () => {
   document.documentElement.classList.toggle('dark', isDarkMode.value);
+});
+
+watch(() => route.fullPath, () => {
+  loadAuthState();
 });
 
 const appName = "安排吃啥"
 
 const mealStore = useMealStore();
 const hasMeals = computed(() => mealStore.meals.length > 0);
+const isLoggedIn = computed(() => !!authToken.value);
+const currentUserName = computed(() => authUser.value?.displayName || authUser.value?.username || '我的账号');
+const currentUserInitial = computed(() => currentUserName.value.slice(0, 1).toUpperCase());
+
+const loadAuthState = () => {
+  authToken.value = localStorage.getItem('token') || '';
+  try {
+    authUser.value = JSON.parse(localStorage.getItem('user') || 'null');
+  } catch (_) {
+    authUser.value = null;
+  }
+};
+
+const clearMealState = () => {
+  mealStore.meals = [];
+  mealStore.currentMeal = null;
+  mealStore.categories = [];
+  mealStore.tags = [];
+  mealStore.totalMeals = 0;
+  mealStore.allLoaded = false;
+  mealStore.error = null;
+};
+
+const handleLogout = () => {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  loadAuthState();
+  clearMealState();
+  closeMobileMenu();
+  ElMessage.success('已退出登录');
+  router.replace({ name: 'login' });
+};
+
+const handleUserCommand = (command) => {
+  if (command === 'settings') {
+    router.push({ name: 'settings' });
+    return;
+  }
+  if (command === 'logout') handleLogout();
+};
 
 // 添加示例菜品
 const addSampleMeals = async () => {
@@ -105,9 +152,9 @@ const addSampleMeals = async () => {
 };
 
 onMounted(async () => {
-  const isAuthenticated = !!localStorage.getItem('token');
+  loadAuthState();
 
-  if (isAuthenticated) {
+  if (isLoggedIn.value) {
     ElMessage.success({
       message: '后端接口对接成功，现已连接到真实服务',
       duration: 5000
@@ -124,7 +171,7 @@ onMounted(async () => {
   window.addEventListener('resize', handleResize);
   
   // 加载菜品数据
-  if (isAuthenticated && mealStore.meals.length === 0) {
+  if (isLoggedIn.value && mealStore.meals.length === 0) {
     try {
       await mealStore.fetchAllMeals();
     } catch (error) {
@@ -198,6 +245,31 @@ const handleResize = () => {
           
           <!-- 桌面端功能按钮 -->
           <div class="desktop-actions">
+            <el-dropdown
+              v-if="isLoggedIn"
+              trigger="click"
+              class="user-dropdown"
+              @command="handleUserCommand"
+            >
+              <el-button class="user-menu-btn">
+                <span class="user-avatar">{{ currentUserInitial }}</span>
+                <span class="user-name">{{ currentUserName }}</span>
+                <el-icon><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="settings">
+                    <el-icon><User /></el-icon>
+                    账号设置
+                  </el-dropdown-item>
+                  <el-dropdown-item command="logout" divided>
+                    <el-icon><SwitchButton /></el-icon>
+                    退出登录
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+
             <el-tooltip content="查看API日志 (Alt+L)" placement="bottom">
               <el-button 
                 type="primary" 
@@ -261,6 +333,20 @@ const handleResize = () => {
         </nav>
         
         <div class="mobile-nav-actions">
+          <div v-if="isLoggedIn" class="mobile-user-box">
+            <div class="mobile-user-info">
+              <span class="mobile-user-avatar">{{ currentUserInitial }}</span>
+              <div class="mobile-user-text">
+                <strong>{{ currentUserName }}</strong>
+                <span>当前账号</span>
+              </div>
+            </div>
+            <el-button type="danger" class="mobile-logout-btn" @click="handleLogout">
+              <el-icon><SwitchButton /></el-icon>
+              退出登录
+            </el-button>
+          </div>
+
           <el-button 
             v-if="$route.path === '/meals' && !hasMeals" 
             type="success" 
@@ -516,7 +602,40 @@ body {
       align-items: center;
       gap: 10px;
       
-      .api-log-btn {
+            .user-menu-btn {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: 210px;
+        height: 36px;
+        color: #fffaf3;
+        background: rgba(255, 250, 243, 0.16);
+        border: 1px solid rgba(255, 250, 243, 0.28);
+        border-radius: 999px;
+        padding: 0 10px;
+      }
+
+      .user-avatar {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 250, 243, 0.24);
+        font-size: 12px;
+        font-weight: 700;
+        flex-shrink: 0;
+      }
+
+      .user-name {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+
+.api-log-btn {
         background-color: var(--accent-color);
         border-color: var(--accent-color);
         
@@ -596,7 +715,62 @@ body {
     padding: 20px;
     border-top: 1px solid var(--border-color);
     
-    .mobile-sample-btn {
+        .mobile-user-box {
+      margin-bottom: 16px;
+      padding: 14px;
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      background: var(--bg-secondary);
+    }
+
+    .mobile-user-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .mobile-user-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--gradient-primary);
+      color: #fffaf3;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .mobile-user-text {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+
+      strong {
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      span {
+        color: var(--text-secondary);
+        font-size: 12px;
+      }
+    }
+
+    .mobile-logout-btn {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+.mobile-sample-btn {
       width: 100%;
       margin-bottom: 16px;
     }
