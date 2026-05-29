@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import defaultImageSrc from '../assets/meal-placeholder.png';
-import { Check, Edit, Delete, View } from '@element-plus/icons-vue';
+import { Check, Edit, Delete, View, Present } from '@element-plus/icons-vue';
 
 const props = defineProps({
   meal: {
@@ -22,7 +22,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['edit', 'delete', 'select', 'view']);
+const emit = defineEmits(['edit', 'delete', 'select', 'view', 'share']);
 
 const defaultImage = ref(defaultImageSrc);
 
@@ -107,6 +107,8 @@ const imageUrl = computed(() => {
           class="meal-image"
           @error="handleImageError"
         />
+        <div class="photo-pin"></div>
+        <div v-if="meal.isDefault" class="default-ribbon">默认菜谱</div>
         <div v-if="selected" class="selected-overlay">
           <el-icon><Check /></el-icon>
         </div>
@@ -121,6 +123,15 @@ const imageUrl = computed(() => {
             class="mobile-view-btn"
           >
             <el-icon><View /></el-icon>
+          </el-button>
+          <el-button
+            type="warning"
+            size="small"
+            circle
+            @click.stop="emit('share', meal)"
+            class="mobile-share-btn"
+          >
+            <el-icon><Present /></el-icon>
           </el-button>
           <el-button
             type="primary"
@@ -154,6 +165,15 @@ const imageUrl = computed(() => {
               @click.stop="emit('view', meal)"
             >
               <el-icon><View /></el-icon>
+            </el-button>
+            <el-button
+              type="warning"
+              size="small"
+              circle
+              @click.stop="emit('share', meal)"
+              class="feed-btn"
+            >
+              <el-icon><Present /></el-icon>
             </el-button>
             <el-button
               type="primary"
@@ -627,4 +647,121 @@ const imageUrl = computed(() => {
     -webkit-line-clamp: 2;
   }
 }
+
+
+/* Cozy recipe card override */
+.meal-card-wrapper {
+  border-radius: 24px;
+  border: 1px solid rgba(224, 159, 103, 0.22);
+  background: rgba(253, 251, 247, 0.92);
+  box-shadow: 0 16px 38px rgba(117, 78, 58, 0.12);
+  transform-origin: center;
+  transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out, border-color 0.3s ease-in-out;
+}
+
+.meal-card-wrapper:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 24px 54px rgba(117, 78, 58, 0.18);
+  border-color: rgba(255, 180, 162, 0.58);
+}
+
+.meal-image-container {
+  height: 218px;
+  margin: 12px 12px 0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #f5ebe6, #fdfbf7);
+}
+
+.meal-image {
+  border-radius: 20px;
+}
+
+.photo-pin {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  width: 44px;
+  height: 13px;
+  transform: translateX(-50%) rotate(-4deg);
+  border-radius: 999px;
+  background: rgba(253, 251, 247, 0.82);
+  box-shadow: 0 4px 12px rgba(117, 78, 58, 0.12);
+}
+
+.default-ribbon {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  color: #fffaf3;
+  background: rgba(74, 62, 61, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+}
+
+.meal-info {
+  padding: 18px 20px 20px;
+}
+
+.meal-name {
+  color: #4a3e3d;
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.meal-description {
+  color: #7d6c67;
+}
+
+.meal-actions .el-button,
+.mobile-actions .el-button {
+  border: 0;
+  box-shadow: 0 8px 18px rgba(117, 78, 58, 0.12);
+  transition: all 0.3s ease-in-out;
+}
+
+.meal-actions .el-button:hover,
+.mobile-actions .el-button:hover {
+  transform: translateY(-2px) scale(1.04);
+}
+
+.feed-btn,
+.mobile-share-btn {
+  color: #fffaf3;
+  background: #e09f67;
+}
+
+.meal-meta span,
+.ingredient-item {
+  background: rgba(245, 235, 230, 0.78);
+  border-color: rgba(224, 159, 103, 0.22);
+  color: #7d5d4d;
+}
+
+.meal-tag {
+  border-radius: 999px;
+  background: rgba(255, 180, 162, 0.16);
+  border-color: rgba(255, 180, 162, 0.26);
+  color: #a95f4f;
+}
+
+@media (max-width: 768px) {
+  .meal-card-wrapper:hover {
+    transform: none;
+  }
+
+  .meal-card-content {
+    flex-direction: column;
+  }
+
+  .meal-image-container {
+    width: auto;
+    height: 190px;
+    margin: 10px 10px 0;
+  }
+}
+
 </style>

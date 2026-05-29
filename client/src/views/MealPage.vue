@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import MealCard from '../components/MealCard.vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
-import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View } from '@element-plus/icons-vue';
+import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const mealStore = useMealStore();
@@ -189,6 +189,19 @@ const handleViewMeal = (meal) => {
   router.push({ name: 'MealDetail', params: { id: mealId } });
 };
 
+const handleShareMeal = (meal) => {
+  ElMessage.success(`已把「${meal.name}」投喂给 TA 的今日灵感`);
+};
+
+const feedInspiration = () => {
+  const meal = mealStore.meals[0];
+  if (meal) {
+    handleShareMeal(meal);
+    return;
+  }
+  router.push({ name: 'MealEditor' });
+};
+
 // 删除菜品
 const handleDeleteMeal = async (meal) => {
   try {
@@ -315,7 +328,10 @@ onMounted(async () => {
     <!-- 页面标题和操作栏 -->
     <div class="page-header">
       <div class="header-content">
-        <h1 class="page-title">菜品管理</h1>
+        <div>
+          <h1 class="page-title">菜品管理</h1>
+          <p class="page-subtitle">两个人的小小菜谱手账，收藏每一顿日常的好味道</p>
+        </div>
         <div class="header-actions">
           <el-button
             type="primary"
@@ -327,6 +343,21 @@ onMounted(async () => {
       </el-button>
         </div>
       </div>
+    </div>
+
+    <div class="couple-presence-card">
+      <div class="presence-avatars">
+        <span>我</span>
+        <span>TA</span>
+      </div>
+      <div class="presence-copy">
+        <strong>TA 正在看当前的菜谱...</strong>
+        <p>挑一道今晚一起吃的菜，或者把灵感先投喂给 TA。</p>
+      </div>
+      <el-button type="primary" class="feed-inspiration-btn" @click="feedInspiration">
+        <el-icon><Present /></el-icon>
+        投喂灵感
+      </el-button>
     </div>
 
     <!-- 搜索和过滤区域 -->
@@ -460,6 +491,7 @@ onMounted(async () => {
                     @view="handleViewMeal"
                     @edit="handleEditMeal"
                     @delete="handleDeleteMeal"
+                    @share="handleShareMeal"
                   />
                 </div>
               </el-collapse-item>
@@ -477,6 +509,7 @@ onMounted(async () => {
           @view="handleViewMeal"
           @edit="handleEditMeal"
           @delete="handleDeleteMeal"
+          @share="handleShareMeal"
         />
       </div>
 
@@ -507,6 +540,15 @@ onMounted(async () => {
                   @click.stop="handleViewMeal(meal)"
                 >
                   <el-icon><View /></el-icon>
+                </el-button>
+                <el-button
+                  type="warning"
+                  size="small"
+                  circle
+                  class="list-feed-btn"
+                  @click.stop="handleShareMeal(meal)"
+                >
+                  <el-icon><Present /></el-icon>
                 </el-button>
                 <el-button
                   type="primary"
@@ -979,12 +1021,12 @@ onMounted(async () => {
   height: 120px;
   flex-shrink: 0;
   overflow: hidden;
+}
 
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-          }
+.meal-list-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .meal-list-info {
@@ -1087,12 +1129,12 @@ onMounted(async () => {
   height: 60px;
   border-radius: 8px;
   overflow: hidden;
+}
 
-  img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
+.table-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .table-name {
@@ -1563,4 +1605,250 @@ onMounted(async () => {
     box-shadow: 0 4px 16px var(--shadow-color);
   }
 }
+
+
+/* Cozy cookbook page override */
+.meal-page {
+  min-height: auto;
+  background: transparent;
+}
+
+.page-header {
+  margin: 0 0 18px;
+  padding: 24px;
+  border: 1px solid rgba(224, 159, 103, 0.18);
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(253, 251, 247, 0.96), rgba(245, 235, 230, 0.84));
+  box-shadow: 0 18px 46px rgba(117, 78, 58, 0.1);
+}
+
+.header-content {
+  max-width: none;
+}
+
+.page-title {
+  font-size: 30px;
+  color: #4a3e3d;
+  background: none;
+  -webkit-text-fill-color: initial;
+}
+
+.page-subtitle {
+  margin-top: 8px;
+  color: #8a746b;
+  font-size: 14px;
+}
+
+.add-meal-btn,
+.feed-inspiration-btn {
+  min-height: 44px;
+  border: 0;
+  border-radius: 999px;
+  color: #fffaf3;
+  background: linear-gradient(135deg, #ffb4a2, #e09f67);
+  box-shadow: 0 14px 28px rgba(224, 159, 103, 0.24);
+  transition: all 0.3s ease-in-out;
+}
+
+.add-meal-btn:hover,
+.feed-inspiration-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(224, 159, 103, 0.3);
+}
+
+.couple-presence-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding: 18px 20px;
+  border: 1px solid rgba(255, 180, 162, 0.24);
+  border-radius: 26px;
+  background: rgba(253, 251, 247, 0.78);
+  box-shadow: 0 14px 36px rgba(117, 78, 58, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+.presence-avatars {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.presence-avatars span {
+  width: 42px;
+  height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: -8px;
+  border: 3px solid #fdfbf7;
+  border-radius: 999px;
+  color: #fffaf3;
+  font-size: 12px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #ffb4a2, #e09f67);
+  box-shadow: 0 10px 20px rgba(117, 78, 58, 0.12);
+}
+
+.presence-avatars span:first-child {
+  margin-left: 0;
+  background: linear-gradient(135deg, #a8b8a0, #e09f67);
+}
+
+.presence-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.presence-copy strong {
+  color: #4a3e3d;
+  font-size: 15px;
+}
+
+.presence-copy p {
+  margin: 4px 0 0;
+  color: #8a746b;
+  font-size: 13px;
+}
+
+.filter-section,
+.loading-container,
+.pagination-container,
+.empty-state,
+.meals-table {
+  border: 1px solid rgba(224, 159, 103, 0.18);
+  border-radius: 26px;
+  background: rgba(253, 251, 247, 0.84);
+  box-shadow: 0 16px 38px rgba(117, 78, 58, 0.09);
+}
+
+.search-input :deep(.el-input__wrapper),
+.tag-select :deep(.el-input__wrapper) {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: inset 0 0 0 1px rgba(224, 159, 103, 0.2);
+  transition: all 0.3s ease-in-out;
+}
+
+.search-input :deep(.el-input__wrapper.is-focus),
+.tag-select :deep(.el-input__wrapper.is-focus) {
+  box-shadow: inset 0 0 0 1px #ffb4a2, 0 10px 24px rgba(255, 180, 162, 0.16);
+}
+
+.view-switcher {
+  border-radius: 999px;
+  padding: 4px;
+  background: rgba(245, 235, 230, 0.82);
+}
+
+.view-switcher .el-radio-button__inner {
+  border-radius: 999px !important;
+  background: transparent;
+}
+
+.view-switcher .el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: #4a3e3d;
+  color: #fdfbf7;
+}
+
+.meals-grid {
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+
+.meals-grid :deep(.meal-card-wrapper:nth-child(3n + 2)) {
+  margin-top: 18px;
+}
+
+.meals-grid :deep(.meal-card-wrapper:nth-child(4n)) {
+  margin-top: 8px;
+}
+
+.meal-list-item {
+  border: 1px solid rgba(224, 159, 103, 0.2);
+  border-radius: 24px;
+  background: rgba(253, 251, 247, 0.9);
+  box-shadow: 0 16px 34px rgba(117, 78, 58, 0.1);
+}
+
+.meal-list-item:hover {
+  transform: translateY(-5px) scale(1.01);
+  box-shadow: 0 22px 42px rgba(117, 78, 58, 0.16);
+}
+
+.meal-list-image {
+  width: 150px;
+  height: 150px;
+  margin: 12px 0 12px 12px;
+  border-radius: 20px;
+}
+
+.meal-list-actions .el-button,
+.table-actions .el-button,
+.list-feed-btn {
+  border: 0;
+  box-shadow: 0 8px 18px rgba(117, 78, 58, 0.12);
+}
+
+.add-meal-dialog :deep(.el-dialog) {
+  border-radius: 28px;
+  background: linear-gradient(135deg, #fdfbf7, #f5ebe6);
+  box-shadow: 0 30px 80px rgba(74, 62, 61, 0.18);
+}
+
+.add-meal-dialog :deep(.el-dialog__header) {
+  padding: 24px 28px 10px;
+}
+
+.add-meal-dialog :deep(.el-dialog__title) {
+  color: #4a3e3d;
+  font-weight: 800;
+}
+
+.add-meal-form {
+  padding: 18px 8px;
+  background: linear-gradient(90deg, rgba(224, 159, 103, 0.08) 1px, transparent 1px), rgba(253, 251, 247, 0.46);
+  background-size: 18px 18px;
+  border-radius: 22px;
+}
+
+.upload-area {
+  border-radius: 22px;
+  background: rgba(245, 235, 230, 0.62);
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    margin: 0 0 14px;
+    padding: 18px;
+    border-radius: 22px;
+  }
+
+  .page-title {
+    font-size: 24px;
+    text-align: left;
+  }
+
+  .couple-presence-card {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    border-radius: 22px;
+  }
+
+  .feed-inspiration-btn {
+    width: 100%;
+  }
+
+  .meals-grid :deep(.meal-card-wrapper:nth-child(n)) {
+    margin-top: 0;
+  }
+
+  .meal-list-image {
+    width: auto;
+    height: 180px;
+    margin: 10px 10px 0;
+  }
+}
+
 </style>

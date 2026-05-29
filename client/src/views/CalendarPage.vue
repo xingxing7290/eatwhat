@@ -32,10 +32,17 @@ const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 
 // 餐食类型
 const mealTypes = [
-  { key: 'breakfast', label: '早餐', icon: 'Sunrise', color: '#e6a84f' },
-  { key: 'lunch', label: '午餐', icon: 'Sunny', color: '#d86f63' },
-  { key: 'dinner', label: '晚餐', icon: 'Sunset', color: '#a76783' }
+  { key: 'breakfast', label: '早餐', icon: 'Sunrise', color: '#e6a84f', symbol: '早' },
+  { key: 'lunch', label: '午餐', icon: 'Sunny', color: '#d86f63', symbol: '午' },
+  { key: 'dinner', label: '晚餐', icon: 'Sunset', color: '#a76783', symbol: '晚' }
 ];
+
+const isTodayDate = (date) => date && format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+
+const hasPlannedMeals = (date) => {
+  const schedule = getDateSchedule(date);
+  return mealTypes.some(type => schedule?.meals?.[type.key]?.length);
+};
 
 // 当前视图的月份和年份
 const currentMonthText = computed(() => {
@@ -356,6 +363,8 @@ onMounted(() => {
               <!-- 日期标题 -->
               <div v-if="day" class="date-header">
                 <span class="date-number">{{ format(day, 'd') }}</span>
+                <span v-if="isTodayDate(day)" class="today-heart">♡</span>
+                <span v-else-if="hasPlannedMeals(day)" class="note-pin"></span>
               </div>
               
               <!-- 三餐安排区域 -->
@@ -375,6 +384,7 @@ onMounted(() => {
                       }"
                     >
                       <div class="planned-meal-header">
+                        <span class="meal-symbol" :style="{ backgroundColor: mealType.color }">{{ mealType.symbol }}</span>
                         <el-icon class="meal-icon" :style="{ color: mealType.color }">
                           <component :is="mealType.icon" />
                         </el-icon>
@@ -416,6 +426,7 @@ onMounted(() => {
                           </span>
                           <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
                           <span v-else class="added-by-avatar placeholder"></span>
+                          <span class="food-dot">●</span>
                           {{ findMealById(item).name }}
                         </div>
                       </div>
@@ -1105,4 +1116,228 @@ onMounted(() => {
     }
   }
 }
+
+
+/* Cozy polaroid calendar override */
+.calendar-page {
+  height: auto;
+  min-height: calc(100vh - var(--header-height));
+  padding: 0;
+}
+
+.page-header {
+  border: 1px solid rgba(224, 159, 103, 0.18);
+  border-radius: 28px;
+  background: linear-gradient(135deg, rgba(253, 251, 247, 0.96), rgba(245, 235, 230, 0.82));
+  box-shadow: 0 18px 46px rgba(117, 78, 58, 0.1);
+}
+
+.page-header .header-content .page-title {
+  font-size: 30px;
+  color: #4a3e3d;
+  background: none;
+  -webkit-text-fill-color: initial;
+}
+
+.month-navigation,
+.mobile-month-nav {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid rgba(224, 159, 103, 0.18);
+  padding: 6px;
+}
+
+.nav-btn,
+.mobile-nav-btn,
+.today-btn,
+.mobile-today-btn.inline {
+  border: 0;
+  border-radius: 999px !important;
+  transition: all 0.3s ease-in-out;
+}
+
+.today-btn,
+.mobile-today-btn.inline {
+  background: linear-gradient(135deg, #ffb4a2, #e09f67) !important;
+  box-shadow: 0 12px 24px rgba(224, 159, 103, 0.22);
+}
+
+.calendar-grid {
+  padding: 18px;
+  border: 1px solid rgba(224, 159, 103, 0.18);
+  border-radius: 30px;
+  background: rgba(253, 251, 247, 0.72);
+  box-shadow: 0 18px 48px rgba(117, 78, 58, 0.1);
+}
+
+.calendar-grid .calendar-header-row {
+  gap: 10px;
+  margin-bottom: 12px;
+  background: transparent;
+  color: #7d6c67;
+}
+
+.calendar-grid .calendar-header-row .weekday-cell {
+  border-radius: 999px;
+  background: rgba(245, 235, 230, 0.74);
+  color: #7d6c67;
+}
+
+.calendar-grid .calendar-body {
+  gap: 14px;
+}
+
+.calendar-grid .calendar-body .date-cell {
+  min-height: 178px;
+  border: 1px solid rgba(224, 159, 103, 0.18);
+  border-radius: 22px;
+  background: #fffdf9;
+  box-shadow: 0 12px 28px rgba(117, 78, 58, 0.1);
+  transform: rotate(-0.35deg);
+  transition: all 0.3s ease-in-out;
+}
+
+.calendar-grid .calendar-body .date-cell:nth-child(2n) {
+  transform: rotate(0.28deg);
+}
+
+.calendar-grid .calendar-body .date-cell:hover {
+  transform: translateY(-6px) rotate(0deg);
+  box-shadow: 0 20px 40px rgba(117, 78, 58, 0.16);
+}
+
+.calendar-grid .calendar-body .date-cell.empty-cell {
+  opacity: 0.52;
+  background: rgba(245, 235, 230, 0.42);
+  box-shadow: none;
+}
+
+.calendar-grid .calendar-body .date-cell.has-plan {
+  background: linear-gradient(180deg, #fffdf9 0%, rgba(255, 180, 162, 0.08) 100%);
+}
+
+.calendar-grid .calendar-body .date-cell.today {
+  border-color: rgba(255, 180, 162, 0.86);
+  box-shadow: 0 0 0 3px rgba(255, 180, 162, 0.2), 0 20px 42px rgba(255, 180, 162, 0.2);
+}
+
+.calendar-grid .calendar-body .date-cell.today::after {
+  content: '';
+  position: absolute;
+  inset: 8px;
+  border: 2px dashed rgba(255, 180, 162, 0.8);
+  border-radius: 18px;
+  pointer-events: none;
+}
+
+.calendar-grid .calendar-body .date-cell .date-header {
+  align-items: center;
+  justify-content: space-between;
+}
+
+.calendar-grid .calendar-body .date-cell.today .date-number,
+.calendar-grid .calendar-body .date-cell .date-number {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  color: #4a3e3d;
+  background: rgba(245, 235, 230, 0.86);
+}
+
+.today-heart {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: #c96c5d;
+  background: rgba(255, 180, 162, 0.2);
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.note-pin {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: #e09f67;
+  box-shadow: 0 0 0 5px rgba(224, 159, 103, 0.16);
+}
+
+.calendar-grid .calendar-body .date-cell .meals-container .meal-slot .add-meal,
+.calendar-grid .calendar-body .date-cell .meals-container .meal-slot .planned-meal {
+  border-radius: 16px;
+  border: 1px dashed rgba(224, 159, 103, 0.28) !important;
+  background: rgba(245, 235, 230, 0.42) !important;
+}
+
+.calendar-grid .calendar-body .date-cell .meals-container .meal-slot .planned-meal {
+  border-style: solid !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+}
+
+.meal-symbol {
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  flex: 0 0 22px;
+}
+
+.calendar-grid .meal-items .meal-item {
+  gap: 4px;
+  max-width: 100%;
+  border-radius: 999px !important;
+  padding: 4px 9px !important;
+  color: #fffaf3;
+  box-shadow: 0 8px 16px rgba(117, 78, 58, 0.12);
+}
+
+.food-dot {
+  font-size: 8px;
+  opacity: 0.82;
+}
+
+.mobile-date-list .mobile-date-card {
+  border-radius: 24px;
+  border-color: rgba(224, 159, 103, 0.2);
+  background: #fffdf9;
+  box-shadow: 0 16px 34px rgba(117, 78, 58, 0.11);
+}
+
+.mobile-date-list .mobile-date-card.today {
+  border-color: rgba(255, 180, 162, 0.82);
+  box-shadow: 0 0 0 3px rgba(255, 180, 162, 0.18), 0 18px 38px rgba(255, 180, 162, 0.18);
+}
+
+.mobile-add-meal,
+.mobile-meal-item {
+  border-radius: 16px !important;
+}
+
+@media (max-width: 768px) {
+  .calendar-page {
+    padding: 0;
+  }
+
+  .page-header {
+    border-radius: 22px;
+    margin-bottom: 12px;
+  }
+
+  .page-header .header-content .page-title {
+    font-size: 24px;
+  }
+
+  .mobile-month-nav {
+    top: var(--header-height);
+  }
+}
+
 </style> 

@@ -16,6 +16,7 @@ const locale = ref(zhCn);
 
 // API日志查看器
 const showApiLogger = ref(false);
+const showDevTools = import.meta.env.DEV;
 
 // 移动端导航菜单
 const showMobileMenu = ref(false);
@@ -154,13 +155,6 @@ const addSampleMeals = async () => {
 onMounted(async () => {
   loadAuthState();
 
-  if (isLoggedIn.value) {
-    ElMessage.success({
-      message: '后端接口对接成功，现已连接到真实服务',
-      duration: 5000
-    });
-  }
-  
   // 初始化暗黑模式
   document.documentElement.classList.toggle('dark', isDarkMode.value);
   
@@ -245,6 +239,10 @@ const handleResize = () => {
           
           <!-- 桌面端功能按钮 -->
           <div class="desktop-actions">
+            <div v-if="isLoggedIn" class="presence-pill">
+              <span class="presence-dot"></span>
+              <span>TA 正在同步小家的菜单</span>
+            </div>
             <el-dropdown
               v-if="isLoggedIn"
               trigger="click"
@@ -270,7 +268,7 @@ const handleResize = () => {
               </template>
             </el-dropdown>
 
-            <el-tooltip content="查看API日志 (Alt+L)" placement="bottom">
+            <el-tooltip v-if="showDevTools" content="查看API日志 (Alt+L)" placement="bottom">
               <el-button 
                 type="primary" 
                 circle 
@@ -359,6 +357,7 @@ const handleResize = () => {
           
           <div class="mobile-utility-buttons">
             <el-button 
+              v-if="showDevTools"
               type="primary" 
               @click="showApiLogger = true"
               class="mobile-api-btn"
@@ -903,4 +902,97 @@ body {
     }
   }
 }
+
+
+/* Creamy cozy shell overrides */
+.app-header {
+  height: 72px;
+  padding: 0 28px;
+  background: rgba(253, 251, 247, 0.82);
+  color: var(--text-primary);
+  border-bottom: 1px solid rgba(224, 159, 103, 0.18);
+  box-shadow: 0 14px 36px rgba(117, 78, 58, 0.08);
+  backdrop-filter: blur(18px);
+}
+
+.app-header .header-left .logo {
+  color: var(--text-primary);
+  font-size: 22px;
+  letter-spacing: 0;
+  padding: 8px 14px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 180, 162, 0.22), rgba(253, 251, 247, 0.68));
+  border: 1px solid rgba(255, 180, 162, 0.28);
+}
+
+.app-header .header-left .main-nav .nav-link {
+  color: var(--text-secondary);
+  padding: 9px 13px;
+  border-radius: 999px;
+  transition: all 0.3s ease-in-out;
+}
+
+.app-header .header-left .main-nav .nav-link::after {
+  display: none;
+}
+
+.app-header .header-left .main-nav .nav-link:hover,
+.app-header .header-left .main-nav .nav-link.router-link-active {
+  color: var(--text-primary);
+  background: rgba(255, 180, 162, 0.2);
+  box-shadow: inset 0 0 0 1px rgba(224, 159, 103, 0.2);
+}
+
+.presence-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.62);
+  border: 1px solid rgba(224, 159, 103, 0.22);
+  border-radius: 999px;
+  padding: 8px 12px;
+  box-shadow: 0 10px 24px rgba(117, 78, 58, 0.08);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: #ffb4a2;
+  box-shadow: 0 0 0 5px rgba(255, 180, 162, 0.18);
+}
+
+.app-header .header-right .desktop-actions .user-menu-btn {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(224, 159, 103, 0.24);
+  border-radius: 999px;
+  height: 42px;
+}
+
+.app-header .header-right .desktop-actions .user-avatar {
+  color: #fffaf3;
+  background: linear-gradient(135deg, #ffb4a2, #e09f67);
+}
+
+.app-main {
+  max-width: 1680px;
+  padding: 28px;
+}
+
+@media (max-width: 768px) {
+  .app-header {
+    height: var(--mobile-header-height);
+    padding: 0 14px;
+  }
+
+  .app-header .header-left .logo {
+    font-size: 17px;
+    padding: 6px 10px;
+  }
+}
+
 </style> 
