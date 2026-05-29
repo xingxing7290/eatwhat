@@ -6,7 +6,7 @@ import { RouterLink, RouterView } from 'vue-router'
 import { onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import ApiLogger from './components/ApiLogger.vue';
-import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User } from '@element-plus/icons-vue';
+import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
 
 const route = useRoute();
@@ -105,11 +105,14 @@ const addSampleMeals = async () => {
 };
 
 onMounted(async () => {
-  // 显示API对接成功通知
-  ElMessage.success({
-    message: '后端接口对接成功，现已连接到真实服务',
-    duration: 5000
-  })
+  const isAuthenticated = !!localStorage.getItem('token');
+
+  if (isAuthenticated) {
+    ElMessage.success({
+      message: '后端接口对接成功，现已连接到真实服务',
+      duration: 5000
+    });
+  }
   
   // 初始化暗黑模式
   document.documentElement.classList.toggle('dark', isDarkMode.value);
@@ -121,7 +124,7 @@ onMounted(async () => {
   window.addEventListener('resize', handleResize);
   
   // 加载菜品数据
-  if (mealStore.meals.length === 0) {
+  if (isAuthenticated && mealStore.meals.length === 0) {
     try {
       await mealStore.fetchAllMeals();
     } catch (error) {
@@ -166,6 +169,9 @@ const handleResize = () => {
           <nav class="main-nav desktop-nav">
             <router-link to="/" class="nav-link" @click="closeMobileMenu">日历</router-link>
             <router-link to="/meals" class="nav-link" @click="closeMobileMenu">菜品</router-link>
+            <router-link to="/memories" class="nav-link" @click="closeMobileMenu">回忆</router-link>
+            <router-link to="/wishlist" class="nav-link" @click="closeMobileMenu">想吃</router-link>
+            <router-link to="/anniversaries" class="nav-link" @click="closeMobileMenu">纪念日</router-link>
             <router-link to="/settings" class="nav-link" @click="closeMobileMenu">设置</router-link>
             <el-button 
               v-if="$route.path === '/meals' && !hasMeals" 
@@ -235,6 +241,18 @@ const handleResize = () => {
           <router-link to="/meals" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Food /></el-icon>
             <span>菜品</span>
+          </router-link>
+          <router-link to="/memories" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><ChatDotRound /></el-icon>
+            <span>回忆</span>
+          </router-link>
+          <router-link to="/wishlist" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><Star /></el-icon>
+            <span>想吃</span>
+          </router-link>
+          <router-link to="/anniversaries" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><Present /></el-icon>
+            <span>纪念日</span>
           </router-link>
           <router-link to="/settings" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><User /></el-icon>
@@ -448,7 +466,7 @@ body {
     .main-nav {
       display: flex;
       align-items: center;
-      gap: 20px;
+      gap: 16px;
       
       .nav-link {
         color: #fffaf3;

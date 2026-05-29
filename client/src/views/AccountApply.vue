@@ -25,6 +25,28 @@
           />
         </el-form-item>
 
+        <el-form-item prop="householdName">
+          <el-input
+            v-model="form.householdName"
+            placeholder="小家名称，可选"
+            clearable
+            size="large"
+            :prefix-icon="HomeFilled"
+            class="custom-input"
+          />
+        </el-form-item>
+
+        <el-form-item prop="inviteCode">
+          <el-input
+            v-model="form.inviteCode"
+            placeholder="伴侣邀请码，可选"
+            clearable
+            size="large"
+            :prefix-icon="Key"
+            class="custom-input"
+          />
+        </el-form-item>
+
         <el-form-item prop="username">
           <el-input
             v-model="form.username"
@@ -83,7 +105,7 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { EditPen, Lock, User } from '@element-plus/icons-vue'
+import { EditPen, HomeFilled, Key, Lock, User } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
 const router = useRouter()
@@ -91,6 +113,8 @@ const formRef = ref()
 const loading = ref(false)
 const form = ref({
   displayName: '',
+  householdName: '',
+  inviteCode: '',
   username: '',
   password: '',
   confirmPassword: ''
@@ -104,6 +128,8 @@ const onSubmit = async () => {
       loading.value = true
       await api.auth.register({
         displayName: form.value.displayName.trim(),
+        householdName: form.value.householdName.trim(),
+        inviteCode: form.value.inviteCode.trim(),
         username: form.value.username.trim(),
         password: form.value.password
       })
@@ -123,6 +149,12 @@ const onSubmit = async () => {
 const rules = {
   displayName: [
     { max: 20, message: '昵称不能超过 20 个字符', trigger: 'blur' }
+  ],
+  householdName: [
+    { max: 40, message: '小家名称不能超过 40 个字符', trigger: 'blur' }
+  ],
+  inviteCode: [
+    { max: 20, message: '邀请码不能超过 20 个字符', trigger: 'blur' }
   ],
   username: [
     { required: true, message: '请输入用户名', trigger: 'blur' },

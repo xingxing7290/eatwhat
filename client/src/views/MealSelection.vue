@@ -286,7 +286,7 @@ watch(selectedCategory, () => {
 
 // 进入新增菜品
 const goToNewMeal = () => {
-  router.push({ name: 'mealEditor' });
+  router.push({ name: 'MealEditor' });
 };
 
 onMounted(async () => {

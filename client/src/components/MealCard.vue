@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import defaultImageSrc from '../assets/meal-placeholder.png';
-import { Check, Edit, Delete } from '@element-plus/icons-vue';
+import { Check, Edit, Delete, View } from '@element-plus/icons-vue';
 
 const props = defineProps({
   meal: {
@@ -22,7 +22,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['edit', 'delete', 'select']);
+const emit = defineEmits(['edit', 'delete', 'select', 'view']);
 
 const defaultImage = ref(defaultImageSrc);
 
@@ -45,12 +45,20 @@ const handleImageError = (e) => {
   img.src = defaultImage.value;
 };
 
-// 处理选择事件
-const handleSelect = () => {
+// handle card click
+const handleCardClick = () => {
   if (props.selectable) {
     emit('select', props.meal);
+    return;
   }
+  emit('view', props.meal);
 };
+
+const totalTime = computed(() => {
+  const prep = Number(props.meal.prepTime || 0);
+  const cook = Number(props.meal.cookTime || 0);
+  return prep + cook;
+});
 
 // 计算样式
 const cardClass = computed(() => ({
@@ -63,7 +71,7 @@ const cardClass = computed(() => ({
 const imageUrl = computed(() => {
   const imagePath = props.meal.imageUrl || props.meal.image;
   if (!imagePath) return defaultImage.value;
-  
+
   // 支持绝对URL或以/开头的相对路径（例如 /uploads/xxx.jpg）
   if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
     try {
@@ -85,39 +93,48 @@ const imageUrl = computed(() => {
 </script>
 
 <template>
-  <el-card 
-    :class="cardClass" 
-    :shadow="selectable ? 'hover' : 'always'" 
-    @click="selectable ? handleSelect() : null"
+  <el-card
+    :class="cardClass"
+    :shadow="selectable ? 'hover' : 'always'"
+    @click="handleCardClick"
     class="meal-card-wrapper"
   >
     <div class="meal-card-content">
       <div class="meal-image-container">
-        <img 
-          :src="imageUrl" 
-          :alt="meal.name" 
-          class="meal-image" 
+        <img
+          :src="imageUrl"
+          :alt="meal.name"
+          class="meal-image"
           @error="handleImageError"
         />
         <div v-if="selected" class="selected-overlay">
           <el-icon><Check /></el-icon>
         </div>
-        
+
         <!-- 移动端操作按钮 -->
         <div v-if="showActions" class="mobile-actions">
-          <el-button 
-            type="primary" 
-            size="small" 
-            circle 
+          <el-button
+            type="info"
+            size="small"
+            circle
+            @click.stop="emit('view', meal)"
+            class="mobile-view-btn"
+          >
+            <el-icon><View /></el-icon>
+          </el-button>
+          <el-button
+            type="primary"
+            size="small"
+            circle
             @click.stop="emit('edit', meal)"
             class="mobile-edit-btn"
           >
             <el-icon><Edit /></el-icon>
           </el-button>
-          <el-button 
-            type="danger" 
-            size="small" 
-            circle 
+          <el-button
+            type="danger"
+            size="small"
+            circle
             @click.stop="emit('delete', meal)"
             class="mobile-delete-btn"
           >
@@ -125,39 +142,53 @@ const imageUrl = computed(() => {
           </el-button>
         </div>
       </div>
-      
+
       <div class="meal-info">
         <div class="meal-header">
           <h3 class="meal-name">{{ meal.name }}</h3>
           <div v-if="showActions" class="meal-actions desktop-actions">
-            <el-button 
-              type="primary" 
-              size="small" 
-              circle 
+            <el-button
+              type="info"
+              size="small"
+              circle
+              @click.stop="emit('view', meal)"
+            >
+              <el-icon><View /></el-icon>
+            </el-button>
+            <el-button
+              type="primary"
+              size="small"
+              circle
               @click.stop="emit('edit', meal)"
             >
               <el-icon><Edit /></el-icon>
             </el-button>
-            <el-button 
-              type="danger" 
-              size="small" 
-              circle 
+            <el-button
+              type="danger"
+              size="small"
+              circle
               @click.stop="emit('delete', meal)"
             >
               <el-icon><Delete /></el-icon>
             </el-button>
           </div>
         </div>
-        
+
         <p v-if="meal.description" class="meal-description">
           {{ meal.description }}
         </p>
-        
+
+        <div v-if="totalTime || meal.difficulty || meal.rating" class="meal-meta">
+          <span v-if="totalTime">{{ totalTime }}分钟</span>
+          <span v-if="meal.difficulty">{{ meal.difficulty === 'easy' ? '简单' : meal.difficulty === 'medium' ? '中等' : '进阶' }}</span>
+          <span v-if="meal.rating">{{ meal.rating }}分</span>
+        </div>
+
         <div v-if="meal.tags && meal.tags.length > 0" class="meal-tags">
-          <el-tag 
+          <el-tag
             v-for="tag in meal.tags.slice(0, 3)"
             :key="tag"
-            size="small" 
+            size="small"
             effect="light"
             class="meal-tag"
           >
@@ -167,12 +198,12 @@ const imageUrl = computed(() => {
             +{{ meal.tags.length - 3 }}
           </span>
         </div>
-        
+
         <div v-if="meal.ingredients && meal.ingredients.length > 0" class="meal-ingredients">
           <div class="ingredients-title">主要食材:</div>
           <div class="ingredients-list">
-            <span 
-              v-for="(ingredient, index) in meal.ingredients.slice(0, 4)" 
+            <span
+              v-for="(ingredient, index) in meal.ingredients.slice(0, 4)"
               :key="index"
               class="ingredient-item"
             >
@@ -195,13 +226,13 @@ const imageUrl = computed(() => {
   overflow: hidden;
   height: 100%;
   }
-  
+
   .meal-card-content {
     display: flex;
     flex-direction: column;
     height: 100%;
   }
-  
+
   .meal-image-container {
     position: relative;
   width: 100%;
@@ -209,7 +240,7 @@ const imageUrl = computed(() => {
     overflow: hidden;
   border-radius: 8px 8px 0 0;
 }
-    
+
     .meal-image {
       width: 100%;
       height: 100%;
@@ -220,7 +251,11 @@ const imageUrl = computed(() => {
 .meal-card-wrapper:hover .meal-image {
   transform: scale(1.05);
 }
-    
+
+.meal-card-wrapper:not(.selectable) {
+  cursor: pointer;
+}
+
     .selected-overlay {
       position: absolute;
       top: 0;
@@ -244,6 +279,7 @@ const imageUrl = computed(() => {
   gap: 8px;
 }
 
+.mobile-view-btn,
 .mobile-edit-btn,
 .mobile-delete-btn {
   width: 32px;
@@ -253,7 +289,7 @@ const imageUrl = computed(() => {
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid rgba(255, 255, 255, 0.2);
   }
-  
+
   .meal-info {
     flex: 1;
   padding: 16px;
@@ -261,14 +297,14 @@ const imageUrl = computed(() => {
     flex-direction: column;
   gap: 12px;
 }
-    
+
     .meal-header {
       display: flex;
   align-items: flex-start;
       justify-content: space-between;
   gap: 12px;
 }
-      
+
       .meal-name {
         font-size: 18px;
         font-weight: 600;
@@ -278,13 +314,13 @@ const imageUrl = computed(() => {
         flex: 1;
   min-width: 0;
       }
-      
+
       .meal-actions {
         display: flex;
   gap: 8px;
   flex-shrink: 0;
     }
-    
+
     .meal-description {
       color: var(--text-secondary);
       font-size: 14px;
@@ -295,8 +331,23 @@ const imageUrl = computed(() => {
       -webkit-box-orient: vertical;
       overflow: hidden;
     }
-    
-    .meal-tags {
+
+.meal-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.meal-meta span {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+
+.meal-tags {
       display: flex;
       flex-wrap: wrap;
   gap: 6px;
@@ -316,7 +367,7 @@ const imageUrl = computed(() => {
   color: var(--text-secondary);
   margin-left: 4px;
     }
-    
+
     .meal-ingredients {
       margin-top: auto;
 }
@@ -371,47 +422,48 @@ const imageUrl = computed(() => {
   .meal-image-container {
     height: 160px;
   }
-  
+
   .meal-info {
     padding: 12px;
     gap: 10px;
   }
-  
+
   .meal-name {
     font-size: 16px;
   }
-  
+
   .meal-description {
           font-size: 13px;
     -webkit-line-clamp: 2;
   }
-  
+
   .meal-tags {
     gap: 4px;
   }
-  
+
   .meal-tag {
     font-size: 11px;
     padding: 3px 6px;
   }
-  
+
   .ingredients-title {
     font-size: 11px;
   }
-  
+
   .ingredient-item {
     font-size: 11px;
     padding: 1px 4px;
   }
-  
+
   .desktop-actions {
     display: none;
   }
-  
+
   .mobile-actions {
     display: flex;
   }
-  
+
+  .mobile-view-btn,
   .mobile-edit-btn,
   .mobile-delete-btn {
     width: 28px;
@@ -424,38 +476,39 @@ const imageUrl = computed(() => {
   .meal-image-container {
     height: 140px;
   }
-  
+
   .meal-info {
     padding: 10px;
     gap: 8px;
   }
-  
+
   .meal-name {
     font-size: 15px;
   }
-  
+
   .meal-description {
     font-size: 12px;
   }
-  
+
   .meal-tags {
     gap: 3px;
   }
-  
+
   .meal-tag {
     font-size: 10px;
     padding: 2px 5px;
   }
-  
+
   .ingredients-title {
     font-size: 10px;
   }
-  
+
   .ingredient-item {
     font-size: 10px;
     padding: 1px 3px;
   }
-  
+
+  .mobile-view-btn,
   .mobile-edit-btn,
   .mobile-delete-btn {
     width: 24px;
@@ -469,17 +522,18 @@ const imageUrl = computed(() => {
   .meal-card-wrapper.selectable:hover {
     transform: none;
   }
-  
+
   .meal-card-wrapper.selectable:active {
     transform: translateY(-2px);
   }
-  
+
+  .mobile-view-btn,
   .mobile-edit-btn,
   .mobile-delete-btn {
     min-height: 44px;
     min-width: 44px;
   }
-  
+
   .meal-actions .el-button {
     min-height: 44px;
     min-width: 44px;
@@ -492,18 +546,19 @@ const imageUrl = computed(() => {
     background: var(--bg-primary);
     border-color: var(--border-color);
   }
-  
+
   .meal-image-container {
     background: var(--bg-secondary);
   }
-  
+
+  .mobile-view-btn,
   .mobile-edit-btn,
   .mobile-delete-btn {
     background: rgba(0, 0, 0, 0.8);
     border-color: rgba(255, 255, 255, 0.2);
     color: white;
   }
-  
+
   .ingredient-item {
     background: var(--bg-secondary);
     border-color: var(--border-color);
@@ -515,38 +570,38 @@ const imageUrl = computed(() => {
   .meal-card-wrapper {
     margin-bottom: 16px;
   }
-  
+
   .meal-card-content {
     flex-direction: row;
   }
-  
+
   .meal-image-container {
     width: 120px;
     height: 120px;
     border-radius: 8px;
     flex-shrink: 0;
   }
-  
+
   .meal-info {
     flex: 1;
     min-width: 0;
   }
-  
+
   .meal-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .meal-name {
     font-size: 16px;
     line-height: 1.2;
   }
-  
+
   .meal-description {
     -webkit-line-clamp: 3;
   }
-  
+
   .meal-ingredients {
     margin-top: 8px;
   }
@@ -557,19 +612,19 @@ const imageUrl = computed(() => {
     width: 100px;
     height: 100px;
   }
-  
+
   .meal-info {
     padding: 8px;
     gap: 6px;
   }
-  
+
   .meal-name {
     font-size: 15px;
   }
-  
+
   .meal-description {
     font-size: 12px;
     -webkit-line-clamp: 2;
   }
 }
-</style> 
+</style>

@@ -26,7 +26,13 @@ const router = createRouter({
       component: () => import('../views/MealPage.vue')
     },
     {
-      path: '/meals/editor/:id',
+      path: '/meals/detail/:id',
+      name: 'MealDetail',
+      component: () => import('../views/MealDetail.vue'),
+      props: true
+    },
+    {
+      path: '/meals/editor/:id?',
       name: 'MealEditor',
       component: () => import('../views/MealEditor.vue'),
       props: true
@@ -39,6 +45,21 @@ const router = createRouter({
         date: route.query.date,
         mealType: route.query.mealType
       })
+    },
+    {
+      path: '/memories',
+      name: 'memories',
+      component: () => import('../views/MemoryTimeline.vue')
+    },
+    {
+      path: '/wishlist',
+      name: 'wishlist',
+      component: () => import('../views/WishlistPage.vue')
+    },
+    {
+      path: '/anniversaries',
+      name: 'anniversaries',
+      component: () => import('../views/AnniversaryPage.vue')
     },
     {
       path: '/settings',

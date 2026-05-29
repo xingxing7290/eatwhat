@@ -257,7 +257,6 @@ export const mealApi = {
 			mockData.meals.unshift(newMeal);
 			return mockResponse(newMeal);
 		}
-		// 当 data 是 FormData 时, axios 会自动设置 Content-Type 为 multipart/form-data
 		return api.post('/meals', formData);
 	},
 	
@@ -322,8 +321,46 @@ export const authApi = {
 	}
 };
 
+
+// 小家相关API
+export const householdApi = {
+	me: () => api.get('/household/me'),
+	update: (payload) => api.put('/household/me', payload, { headers: { 'Content-Type': 'application/json' } }),
+	refreshInvite: () => api.post('/household/invite/refresh'),
+	join: (inviteCode) => api.post('/household/join', { inviteCode }, { headers: { 'Content-Type': 'application/json' } })
+};
+
+// 饭后回忆API
+export const memoryApi = {
+	list: (params = {}) => api.get('/memories', { params }),
+	create: (payload) => api.post('/memories', payload),
+	update: (id, payload) => api.put(`/memories/${id}`, payload),
+	delete: (id) => api.delete(`/memories/${id}`)
+};
+
+// 想吃清单API
+export const wishlistApi = {
+	list: (params = {}) => api.get('/wishlist', { params }),
+	create: (payload) => api.post('/wishlist', payload, { headers: { 'Content-Type': 'application/json' } }),
+	vote: (id) => api.post(`/wishlist/${id}/vote`),
+	updateStatus: (id, status) => api.patch(`/wishlist/${id}/status`, { status }, { headers: { 'Content-Type': 'application/json' } }),
+	delete: (id) => api.delete(`/wishlist/${id}`)
+};
+
+// 纪念日菜单API
+export const anniversaryApi = {
+	list: () => api.get('/anniversaries'),
+	create: (payload) => api.post('/anniversaries', payload),
+	update: (id, payload) => api.put(`/anniversaries/${id}`, payload),
+	delete: (id) => api.delete(`/anniversaries/${id}`)
+};
+
 export default {
 	schedule: scheduleApi,
 	meal: mealApi,
-	auth: authApi
+	auth: authApi,
+	household: householdApi,
+	memory: memoryApi,
+	wishlist: wishlistApi,
+	anniversary: anniversaryApi
 }; 

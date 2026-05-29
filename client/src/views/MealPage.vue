@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import MealCard from '../components/MealCard.vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
-import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter } from '@element-plus/icons-vue';
+import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const mealStore = useMealStore();
@@ -14,6 +14,8 @@ const searchQuery = ref('');
 const selectedTag = ref('');
 const selectedCategory = ref('');
 const selectedSubcategory = ref('');
+const selectedDifficulty = ref('');
+const favoriteOnly = ref(false);
 const currentPage = ref(1);
 const pageSize = ref(8);
 const loading = ref(false);
@@ -23,7 +25,7 @@ const currentView = ref('grid'); // 'grid', 'list', 'table'
 const showAdvancedFilters = ref(false);
 
 const hasActiveFilters = computed(() => {
-  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value);
+  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value || selectedDifficulty.value || favoriteOnly.value);
 });
 
 // 状态 - 新增菜品对话框
@@ -149,7 +151,7 @@ const handleImageError = (e) => {
 // 加载所有菜品
 const fetchMeals = async () => {
   loading.value = true;
-  
+
   try {
     const params = {};
 
@@ -157,6 +159,8 @@ const fetchMeals = async () => {
     if (selectedTag.value) params.tag = selectedTag.value;
     if (selectedCategory.value) params.category = selectedCategory.value;
     if (selectedSubcategory.value) params.subcategory = selectedSubcategory.value;
+    if (selectedDifficulty.value) params.difficulty = selectedDifficulty.value;
+    if (favoriteOnly.value) params.favorite = 'true';
 
     if (currentView.value !== 'grouped') {
       params.page = currentPage.value;
@@ -180,6 +184,11 @@ const handleEditMeal = (meal) => {
   });
 };
 
+const handleViewMeal = (meal) => {
+  const mealId = meal._id || meal.id;
+  router.push({ name: 'MealDetail', params: { id: mealId } });
+};
+
 // 删除菜品
 const handleDeleteMeal = async (meal) => {
   try {
@@ -192,11 +201,11 @@ const handleDeleteMeal = async (meal) => {
         type: 'warning',
       }
     );
-    
+
     const mealId = meal._id || meal.id;
     await mealStore.deleteMeal(mealId);
     ElMessage.success('删除成功');
-    
+
     // 重新获取菜品列表
     await fetchMeals();
   } catch (error) {
@@ -210,10 +219,10 @@ const handleDeleteMeal = async (meal) => {
 const handleAddMeal = async () => {
   await newMealFormRef.value?.validate(async (valid) => {
     if (!valid) return;
-    
+
     try {
       isSubmitting.value = true;
-      
+
       // 使用 FormData 携带文本与图片
       const fd = new FormData();
       fd.append('name', newMealForm.name);
@@ -222,19 +231,19 @@ const handleAddMeal = async () => {
       if (imageFileToUpload.value?.raw) {
         fd.append('image', imageFileToUpload.value.raw);
       }
-      
+
       await mealStore.createMeal(fd);
-      
+
       ElMessage.success('添加成功');
       addMealDialogVisible.value = false;
-      
+
       // 重置表单
       newMealForm.name = '';
       newMealForm.description = '';
       newMealForm.tags = [];
       newMealImagePreviewUrl.value = '';
       imageFileToUpload.value = null;
-      
+
       // 重新获取菜品列表
       await fetchMeals();
     } catch (error) {
@@ -257,6 +266,8 @@ const clearFilters = () => {
   selectedTag.value = '';
   selectedCategory.value = '';
   selectedSubcategory.value = '';
+  selectedDifficulty.value = '';
+  favoriteOnly.value = false;
   showAdvancedFilters.value = false;
   currentPage.value = 1;
 };
@@ -276,7 +287,7 @@ const scheduleFetch = () => {
 };
 
 // 监听筛选条件变化，重置分页
-watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory], () => {
+watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory, selectedDifficulty, favoriteOnly], () => {
   currentPage.value = 1;
   scheduleFetch();
 });
@@ -306,9 +317,9 @@ onMounted(async () => {
       <div class="header-content">
         <h1 class="page-title">菜品管理</h1>
         <div class="header-actions">
-          <el-button 
-            type="primary" 
-            @click="addMealDialogVisible = true"
+          <el-button
+            type="primary"
+            @click="router.push({ name: 'MealEditor' })"
             class="add-meal-btn"
           >
         <el-icon><Plus /></el-icon>
@@ -317,14 +328,14 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-    
+
     <!-- 搜索和过滤区域 -->
     <div class="filter-section">
       <div class="filter-row">
         <div class="search-box">
           <el-input
             v-model="searchQuery"
-            placeholder="搜索菜品名称或描述..."
+            placeholder="搜索菜名、描述、食材或做法..."
             clearable
             class="search-input"
             :prefix-icon="Search"
@@ -405,10 +416,22 @@ onMounted(async () => {
               />
             </el-select>
           </div>
+
+          <div class="filter-item">
+            <el-select v-model="selectedDifficulty" placeholder="选择难度" clearable class="tag-select">
+              <el-option label="简单" value="easy" />
+              <el-option label="中等" value="medium" />
+              <el-option label="进阶" value="hard" />
+            </el-select>
+          </div>
+
+          <div class="filter-item favorite-filter">
+            <el-checkbox v-model="favoriteOnly">只看收藏</el-checkbox>
+          </div>
         </div>
       </el-collapse-transition>
         </div>
-        
+
     <!-- 加载状态 -->
     <div v-if="loading" class="loading-container">
       <el-skeleton :rows="3" animated />
@@ -434,6 +457,7 @@ onMounted(async () => {
                     v-for="meal in sub.meals"
                     :key="meal._id || meal.id"
                     :meal="meal"
+                    @view="handleViewMeal"
                     @edit="handleEditMeal"
                     @delete="handleDeleteMeal"
                   />
@@ -450,53 +474,63 @@ onMounted(async () => {
           v-for="meal in mealStore.meals"
           :key="meal._id || meal.id"
           :meal="meal"
+          @view="handleViewMeal"
           @edit="handleEditMeal"
           @delete="handleDeleteMeal"
         />
       </div>
-      
+
       <!-- 列表布局 -->
       <div v-else-if="currentView === 'list'" class="meals-list">
-        <div 
-          v-for="meal in mealStore.meals" 
+        <div
+          v-for="meal in mealStore.meals"
           :key="meal._id || meal.id"
           class="meal-list-item"
+          @click="handleViewMeal(meal)"
         >
           <div class="meal-list-image">
-            <img 
-              :src="getMealImage(meal)" 
+            <img
+              :src="getMealImage(meal)"
               :alt="meal.name"
               @error="handleImageError"
             />
           </div>
-          
+
           <div class="meal-list-info">
             <div class="meal-list-header">
               <h3 class="meal-list-name">{{ meal.name }}</h3>
               <div class="meal-list-actions">
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  circle 
-                  @click="handleEditMeal(meal)"
+                <el-button
+                  type="info"
+                  size="small"
+                  circle
+                  @click.stop="handleViewMeal(meal)"
+                >
+                  <el-icon><View /></el-icon>
+                </el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  circle
+                  @click.stop="handleEditMeal(meal)"
                 >
                   <el-icon><Edit /></el-icon>
                 </el-button>
-                <el-button 
-                  type="danger" 
-                  size="small" 
-                  circle 
-                  @click="handleDeleteMeal(meal)"
+                <el-button
+                  type="danger"
+                  size="small"
+                  circle
+                  @click.stop="handleDeleteMeal(meal)"
                 >
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </div>
             </div>
-            
+
             <p v-if="meal.description" class="meal-list-description">
               {{ meal.description }}
             </p>
-            
+
             <div class="meal-list-meta">
               <div v-if="meal.tags && meal.tags.length > 0" class="meal-list-tags">
           <el-tag
@@ -512,7 +546,7 @@ onMounted(async () => {
                   +{{ meal.tags.length - 3 }}
                 </span>
         </div>
-              
+
               <div v-if="meal.ingredients && meal.ingredients.length > 0" class="meal-list-ingredients">
                 <span class="ingredients-count">
                   {{ meal.ingredients.length }} 种食材
@@ -522,32 +556,32 @@ onMounted(async () => {
           </div>
         </div>
           </div>
-          
+
       <!-- 表格布局 -->
       <div v-else-if="currentView === 'table'" class="meals-table">
-        <el-table 
-          :data="mealStore.meals" 
+        <el-table
+          :data="mealStore.meals"
           style="width: 100%"
           class="meals-table-content"
         >
-          <el-table-column label="图片" width="80" align="center">
+          <el-table-column label="操作" width="160" align="center">
             <template #default="{ row }">
               <div class="table-image">
-                <img 
-                  :src="getMealImage(row)" 
+                <img
+                  :src="getMealImage(row)"
                   :alt="row.name"
                   @error="handleImageError"
               />
             </div>
             </template>
           </el-table-column>
-          
+
           <el-table-column prop="name" label="菜品名称" min-width="120">
             <template #default="{ row }">
               <div class="table-name">{{ row.name }}</div>
             </template>
           </el-table-column>
-          
+
           <el-table-column prop="description" label="描述" min-width="200">
             <template #default="{ row }">
               <div class="table-description">
@@ -555,7 +589,7 @@ onMounted(async () => {
           </div>
             </template>
           </el-table-column>
-          
+
           <el-table-column label="标签" min-width="150">
             <template #default="{ row }">
               <div class="table-tags">
@@ -574,7 +608,7 @@ onMounted(async () => {
               </div>
             </template>
           </el-table-column>
-          
+
           <el-table-column label="食材" min-width="120">
             <template #default="{ row }">
               <div class="table-ingredients">
@@ -582,22 +616,30 @@ onMounted(async () => {
               </div>
             </template>
           </el-table-column>
-          
+
           <el-table-column label="操作" width="120" align="center">
             <template #default="{ row }">
               <div class="table-actions">
-                <el-button 
-                  type="primary" 
-                  size="small" 
-                  circle 
+                <el-button
+                  type="info"
+                  size="small"
+                  circle
+                  @click="handleViewMeal(row)"
+                >
+                  <el-icon><View /></el-icon>
+                </el-button>
+                <el-button
+                  type="primary"
+                  size="small"
+                  circle
                   @click="handleEditMeal(row)"
                 >
                   <el-icon><Edit /></el-icon>
                 </el-button>
-                <el-button 
-                  type="danger" 
-                  size="small" 
-                  circle 
+                <el-button
+                  type="danger"
+                  size="small"
+                  circle
                   @click="handleDeleteMeal(row)"
                 >
                   <el-icon><Delete /></el-icon>
@@ -626,9 +668,9 @@ onMounted(async () => {
         <el-icon class="empty-icon"><Food /></el-icon>
         <h3>暂无菜品</h3>
         <p>开始添加你的第一个菜品吧！</p>
-        <el-button 
-          type="primary" 
-          @click="addMealDialogVisible = true"
+        <el-button
+          type="primary"
+          @click="router.push({ name: 'MealEditor' })"
           class="empty-action-btn"
         >
           <el-icon><Plus /></el-icon>
@@ -660,17 +702,17 @@ onMounted(async () => {
             class="form-input"
           />
         </el-form-item>
-        
+
         <el-form-item label="描述" prop="description">
-          <el-input 
-            v-model="newMealForm.description" 
-            type="textarea" 
+          <el-input
+            v-model="newMealForm.description"
+            type="textarea"
             :rows="3"
             placeholder="请输入菜品描述"
             class="form-input"
           />
         </el-form-item>
-        
+
         <el-form-item label="标签">
           <el-select
             v-model="newMealForm.tags"
@@ -689,7 +731,7 @@ onMounted(async () => {
             />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="图片">
           <el-upload
             class="image-upload"
@@ -701,9 +743,9 @@ onMounted(async () => {
           >
             <div class="upload-area">
               <el-icon v-if="!newMealImagePreviewUrl" class="upload-icon"><Upload /></el-icon>
-              <img 
-                v-else 
-                :src="newMealImagePreviewUrl" 
+              <img
+                v-else
+                :src="newMealImagePreviewUrl"
                 class="image-preview"
                 alt="预览图"
               />
@@ -714,12 +756,12 @@ onMounted(async () => {
           </el-upload>
         </el-form-item>
       </el-form>
-      
+
       <template #footer>
         <div class="dialog-footer">
           <el-button @click="addMealDialogVisible = false">取消</el-button>
-          <el-button 
-            type="primary" 
+          <el-button
+            type="primary"
             @click="handleAddMeal"
             :loading="isSubmitting"
           >
@@ -737,7 +779,7 @@ onMounted(async () => {
   background: var(--bg-secondary);
   padding: 0;
 }
-  
+
 /* 页面标题和操作栏 */
   .page-header {
   background: var(--bg-primary);
@@ -754,7 +796,7 @@ onMounted(async () => {
   max-width: 1200px;
   margin: 0 auto;
 }
-    
+
     .page-title {
       margin: 0;
       font-size: 24px;
@@ -790,6 +832,7 @@ onMounted(async () => {
   background: var(--bg-secondary);
   color: var(--text-secondary);
   transition: all 0.3s ease;
+  cursor: pointer;
 }
 
 .view-switcher .el-radio-button__original-radio:checked + .el-radio-button__inner {
@@ -824,7 +867,7 @@ onMounted(async () => {
     margin-bottom: 20px;
   box-shadow: 0 2px 8px var(--shadow-color);
     }
-    
+
 .filter-row {
         display: flex;
   gap: 16px;
@@ -857,13 +900,19 @@ onMounted(async () => {
 
 .advanced-filters {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-top: 12px;
 }
 
 .filter-item {
   min-width: 0;
+}
+
+.favorite-filter {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
 }
 
 .tag-filter {
@@ -917,6 +966,7 @@ onMounted(async () => {
   overflow: hidden;
   box-shadow: 0 2px 8px var(--shadow-color);
   transition: all 0.3s ease;
+  cursor: pointer;
 
           &:hover {
             transform: translateY(-2px);
@@ -929,7 +979,7 @@ onMounted(async () => {
   height: 120px;
   flex-shrink: 0;
   overflow: hidden;
-  
+
   img {
     width: 100%;
     height: 100%;
@@ -983,7 +1033,7 @@ onMounted(async () => {
   justify-content: space-between;
   margin-top: auto;
   }
-  
+
 .meal-list-tags {
   display: flex;
   gap: 6px;
@@ -1037,7 +1087,7 @@ onMounted(async () => {
   height: 60px;
   border-radius: 8px;
   overflow: hidden;
-  
+
   img {
     width: 100%;
     height: 100%;
@@ -1059,7 +1109,7 @@ onMounted(async () => {
   -webkit-box-orient: vertical;
   overflow: hidden;
     }
-    
+
 .table-tags {
   display: flex;
   gap: 4px;
@@ -1074,7 +1124,7 @@ onMounted(async () => {
   height: auto;
   line-height: 1.2;
     }
-    
+
 .table-ingredients {
   color: var(--text-secondary);
   font-size: 14px;
@@ -1203,23 +1253,23 @@ onMounted(async () => {
     margin: -16px -16px 16px -16px;
     padding: 16px;
   }
-  
+
   .header-content {
     flex-direction: column;
     gap: 16px;
     align-items: stretch;
   }
-  
+
   .page-title {
     font-size: 20px;
     text-align: center;
   }
-  
+
   .header-actions {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .view-toggle {
     margin-right: 0;
     margin-bottom: 8px;
@@ -1240,24 +1290,24 @@ onMounted(async () => {
   .advanced-filters {
     grid-template-columns: 1fr;
   }
-  
+
   .view-switcher {
     width: 100%;
   }
-  
+
   .view-switcher .el-radio-button {
     flex: 1;
   }
-  
+
   .view-switcher .el-radio-button__inner {
       justify-content: center;
     padding: 10px 12px;
   }
-  
+
   .view-label {
     display: none;
   }
-  
+
   .add-meal-btn {
     width: 100%;
     justify-content: center;
@@ -1273,93 +1323,93 @@ onMounted(async () => {
     gap: 12px;
     margin-bottom: 12px;
   }
-  
+
   .search-box,
   .tag-filter {
     width: 100%;
     min-width: 0;
   }
-  
+
   .mobile-filter-actions {
     display: flex;
   }
-  
+
   .meals-grid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
-  
+
   .meal-list-item {
     flex-direction: column;
   }
-  
+
   .meal-list-image {
     width: 100%;
     height: 160px;
   }
-  
+
   .meal-list-info {
     padding: 12px;
   }
-  
+
   .meal-list-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .meal-list-actions {
     width: 100%;
     justify-content: flex-end;
   }
-  
+
   .meal-list-meta {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
-  
+
   .meals-table {
     overflow-x: auto;
   }
-  
+
   .meals-table-content {
     min-width: 600px;
   }
-  
+
   .desktop-only {
     display: none;
   }
-  
+
   .empty-state {
     min-height: 300px;
   }
-  
+
   .empty-content {
     padding: 30px 16px;
   }
-  
+
   .empty-icon {
     font-size: 48px;
   }
-  
+
   .empty-content h3 {
     font-size: 18px;
   }
-  
+
   .add-meal-dialog {
     width: 95%;
     margin: 10px;
   }
-  
+
   .add-meal-form {
     padding: 16px 0;
   }
-  
+
   .upload-area {
     padding: 30px 16px;
   }
-  
+
   .image-preview {
     width: 100px;
     height: 100px;
@@ -1371,59 +1421,59 @@ onMounted(async () => {
     margin: -12px -12px 12px -12px;
     padding: 12px;
   }
-  
+
   .filter-section {
     padding: 12px;
     margin-bottom: 12px;
   }
-  
+
   .filter-row {
     gap: 8px;
   }
-  
+
   .view-switcher .el-radio-button__inner {
     padding: 8px 8px;
     font-size: 12px;
   }
-  
+
   .meal-list-image {
     height: 140px;
   }
-  
+
   .meal-list-info {
     padding: 10px;
     gap: 8px;
   }
-  
+
   .meal-list-name {
     font-size: 16px;
   }
-  
+
   .meal-list-description {
     font-size: 13px;
   }
-  
+
   .empty-state {
     min-height: 250px;
   }
-  
+
   .empty-content {
     padding: 20px 12px;
   }
-  
+
   .empty-icon {
     font-size: 40px;
   }
-  
+
   .add-meal-dialog {
     width: 98%;
     margin: 5px;
   }
-  
+
   .upload-area {
     padding: 20px 12px;
   }
-  
+
   .image-preview {
     width: 80px;
     height: 80px;
@@ -1435,36 +1485,36 @@ onMounted(async () => {
   .meal-list-item:hover {
     transform: none;
   }
-  
+
   .meal-list-item:active {
     transform: translateY(-1px);
   }
-  
+
   .view-switcher .el-radio-button__inner {
     min-height: 44px;
   }
-  
+
   .add-meal-btn,
   .clear-filters-btn,
   .empty-action-btn {
     min-height: 44px;
     padding: 12px 20px;
   }
-  
+
   .search-input :deep(.el-input__wrapper),
   .tag-select :deep(.el-input__wrapper) {
     min-height: 44px;
     }
-    
+
   .upload-area {
     min-height: 120px;
   }
-  
+
   .meal-list-actions .el-button {
     min-height: 44px;
     min-width: 44px;
   }
-  
+
   .table-actions .el-button {
     min-height: 44px;
     min-width: 44px;
@@ -1477,7 +1527,7 @@ onMounted(async () => {
     background: var(--bg-primary);
     border-bottom-color: var(--border-color);
   }
-  
+
   .filter-section,
   .loading-container,
   .pagination-container,
@@ -1485,17 +1535,17 @@ onMounted(async () => {
     background: var(--bg-primary);
     box-shadow: 0 2px 8px var(--shadow-color);
   }
-  
+
   .upload-area {
     background: var(--bg-secondary);
     border-color: var(--border-color);
-    
+
     &:hover {
       background: var(--bg-primary);
       border-color: var(--primary-color);
     }
   }
-  
+
   .meals-table-content {
     --el-table-border-color: var(--border-color);
     --el-table-header-bg-color: var(--bg-secondary);
@@ -1503,14 +1553,14 @@ onMounted(async () => {
     --el-table-tr-bg-color: var(--bg-primary);
     --el-table-text-color: var(--text-primary);
   }
-  
+
   .meal-list-item {
     background: var(--bg-primary);
     box-shadow: 0 2px 8px var(--shadow-color);
     }
-  
+
   .meal-list-item:hover {
     box-shadow: 0 4px 16px var(--shadow-color);
   }
 }
-</style> 
+</style>
