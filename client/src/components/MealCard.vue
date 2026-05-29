@@ -191,7 +191,7 @@ const imageUrl = computed(() => {
 <style scoped>
 .meal-card-wrapper {
   transition: all 0.3s ease;
-  border-radius: 12px;
+  border-radius: 10px;
   overflow: hidden;
   height: 100%;
   }
@@ -227,7 +227,7 @@ const imageUrl = computed(() => {
       left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(60, 165, 92, 0.8);
+  background: rgba(122, 168, 116, 0.82);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -304,7 +304,7 @@ const imageUrl = computed(() => {
 }
 
 .meal-tag {
-  border-radius: 16px;
+  border-radius: 999px;
   font-size: 12px;
   padding: 4px 8px;
   height: auto;
@@ -340,7 +340,7 @@ const imageUrl = computed(() => {
         color: var(--text-primary);
   background: var(--bg-secondary);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 999px;
   border: 1px solid var(--border-color);
 }
 

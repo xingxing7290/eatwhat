@@ -288,55 +288,77 @@ const handleResize = () => {
 
 <style lang="scss">
 :root {
-  --primary-color: #667eea;
-  --secondary-color: #764ba2;
-  --accent-color: #f093fb;
-  --success-color: #4cd964;
-  --warning-color: #ff9500;
-  --error-color: #ff3b30;
+  --primary-color: #d85f65;
+  --secondary-color: #f09a73;
+  --accent-color: #e6b85c;
+  --success-color: #7aa874;
+  --warning-color: #d9903d;
+  --error-color: #c94c4c;
   
-  --bg-primary: #ffffff;
-  --bg-secondary: #f8f9fa;
-  --bg-tertiary: #f1f3f4;
+  --bg-primary: #fffaf3;
+  --bg-secondary: #fff4e8;
+  --bg-tertiary: #f7e3d2;
   
-  --text-primary: #2c3e50;
-  --text-secondary: #7f8c8d;
-  --text-muted: #95a5a6;
+  --text-primary: #3d3028;
+  --text-secondary: #7c675a;
+  --text-muted: #a58d7f;
   
-  --border-color: #e1e8ed;
-  --border-light: #f1f3f4;
-  --shadow-color: rgba(0, 0, 0, 0.08);
-  --shadow-heavy: rgba(0, 0, 0, 0.12);
+  --border-color: #ead4c3;
+  --border-light: #f4e4d8;
+  --shadow-color: rgba(121, 76, 47, 0.12);
+  --shadow-heavy: rgba(121, 76, 47, 0.2);
   
+
+  --el-color-primary: #d85f65;
+  --el-color-primary-light-3: #e48887;
+  --el-color-primary-light-5: #efa7a0;
+  --el-color-primary-light-7: #f6c7bd;
+  --el-color-primary-light-8: #f9d9cf;
+  --el-color-primary-light-9: #fdece5;
+  --el-color-primary-dark-2: #ad4c51;
+  --el-color-success: #7aa874;
+  --el-color-warning: #d9903d;
+  --el-color-danger: #c94c4c;
   --header-height: 60px;
   --mobile-header-height: 56px;
   
-  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-  --gradient-accent: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  --gradient-primary: linear-gradient(135deg, #f4a261 0%, #d85f65 48%, #8d5a50 100%);
+  --gradient-secondary: linear-gradient(135deg, #ffe0c2 0%, #f4a7a3 52%, #d85f65 100%);
+  --gradient-accent: linear-gradient(135deg, #f7d58b 0%, #f09a73 50%, #9fbd8d 100%);
 }
 
 .dark-mode {
-  --primary-color: #667eea;
-  --secondary-color: #764ba2;
-  --accent-color: #f093fb;
-  --success-color: #4cd964;
-  --warning-color: #ff9500;
-  --error-color: #ff3b30;
+  --primary-color: #ff9b8c;
+  --secondary-color: #f2b279;
+  --accent-color: #f7d27a;
+  --success-color: #9fc28f;
+  --warning-color: #e0a15a;
+  --error-color: #e57a74;
   
-  --bg-primary: #1a1a1a;
-  --bg-secondary: #2c2c2e;
-  --bg-tertiary: #3a3a3c;
+  --bg-primary: #241c19;
+  --bg-secondary: #302620;
+  --bg-tertiary: #3b2e27;
   
-  --text-primary: #f5f5f7;
-  --text-secondary: #a1a1a6;
-  --text-muted: #86868b;
+  --text-primary: #fff3e8;
+  --text-secondary: #d8c2b2;
+  --text-muted: #b79e8e;
   
-  --border-color: #424242;
-  --border-light: #3a3a3c;
-  --shadow-color: rgba(0, 0, 0, 0.3);
-  --shadow-heavy: rgba(0, 0, 0, 0.5);
+  --border-color: #5a4337;
+  --border-light: #46342d;
+  --shadow-color: rgba(0, 0, 0, 0.35);
+  --shadow-heavy: rgba(0, 0, 0, 0.55);
   
+
+  --el-color-primary: #ff9b8c;
+  --el-color-primary-light-3: #c77e72;
+  --el-color-primary-light-5: #9d635a;
+  --el-color-primary-light-7: #724941;
+  --el-color-primary-light-8: #5a3a34;
+  --el-color-primary-light-9: #3f2b27;
+  --el-color-primary-dark-2: #ffc1b6;
+  --el-color-success: #9fc28f;
+  --el-color-warning: #e0a15a;
+  --el-color-danger: #e57a74;
   color-scheme: dark;
   
   .el-card {
@@ -373,7 +395,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   margin: 0;
-  background-color: var(--bg-secondary);
+  background: linear-gradient(180deg, var(--bg-secondary) 0%, #fff8ef 100%);
   color: var(--text-primary);
   overflow-x: hidden;
 }
@@ -392,7 +414,7 @@ body {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(61, 48, 40, 0.38);
   z-index: 998;
   backdrop-filter: blur(4px);
 }
@@ -400,7 +422,7 @@ body {
 .app-header {
   height: var(--header-height);
   background: var(--gradient-primary);
-  color: white;
+  color: #fffaf3;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -418,7 +440,7 @@ body {
       font-size: 20px;
       font-weight: bold;
       margin-right: 20px;
-      color: white;
+      color: #fffaf3;
       text-decoration: none;
       white-space: nowrap;
     }
@@ -429,7 +451,7 @@ body {
       gap: 20px;
       
       .nav-link {
-        color: white;
+        color: #fffaf3;
         text-decoration: none;
         font-size: 16px;
         font-weight: 500;
@@ -443,7 +465,7 @@ body {
           left: 0;
           width: 0;
           height: 2px;
-          background-color: white;
+          background-color: #fffaf3;
           transition: width 0.3s;
         }
         
@@ -462,7 +484,7 @@ body {
     
     .mobile-menu-btn {
       display: none;
-      color: white;
+      color: #fffaf3;
       font-size: 20px;
       padding: 8px;
       
@@ -477,12 +499,12 @@ body {
       gap: 10px;
       
       .api-log-btn {
-        background-color: #ff9800;
-        border-color: #ff9800;
+        background-color: var(--accent-color);
+        border-color: var(--accent-color);
         
         &:hover, &:focus {
-          background-color: #f57c00;
-          border-color: #f57c00;
+          background-color: var(--warning-color);
+          border-color: var(--warning-color);
         }
       }
     }
@@ -497,7 +519,7 @@ body {
   width: 300px;
   height: 100vh;
   background: var(--bg-primary);
-  box-shadow: -5px 0 15px rgba(0, 0, 0, 0.1);
+  box-shadow: -5px 0 18px rgba(121, 76, 47, 0.16);
   z-index: 999;
   transition: right 0.3s ease;
   display: flex;

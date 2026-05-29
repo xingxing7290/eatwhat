@@ -151,7 +151,7 @@ onMounted(async () => {
   height: 56px;
   border-radius: 999px;
   overflow: hidden;
-  background: rgba(102, 126, 234, 0.15);
+  background: rgba(216, 95, 101, 0.14);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -167,7 +167,7 @@ onMounted(async () => {
 
 .avatar-placeholder {
   font-weight: 700;
-  color: rgba(102, 126, 234, 0.95);
+  color: rgba(141, 90, 80, 0.95);
 }
 
 .avatar-actions {

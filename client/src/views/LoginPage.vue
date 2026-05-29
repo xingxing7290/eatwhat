@@ -19,7 +19,7 @@
           </svg>
         </div>
         <h1 class="app-title">安排吃啥</h1>
-        <p class="app-subtitle">让每一餐都充满惊喜</p>
+        <p class="app-subtitle">记录每一餐，也记录彼此的日常</p>
       </div>
 
       <!-- 登录表单 -->
@@ -182,7 +182,7 @@ const registerRules = {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #fff0df 0%, #ffd1bd 45%, #eaa0aa 100%);
   position: relative;
   overflow: hidden;
 }
@@ -195,13 +195,15 @@ const registerRules = {
   width: 100%;
   height: 100%;
   pointer-events: none;
+  background-image:
+    linear-gradient(90deg, rgba(141, 90, 80, 0.13) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(141, 90, 80, 0.1) 1px, transparent 1px);
+  background-size: 44px 44px;
+  opacity: 0.22;
 }
 
 .circle {
-  position: absolute;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.1);
-  animation: float 6s ease-in-out infinite;
+  display: none;
 }
 
 .circle-1 {
@@ -237,12 +239,12 @@ const registerRules = {
 .login-card {
   width: 420px;
   padding: 40px;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 250, 243, 0.94);
   backdrop-filter: blur(20px);
   border-radius: 24px;
   box-shadow: 
-    0 20px 40px rgba(0, 0, 0, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.2);
+    0 22px 50px rgba(121, 76, 47, 0.16),
+    0 0 0 1px rgba(255, 255, 255, 0.45);
   position: relative;
   z-index: 10;
   animation: slideUp 0.6s ease-out;
@@ -270,13 +272,13 @@ const registerRules = {
   height: 64px;
   margin: 0 auto 16px;
   background: var(--gradient-primary);
-  border-radius: 16px;
+  border-radius: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
   font-size: 32px;
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
+  box-shadow: 0 10px 26px rgba(216, 95, 101, 0.28);
 }
 
 .app-title {
@@ -317,7 +319,7 @@ const registerRules = {
 .custom-input :deep(.el-input__wrapper.is-focus) {
   border-color: var(--primary-color);
   background: var(--bg-primary);
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 3px rgba(216, 95, 101, 0.14);
 }
 
 .custom-input :deep(.el-input__inner) {
@@ -345,7 +347,7 @@ const registerRules = {
 
 .login-btn:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 10px 26px rgba(216, 95, 101, 0.32);
 }
 
 .login-btn:active {

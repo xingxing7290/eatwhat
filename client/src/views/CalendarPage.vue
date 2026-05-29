@@ -32,9 +32,9 @@ const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 
 // 餐食类型
 const mealTypes = [
-  { key: 'breakfast', label: '早餐', icon: 'Sunrise', color: '#FF9800' },
-  { key: 'lunch', label: '午餐', icon: 'Sunny', color: '#f44336' },
-  { key: 'dinner', label: '晚餐', icon: 'Sunset', color: '#673AB7' }
+  { key: 'breakfast', label: '早餐', icon: 'Sunrise', color: '#e6a84f' },
+  { key: 'lunch', label: '午餐', icon: 'Sunny', color: '#d86f63' },
+  { key: 'dinner', label: '晚餐', icon: 'Sunset', color: '#a76783' }
 ];
 
 // 当前视图的月份和年份
@@ -598,7 +598,7 @@ onMounted(() => {
         
         &:hover {
           transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+          box-shadow: 0 4px 12px rgba(216, 95, 101, 0.24);
         }
       }
     }
@@ -892,7 +892,7 @@ onMounted(() => {
     
     &.today {
       border: 2px solid var(--primary-color);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+      box-shadow: 0 4px 12px rgba(216, 95, 101, 0.18);
     }
     
     .mobile-date-header {
