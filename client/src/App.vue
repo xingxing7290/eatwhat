@@ -176,7 +176,9 @@ onMounted(async () => {
 
 // 键盘快捷键处理
 const handleKeyDown = (e) => {
-  // Alt+L 打开API日志查看器
+  if (!showDevTools) return;
+
+  // Alt+L opens the API log viewer in development
   if (e.altKey && e.key === 'l') {
     showApiLogger.value = !showApiLogger.value;
   }
@@ -384,7 +386,7 @@ const handleResize = () => {
         <router-view />
       </main>
       
-      <ApiLogger v-model:visible="showApiLogger" @close="showApiLogger = false" />
+      <ApiLogger v-if="showDevTools" v-model:visible="showApiLogger" @close="showApiLogger = false" />
     </div>
   </el-config-provider>
 </template>

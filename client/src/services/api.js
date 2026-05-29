@@ -5,6 +5,9 @@ import { ElMessage } from 'element-plus';
 // 是否使用模拟数据
 const USE_MOCK = false;
 
+// Disable verbose API logging in production to reduce console overhead
+const ENABLE_API_LOGS = import.meta.env.DEV || import.meta.env.VITE_ENABLE_API_LOGS === 'true';
+
 // API日志历史记录
 export const apiLogs = {
 	history: [],
@@ -39,6 +42,8 @@ export const apiLogs = {
 
 // 日志打印函数
 const logAPI = (type, url, data, status) => {
+	if (!ENABLE_API_LOGS) return;
+
 	const timestamp = new Date();
 	const timeString = timestamp.toLocaleTimeString();
 	const colorMap = {
@@ -119,18 +124,19 @@ api.interceptors.response.use(
 		// 统一处理错误
 		const { response } = error;
 		if (response) {
-			// 服务器返回错误信息
-			const errorMsg = response.data?.error || response.data?.errors?.[0]?.msg || '服务器错误';
-			logAPI('error', `${error.config?.method?.toUpperCase() || 'ERROR'} ${error.config?.url || '未知URL'}`, response.data, response.status);
+			const errorMsg = response.data?.error || response.data?.errors?.[0]?.msg || '\u670d\u52a1\u5668\u9519\u8bef';
+			logAPI('error', `${error.config?.method?.toUpperCase() || 'ERROR'} ${error.config?.url || '\u672a\u77e5URL'}`, response.data, response.status);
 			
-			// 详细打印错误信息，帮助调试
-			console.error('API错误详情:', {
-				url: error.config?.url,
-				method: error.config?.method,
-				status: response.status,
-				data: response.data,
-				requestData: (error.config?.data && typeof error.config.data === 'string') ? JSON.parse(error.config.data) : '非JSON或无数据'
-			});
+			// Log detailed API errors only in debug mode
+			if (ENABLE_API_LOGS) {
+				console.error('API错误详情:', {
+					url: error.config?.url,
+					method: error.config?.method,
+					status: response.status,
+					data: response.data,
+					requestData: (error.config?.data && typeof error.config.data === 'string') ? JSON.parse(error.config.data) : '非JSON或无数据'
+				});
+			}
 			
 			ElMessage.error(errorMsg);
 			return Promise.reject(response.data || '服务器错误');

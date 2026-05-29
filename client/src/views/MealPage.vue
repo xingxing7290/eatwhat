@@ -288,15 +288,15 @@ const clearFilters = () => {
 // 分页变化
 const handlePageChange = (page) => {
   currentPage.value = page;
-  scheduleFetch();
+  scheduleFetch(0);
 };
 
 let fetchTimer = null;
-const scheduleFetch = () => {
+const scheduleFetch = (delay = 160) => {
   if (fetchTimer) clearTimeout(fetchTimer);
   fetchTimer = setTimeout(() => {
     fetchMeals();
-  }, 300);
+  }, delay);
 };
 
 // 监听筛选条件变化，重置分页
@@ -311,7 +311,7 @@ watch(selectedCategory, () => {
 
 watch(currentView, () => {
   currentPage.value = 1;
-  scheduleFetch();
+  scheduleFetch(0);
 });
 
 onMounted(async () => {
