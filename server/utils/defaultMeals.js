@@ -4,6 +4,7 @@ const Meal = require('../models/mealModel');
 const defaultMeals = require('../data/defaultMeals');
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'default-meals');
+const generatedUploadRoot = path.join(__dirname, '..', 'uploads', 'generated-meals');
 
 function escapeXml(value) {
   return String(value || '')
@@ -15,6 +16,54 @@ function escapeXml(value) {
 
 function imageUrlFor(meal) {
   return `/api/uploads/default-meals/${meal.key}.svg`;
+}
+
+function generatedImageUrlFor(meal) {
+  const id = String(meal?._id || meal?.id || meal?.defaultKey || meal?.key || '').trim();
+  if (!id) return '';
+  return `/api/uploads/generated-meals/${id}.svg`;
+}
+
+function generatedImagePathFor(meal) {
+  const url = generatedImageUrlFor(meal);
+  if (!url) return '';
+  return path.join(generatedUploadRoot, path.basename(url));
+}
+
+function ensureGeneratedMealImage(meal) {
+  const filePath = generatedImagePathFor(meal);
+  const url = generatedImageUrlFor(meal);
+  if (!filePath || !url) return '';
+  fs.mkdirSync(generatedUploadRoot, { recursive: true });
+  fs.writeFileSync(filePath, svgFor(meal), 'utf8');
+  return url;
+}
+
+function localUploadPathFromUrl(url) {
+  if (!url || typeof url !== 'string') return '';
+  const raw = url.trim();
+  let pathname = raw;
+  try {
+    pathname = new URL(raw, 'http://local.test').pathname;
+  } catch (_) {}
+  const prefix = pathname.startsWith('/api/uploads/') ? '/api/uploads/' : pathname.startsWith('/uploads/') ? '/uploads/' : '';
+  if (!prefix) return '';
+  const rel = pathname.slice(prefix.length).replace(/^\/+/, '');
+  if (!rel || rel.includes('..')) return '';
+  return path.join(__dirname, '..', 'uploads', rel);
+}
+
+function hasUsableImage(meal) {
+  const imageUrl = String(meal?.imageUrl || '').trim();
+  if (!imageUrl) return false;
+  if (/^https?:\/\//i.test(imageUrl)) return true;
+  const localPath = localUploadPathFromUrl(imageUrl);
+  return !!localPath && fs.existsSync(localPath);
+}
+
+function ensureMealImage(meal) {
+  if (hasUsableImage(meal)) return meal.imageUrl;
+  return ensureGeneratedMealImage(meal);
 }
 
 function hasAny(text, patterns) {
@@ -217,5 +266,9 @@ module.exports = {
   ensureDefaultMealImages,
   seedDefaultMealsForHousehold,
   seedDefaultMealsForHouseholds,
-  imageUrlFor
+  imageUrlFor,
+  generatedImageUrlFor,
+  ensureGeneratedMealImage,
+  ensureMealImage,
+  hasUsableImage
 };

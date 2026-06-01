@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { ensureUserHousehold } = require('../utils/household');
+const { ensureMealImage } = require('../utils/defaultMeals');
 
 function buildImageUrl(req, filename) {
   const publicBase = process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.trim();
@@ -185,6 +186,11 @@ exports.createMeal = async (req, res, next) => {
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
     const { household } = await ensureUserHousehold(req.user.uid);
     const newMeal = await Meal.create({ ...mealPayloadFromRequest(req), householdId: household._id, createdBy: req.user.uid });
+    if (!newMeal.imageUrl) {
+      newMeal.imageUrl = ensureMealImage(newMeal);
+      newMeal.photos = Array.from(new Set([newMeal.imageUrl, ...(newMeal.photos || [])].filter(Boolean)));
+      await newMeal.save();
+    }
     res.status(201).json(newMeal);
   } catch (error) { logger.error(`创建菜品失败: ${error.message}`); next(error); }
 };
@@ -197,6 +203,11 @@ exports.updateMeal = async (req, res, next) => {
     const existing = await Meal.findOne({ _id: req.params.id, householdId: household._id });
     if (!existing) return res.status(404).json({ error: '未找到指定菜品' });
     const updatedMeal = await Meal.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, mealPayloadFromRequest(req, existing), { new: true, runValidators: true });
+    if (!updatedMeal.imageUrl) {
+      updatedMeal.imageUrl = ensureMealImage(updatedMeal);
+      updatedMeal.photos = Array.from(new Set([updatedMeal.imageUrl, ...(updatedMeal.photos || [])].filter(Boolean)));
+      await updatedMeal.save();
+    }
     res.status(200).json(updatedMeal);
   } catch (error) { logger.error(`更新菜品失败: ${error.message}`); next(error); }
 };
