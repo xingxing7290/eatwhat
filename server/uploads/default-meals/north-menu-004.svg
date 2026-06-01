@@ -2,34 +2,28 @@
   <defs>
     <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
       <stop offset="0%" stop-color="#f8e1c6"/>
-      <stop offset="54%" stop-color="#fff6ec"/>
-      <stop offset="100%" stop-color="#e09f67" stop-opacity="0.42"/>
+      <stop offset="52%" stop-color="#fff8ef"/>
+      <stop offset="100%" stop-color="#e09f67" stop-opacity="0.5"/>
     </linearGradient>
-    <radialGradient id="plate" cx="50%" cy="42%" r="58%">
-      <stop offset="0%" stop-color="#fffaf3"/>
-      <stop offset="72%" stop-color="#f8e0cf"/>
-      <stop offset="100%" stop-color="#e8b99e"/>
-    </radialGradient>
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#6f3d2d" flood-opacity="0.22"/>
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#6f3d2d" flood-opacity="0.2"/>
     </filter>
   </defs>
-  <rect width="900" height="620" rx="42" fill="url(#bg)"/>
-  <circle cx="162" cy="110" r="54" fill="#ffffff" opacity="0.28"/>
-  <circle cx="760" cy="132" r="74" fill="#ffffff" opacity="0.22"/>
-  <circle cx="760" cy="482" r="110" fill="#ffffff" opacity="0.2"/>
+  <rect width="900" height="620" rx="46" fill="url(#bg)"/>
+  <circle cx="116" cy="108" r="54" fill="#ffffff" opacity="0.27"/>
+  <circle cx="786" cy="128" r="76" fill="#ffffff" opacity="0.22"/>
+  <circle cx="770" cy="476" r="102" fill="#ffffff" opacity="0.22"/>
+  <rect x="568" y="82" width="126" height="34" rx="17" fill="#ffffff" opacity="0.82" transform="rotate(-4 631 99)"/>
   <g filter="url(#shadow)">
-    <ellipse cx="450" cy="318" rx="270" ry="160" fill="url(#plate)"/>
-    <ellipse cx="450" cy="310" rx="218" ry="112" fill="#fffaf4"/>
-    <path d="M265 306 C340 205 552 196 638 300 C590 398 340 405 265 306Z" fill="#b66b45" opacity="0.92"/>
-    <circle cx="366" cy="288" r="38" fill="#e09f67" opacity="0.95"/>
-    <circle cx="468" cy="272" r="44" fill="#f8e1c6" opacity="0.9"/>
-    <circle cx="548" cy="325" r="36" fill="#e09f67" opacity="0.88"/>
-    <path d="M326 356 C420 398 532 392 603 346" fill="none" stroke="#fff6ec" stroke-width="18" stroke-linecap="round" opacity="0.58"/>
-    <path d="M330 250 C414 224 498 222 580 254" fill="none" stroke="#fff6ec" stroke-width="14" stroke-linecap="round" opacity="0.46"/>
+    <ellipse cx="450" cy="370" rx="278" ry="126" fill="#f2cbb4"/>
+    <ellipse cx="450" cy="330" rx="238" ry="100" fill="#fff8ee"/>
+    <path d="M278 326 C350 244 552 246 622 326 C560 398 340 400 278 326Z" fill="#b66b45" opacity="0.9"/>
+    <circle cx="360" cy="318" r="28" fill="#e09f67"/><circle cx="456" cy="300" r="30" fill="#fff0d3"/><circle cx="548" cy="340" r="24" fill="#7aa874"/>
+    <path d="M318 374 C420 418 524 410 604 366" fill="none" stroke="#fff6ec" stroke-width="15" stroke-linecap="round" opacity="0.5"/>
   </g>
   <g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Arial, sans-serif" text-anchor="middle">
-    <text x="450" y="524" font-size="56" font-weight="800" fill="#3d3028">爆肚</text>
-    <text x="450" y="570" font-size="24" font-weight="600" fill="#7c675a">地方特色 · 京津冀 / 地方特色</text>
+    <rect x="80" y="494" width="740" height="84" rx="32" fill="#fffaf3" opacity="0.84"/>
+    <text x="450" y="542" font-size="52" font-weight="800" fill="#3d3028">爆肚</text>
+    <text x="450" y="578" font-size="23" font-weight="600" fill="#7c675a">地方特色 &#183; 家常小炒 &#183; 京津冀 / 地方特色</text>
   </g>
 </svg>

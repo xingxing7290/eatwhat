@@ -164,14 +164,7 @@ onMounted(async () => {
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleResize);
   
-  // 加载菜品数据
-  if (isLoggedIn.value && mealStore.meals.length === 0) {
-    try {
-      await mealStore.fetchAllMeals();
-    } catch (error) {
-      console.error('获取菜品列表失败:', error);
-    }
-  }
+  // Meal data is loaded by each page on demand to keep the larger default catalog from slowing the app shell.
 })
 
 // 键盘快捷键处理
