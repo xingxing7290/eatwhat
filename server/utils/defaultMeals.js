@@ -2,6 +2,13 @@ const fs = require('fs');
 const path = require('path');
 const Meal = require('../models/mealModel');
 const defaultMeals = require('../data/defaultMeals');
+let mealWebImages = [];
+try {
+  mealWebImages = require('../data/mealWebImages.json');
+} catch (_) {
+  mealWebImages = [];
+}
+const mealWebImageByKey = new Map((Array.isArray(mealWebImages) ? mealWebImages : []).map(entry => [String(entry.key), entry]));
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'default-meals');
 const generatedUploadRoot = path.join(__dirname, '..', 'uploads', 'generated-meals');
@@ -15,6 +22,9 @@ function escapeXml(value) {
 }
 
 function imageUrlFor(meal) {
+  const key = String(meal?.key || meal?.defaultKey || '').trim();
+  const webImage = key ? mealWebImageByKey.get(key) : null;
+  if (webImage?.imageUrl) return webImage.imageUrl;
   return `/api/uploads/default-meals/${meal.key}.svg`;
 }
 
