@@ -32,14 +32,17 @@ const storage = multer.diskStorage({
 
 // 文件过滤器，只接受特定类型的图片
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif/;
-  const mimetype = allowedTypes.test(file.mimetype);
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+  const allowedExtnames = new Set(['.jpeg', '.jpg', '.png', '.gif', '.webp']);
+  const mimetype = allowedMimeTypes.has(String(file.mimetype || '').toLowerCase());
+  const extname = allowedExtnames.has(path.extname(file.originalname || '').toLowerCase());
 
   if (mimetype && extname) {
     return cb(null, true);
   }
-  cb(new Error('错误：只支持上传 jpeg, jpg, png, gif 格式的图片!'));
+  const err = new Error('\u9519\u8bef\uff1a\u53ea\u652f\u6301\u4e0a\u4f20 jpeg, jpg, png, gif, webp \u683c\u5f0f\u7684\u56fe\u7247!');
+  err.status = 400;
+  cb(err);
 };
 
 // 创建 multer 实例

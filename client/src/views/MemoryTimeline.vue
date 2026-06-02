@@ -11,6 +11,28 @@ const dialogVisible = ref(false);
 const photoFiles = ref([]);
 const form = reactive({ date: new Date().toISOString().slice(0, 10), mealType: 'dinner', title: '', mood: '', rating: 5, note: '', mealIds: [] });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
+const supportedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
+const supportedPhotoExts = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
+const maxPhotoSize = 5 * 1024 * 1024;
+const photoAccept = 'image/jpeg,image/png,image/gif,image/webp';
+
+const isSupportedPhoto = (file) => {
+  if (!file) return false;
+  const name = String(file.name || '').toLowerCase();
+  const type = String(file.type || '').toLowerCase();
+  const typeMatched = supportedPhotoTypes.has(type);
+  const extMatched = supportedPhotoExts.some(ext => name.endsWith(ext));
+  return typeMatched && extMatched && Number(file.size || 0) <= maxPhotoSize;
+};
+
+const handlePhotoChange = (_uploadFile, uploadFiles) => {
+  const nextFiles = uploadFiles.filter(file => isSupportedPhoto(file.raw || file));
+  if (nextFiles.length !== uploadFiles.length) {
+    ElMessage.warning('\u53ea\u652f\u6301 5MB \u4ee5\u5185\u7684 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
+  }
+  photoFiles.value = nextFiles;
+};
+
 
 const grouped = computed(() => memories.value.reduce((acc, item) => {
   const key = item.date;
@@ -34,6 +56,11 @@ const load = async () => {
 };
 const save = async () => {
   try {
+    const invalidPhoto = photoFiles.value.find(file => !isSupportedPhoto(file.raw || file));
+    if (invalidPhoto) {
+      ElMessage.warning('\u8bf7\u4e0a\u4f20 5MB \u4ee5\u5185\u7684 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
+      return;
+    }
     const fd = new FormData();
     Object.entries(form).forEach(([key, value]) => fd.append(key, Array.isArray(value) ? JSON.stringify(value) : value));
     photoFiles.value.forEach(file => fd.append('photos', file.raw || file));
@@ -88,7 +115,7 @@ onMounted(load);
         <el-form-item label="心情"><el-input v-model="form.mood" placeholder="开心、满足、想再吃一次..." /></el-form-item>
         <el-form-item label="评分"><el-rate v-model="form.rating" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
-        <el-form-item label="照片"><el-upload action="#" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload></el-form-item>
+        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
       </el-form>
       <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
     </el-dialog>

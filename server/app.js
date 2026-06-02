@@ -66,7 +66,8 @@ app.get('/', (req, res) => res.json({ message: '欢迎使用"安排吃啥"API' }
 app.use((req, res) => res.status(404).json({ error: '未找到请求的资源' }));
 app.use((err, req, res, next) => {
 	logger.error(`错误: ${err.message}`);
-	res.status(err.status || 500).json({ error: err.message || '服务器内部错误' });
+	const status = err.status || (err.name === 'MulterError' ? 400 : 500);
+	res.status(status).json({ error: err.message || '服务器内部错误' });
 });
 
 const PORT = process.env.PORT || 3000;
