@@ -62,6 +62,9 @@ function collectFileUrls(req, field) {
   const files = (req.files && req.files[field]) || [];
   return files.map(file => buildImageUrl(req, file.filename));
 }
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 exports.validateMeal = [
   body('name').notEmpty().withMessage('菜品名称不能为空').isLength({ max: 100 }).withMessage('菜品名称不能超过100个字符'),
@@ -74,7 +77,7 @@ exports.getAllMeals = async (req, res, next) => {
     const { search, tag, category, subcategory, difficulty, favorite, page, limit } = req.query;
     const query = { householdId: household._id };
     if (search && String(search).trim()) {
-      const rx = { $regex: String(search).trim(), $options: 'i' };
+      const rx = { $regex: escapeRegExp(String(search).trim()), $options: 'i' };
       query.$or = [{ name: rx }, { description: rx }, { tags: rx }, { tips: rx }, { 'ingredients.name': rx }, { 'steps.description': rx }];
     }
     if (tag && String(tag).trim()) query.tags = String(tag).trim();
@@ -141,25 +144,32 @@ exports.getMealById = async (req, res, next) => {
 
 function mealPayloadFromRequest(req, existingMeal = null) {
   const body = req.body || {};
+  const hasField = field => Object.prototype.hasOwnProperty.call(body, field);
+  const keepString = field => (hasField(field) ? String(body[field] || '').trim() : String(existingMeal?.[field] || '').trim());
+  const keepNumber = field => (hasField(field) ? numberOrZero(body[field]) : Number(existingMeal?.[field] || 0));
+  const keepStringArray = field => (hasField(field) ? normalizeStringArray(body[field]) : [...(existingMeal?.[field] || [])]);
+  const keepIngredients = () => (hasField('ingredients') ? normalizeIngredients(body.ingredients) : [...(existingMeal?.ingredients || [])]);
+  const keepSteps = () => (hasField('steps') ? normalizeSteps(body.steps) : [...(existingMeal?.steps || [])]);
+  const rawDifficulty = hasField('difficulty') ? body.difficulty : existingMeal?.difficulty;
   const payload = {
-    name: String(body.name || '').trim(),
-    description: String(body.description || '').trim(),
-    category: String(body.category || '').trim(),
-    subcategory: String(body.subcategory || '').trim(),
-    tags: normalizeStringArray(body.tags),
-    ingredients: normalizeIngredients(body.ingredients),
-    steps: normalizeSteps(body.steps),
-    tips: String(body.tips || '').trim(),
-    servingSize: String(body.servingSize || '').trim(),
-    prepTime: numberOrZero(body.prepTime),
-    cookTime: numberOrZero(body.cookTime),
-    difficulty: ['easy', 'medium', 'hard'].includes(body.difficulty) ? body.difficulty : '',
-    taste: normalizeStringArray(body.taste),
-    spiceLevel: Math.min(numberOrZero(body.spiceLevel), 5),
-    source: String(body.source || '').trim(),
-    sourcePath: String(body.sourcePath || '').trim(),
-    favorite: body.favorite === true || body.favorite === 'true',
-    rating: Math.min(numberOrZero(body.rating), 5)
+    name: keepString('name'),
+    description: keepString('description'),
+    category: keepString('category'),
+    subcategory: keepString('subcategory'),
+    tags: keepStringArray('tags'),
+    ingredients: keepIngredients(),
+    steps: keepSteps(),
+    tips: keepString('tips'),
+    servingSize: keepString('servingSize'),
+    prepTime: keepNumber('prepTime'),
+    cookTime: keepNumber('cookTime'),
+    difficulty: ['easy', 'medium', 'hard'].includes(rawDifficulty) ? rawDifficulty : '',
+    taste: keepStringArray('taste'),
+    spiceLevel: Math.min(keepNumber('spiceLevel'), 5),
+    source: keepString('source'),
+    sourcePath: keepString('sourcePath'),
+    favorite: hasField('favorite') ? (body.favorite === true || body.favorite === 'true') : Boolean(existingMeal?.favorite),
+    rating: Math.min(keepNumber('rating'), 5)
   };
   if (req.files?.image?.[0]) payload.imageUrl = buildImageUrl(req, req.files.image[0].filename);
   else if (body.imageUrl !== undefined) payload.imageUrl = String(body.imageUrl || '').trim();

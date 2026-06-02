@@ -263,6 +263,15 @@ const handleResize = () => {
               </template>
             </el-dropdown>
 
+            <el-button
+              v-if="isLoggedIn"
+              class="desktop-logout-btn"
+              @click="handleLogout"
+            >
+              <el-icon><SwitchButton /></el-icon>
+              <span>退出登录</span>
+            </el-button>
+
             <el-tooltip v-if="showDevTools" content="查看API日志 (Alt+L)" placement="bottom">
               <el-button 
                 type="primary" 
@@ -971,6 +980,25 @@ body {
 .app-header .header-right .desktop-actions .user-avatar {
   color: #fffaf3;
   background: linear-gradient(135deg, #ffb4a2, #e09f67);
+}
+
+.app-header .header-right .desktop-actions .desktop-logout-btn {
+  height: 42px;
+  padding: 0 13px;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(224, 159, 103, 0.24);
+  box-shadow: 0 10px 22px rgba(117, 78, 58, 0.08);
+  transition: all 0.3s ease-in-out;
+}
+
+.app-header .header-right .desktop-actions .desktop-logout-btn:hover,
+.app-header .header-right .desktop-actions .desktop-logout-btn:focus {
+  color: #fffaf3;
+  background: linear-gradient(135deg, #ffb4a2, #e09f67);
+  border-color: rgba(224, 159, 103, 0.34);
+  transform: translateY(-1px);
 }
 
 .app-main {
