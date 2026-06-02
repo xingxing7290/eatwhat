@@ -18,6 +18,36 @@
       </el-form>
     </el-card>
 
+    <el-card class="settings-card theme-settings-card">
+      <template #header>
+        <div class="card-header">
+          <span>主题色</span>
+          <el-tag>{{ currentThemeLabel }}</el-tag>
+        </div>
+      </template>
+      <div class="theme-grid">
+        <button
+          v-for="theme in themeOptions"
+          :key="theme.value"
+          type="button"
+          class="theme-card"
+          :class="{ active: selectedTheme === theme.value }"
+          @click="selectTheme(theme.value)"
+        >
+          <span class="theme-name">{{ theme.label }}</span>
+          <span class="theme-desc">{{ theme.desc }}</span>
+          <span class="theme-swatches">
+            <span
+              v-for="color in theme.colors"
+              :key="color"
+              class="theme-swatch"
+              :style="{ backgroundColor: color }"
+            ></span>
+          </span>
+        </button>
+      </div>
+    </el-card>
+
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>情侣小家</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
       <el-form label-width="90px">
@@ -41,6 +71,17 @@
 import { computed, onMounted, ref } from 'vue';
 import { ElMessage } from 'element-plus';
 import api from '@/services/api';
+
+const themeOptions = [
+  { value: 'cream', label: '奶油原木', desc: '温柔奶白与焦糖木色', colors: ['#FDFBF7', '#F5EBE6', '#FFB4A2', '#E09F67'] },
+  { value: 'peach', label: '蜜桃日常', desc: '适合记录甜一点的两人餐', colors: ['#FFF9F5', '#FFECE7', '#FF9D8F', '#F0786F'] },
+  { value: 'caramel', label: '焦糖餐桌', desc: '像晚饭后的灯光和木桌', colors: ['#FFFAF0', '#F3E5D2', '#E7BD73', '#B97842'] },
+  { value: 'matcha', label: '抹茶和风', desc: '清爽平和的日式小家感', colors: ['#FBFBF4', '#EDF1E3', '#B5C99A', '#6F8F62'] },
+  { value: 'azuki', label: '红豆复古', desc: '偏轻复古的温暖手账色', colors: ['#FFF8F4', '#F3E4DF', '#D79A8F', '#8D5654'] },
+  { value: 'mist', label: '晨雾蓝', desc: '安静干净的早餐与周末感', colors: ['#FBFCFB', '#E9F0EF', '#A7C4C9', '#6D8F99'] }
+];
+const selectedTheme = ref(localStorage.getItem('colorTheme') || 'cream');
+const currentThemeLabel = computed(() => themeOptions.find(theme => theme.value === selectedTheme.value)?.label || themeOptions[0].label);
 
 const user = ref({ id: '', username: '', displayName: '', avatarUrl: '' });
 const household = ref({ name: '', inviteCode: '', members: [] });
@@ -90,6 +131,13 @@ const copyInvite = async () => {
   try { await navigator.clipboard.writeText(household.value.inviteCode || ''); ElMessage.success('邀请码已复制'); }
   catch (_) { ElMessage.warning(`邀请码：${household.value.inviteCode}`); }
 };
+const selectTheme = (theme) => {
+  selectedTheme.value = theme;
+  localStorage.setItem('colorTheme', theme);
+  document.documentElement.dataset.theme = theme;
+  window.dispatchEvent(new CustomEvent('eatwhat-theme-change', { detail: theme }));
+  ElMessage.success('\u4e3b\u9898\u5df2\u5207\u6362');
+};
 const chooseFile = () => fileInputRef.value?.click();
 const onFileChange = (e) => { avatarFile.value = e.target?.files?.[0] || null; };
 const uploadAvatar = async () => {
@@ -123,5 +171,31 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
 .member-list { gap: 12px; }
 .member-item { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border-radius: 999px; padding: 6px 12px 6px 6px; }
 .file-input { display: none; }
-@media (max-width: 640px) { .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .invite-row .el-input { min-width: 0; width: 100%; } }
+.theme-settings-card { overflow: hidden; }
+.theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.theme-card {
+  appearance: none;
+  width: 100%;
+  min-height: 118px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.38));
+  box-shadow: 0 12px 28px rgba(117, 78, 58, 0.08);
+  color: var(--text-primary);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  text-align: left;
+  transition: all 0.3s ease-in-out;
+}
+.theme-card:hover, .theme-card.active { transform: translateY(-2px); border-color: var(--secondary-color); box-shadow: 0 18px 36px rgba(117, 78, 58, 0.14); }
+.theme-card.active { background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), var(--bg-secondary)); }
+.theme-name { font-size: 16px; font-weight: 700; }
+.theme-desc { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.theme-swatches { display: flex; gap: 7px; margin-top: auto; }
+.theme-swatch { width: 24px; height: 24px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.78); box-shadow: 0 4px 10px rgba(74, 62, 61, 0.14); }
+@media (max-width: 640px) { .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
 </style>
