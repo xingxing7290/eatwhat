@@ -5,6 +5,7 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const logger = require('../utils/logger');
 
 // 统一的上传目录（绝对路径，指向 /app/uploads）
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
@@ -37,11 +38,17 @@ const fileFilter = (req, file, cb) => {
   const mimetype = allowedMimeTypes.has(String(file.mimetype || '').toLowerCase());
   const extname = allowedExtnames.has(path.extname(file.originalname || '').toLowerCase());
 
+  const details = `field=${file.fieldname} original=${file.originalname} mimetype=${file.mimetype} ext=${path.extname(file.originalname || '').toLowerCase()} route=${req.method} ${req.originalUrl}`;
+
   if (mimetype && extname) {
+    logger.info(`[upload] accepted ${details}`);
     return cb(null, true);
   }
+
+  logger.error(`[upload] rejected ${details}`);
   const err = new Error('\u9519\u8bef\uff1a\u53ea\u652f\u6301\u4e0a\u4f20 jpeg, jpg, png, gif, webp \u683c\u5f0f\u7684\u56fe\u7247!');
   err.status = 400;
+  err.uploadDetails = details;
   cb(err);
 };
 

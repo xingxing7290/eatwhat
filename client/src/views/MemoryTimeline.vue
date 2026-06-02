@@ -16,19 +16,45 @@ const supportedPhotoExts = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
 const maxPhotoSize = 5 * 1024 * 1024;
 const photoAccept = 'image/jpeg,image/png,image/gif,image/webp';
 
-const isSupportedPhoto = (file) => {
-  if (!file) return false;
+const photoValidationError = (file) => {
+  if (!file) return 'empty';
   const name = String(file.name || '').toLowerCase();
   const type = String(file.type || '').toLowerCase();
   const typeMatched = supportedPhotoTypes.has(type);
   const extMatched = supportedPhotoExts.some(ext => name.endsWith(ext));
-  return typeMatched && extMatched && Number(file.size || 0) <= maxPhotoSize;
+  if (!typeMatched || !extMatched) return 'type';
+  if (Number(file.size || 0) > maxPhotoSize) return 'size';
+  return '';
+};
+
+const isSupportedPhoto = (file) => !photoValidationError(file);
+
+const logRejectedPhoto = (file, reason) => {
+  const raw = file?.raw || file;
+  console.warn('[memory-upload] rejected photo', {
+    reason,
+    name: raw?.name || file?.name || '',
+    type: raw?.type || file?.type || '',
+    size: raw?.size || file?.size || 0
+  });
 };
 
 const handlePhotoChange = (_uploadFile, uploadFiles) => {
-  const nextFiles = uploadFiles.filter(file => isSupportedPhoto(file.raw || file));
-  if (nextFiles.length !== uploadFiles.length) {
-    ElMessage.warning('\u53ea\u652f\u6301 5MB \u4ee5\u5185\u7684 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
+  const nextFiles = [];
+  let rejectedReason = '';
+  uploadFiles.forEach(file => {
+    const reason = photoValidationError(file.raw || file);
+    if (reason) {
+      rejectedReason = rejectedReason || reason;
+      logRejectedPhoto(file, reason);
+      return;
+    }
+    nextFiles.push(file);
+  });
+  if (rejectedReason === 'size') {
+    ElMessage.warning('\u56fe\u7247\u4e0d\u80fd\u8d85\u8fc7 5MB');
+  } else if (rejectedReason) {
+    ElMessage.warning('\u53ea\u652f\u6301 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
   }
   photoFiles.value = nextFiles;
 };
@@ -58,7 +84,9 @@ const save = async () => {
   try {
     const invalidPhoto = photoFiles.value.find(file => !isSupportedPhoto(file.raw || file));
     if (invalidPhoto) {
-      ElMessage.warning('\u8bf7\u4e0a\u4f20 5MB \u4ee5\u5185\u7684 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
+      const reason = photoValidationError(invalidPhoto.raw || invalidPhoto);
+      logRejectedPhoto(invalidPhoto, reason);
+      ElMessage.warning(reason === 'size' ? '\u56fe\u7247\u4e0d\u80fd\u8d85\u8fc7 5MB' : '\u8bf7\u4e0a\u4f20 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
       return;
     }
     const fd = new FormData();

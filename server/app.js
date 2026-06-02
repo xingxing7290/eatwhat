@@ -65,8 +65,10 @@ app.get('/', (req, res) => res.json({ message: '欢迎使用"安排吃啥"API' }
 
 app.use((req, res) => res.status(404).json({ error: '未找到请求的资源' }));
 app.use((err, req, res, next) => {
-	logger.error(`错误: ${err.message}`);
 	const status = err.status || (err.name === 'MulterError' ? 400 : 500);
+	logger.error(`错误: ${err.message}`);
+	logger.error(`错误详情: status=${status} name=${err.name || ''} code=${err.code || ''} field=${err.field || ''} route=${req.method} ${req.originalUrl}`);
+	if (err.uploadDetails) logger.error(`上传详情: ${err.uploadDetails}`);
 	res.status(status).json({ error: err.message || '服务器内部错误' });
 });
 
