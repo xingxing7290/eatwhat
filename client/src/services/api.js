@@ -336,6 +336,54 @@ export const householdApi = {
 	join: (inviteCode) => api.post('/household/join', { inviteCode }, { headers: { 'Content-Type': 'application/json' } })
 };
 
+
+
+// 小家仪表盘API
+export const dashboardApi = {
+	summary: () => api.get('/dashboard/summary')
+};
+
+// 本周饭桌计划API
+export const weeklyPlanApi = {
+	get: (weekStart) => api.get('/weekly-plans', { params: { weekStart } }),
+	generate: (weekStart) => api.post('/weekly-plans/generate', { weekStart }, { headers: { 'Content-Type': 'application/json' } }),
+	apply: (days) => api.post('/weekly-plans/apply', { days }, { headers: { 'Content-Type': 'application/json' } })
+};
+
+// 购物清单API
+export const shoppingListApi = {
+	get: (weekStart) => api.get('/shopping-list', { params: { weekStart } }),
+	generate: (weekStart) => api.post('/shopping-list/generate', { weekStart }, { headers: { 'Content-Type': 'application/json' } }),
+	addItem: (payload) => api.post('/shopping-list/items', payload, { headers: { 'Content-Type': 'application/json' } }),
+	updateItem: (id, payload) => api.patch(`/shopping-list/items/${id}`, payload, { headers: { 'Content-Type': 'application/json' } }),
+	deleteItem: (id, weekStart) => api.delete(`/shopping-list/items/${id}`, { params: { weekStart } }),
+	clearPurchased: (weekStart) => api.delete('/shopping-list/purchased', { params: { weekStart } })
+};
+
+// 饭桌相册API
+export const photoAlbumApi = {
+	month: (month) => api.get('/photo-album', { params: { month } })
+};
+
+// 默认菜品管理API
+export const defaultMealApi = {
+	status: () => api.get('/default-meals/status'),
+	importMissing: () => api.post('/default-meals/import-missing'),
+	restoreImages: () => api.post('/default-meals/restore-images')
+};
+
+// 菜品图片纠错API
+export const mealImageIssueApi = {
+	list: (params = {}) => api.get('/meal-image-issues', { params }),
+	create: (payload) => api.post('/meal-image-issues', payload, { headers: { 'Content-Type': 'application/json' } }),
+	update: (id, payload) => api.patch(`/meal-image-issues/${id}`, payload, { headers: { 'Content-Type': 'application/json' } })
+};
+
+// 纪念日菜单模板API
+export const anniversaryTemplateApi = {
+	list: () => api.get('/anniversary-templates')
+};
+
 // 饭后回忆API
 export const memoryApi = {
 	list: (params = {}) => api.get('/memories', { params }),
@@ -368,5 +416,12 @@ export default {
 	household: householdApi,
 	memory: memoryApi,
 	wishlist: wishlistApi,
-	anniversary: anniversaryApi
+	anniversary: anniversaryApi,
+	dashboard: dashboardApi,
+	weeklyPlan: weeklyPlanApi,
+	shoppingList: shoppingListApi,
+	photoAlbum: photoAlbumApi,
+	defaultMeal: defaultMealApi,
+	mealImageIssue: mealImageIssueApi,
+	anniversaryTemplate: anniversaryTemplateApi
 }; 

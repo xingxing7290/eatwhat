@@ -15,6 +15,13 @@ const householdRoutes = require('./routes/householdRoutes');
 const memoryRoutes = require('./routes/memoryRoutes');
 const wishlistRoutes = require('./routes/wishlistRoutes');
 const anniversaryRoutes = require('./routes/anniversaryRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
+const weeklyPlanRoutes = require('./routes/weeklyPlanRoutes');
+const shoppingListRoutes = require('./routes/shoppingListRoutes');
+const photoAlbumRoutes = require('./routes/photoAlbumRoutes');
+const defaultMealRoutes = require('./routes/defaultMealRoutes');
+const mealImageIssueRoutes = require('./routes/mealImageIssueRoutes');
+const anniversaryTemplateRoutes = require('./routes/anniversaryTemplateRoutes');
 
 dotenv.config();
 const app = express();
@@ -58,6 +65,13 @@ app.use('/schedules', scheduleRoutes);
 app.use('/memories', memoryRoutes);
 app.use('/wishlist', wishlistRoutes);
 app.use('/anniversaries', anniversaryRoutes);
+app.use('/dashboard', dashboardRoutes);
+app.use('/weekly-plans', weeklyPlanRoutes);
+app.use('/shopping-list', shoppingListRoutes);
+app.use('/photo-album', photoAlbumRoutes);
+app.use('/default-meals', defaultMealRoutes);
+app.use('/meal-image-issues', mealImageIssueRoutes);
+app.use('/anniversary-templates', anniversaryTemplateRoutes);
 app.use('/debug', debugRoutes);
 
 app.get('/health', (req, res) => res.send('healthy'));

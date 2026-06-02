@@ -21,7 +21,7 @@ const pageTitle = computed(() => editMode.value ? '编辑菜品' : '创建菜品
 const form = reactive({
   name: '', description: '', category: '', subcategory: '', tags: [], imageUrl: '', existingPhotos: [],
   ingredients: [], steps: [], tips: '', servingSize: '', prepTime: 0, cookTime: 0,
-  difficulty: '', taste: [], spiceLevel: 0, source: '', sourcePath: '', favorite: false, rating: 0
+  difficulty: '', taste: [], healthTags: [], spiceLevel: 0, source: '', sourcePath: '', favorite: false, rating: 0
 });
 const newIngredient = reactive({ name: '', amount: '' });
 const newStep = reactive({ description: '', imageFile: null, imagePreview: '' });
@@ -30,6 +30,7 @@ const rules = { name: [{ required: true, message: '请输入菜品名称', trigg
 const totalTime = computed(() => Number(form.prepTime || 0) + Number(form.cookTime || 0));
 const difficultyOptions = [{ label: '简单', value: 'easy' }, { label: '适中', value: 'medium' }, { label: '费工夫', value: 'hard' }];
 const tasteOptions = ['酸甜', '清淡', '下饭', '鲜香', '浓郁', '辣', '不辣', '甜品', '汤羹', '早餐'];
+const healthTagOptions = ['清淡', '高蛋白', '快手', '少油', '下饭', '重口', '蔬菜多'];
 
 const addIngredient = () => {
   if (!newIngredient.name.trim()) return ElMessage.warning('请输入食材名称');
@@ -62,7 +63,7 @@ const fillForm = (meal) => {
     ingredients: (meal.ingredients || []).map(i => ({ name: i.name || i, amount: i.amount || '' })),
     steps: (meal.steps || []).map(s => typeof s === 'string' ? { description: s, imageUrl: '' } : { description: s.description || '', imageUrl: s.imageUrl || '' }),
     tips: meal.tips || '', servingSize: meal.servingSize || '', prepTime: meal.prepTime || 0, cookTime: meal.cookTime || 0,
-    difficulty: meal.difficulty || '', taste: [...(meal.taste || [])], spiceLevel: meal.spiceLevel || 0, source: meal.source || '', sourcePath: meal.sourcePath || '', favorite: !!meal.favorite, rating: meal.rating || 0
+    difficulty: meal.difficulty || '', taste: [...(meal.taste || [])], healthTags: [...(meal.healthTags || [])], spiceLevel: meal.spiceLevel || 0, source: meal.source || '', sourcePath: meal.sourcePath || '', favorite: !!meal.favorite, rating: meal.rating || 0
   });
   imagePreview.value = meal.imageUrl || '';
 };
@@ -78,6 +79,7 @@ const buildPayload = () => {
   ['name','description','category','subcategory','tips','servingSize','prepTime','cookTime','difficulty','spiceLevel','source','sourcePath','favorite','rating','imageUrl'].forEach(key => fd.append(key, form[key] ?? ''));
   fd.append('tags', JSON.stringify(form.tags));
   fd.append('taste', JSON.stringify(form.taste));
+  fd.append('healthTags', JSON.stringify(form.healthTags));
   fd.append('ingredients', JSON.stringify(form.ingredients));
   fd.append('existingPhotos', JSON.stringify(form.existingPhotos));
   const stepPayload = form.steps.map(s => ({ description: s.description, imageUrl: s.imageFile ? '' : (s.imageUrl || '') }));
@@ -118,6 +120,7 @@ onMounted(load);
           <div class="two-cols"><el-form-item label="难度"><el-select v-model="form.difficulty" clearable><el-option v-for="opt in difficultyOptions" :key="opt.value" :label="opt.label" :value="opt.value" /></el-select></el-form-item><el-form-item label="总耗时"><el-tag>{{ totalTime }} 分钟</el-tag></el-form-item></div>
           <el-form-item label="标签"><el-select v-model="form.tags" multiple filterable allow-create default-first-option style="width:100%;" /></el-form-item>
           <el-form-item label="口味偏好"><el-select v-model="form.taste" multiple filterable allow-create style="width:100%;"><el-option v-for="item in tasteOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item>
+          <el-form-item label="健康/均衡标签"><el-select v-model="form.healthTags" multiple filterable allow-create style="width:100%;"><el-option v-for="item in healthTagOptions" :key="item" :label="item" :value="item" /></el-select></el-form-item>
           <div class="two-cols"><el-form-item label="辣度"><el-rate v-model="form.spiceLevel" :max="5" /></el-form-item><el-form-item label="评分"><el-rate v-model="form.rating" :max="5" /></el-form-item></div>
           <el-checkbox v-model="form.favorite">收藏到常做菜</el-checkbox>
         </el-card>

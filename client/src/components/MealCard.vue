@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import defaultImageSrc from '../assets/meal-placeholder.png';
-import { Check, Edit, Delete, View, Present } from '@element-plus/icons-vue';
+import { Check, Edit, Delete, View, Present, Warning } from '@element-plus/icons-vue';
 
 const props = defineProps({
   meal: {
@@ -22,7 +22,7 @@ const props = defineProps({
   }
 });
 
-const emit = defineEmits(['edit', 'delete', 'select', 'view', 'share']);
+const emit = defineEmits(['edit', 'delete', 'select', 'view', 'share', 'imageIssue']);
 
 const defaultImage = ref(defaultImageSrc);
 
@@ -176,6 +176,14 @@ const imageUrl = computed(() => {
               <el-icon><Present /></el-icon>
             </el-button>
             <el-button
+              type="warning"
+              size="small"
+              circle
+              @click.stop="emit('imageIssue', meal)"
+            >
+              <el-icon><Warning /></el-icon>
+            </el-button>
+            <el-button
               type="primary"
               size="small"
               circle
@@ -204,7 +212,7 @@ const imageUrl = computed(() => {
           <span v-if="meal.rating">{{ meal.rating }}分</span>
         </div>
 
-        <div v-if="meal.tags && meal.tags.length > 0" class="meal-tags">
+        <div v-if="(meal.tags && meal.tags.length > 0) || (meal.healthTags && meal.healthTags.length > 0)" class="meal-tags">
           <el-tag
             v-for="tag in meal.tags.slice(0, 3)"
             :key="tag"
@@ -214,7 +222,8 @@ const imageUrl = computed(() => {
           >
             {{ tag }}
           </el-tag>
-          <span v-if="meal.tags.length > 3" class="more-tags">
+          <el-tag v-for="tag in (meal.healthTags || []).slice(0, 2)" :key="`h-${tag}`" size="small" type="success" effect="plain" class="meal-tag">{{ tag }}</el-tag>
+          <span v-if="(meal.tags || []).length > 3" class="more-tags">
             +{{ meal.tags.length - 3 }}
           </span>
         </div>

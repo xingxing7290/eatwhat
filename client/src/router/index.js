@@ -17,8 +17,31 @@ const router = createRouter({
     },
     {
       path: '/',
+      redirect: '/dashboard'
+    },
+    {
+      path: '/dashboard',
+      name: 'dashboard',
+      component: () => import('../views/DashboardPage.vue'),
+      meta: { title: '小家仪表盘' }
+    },
+    {
+      path: '/calendar',
       name: 'calendar',
-      component: () => import('../views/CalendarPage.vue')
+      component: () => import('../views/CalendarPage.vue'),
+      meta: { title: '日历' }
+    },
+    {
+      path: '/weekly-plan',
+      name: 'weeklyPlan',
+      component: () => import('../views/WeeklyPlanPage.vue'),
+      meta: { title: '周计划' }
+    },
+    {
+      path: '/shopping-list',
+      name: 'shoppingList',
+      component: () => import('../views/ShoppingListPage.vue'),
+      meta: { title: '购物清单' }
     },
     {
       path: '/meals',
@@ -50,6 +73,12 @@ const router = createRouter({
       path: '/memories',
       name: 'memories',
       component: () => import('../views/MemoryTimeline.vue')
+    },
+    {
+      path: '/photo-album',
+      name: 'photoAlbum',
+      component: () => import('../views/PhotoAlbumPage.vue'),
+      meta: { title: '饭桌相册' }
     },
     {
       path: '/wishlist',

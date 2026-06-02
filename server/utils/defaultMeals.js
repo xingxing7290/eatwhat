@@ -237,6 +237,7 @@ function mealPayload(meal, householdId, createdBy = null) {
   return {
     ...payload,
     defaultKey: key,
+    isDefault: true,
     imageUrl: imageUrlFor(meal),
     photos: [imageUrlFor(meal)],
     householdId,

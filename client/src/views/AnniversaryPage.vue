@@ -6,11 +6,17 @@ import api from '@/services/api';
 
 const menus = ref([]);
 const meals = ref([]);
+const templates = ref([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const photoFiles = ref([]);
 const form = reactive({ title: '', date: new Date().toISOString().slice(0, 10), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
+const applyTemplate = (tpl) => {
+  form.title = tpl.title;
+  form.theme = tpl.theme;
+  form.description = `${tpl.description}\n推荐结构：${(tpl.structure || []).join(' / ')}`;
+};
 
 const reset = () => {
   Object.assign(form, { title: '', date: new Date().toISOString().slice(0, 10), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
@@ -19,9 +25,10 @@ const reset = () => {
 const load = async () => {
   loading.value = true;
   try {
-    const [menuData, mealData] = await Promise.all([api.anniversary.list(), api.meal.getAllMeals()]);
+    const [menuData, mealData, templateData] = await Promise.all([api.anniversary.list(), api.meal.getAllMeals(), api.anniversaryTemplate.list()]);
     menus.value = menuData || [];
     meals.value = mealData.data || mealData || [];
+    templates.value = templateData || [];
   } catch (e) { ElMessage.error(e?.error || '加载纪念日菜单失败'); }
   finally { loading.value = false; }
 };
@@ -73,6 +80,7 @@ onMounted(load);
 
     <el-dialog v-model="dialogVisible" title="新增纪念日菜单" width="620px">
       <el-form label-position="top">
+        <el-form-item label="菜单模板"><div class="template-list"><el-button v-for="tpl in templates" :key="tpl.key" size="small" @click="applyTemplate(tpl)">{{ tpl.title }}</el-button></div></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" placeholder="比如：三周年晚餐" /></el-form-item>
         <el-form-item label="日期"><el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" /></el-form-item>
         <el-form-item label="主题"><el-input v-model="form.theme" placeholder="家常、烛光、火锅、露营..." /></el-form-item>
@@ -98,5 +106,6 @@ h1, h2 { margin: 0; color: var(--text-primary); }
 .photos img { width: 100%; height: 88px; object-fit: cover; border-radius: 8px; }
 .meal-blocks { display: flex; flex-direction: column; gap: 10px; }
 .meal-block { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px; background: var(--bg-secondary); border-radius: 8px; }
+.template-list { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 640px) { .page-header { flex-direction: column; align-items: stretch; } }
 </style>

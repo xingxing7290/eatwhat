@@ -28,6 +28,7 @@ const mealSchema = new mongoose.Schema({
   cookTime: { type: Number, default: 0, min: 0 },
   difficulty: { type: String, enum: ['', 'easy', 'medium', 'hard'], default: '' },
   taste: { type: [String], default: [] },
+  healthTags: { type: [String], default: [], index: true },
   spiceLevel: { type: Number, default: 0, min: 0, max: 5 },
   source: { type: String, trim: true, default: '' },
   sourcePath: { type: String, trim: true, default: '' },

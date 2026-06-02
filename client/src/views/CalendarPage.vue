@@ -3,6 +3,7 @@ import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
 import { useMealStore } from '../stores/meal';
+import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { format, addMonths, subMonths, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 
@@ -13,6 +14,8 @@ const mealStore = useMealStore();
 const currentDate = ref(new Date());
 const isLoading = ref(false);
 const meals = ref([]);
+const partnerWishlist = ref([]);
+const arrangingWishlist = ref('');
 
 // 记录是否需要在加载完成后滚动到今天
 const shouldScrollToToday = ref(false);
@@ -73,6 +76,25 @@ const getDateSchedule = (date) => {
 };
 
 // 获取该月所有日期的安排
+const loadPartnerWishlist = async () => {
+  try {
+    const items = await api.wishlist.list({ status: 'open' });
+    partnerWishlist.value = (items || []).filter(item => item.partnerSignal).slice(0, 3);
+  } catch (_) {}
+};
+const arrangeWishlistDinner = async (item) => {
+  const id = item.mealId?._id || item.mealId?.id;
+  if (!id) return ElMessage.warning('这个想吃项还没有关联菜品');
+  try {
+    arrangingWishlist.value = item._id;
+    await scheduleStore.setMeal(format(new Date(), 'yyyy-MM-dd'), 'dinner', [id]);
+    await api.wishlist.updateStatus(item._id, 'planned');
+    ElMessage.success('已安排到今天晚餐');
+    await loadPartnerWishlist();
+    await fetchMonthSchedules();
+  } catch (e) { ElMessage.error(e?.error || '安排失败'); }
+  finally { arrangingWishlist.value = ''; }
+};
 const fetchMonthSchedules = async () => {
   isLoading.value = true;
   
@@ -87,6 +109,7 @@ const fetchMonthSchedules = async () => {
       await mealStore.fetchAllMeals();
     }
     meals.value = mealStore.meals;
+    await loadPartnerWishlist();
   } catch (error) {
     ElMessage.error('获取月度安排失败');
   } finally {
@@ -297,6 +320,11 @@ onMounted(() => {
           </el-button>
         </div>
       </div>
+    </div>
+
+    <div v-if="partnerWishlist.length" class="partner-wishlist-banner">
+      <div><strong>TA 最近想吃</strong><span v-for="item in partnerWishlist" :key="item._id">{{ item.title }}</span></div>
+      <el-button size="small" type="primary" :loading="arrangingWishlist === partnerWishlist[0]._id" @click="arrangeWishlistDinner(partnerWishlist[0])">安排今天晚餐</el-button>
     </div>
 
     <!-- 移动端月份导航 - 只在移动端显示 -->
@@ -543,6 +571,10 @@ onMounted(() => {
 </template>
 
 <style lang="scss" scoped>
+.partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
+.partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }
+.partner-wishlist-banner strong { color: var(--text-primary); }
+.partner-wishlist-banner span { background: var(--bg-secondary); border-radius: 999px; padding: 4px 10px; }
 .calendar-page {
   padding: 20px;
   display: flex;
@@ -1119,6 +1151,10 @@ onMounted(() => {
 
 
 /* Cozy polaroid calendar override */
+.partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
+.partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }
+.partner-wishlist-banner strong { color: var(--text-primary); }
+.partner-wishlist-banner span { background: var(--bg-secondary); border-radius: 999px; padding: 4px 10px; }
 .calendar-page {
   height: auto;
   min-height: calc(100vh - var(--header-height));
@@ -1322,7 +1358,11 @@ onMounted(() => {
 }
 
 @media (max-width: 768px) {
-  .calendar-page {
+  .partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
+.partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }
+.partner-wishlist-banner strong { color: var(--text-primary); }
+.partner-wishlist-banner span { background: var(--bg-secondary); border-radius: 999px; padding: 4px 10px; }
+.calendar-page {
     padding: 0;
   }
 

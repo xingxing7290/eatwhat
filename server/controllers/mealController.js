@@ -165,6 +165,7 @@ function mealPayloadFromRequest(req, existingMeal = null) {
     cookTime: keepNumber('cookTime'),
     difficulty: ['easy', 'medium', 'hard'].includes(rawDifficulty) ? rawDifficulty : '',
     taste: keepStringArray('taste'),
+    healthTags: keepStringArray('healthTags'),
     spiceLevel: Math.min(keepNumber('spiceLevel'), 5),
     source: keepString('source'),
     sourcePath: keepString('sourcePath'),

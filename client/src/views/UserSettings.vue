@@ -48,6 +48,33 @@
       </div>
     </el-card>
 
+
+
+    <el-card class="settings-card">
+      <template #header><div class="card-header"><span>默认菜品管理</span><el-tag>{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
+      <div class="governance-row">
+        <div class="governance-metric"><span>缺失默认菜品</span><strong>{{ defaultStatus.missing }}</strong></div>
+        <el-button type="primary" :loading="defaultLoading" @click="importMissingDefaultMeals">导入缺失默认菜品</el-button>
+        <el-button :loading="defaultLoading" @click="restoreDefaultImages">恢复默认菜品图片</el-button>
+      </div>
+    </el-card>
+
+    <el-card class="settings-card">
+      <template #header><div class="card-header"><span>待修正图片</span><el-tag type="warning">{{ imageIssues.length }}</el-tag></div></template>
+      <el-empty v-if="!imageIssues.length" description="暂无待修正图片" />
+      <div v-else class="issue-list">
+        <div v-for="issue in imageIssues" :key="issue._id" class="issue-item">
+          <img v-if="issue.mealId?.imageUrl" :src="issue.mealId.imageUrl" />
+          <div class="issue-main">
+            <strong>{{ issue.mealId?.name || '未知菜品' }}</strong>
+            <span>{{ issue.note || '图片与菜名不匹配' }}</span>
+          </div>
+          <el-button size="small" type="success" @click="resolveIssue(issue, 'fixed')">标记已修正</el-button>
+          <el-button size="small" @click="resolveIssue(issue, 'ignored')">忽略</el-button>
+        </div>
+      </div>
+    </el-card>
+
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>情侣小家</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
       <el-form label-width="90px">
@@ -94,6 +121,9 @@ const refreshing = ref(false);
 const joining = ref(false);
 const avatarFile = ref(null);
 const avatarUploading = ref(false);
+const defaultStatus = ref({ total: 0, imported: 0, missing: 0 });
+const imageIssues = ref([]);
+const defaultLoading = ref(false);
 const fileInputRef = ref(null);
 const initial = computed(() => memberInitial(user.value));
 const memberInitial = (member) => ((member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase());
@@ -105,7 +135,14 @@ const applyProfile = (res) => {
   householdName.value = household.value.name || '';
   localStorage.setItem('user', JSON.stringify(user.value));
 };
-const reload = async () => applyProfile(await api.auth.me());
+const loadGovernance = async () => {
+  try {
+    const [status, issues] = await Promise.all([api.defaultMeal.status(), api.mealImageIssue.list({ status: 'open' })]);
+    defaultStatus.value = status || defaultStatus.value;
+    imageIssues.value = issues || [];
+  } catch (_) {}
+};
+const reload = async () => { applyProfile(await api.auth.me()); await loadGovernance(); };
 const saveProfile = async () => {
   try { saving.value = true; applyProfile(await api.auth.updateProfile({ displayName: displayName.value })); ElMessage.success('保存成功'); }
   catch (e) { ElMessage.error(e?.error || '保存失败'); }
@@ -140,6 +177,20 @@ const selectTheme = (theme) => {
 };
 const chooseFile = () => fileInputRef.value?.click();
 const onFileChange = (e) => { avatarFile.value = e.target?.files?.[0] || null; };
+const importMissingDefaultMeals = async () => {
+  try { defaultLoading.value = true; const res = await api.defaultMeal.importMissing(); defaultStatus.value = res.after || res.status || defaultStatus.value; ElMessage.success('默认菜品已补齐'); }
+  catch (e) { ElMessage.error(e?.error || '导入失败'); }
+  finally { defaultLoading.value = false; }
+};
+const restoreDefaultImages = async () => {
+  try { defaultLoading.value = true; const res = await api.defaultMeal.restoreImages(); defaultStatus.value = res.status || defaultStatus.value; ElMessage.success('默认菜品图片已恢复'); }
+  catch (e) { ElMessage.error(e?.error || '恢复失败'); }
+  finally { defaultLoading.value = false; }
+};
+const resolveIssue = async (issue, status) => {
+  try { await api.mealImageIssue.update(issue._id, { status }); await loadGovernance(); ElMessage.success('已更新'); }
+  catch (e) { ElMessage.error(e?.error || '更新失败'); }
+};
 const uploadAvatar = async () => {
   if (!avatarFile.value) return;
   try {
@@ -171,6 +222,14 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
 .member-list { gap: 12px; }
 .member-item { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border-radius: 999px; padding: 6px 12px 6px 6px; }
 .file-input { display: none; }
+.governance-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.governance-metric { min-width: 140px; background: var(--bg-secondary); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.governance-metric span, .issue-main span { color: var(--text-secondary); font-size: 13px; }
+.governance-metric strong { font-size: 24px; color: var(--primary-color); }
+.issue-list { display: flex; flex-direction: column; gap: 10px; }
+.issue-item { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
+.issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
+.issue-main { display: flex; flex-direction: column; gap: 4px; }
 .theme-settings-card { overflow: hidden; }
 .theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .theme-card {
@@ -197,5 +256,5 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
 .theme-desc { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .theme-swatches { display: flex; gap: 7px; margin-top: auto; }
 .theme-swatch { width: 24px; height: 24px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.78); box-shadow: 0 4px 10px rgba(74, 62, 61, 0.14); }
-@media (max-width: 640px) { .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .issue-item { grid-template-columns: 1fr; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
 </style>

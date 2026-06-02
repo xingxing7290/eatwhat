@@ -52,6 +52,8 @@ exports.create = async (req, res, next) => {
       note: String(req.body.note || '').trim(),
       mood: String(req.body.mood || '').trim(),
       rating: Math.min(Number(req.body.rating) || 0, 5),
+      actualCookTime: Math.max(Number(req.body.actualCookTime) || 0, 0),
+      nextImprovement: String(req.body.nextImprovement || '').trim(),
       photos: [...stringArray(req.body.existingPhotos), ...photoUrls(req)],
       mealIds,
       participants: stringArray(req.body.participants),
@@ -73,6 +75,8 @@ exports.update = async (req, res, next) => {
       note: String(req.body.note || '').trim(),
       mood: String(req.body.mood || '').trim(),
       rating: Math.min(Number(req.body.rating) || 0, 5),
+      actualCookTime: Math.max(Number(req.body.actualCookTime) || 0, 0),
+      nextImprovement: String(req.body.nextImprovement || '').trim(),
       photos: [...stringArray(req.body.existingPhotos), ...photoUrls(req)],
       mealIds: stringArray(req.body.mealIds),
       participants: stringArray(req.body.participants)

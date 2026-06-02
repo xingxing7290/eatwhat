@@ -8,6 +8,8 @@ const memorySchema = new mongoose.Schema({
   note: { type: String, trim: true, default: '' },
   mood: { type: String, trim: true, default: '' },
   rating: { type: Number, default: 0, min: 0, max: 5 },
+  actualCookTime: { type: Number, default: 0, min: 0 },
+  nextImprovement: { type: String, trim: true, default: '' },
   photos: { type: [String], default: [] },
   mealIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Meal' }],
   participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],

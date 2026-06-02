@@ -2,6 +2,7 @@
 import { ref, onMounted, computed, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
+import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
@@ -191,6 +192,15 @@ const handleViewMeal = (meal) => {
 
 const handleShareMeal = (meal) => {
   ElMessage.success(`已把「${meal.name}」投喂给 TA 的今日灵感`);
+};
+
+const handleImageIssue = async (meal) => {
+  try {
+    await api.mealImageIssue.create({ mealId: meal._id || meal.id, issueType: 'wrong_image', note: '列表中标记图片不匹配' });
+    ElMessage.success('已加入待修正图片列表');
+  } catch (e) {
+    ElMessage.error(e?.error || '提交失败');
+  }
 };
 
 const feedInspiration = () => {
@@ -492,6 +502,7 @@ onMounted(async () => {
                     @edit="handleEditMeal"
                     @delete="handleDeleteMeal"
                     @share="handleShareMeal"
+                    @image-issue="handleImageIssue"
                   />
                 </div>
               </el-collapse-item>
@@ -510,6 +521,7 @@ onMounted(async () => {
           @edit="handleEditMeal"
           @delete="handleDeleteMeal"
           @share="handleShareMeal"
+          @image-issue="handleImageIssue"
         />
       </div>
 

@@ -211,15 +211,19 @@ const handleResize = () => {
       
       <header class="app-header">
         <div class="header-left">
-          <router-link to="/" class="logo" @click="closeMobileMenu">
+          <router-link to="/dashboard" class="logo" @click="closeMobileMenu">
             {{ appName }}
           </router-link>
           
           <!-- 桌面端导航 -->
           <nav class="main-nav desktop-nav">
-            <router-link to="/" class="nav-link" @click="closeMobileMenu">日历</router-link>
+            <router-link to="/dashboard" class="nav-link" @click="closeMobileMenu">首页</router-link>
+            <router-link to="/calendar" class="nav-link" @click="closeMobileMenu">日历</router-link>
+            <router-link to="/weekly-plan" class="nav-link" @click="closeMobileMenu">周计划</router-link>
+            <router-link to="/shopping-list" class="nav-link" @click="closeMobileMenu">购物清单</router-link>
             <router-link to="/meals" class="nav-link" @click="closeMobileMenu">菜品</router-link>
             <router-link to="/memories" class="nav-link" @click="closeMobileMenu">回忆</router-link>
+            <router-link to="/photo-album" class="nav-link" @click="closeMobileMenu">相册</router-link>
             <router-link to="/wishlist" class="nav-link" @click="closeMobileMenu">想吃</router-link>
             <router-link to="/anniversaries" class="nav-link" @click="closeMobileMenu">纪念日</router-link>
             <router-link to="/settings" class="nav-link" @click="closeMobileMenu">设置</router-link>
@@ -322,9 +326,21 @@ const handleResize = () => {
         </div>
         
         <nav class="mobile-nav-links">
-          <router-link to="/" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/dashboard" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><Calendar /></el-icon>
+            <span>首页</span>
+          </router-link>
+          <router-link to="/calendar" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Calendar /></el-icon>
             <span>日历</span>
+          </router-link>
+          <router-link to="/weekly-plan" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><Calendar /></el-icon>
+            <span>周计划</span>
+          </router-link>
+          <router-link to="/shopping-list" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><Food /></el-icon>
+            <span>购物清单</span>
           </router-link>
           <router-link to="/meals" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Food /></el-icon>
@@ -333,6 +349,10 @@ const handleResize = () => {
           <router-link to="/memories" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><ChatDotRound /></el-icon>
             <span>回忆</span>
+          </router-link>
+          <router-link to="/photo-album" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><ChatDotRound /></el-icon>
+            <span>相册</span>
           </router-link>
           <router-link to="/wishlist" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Star /></el-icon>

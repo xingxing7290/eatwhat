@@ -5,6 +5,17 @@ const { ensureUserHousehold } = require('../utils/household');
 function populateQuery(q) {
   return q.populate('mealId').populate('createdBy', 'username displayName avatarUrl').populate('votes', 'username displayName avatarUrl');
 }
+function decorateItem(item, uid) {
+  const obj = item?.toObject ? item.toObject() : item;
+  if (!obj) return obj;
+  const current = String(uid || '');
+  obj.createdByPartner = !!obj.createdBy && String(obj.createdBy._id || obj.createdBy) !== current;
+  obj.votedByMe = (obj.votes || []).some(v => String(v._id || v) === current);
+  obj.votedByPartner = (obj.votes || []).some(v => String(v._id || v) !== current);
+  obj.partnerSignal = obj.createdByPartner || obj.votedByPartner;
+  return obj;
+}
+function decorateList(items, uid) { return (items || []).map(item => decorateItem(item, uid)); }
 
 exports.list = async (req, res, next) => {
   try {
@@ -12,7 +23,7 @@ exports.list = async (req, res, next) => {
     const query = { householdId: household._id };
     if (req.query.status) query.status = req.query.status;
     const items = await populateQuery(WishlistItem.find(query).sort({ status: 1, priority: -1, createdAt: -1 }));
-    res.json(items);
+    res.json(decorateList(items, req.user.uid));
   } catch (err) { next(err); }
 };
 
@@ -37,7 +48,7 @@ exports.create = async (req, res, next) => {
       votes: [req.user.uid],
       createdBy: req.user.uid
     });
-    res.status(201).json(await populateQuery(WishlistItem.findById(item._id)));
+    res.status(201).json(decorateItem(await populateQuery(WishlistItem.findById(item._id)), req.user.uid));
   } catch (err) { next(err); }
 };
 
@@ -50,7 +61,7 @@ exports.vote = async (req, res, next) => {
     const exists = item.votes.some(v => String(v) === uid);
     item.votes = exists ? item.votes.filter(v => String(v) !== uid) : [...item.votes, req.user.uid];
     await item.save();
-    res.json(await populateQuery(WishlistItem.findById(item._id)));
+    res.json(decorateItem(await populateQuery(WishlistItem.findById(item._id)), req.user.uid));
   } catch (err) { next(err); }
 };
 
@@ -61,7 +72,7 @@ exports.updateStatus = async (req, res, next) => {
     if (!status) return res.status(400).json({ error: '状态无效' });
     const item = await populateQuery(WishlistItem.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, { status }, { new: true }));
     if (!item) return res.status(404).json({ error: '未找到想吃项' });
-    res.json(item);
+    res.json(decorateItem(item, req.user.uid));
   } catch (err) { next(err); }
 };
 
