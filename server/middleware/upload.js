@@ -37,12 +37,15 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
   const allowedExtnames = new Set(['.jpeg', '.jpg', '.png', '.gif', '.webp']);
-  const mimetype = allowedMimeTypes.has(String(file.mimetype || '').toLowerCase());
-  const extname = allowedExtnames.has(path.extname(file.originalname || '').toLowerCase());
+  const normalizedMime = String(file.mimetype || '').toLowerCase();
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mimetype = allowedMimeTypes.has(normalizedMime);
+  const extname = allowedExtnames.has(ext);
+  const octetStreamFallback = normalizedMime === 'application/octet-stream' && extname;
 
-  const details = `field=${file.fieldname} original=${file.originalname} mimetype=${file.mimetype} ext=${path.extname(file.originalname || '').toLowerCase()} route=${req.method} ${req.originalUrl}`;
+  const details = `field=${file.fieldname} original=${file.originalname} mimetype=${file.mimetype} ext=${ext} route=${req.method} ${req.originalUrl}`;
 
-  if (mimetype && extname) {
+  if ((mimetype || octetStreamFallback) && extname) {
     logger.info(`[upload] accepted ${details}`);
     return cb(null, true);
   }
