@@ -83,6 +83,23 @@ exports.login = async (req, res, next) => {
 		if (!ok) return res.status(401).json({ error: '用户名或密码错误' });
 		const { household } = await ensureUserHousehold(user._id);
 		const token = jwt.sign({ uid: user._id, username: user.username, role: user.role, householdId: user.householdId }, JWT_SECRET, { expiresIn: TOKEN_EXPIRES_IN });
+		if (req.headers['x-mobile-client'] === 'eatwhat-flutter') {
+			return res.json({
+				token,
+				user: {
+					id: user._id,
+					username: user.username,
+					displayName: user.displayName || '',
+					role: user.role,
+					householdId: user.householdId || null
+				},
+				household: household ? {
+					id: household._id,
+					name: household.name,
+					inviteCode: household.inviteCode
+				} : null
+			});
+		}
 		return res.json({ token, user: toSafeUser(user, household), household: householdPayload(household) });
 	} catch (err) { next(err); }
 };

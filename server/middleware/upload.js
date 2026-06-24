@@ -9,7 +9,7 @@ const logger = require('../utils/logger');
 
 // 统一的上传目录（绝对路径，指向 /app/uploads）
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
-const uploadFileSizeLimitMb = Number(process.env.UPLOAD_FILE_SIZE_LIMIT_MB || 15);
+const uploadFileSizeLimitMb = Number(process.env.UPLOAD_FILE_SIZE_LIMIT_MB || 30);
 const uploadFileSizeLimit = uploadFileSizeLimitMb * 1024 * 1024;
 
 // 配置存储引擎
@@ -35,8 +35,8 @@ const storage = multer.diskStorage({
 
 // 文件过滤器，只接受特定类型的图片
 const fileFilter = (req, file, cb) => {
-  const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
-  const allowedExtnames = new Set(['.jpeg', '.jpg', '.png', '.gif', '.webp']);
+  const allowedMimeTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']);
+  const allowedExtnames = new Set(['.jpeg', '.jpg', '.png', '.gif', '.webp', '.heic', '.heif']);
   const normalizedMime = String(file.mimetype || '').toLowerCase();
   const ext = path.extname(file.originalname || '').toLowerCase();
   const mimetype = allowedMimeTypes.has(normalizedMime);
@@ -51,7 +51,7 @@ const fileFilter = (req, file, cb) => {
   }
 
   logger.error(`[upload] rejected ${details}`);
-  const err = new Error('\u9519\u8bef\uff1a\u53ea\u652f\u6301\u4e0a\u4f20 jpeg, jpg, png, gif, webp \u683c\u5f0f\u7684\u56fe\u7247!');
+  const err = new Error('\u9519\u8bef\uff1a\u53ea\u652f\u6301\u4e0a\u4f20 jpeg, jpg, png, gif, webp, heic, heif \u683c\u5f0f\u7684\u56fe\u7247!');
   err.status = 400;
   err.uploadDetails = details;
   cb(err);

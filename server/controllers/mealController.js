@@ -65,6 +65,25 @@ function collectFileUrls(req, field) {
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+function isMobileClient(req) {
+  return req.headers['x-mobile-client'] === 'eatwhat-flutter';
+}
+function compactMeal(meal) {
+  return {
+    _id: meal._id,
+    id: meal._id,
+    name: meal.name || '',
+    imageUrl: meal.imageUrl || '',
+    category: meal.category || '',
+    tags: (meal.tags || []).slice(0, 3),
+    healthTags: (meal.healthTags || []).slice(0, 3),
+    ingredients: (meal.ingredients || []).slice(0, 3).map(item => ({ name: item.name || '', amount: item.amount || '' })),
+    cookTime: meal.cookTime || 0,
+    difficulty: meal.difficulty || '',
+    rating: meal.rating || 0,
+    favorite: Boolean(meal.favorite)
+  };
+}
 
 exports.validateMeal = [
   body('name').notEmpty().withMessage('菜品名称不能为空').isLength({ max: 100 }).withMessage('菜品名称不能超过100个字符'),
@@ -91,10 +110,13 @@ exports.getAllMeals = async (req, res, next) => {
     const hasPagination = Number.isFinite(pageNum) || Number.isFinite(limitNumRaw);
     if (!hasPagination) return res.status(200).json(await Meal.find(query).sort({ favorite: -1, createdAt: -1 }));
     const safePage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
-    const safeLimit = Math.min(Number.isFinite(limitNumRaw) && limitNumRaw > 0 ? limitNumRaw : 20, 200);
+    const mobile = isMobileClient(req);
+    const safeLimit = Math.min(Number.isFinite(limitNumRaw) && limitNumRaw > 0 ? limitNumRaw : 20, mobile ? 12 : 200);
     const total = await Meal.countDocuments(query);
-    const meals = await Meal.find(query).sort({ favorite: -1, createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit);
-    res.status(200).json({ data: meals, total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1 });
+    let mealQuery = Meal.find(query).sort({ favorite: -1, createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit);
+    if (mobile) mealQuery = mealQuery.select('name imageUrl category tags healthTags ingredients cookTime difficulty rating favorite');
+    const meals = await mealQuery.lean();
+    res.status(200).json({ data: mobile ? meals.map(compactMeal) : meals, total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1 });
   } catch (error) { logger.error(`获取菜品失败: ${error.message}`); next(error); }
 };
 

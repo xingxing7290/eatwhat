@@ -18,6 +18,26 @@ function normalizeMealItems(scheduleDoc) {
 	}
 }
 
+function isMobileClient(req) {
+	return req.headers['x-mobile-client'] === 'eatwhat-flutter';
+}
+function compactSchedule(schedule) {
+	const compactItems = items => (items || []).map(item => {
+		const meal = item && item.meal ? item.meal : item;
+		return {
+			meal: meal && meal._id ? { _id: meal._id, id: meal._id, name: meal.name || '' } : meal
+		};
+	});
+	return {
+		date: schedule.date,
+		meals: {
+			breakfast: compactItems(schedule.meals?.breakfast),
+			lunch: compactItems(schedule.meals?.lunch),
+			dinner: compactItems(schedule.meals?.dinner)
+		}
+	};
+}
+
 function fillMissingAddedBy(scheduleDoc, uid) {
 	if (!uid || !scheduleDoc || !scheduleDoc.meals) return false;
 	const uidObj = mongoose.Types.ObjectId.isValid(uid) ? new mongoose.Types.ObjectId(uid) : null;
@@ -34,6 +54,10 @@ function fillMissingAddedBy(scheduleDoc, uid) {
 exports.validateSchedulesQuery = [
   query('year').notEmpty().withMessage('年份参数不能为空').isInt({ min: 2000, max: 2100 }).withMessage('年份无效'),
   query('month').notEmpty().withMessage('月份参数不能为空').isInt({ min: 1, max: 12 }).withMessage('月份无效 (1-12)')
+];
+
+exports.validateScheduleDate = [
+  param('date').matches(/^\d{4}-\d{2}-\d{2}$/).withMessage('Invalid date format, use YYYY-MM-DD')
 ];
 
 exports.validateScheduleUpdate = [
@@ -72,6 +96,30 @@ exports.getSchedules = async (req, res, next) => {
     }
     res.status(200).json(fullMonthSchedules);
   } catch (error) { logger.error(`获取餐食安排失败: ${error.message}`); next(error); }
+};
+
+exports.getScheduleByDate = async (req, res, next) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    const { household } = await ensureUserHousehold(req.user.uid);
+    const { date } = req.params;
+    const schedule = await Schedule.findOne({ householdId: household._id, date });
+    if (!schedule) {
+      return res.status(200).json({ date, meals: { breakfast: [], lunch: [], dinner: [] } });
+    }
+    normalizeMealItems(schedule);
+    fillMissingAddedBy(schedule, req.user.uid);
+    await schedule.populate([
+      { path: 'meals.breakfast.meal' },
+      { path: 'meals.lunch.meal' },
+      { path: 'meals.dinner.meal' },
+      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
+      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
+      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
+    ]);
+    res.status(200).json(isMobileClient(req) ? compactSchedule(schedule) : schedule);
+  } catch (error) { logger.error(`Failed to get daily schedule: ${error.message}`); next(error); }
 };
 
 exports.updateSchedule = async (req, res, next) => {
