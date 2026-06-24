@@ -9,6 +9,8 @@ const logger = require('../utils/logger');
 
 // 统一的上传目录（绝对路径，指向 /app/uploads）
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const uploadFileSizeLimitMb = Number(process.env.UPLOAD_FILE_SIZE_LIMIT_MB || 15);
+const uploadFileSizeLimit = uploadFileSizeLimitMb * 1024 * 1024;
 
 // 配置存储引擎
 const storage = multer.diskStorage({
@@ -56,8 +58,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage: storage,
   limits: {
-    // 文件大小限制为 5MB
-    fileSize: 5 * 1024 * 1024 
+    fileSize: uploadFileSizeLimit
   },
   fileFilter: fileFilter
 });

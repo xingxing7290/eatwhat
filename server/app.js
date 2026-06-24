@@ -79,11 +79,16 @@ app.get('/', (req, res) => res.json({ message: '欢迎使用"安排吃啥"API' }
 
 app.use((req, res) => res.status(404).json({ error: '未找到请求的资源' }));
 app.use((err, req, res, next) => {
-	const status = err.status || (err.name === 'MulterError' ? 400 : 500);
-	logger.error(`错误: ${err.message}`);
-	logger.error(`错误详情: status=${status} name=${err.name || ''} code=${err.code || ''} field=${err.field || ''} route=${req.method} ${req.originalUrl}`);
-	if (err.uploadDetails) logger.error(`上传详情: ${err.uploadDetails}`);
-	res.status(status).json({ error: err.message || '服务器内部错误' });
+	let status = err.status || (err.name === 'MulterError' ? 400 : 500);
+	let message = err.message || '\u670d\u52a1\u5668\u5185\u90e8\u9519\u8bef';
+	if (err.name === 'MulterError' && err.code === 'LIMIT_FILE_SIZE') {
+		status = 413;
+		message = '\u56fe\u7247\u6587\u4ef6\u592a\u5927\uff0c\u8bf7\u9009\u62e9\u8f83\u5c0f\u56fe\u7247\u6216\u91cd\u65b0\u62cd\u7167\u4e0a\u4f20\uff08\u5355\u5f20\u4e0d\u8d85\u8fc7 15MB\uff09';
+	}
+	logger.error(`\u9519\u8bef: ${message}`);
+	logger.error(`\u9519\u8bef\u8be6\u60c5: status=${status} name=${err.name || ''} code=${err.code || ''} field=${err.field || ''} route=${req.method} ${req.originalUrl}`);
+	if (err.uploadDetails) logger.error(`\u4e0a\u4f20\u8be6\u60c5: ${err.uploadDetails}`);
+	res.status(status).json({ error: message });
 });
 
 const PORT = process.env.PORT || 3000;
