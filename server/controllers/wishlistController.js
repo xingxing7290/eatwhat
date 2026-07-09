@@ -76,6 +76,23 @@ exports.updateStatus = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.attachMeal = async (req, res, next) => {
+  try {
+    const { household } = await ensureUserHousehold(req.user.uid);
+    const mealId = req.body.mealId || null;
+    if (!mealId) return res.status(400).json({ error: '\u83dc\u54c1\u4e0d\u80fd\u4e3a\u7a7a' });
+    const meal = await Meal.findOne({ _id: mealId, householdId: household._id });
+    if (!meal) return res.status(400).json({ error: '\u83dc\u54c1\u4e0d\u5b58\u5728' });
+    const item = await populateQuery(WishlistItem.findOneAndUpdate(
+      { _id: req.params.id, householdId: household._id },
+      { mealId, status: 'open' },
+      { new: true }
+    ));
+    if (!item) return res.status(404).json({ error: '\u672a\u627e\u5230\u60f3\u5403\u9879' });
+    res.json(decorateItem(item, req.user.uid));
+  } catch (err) { next(err); }
+};
+
 exports.remove = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
