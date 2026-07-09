@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const { seedDefaultMealsForHousehold } = require('./defaultMeals');
+const { cleanHouseholdName } = require('./text');
 
 async function generateInviteCode() {
   for (let i = 0; i < 20; i++) {
@@ -70,7 +71,7 @@ function householdPayload(household) {
   if (!household) return null;
   return {
     id: household._id,
-    name: household.name,
+    name: cleanHouseholdName(household.name),
     inviteCode: household.inviteCode,
     members: household.members || []
   };

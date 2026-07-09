@@ -2,6 +2,7 @@ const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const { ensureUserHousehold, generateInviteCode, householdPayload } = require('../utils/household');
 const { toSafeUser } = require('./authController');
+const { looksBrokenText } = require('../utils/text');
 
 async function loadHousehold(uid) {
   const { user, household } = await ensureUserHousehold(uid);
@@ -20,7 +21,8 @@ exports.update = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
-    if (!name) return res.status(400).json({ error: '小家名称不能为空' });
+    if (!name) return res.status(400).json({ error: '\u5c0f\u5bb6\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a' });
+    if (looksBrokenText(name)) return res.status(400).json({ error: '\u5c0f\u5bb6\u540d\u79f0\u770b\u8d77\u6765\u662f\u4e71\u7801\uff0c\u8bf7\u91cd\u65b0\u8f93\u5165' });
     household.name = name;
     await household.save();
     await household.populate({ path: 'members', select: 'username displayName avatarUrl' });

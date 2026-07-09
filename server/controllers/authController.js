@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/userModel');
 const Household = require('../models/householdModel');
 const { createHousehold, ensureUserHousehold, householdPayload } = require('../utils/household');
+const { cleanDisplayName, cleanHouseholdName, looksBrokenText } = require('../utils/text');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
 const TOKEN_EXPIRES_IN = '7d';
@@ -35,7 +36,7 @@ function toSafeUser(userDoc, household = null) {
 		id: userDoc._id,
 		username: userDoc.username,
 		role: userDoc.role,
-		displayName: userDoc.displayName || '',
+		displayName: cleanDisplayName(userDoc.displayName, userDoc.username),
 		avatarUrl: userDoc.avatarUrl || '',
 		householdId: userDoc.householdId || null,
 		household: householdPayload(household)
@@ -46,22 +47,23 @@ exports.register = async (req, res, next) => {
 	try {
 		const { username, password, displayName, inviteCode, householdName } = req.body;
 		const safeUsername = typeof username === 'string' ? username.trim() : '';
-		const safeDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
-		if (!safeUsername || !password) return res.status(400).json({ error: '用户名和密码必填' });
+		const safeDisplayName = cleanDisplayName(displayName, safeUsername);
+		if (!safeUsername || !password) return res.status(400).json({ error: '\u7528\u6237\u540d\u548c\u5bc6\u7801\u5fc5\u586b' });
 		const existed = await User.findOne({ username: safeUsername });
-		if (existed) return res.status(409).json({ error: '用户名已存在' });
+		if (existed) return res.status(409).json({ error: '\u7528\u6237\u540d\u5df2\u5b58\u5728' });
 
 		let household = null;
 		if (inviteCode && String(inviteCode).trim()) {
 			household = await Household.findOne({ inviteCode: String(inviteCode).trim().toUpperCase() });
-			if (!household) return res.status(404).json({ error: '邀请码无效' });
+			if (!household) return res.status(404).json({ error: '\u9080\u8bf7\u7801\u65e0\u6548' });
 		}
 
 		const passwordHash = await bcrypt.hash(password, 10);
 		const user = await User.create({ username: safeUsername, displayName: safeDisplayName, passwordHash, householdId: household ? household._id : null });
 
 		if (!household) {
-			const name = householdName && String(householdName).trim() ? String(householdName).trim() : `${safeDisplayName || safeUsername}的小家`;
+			const fallbackName = `${safeDisplayName || safeUsername}\u7684\u5c0f\u5bb6`;
+			const name = cleanHouseholdName(householdName, fallbackName);
 			household = await createHousehold(name, user._id);
 			user.householdId = household._id;
 			await user.save();
@@ -89,13 +91,13 @@ exports.login = async (req, res, next) => {
 				user: {
 					id: user._id,
 					username: user.username,
-					displayName: user.displayName || '',
+					displayName: cleanDisplayName(user.displayName, user.username),
 					role: user.role,
 					householdId: user.householdId || null
 				},
 				household: household ? {
 					id: household._id,
-					name: household.name,
+					name: cleanHouseholdName(household.name),
 					inviteCode: household.inviteCode
 				} : null
 			});
@@ -117,11 +119,12 @@ exports.me = async (req, res, next) => {
 exports.updateProfile = async (req, res, next) => {
 	try {
 		const uid = req.user && req.user.uid;
-		if (!uid) return res.status(401).json({ error: '未认证' });
+		if (!uid) return res.status(401).json({ error: '\u672a\u8ba4\u8bc1' });
 		const { displayName } = req.body;
 		const safeDisplayName = typeof displayName === 'string' ? displayName.trim() : '';
+		if (looksBrokenText(safeDisplayName)) return res.status(400).json({ error: '\u6635\u79f0\u770b\u8d77\u6765\u662f\u4e71\u7801\uff0c\u8bf7\u91cd\u65b0\u8f93\u5165' });
 		const user = await User.findByIdAndUpdate(uid, { $set: { displayName: safeDisplayName } }, { new: true });
-		if (!user) return res.status(404).json({ error: '用户不存在' });
+		if (!user) return res.status(404).json({ error: '\u7528\u6237\u4e0d\u5b58\u5728' });
 		const { household } = await ensureUserHousehold(uid);
 		return res.json({ user: toSafeUser(user, household), household: householdPayload(household) });
 	} catch (err) { next(err); }
