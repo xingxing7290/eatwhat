@@ -22,6 +22,7 @@ const photoAlbumRoutes = require('./routes/photoAlbumRoutes');
 const defaultMealRoutes = require('./routes/defaultMealRoutes');
 const mealImageIssueRoutes = require('./routes/mealImageIssueRoutes');
 const anniversaryTemplateRoutes = require('./routes/anniversaryTemplateRoutes');
+const reviewRoutes = require('./routes/reviewRoutes');
 
 dotenv.config();
 const app = express();
@@ -72,6 +73,7 @@ app.use('/photo-album', photoAlbumRoutes);
 app.use('/default-meals', defaultMealRoutes);
 app.use('/meal-image-issues', mealImageIssueRoutes);
 app.use('/anniversary-templates', anniversaryTemplateRoutes);
+app.use('/review', reviewRoutes);
 app.use('/debug', debugRoutes);
 
 app.get('/health', (req, res) => res.send('healthy'));
