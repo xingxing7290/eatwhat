@@ -18212,6 +18212,8 @@ const defaultMeals = [
   }
 ];
 
+const mealDetails = require('./mealDetails');
+
 function ingredients(items) {
   return items.map(([name, amount]) => ({ name, amount }));
 }
@@ -18219,25 +18221,31 @@ function steps(items) {
   return items.map(description => ({ description, imageUrl: '' }));
 }
 
-module.exports = defaultMeals.map(meal => ({
-  key: meal.key,
-  name: meal.name,
-  category: meal.category,
-  subcategory: meal.subcategory,
-  description: meal.description,
-  tags: meal.tags,
-  ingredients: ingredients(meal.ingredients),
-  steps: steps(meal.steps),
-  tips: '\u9ed8\u8ba4\u83dc\u54c1\u53ef\u4ee5\u6309\u4e24\u4e2a\u4eba\u7684\u53e3\u5473\u5fae\u8c03\u54b8\u6de1\u3001\u8fa3\u5ea6\u548c\u4efd\u91cf\u3002',
-  servingSize: '2\u4eba\u4efd',
-  prepTime: meal.prepTime,
-  cookTime: meal.cookTime,
-  difficulty: meal.difficulty,
-  taste: meal.taste,
-  spiceLevel: meal.spiceLevel,
-  source: '\u7cfb\u7edf\u9ed8\u8ba4\u83dc\u54c1\uff08\u5317\u65b9\u5e38\u89c1\u9910\u54c1\u5e93\uff09',
-  favorite: false,
-  rating: 4,
-  isDefault: true,
-  palette: meal.palette
-}));
+module.exports = defaultMeals.map(baseMeal => {
+  const detail = mealDetails[baseMeal.key] || {};
+  const meal = { ...baseMeal, ...detail };
+  return {
+    key: meal.key,
+    name: meal.name,
+    category: meal.category,
+    subcategory: meal.subcategory,
+    description: meal.description,
+    tags: meal.tags,
+    ingredients: ingredients(meal.ingredients),
+    steps: steps(meal.steps),
+    tips: meal.tips || '\u9ed8\u8ba4\u83dc\u54c1\u53ef\u4ee5\u6309\u4e24\u4e2a\u4eba\u7684\u53e3\u5473\u5fae\u8c03\u54b8\u6de1\u3001\u8fa3\u5ea6\u548c\u4efd\u91cf\u3002',
+    servingSize: meal.servingSize || '2\u4eba\u4efd',
+    prepTime: meal.prepTime,
+    cookTime: meal.cookTime,
+    difficulty: meal.difficulty,
+    taste: meal.taste,
+    healthTags: meal.healthTags || [],
+    spiceLevel: meal.spiceLevel,
+    source: meal.source || '\u7cfb\u7edf\u9ed8\u8ba4\u83dc\u54c1\uff08\u5317\u65b9\u5e38\u89c1\u9910\u54c1\u5e93\uff09',
+    sourcePath: meal.sourcePath || '',
+    favorite: false,
+    rating: 4,
+    isDefault: true,
+    palette: meal.palette
+  };
+});

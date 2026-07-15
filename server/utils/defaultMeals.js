@@ -8,7 +8,14 @@ try {
 } catch (_) {
   mealWebImages = [];
 }
+let mealCatalogImages = [];
+try {
+  mealCatalogImages = require('../data/mealCatalogImages.json');
+} catch (_) {
+  mealCatalogImages = [];
+}
 const mealWebImageByKey = new Map((Array.isArray(mealWebImages) ? mealWebImages : []).map(entry => [String(entry.key), entry]));
+const mealCatalogImageByKey = new Map((Array.isArray(mealCatalogImages) ? mealCatalogImages : []).map(entry => [String(entry.key), entry]));
 
 const uploadRoot = path.join(__dirname, '..', 'uploads', 'default-meals');
 const generatedUploadRoot = path.join(__dirname, '..', 'uploads', 'generated-meals');
@@ -23,6 +30,8 @@ function escapeXml(value) {
 
 function imageUrlFor(meal) {
   const key = String(meal?.key || meal?.defaultKey || '').trim();
+  const catalogImage = key ? mealCatalogImageByKey.get(key) : null;
+  if (catalogImage?.imageUrl) return catalogImage.imageUrl;
   const webImage = key ? mealWebImageByKey.get(key) : null;
   if (webImage?.imageUrl) return webImage.imageUrl;
   return `/api/uploads/default-meals/${meal.key}.svg`;
