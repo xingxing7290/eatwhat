@@ -4,6 +4,8 @@ const north021030 = require('./mealDetails/north-021-030');
 const north031040 = require('./mealDetails/north-031-040');
 const north041050 = require('./mealDetails/north-041-050');
 const north051060 = require('./mealDetails/north-051-060');
+const north061070 = require('./mealDetails/north-061-070');
+const north071080 = require('./mealDetails/north-071-080');
 
 module.exports = {
   ...north001010,
@@ -12,6 +14,8 @@ module.exports = {
   ...north031040,
   ...north041050,
   ...north051060,
+  ...north061070,
+  ...north071080,
   'hong-shao-rou': {
     description: '带皮五花肉煸出油脂后以冰糖、酱油和香料小火焖至软糯，色泽红亮，咸鲜微甜。',
     ingredients: [
