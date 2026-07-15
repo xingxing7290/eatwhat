@@ -99,12 +99,14 @@ const records = meals.map((meal, index) => {
   const issues = [...recipe.issues];
   if (!image.exists) issues.push('图片文件不存在');
   if (image.usage > 1) issues.push(`图片被 ${image.usage} 道菜共用`);
+  if (image.kind !== '统一生成照片') issues.push('尚未替换为统一生成照片');
   if (image.kind === 'SVG 占位图') issues.push('尚未替换为真实或统一生成的菜品照片');
   return { index: index + 1, meal, image, issues };
 });
 
 const summary = {
   total: records.length,
+  unifiedGeneratedImages: records.filter(item => item.image.exists && item.image.usage === 1 && item.image.kind === '统一生成照片').length,
   exactImages: records.filter(item => item.image.exists && item.image.usage === 1 && item.image.kind === '照片').length,
   sharedImages: records.filter(item => item.image.usage > 1).length,
   svgPlaceholders: records.filter(item => item.image.kind === 'SVG 占位图').length,
@@ -113,6 +115,7 @@ const summary = {
   vagueAmounts: records.filter(item => item.issues.includes('食材用量全部过于笼统')).length,
   passed: records.filter(item => item.issues.length === 0).length,
 };
+summary.remainingNonUnifiedImages = summary.total - summary.unifiedGeneratedImages;
 
 const lines = [
   '# EatWhat 全部菜品完整目录',
@@ -122,7 +125,9 @@ const lines = [
   '',
   `- 生成时间：${new Date().toISOString()}`,
   `- 菜品总数：${summary.total}`,
-  `- 独立且文件存在的照片：${summary.exactImages}`,
+  `- 已按统一模板生成并验收图片：${summary.unifiedGeneratedImages}`,
+  `- 尚未替换为统一生成图片：${summary.remainingNonUnifiedImages}`,
+  `- 独立且文件存在的既有照片：${summary.exactImages}`,
   `- 使用复用图片的菜品：${summary.sharedImages}`,
   `- 仍使用 SVG 占位图：${summary.svgPlaceholders}`,
   `- 图片文件不存在：${summary.missingImageFiles}`,

@@ -1,7 +1,222 @@
 [
   {
     "key": "north-menu-001",
-    "imageUrl": "/api/uploads/meal-catalog/north-menu-001.png",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-001.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-011",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-011.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-012",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-012.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-013",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-013.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-014",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-014.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-015",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-015.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-016",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-016.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-017",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-017.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-018",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-018.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-019",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-019.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-020",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-020.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-021",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-021.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-022",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-022.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-023",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-023.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-024",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-024.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-025",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-025.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-026",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-026.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-027",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-027.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-028",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-028.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-029",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-029.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-030",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-030.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-031",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-031.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-032",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-032.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-033",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-033.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-034",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-034.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-035",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-035.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-036",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-036.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-037",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-037.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-038",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-038.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-039",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-039.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-040",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-040.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-041",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-041.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-042",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-042.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-043",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-043.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-044",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-044.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-045",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-045.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-046",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-046.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-047",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-047.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-048",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-048.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-049",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-049.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-050",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-050.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-051",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-051.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-052",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-052.jpg",
+    "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
+  },
+  {
+    "key": "north-menu-053",
+    "imageUrl": "/api/uploads/meal-catalog/north-menu-053.jpg",
     "sourceLabel": "AI 生成（EatWhat 统一菜品摄影模板，2026-07-15）"
   }
 ]
