@@ -10,6 +10,9 @@ import zhCn from 'element-plus/dist/locale/zh-cn.mjs'
 import App from './App.vue'
 import router from './router'
 
+const savedColorTheme = localStorage.getItem('colorTheme') || 'cream'
+document.documentElement.dataset.theme = savedColorTheme
+
 const app = createApp(App)
 
 // 注册所有图标

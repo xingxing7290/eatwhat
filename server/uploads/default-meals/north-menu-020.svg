@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8e1c6"/>
+      <stop offset="52%" stop-color="#fff8ef"/>
+      <stop offset="100%" stop-color="#e09f67" stop-opacity="0.5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#6f3d2d" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect width="900" height="620" rx="46" fill="url(#bg)"/>
+  <circle cx="116" cy="108" r="54" fill="#ffffff" opacity="0.27"/>
+  <circle cx="786" cy="128" r="76" fill="#ffffff" opacity="0.22"/>
+  <circle cx="770" cy="476" r="102" fill="#ffffff" opacity="0.22"/>
+  <rect x="568" y="82" width="126" height="34" rx="17" fill="#ffffff" opacity="0.82" transform="rotate(-4 631 99)"/>
+  <g filter="url(#shadow)">
+    <ellipse cx="450" cy="370" rx="278" ry="126" fill="#d7e8e7"/>
+    <ellipse cx="450" cy="332" rx="240" ry="100" fill="#fff9ef"/>
+    <path d="M292 330 C358 254 528 252 606 328 C528 404 360 402 292 330Z" fill="#b66b45" opacity="0.9"/>
+    <circle cx="548" cy="314" r="10" fill="#3d3028"/><path d="M606 328 L662 286 L656 374 Z" fill="#e09f67"/><path d="M364 286 C410 326 474 324 520 286" fill="none" stroke="#fff6ec" stroke-width="12" stroke-linecap="round" opacity="0.72"/><circle cx="330" cy="374" r="22" fill="#7aa874"/><circle cx="430" cy="388" r="16" fill="#ffd166"/>
+  </g>
+  <g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Arial, sans-serif" text-anchor="middle">
+    <rect x="80" y="494" width="740" height="84" rx="32" fill="#fffaf3" opacity="0.84"/>
+    <text x="450" y="542" font-size="52" font-weight="800" fill="#3d3028">罾蹦鲤鱼</text>
+    <text x="450" y="578" font-size="23" font-weight="600" fill="#7c675a">地方特色 &#183; 鲜味海河 &#183; 京津冀 / 地方特色</text>
+  </g>
+</svg>

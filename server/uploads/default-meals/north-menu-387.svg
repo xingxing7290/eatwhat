@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f7e5c5"/>
+      <stop offset="52%" stop-color="#fff8ef"/>
+      <stop offset="100%" stop-color="#e5b26d" stop-opacity="0.5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#6f3d2d" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <rect width="900" height="620" rx="46" fill="url(#bg)"/>
+  <circle cx="116" cy="108" r="54" fill="#ffffff" opacity="0.27"/>
+  <circle cx="786" cy="128" r="76" fill="#ffffff" opacity="0.22"/>
+  <circle cx="770" cy="476" r="102" fill="#ffffff" opacity="0.22"/>
+  <rect x="568" y="82" width="126" height="34" rx="17" fill="#ffffff" opacity="0.82" transform="rotate(-4 631 99)"/>
+  <g filter="url(#shadow)">
+    <ellipse cx="450" cy="374" rx="268" ry="126" fill="#f0c6ad"/>
+    <path d="M218 326 C264 462 636 462 682 326 Z" fill="#e5b26d" opacity="0.95"/>
+    <ellipse cx="450" cy="318" rx="248" ry="92" fill="#fff8ee"/>
+    <path d="M285 316 C350 254 554 252 616 318 C570 372 334 374 285 316Z" fill="#fff3d0"/>
+    <circle cx="362" cy="314" r="34" fill="#be7c4d" opacity="0.88"/><circle cx="452" cy="286" r="30" fill="#ffd166"/><circle cx="536" cy="330" r="34" fill="#7aa874"/><path d="M346 360 C428 392 522 390 596 354" fill="none" stroke="#d68b56" stroke-width="14" stroke-linecap="round" opacity="0.68"/>
+  </g>
+  <g font-family="PingFang SC, Microsoft YaHei, Noto Sans CJK SC, Arial, sans-serif" text-anchor="middle">
+    <rect x="80" y="494" width="740" height="84" rx="32" fill="#fffaf3" opacity="0.84"/>
+    <text x="450" y="542" font-size="52" font-weight="800" fill="#3d3028">蛋炒饭</text>
+    <text x="450" y="578" font-size="23" font-weight="600" fill="#7c675a">早餐夜宵 &#183; 暖胃盖饭 &#183; 早餐夜宵 / 小炒</text>
+  </g>
+</svg>

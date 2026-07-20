@@ -1,27 +1,23 @@
-/**
- * 菜品路由模块
- * 定义与菜品相关的 API 路由
- */
 const express = require('express');
 const mealController = require('../controllers/mealController');
 const upload = require('../middleware/upload');
+const auth = require('../middleware/auth');
 const router = express.Router();
 
-// GET /meals - 获取所有菜品
+const mealUpload = upload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'photos', maxCount: 12 },
+  { name: 'stepImages', maxCount: 20 }
+]);
+
+router.use(auth());
 router.get('/', mealController.getAllMeals);
 router.get('/categories', mealController.getMealCategories);
 router.get('/tags', mealController.getMealTags);
-
-// 新增：GET /meals/:id - 获取单个菜品
+router.get('/stats', mealController.getMealStats);
 router.get('/:id', mealController.getMealById);
-
-// POST /meals - 创建新菜品 (带图片上传)
-router.post('/', upload.single('image'), mealController.validateMeal, mealController.createMeal);
-
-// PUT /meals/:id - 更新菜品 (带图片上传)
-router.put('/:id', upload.single('image'), mealController.validateMeal, mealController.updateMeal);
-
-// DELETE /meals/:id - 删除菜品
+router.post('/', mealUpload, mealController.validateMeal, mealController.createMeal);
+router.put('/:id', mealUpload, mealController.validateMeal, mealController.updateMeal);
 router.delete('/:id', mealController.deleteMeal);
 
-module.exports = router; 
+module.exports = router;

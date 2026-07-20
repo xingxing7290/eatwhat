@@ -5,9 +5,12 @@
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const logger = require('../utils/logger');
 
 // 统一的上传目录（绝对路径，指向 /app/uploads）
 const UPLOAD_DIR = path.join(__dirname, '..', 'uploads');
+const uploadFileSizeLimitMb = Number(process.env.UPLOAD_FILE_SIZE_LIMIT_MB || 30);
+const uploadFileSizeLimit = uploadFileSizeLimitMb * 1024 * 1024;
 
 // 配置存储引擎
 const storage = multer.diskStorage({
@@ -32,22 +35,33 @@ const storage = multer.diskStorage({
 
 // 文件过滤器，只接受特定类型的图片
 const fileFilter = (req, file, cb) => {
-  const allowedTypes = /jpeg|jpg|png|gif/;
-  const mimetype = allowedTypes.test(file.mimetype);
-  const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+  const allowedMimeTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif']);
+  const allowedExtnames = new Set(['.jpeg', '.jpg', '.png', '.gif', '.webp', '.heic', '.heif']);
+  const normalizedMime = String(file.mimetype || '').toLowerCase();
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  const mimetype = allowedMimeTypes.has(normalizedMime);
+  const extname = allowedExtnames.has(ext);
+  const octetStreamFallback = normalizedMime === 'application/octet-stream' && extname;
 
-  if (mimetype && extname) {
+  const details = `field=${file.fieldname} original=${file.originalname} mimetype=${file.mimetype} ext=${ext} route=${req.method} ${req.originalUrl}`;
+
+  if ((mimetype || octetStreamFallback) && extname) {
+    logger.info(`[upload] accepted ${details}`);
     return cb(null, true);
   }
-  cb(new Error('错误：只支持上传 jpeg, jpg, png, gif 格式的图片!'));
+
+  logger.error(`[upload] rejected ${details}`);
+  const err = new Error('\u9519\u8bef\uff1a\u53ea\u652f\u6301\u4e0a\u4f20 jpeg, jpg, png, gif, webp, heic, heif \u683c\u5f0f\u7684\u56fe\u7247!');
+  err.status = 400;
+  err.uploadDetails = details;
+  cb(err);
 };
 
 // 创建 multer 实例
 const upload = multer({
   storage: storage,
   limits: {
-    // 文件大小限制为 5MB
-    fileSize: 5 * 1024 * 1024 
+    fileSize: uploadFileSizeLimit
   },
   fileFilter: fileFilter
 });

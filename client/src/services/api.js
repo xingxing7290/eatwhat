@@ -5,6 +5,9 @@ import { ElMessage } from 'element-plus';
 // 是否使用模拟数据
 const USE_MOCK = false;
 
+// Disable verbose API logging in production to reduce console overhead
+const ENABLE_API_LOGS = import.meta.env.DEV || import.meta.env.VITE_ENABLE_API_LOGS === 'true';
+
 // API日志历史记录
 export const apiLogs = {
 	history: [],
@@ -39,6 +42,8 @@ export const apiLogs = {
 
 // 日志打印函数
 const logAPI = (type, url, data, status) => {
+	if (!ENABLE_API_LOGS) return;
+
 	const timestamp = new Date();
 	const timeString = timestamp.toLocaleTimeString();
 	const colorMap = {
@@ -119,18 +124,19 @@ api.interceptors.response.use(
 		// 统一处理错误
 		const { response } = error;
 		if (response) {
-			// 服务器返回错误信息
-			const errorMsg = response.data?.error || response.data?.errors?.[0]?.msg || '服务器错误';
-			logAPI('error', `${error.config?.method?.toUpperCase() || 'ERROR'} ${error.config?.url || '未知URL'}`, response.data, response.status);
+			const errorMsg = response.data?.error || response.data?.errors?.[0]?.msg || '\u670d\u52a1\u5668\u9519\u8bef';
+			logAPI('error', `${error.config?.method?.toUpperCase() || 'ERROR'} ${error.config?.url || '\u672a\u77e5URL'}`, response.data, response.status);
 			
-			// 详细打印错误信息，帮助调试
-			console.error('API错误详情:', {
-				url: error.config?.url,
-				method: error.config?.method,
-				status: response.status,
-				data: response.data,
-				requestData: (error.config?.data && typeof error.config.data === 'string') ? JSON.parse(error.config.data) : '非JSON或无数据'
-			});
+			// Log detailed API errors only in debug mode
+			if (ENABLE_API_LOGS) {
+				console.error('API错误详情:', {
+					url: error.config?.url,
+					method: error.config?.method,
+					status: response.status,
+					data: response.data,
+					requestData: (error.config?.data && typeof error.config.data === 'string') ? JSON.parse(error.config.data) : '非JSON或无数据'
+				});
+			}
 			
 			ElMessage.error(errorMsg);
 			return Promise.reject(response.data || '服务器错误');
@@ -257,7 +263,6 @@ export const mealApi = {
 			mockData.meals.unshift(newMeal);
 			return mockResponse(newMeal);
 		}
-		// 当 data 是 FormData 时, axios 会自动设置 Content-Type 为 multipart/form-data
 		return api.post('/meals', formData);
 	},
 	
@@ -322,8 +327,101 @@ export const authApi = {
 	}
 };
 
+
+// 小家相关API
+export const householdApi = {
+	me: () => api.get('/household/me'),
+	update: (payload) => api.put('/household/me', payload, { headers: { 'Content-Type': 'application/json' } }),
+	refreshInvite: () => api.post('/household/invite/refresh'),
+	join: (inviteCode) => api.post('/household/join', { inviteCode }, { headers: { 'Content-Type': 'application/json' } })
+};
+
+
+
+// 小家仪表盘API
+export const dashboardApi = {
+	summary: () => api.get('/dashboard/summary')
+};
+
+// 本周饭桌计划API
+export const weeklyPlanApi = {
+	get: (weekStart) => api.get('/weekly-plans', { params: { weekStart } }),
+	generate: (weekStart) => api.post('/weekly-plans/generate', { weekStart }, { headers: { 'Content-Type': 'application/json' } }),
+	apply: (days) => api.post('/weekly-plans/apply', { days }, { headers: { 'Content-Type': 'application/json' } })
+};
+
+// 购物清单API
+export const shoppingListApi = {
+	get: (weekStart) => api.get('/shopping-list', { params: { weekStart } }),
+	generate: (weekStart) => api.post('/shopping-list/generate', { weekStart }, { headers: { 'Content-Type': 'application/json' } }),
+	addItem: (payload) => api.post('/shopping-list/items', payload, { headers: { 'Content-Type': 'application/json' } }),
+	updateItem: (id, payload) => api.patch(`/shopping-list/items/${id}`, payload, { headers: { 'Content-Type': 'application/json' } }),
+	deleteItem: (id, weekStart) => api.delete(`/shopping-list/items/${id}`, { params: { weekStart } }),
+	clearPurchased: (weekStart) => api.delete('/shopping-list/purchased', { params: { weekStart } })
+};
+
+// 饭桌相册API
+export const photoAlbumApi = {
+	month: (month) => api.get('/photo-album', { params: { month } })
+};
+
+// 默认菜品管理API
+export const defaultMealApi = {
+	status: () => api.get('/default-meals/status'),
+	importMissing: () => api.post('/default-meals/import-missing'),
+	restoreImages: () => api.post('/default-meals/restore-images')
+};
+
+// 菜品图片纠错API
+export const mealImageIssueApi = {
+	list: (params = {}) => api.get('/meal-image-issues', { params }),
+	create: (payload) => api.post('/meal-image-issues', payload, { headers: { 'Content-Type': 'application/json' } }),
+	update: (id, payload) => api.patch(`/meal-image-issues/${id}`, payload, { headers: { 'Content-Type': 'application/json' } })
+};
+
+// 纪念日菜单模板API
+export const anniversaryTemplateApi = {
+	list: () => api.get('/anniversary-templates')
+};
+
+// 饭后回忆API
+export const memoryApi = {
+	list: (params = {}) => api.get('/memories', { params }),
+	create: (payload) => api.post('/memories', payload),
+	update: (id, payload) => api.put(`/memories/${id}`, payload),
+	delete: (id) => api.delete(`/memories/${id}`)
+};
+
+// 想吃清单API
+export const wishlistApi = {
+	list: (params = {}) => api.get('/wishlist', { params }),
+	create: (payload) => api.post('/wishlist', payload, { headers: { 'Content-Type': 'application/json' } }),
+	vote: (id) => api.post(`/wishlist/${id}/vote`),
+	updateStatus: (id, status) => api.patch(`/wishlist/${id}/status`, { status }, { headers: { 'Content-Type': 'application/json' } }),
+	delete: (id) => api.delete(`/wishlist/${id}`)
+};
+
+// 纪念日菜单API
+export const anniversaryApi = {
+	list: () => api.get('/anniversaries'),
+	create: (payload) => api.post('/anniversaries', payload),
+	update: (id, payload) => api.put(`/anniversaries/${id}`, payload),
+	delete: (id) => api.delete(`/anniversaries/${id}`)
+};
+
 export default {
 	schedule: scheduleApi,
 	meal: mealApi,
-	auth: authApi
+	auth: authApi,
+	household: householdApi,
+	memory: memoryApi,
+	wishlist: wishlistApi,
+	anniversary: anniversaryApi,
+	dashboard: dashboardApi,
+	weeklyPlan: weeklyPlanApi,
+	shoppingList: shoppingListApi,
+	photoAlbum: photoAlbumApi,
+	defaultMeal: defaultMealApi,
+	mealImageIssue: mealImageIssueApi,
+	anniversaryTemplate: anniversaryTemplateApi
 }; 

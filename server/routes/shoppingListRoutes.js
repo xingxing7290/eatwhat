@@ -1,0 +1,12 @@
+const express = require('express');
+const auth = require('../middleware/auth');
+const controller = require('../controllers/shoppingListController');
+const router = express.Router();
+router.use(auth());
+router.get('/', controller.get);
+router.post('/generate', controller.generate);
+router.post('/items', controller.addItem);
+router.patch('/items/:id', controller.updateItem);
+router.delete('/items/:id', controller.deleteItem);
+router.delete('/purchased', controller.clearPurchased);
+module.exports = router;

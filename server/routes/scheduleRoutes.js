@@ -10,7 +10,10 @@ const router = express.Router();
 // GET /schedules?year=YYYY&month=M - 获取特定月份的餐食安排
 router.get('/', auth(), scheduleController.validateSchedulesQuery, scheduleController.getSchedules);
 
-// PUT /schedules/:date/:mealType - 更新特定日期和餐食类型的安排
+// GET /schedules/day/:date - get daily meal schedule
+router.get('/day/:date', auth(), scheduleController.validateScheduleDate, scheduleController.getScheduleByDate);
+
+// PUT /schedules/:date/:mealType - update meals for a date and meal type
 router.put('/:date/:mealType', auth(), scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
 
 module.exports = router;

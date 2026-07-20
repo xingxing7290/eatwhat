@@ -3,4 +3,12 @@ server/logs/
 client/node_modules/
 server/node_modules/
 /client/dist
-server/uploads/ 
+server/uploads/*
+!server/uploads/default-meals/
+!server/uploads/default-meals/*.svg
+
+!server/uploads/web-meals/
+!server/uploads/web-meals/*.jpg
+!server/uploads/web-meals/*.jpeg
+!server/uploads/web-meals/*.png
+!server/uploads/web-meals/*.webp
