@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#f36d4e">
+  <title>来家里吃饭 · 客人点菜</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --peach: #f36d4e;
+      --peach-dark: #d64d35;
+      --cream: #fff8ef;
+      --paper: #fffdf9;
+      --cocoa: #5b3a2f;
+      --muted: #866d64;
+      --line: #ead8cb;
+      --mint: #dff2e4;
+      --shadow: 0 14px 40px rgba(111, 63, 42, .12);
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--cream); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--cocoa);
+      background:
+        radial-gradient(circle at 8% -8%, rgba(255, 211, 190, .75), transparent 34%),
+        radial-gradient(circle at 100% 8%, rgba(223, 242, 228, .75), transparent 30%),
+        var(--cream);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    button, input, textarea { font: inherit; }
+    button { -webkit-tap-highlight-color: transparent; }
+    .shell { width: min(1120px, 100%); margin: 0 auto; padding: 18px 16px 116px; }
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 24px;
+      border: 1px solid rgba(234, 216, 203, .9);
+      border-radius: 30px;
+      background: linear-gradient(135deg, rgba(255, 253, 249, .98), rgba(255, 225, 211, .92));
+      box-shadow: var(--shadow);
+    }
+    .hero::after {
+      content: "🍲";
+      position: absolute;
+      right: 20px;
+      top: 13px;
+      font-size: 66px;
+      opacity: .18;
+      transform: rotate(8deg);
+    }
+    .eyebrow { color: var(--peach-dark); font-size: 13px; font-weight: 900; letter-spacing: .08em; }
+    h1 { margin: 7px 70px 5px 0; font-size: clamp(27px, 7vw, 42px); line-height: 1.14; }
+    .hero p { margin: 6px 0 0; color: var(--muted); font-weight: 650; line-height: 1.6; }
+    .hero-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-height: 31px;
+      padding: 6px 11px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .82);
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 850;
+    }
+    .pill.open { color: #277946; background: var(--mint); border-color: #b9ddc3; }
+    .pill.closed { color: #9a4b38; background: #ffe3da; border-color: #efc0b1; }
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      margin: 15px -3px 0;
+      padding: 11px 3px 9px;
+      background: linear-gradient(var(--cream) 78%, rgba(255,248,239,0));
+    }
+    .search {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 15px;
+      min-height: 50px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: rgba(255, 253, 249, .95);
+      box-shadow: 0 8px 24px rgba(91, 58, 47, .07);
+    }
+    .search span { font-size: 19px; }
+    .search input { flex: 1; min-width: 0; border: 0; outline: 0; color: var(--cocoa); background: transparent; font-weight: 750; }
+    .filters { display: flex; gap: 8px; overflow-x: auto; padding: 10px 1px 3px; scrollbar-width: none; }
+    .filters::-webkit-scrollbar { display: none; }
+    .filter {
+      flex: 0 0 auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 8px 13px;
+      color: var(--muted);
+      background: var(--paper);
+      font-size: 13px;
+      font-weight: 850;
+      cursor: pointer;
+    }
+    .filter.active { color: white; background: var(--peach); border-color: var(--peach); }
+    .section-head { display: flex; align-items: end; justify-content: space-between; margin: 20px 2px 12px; }
+    .section-head h2 { margin: 0; font-size: 21px; }
+    .count { color: var(--muted); font-size: 13px; font-weight: 800; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .meal {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: var(--paper);
+      box-shadow: 0 9px 24px rgba(91, 58, 47, .07);
+    }
+    .photo { position: relative; aspect-ratio: 4 / 3; background: linear-gradient(135deg, #f7e6d8, #e5f0df); overflow: hidden; }
+    .photo img { width: 100%; height: 100%; display: block; object-fit: cover; }
+    .photo .fallback { position: absolute; inset: 0; display: grid; place-items: center; font-size: 48px; }
+    .selected-badge {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      min-width: 30px;
+      height: 30px;
+      display: none;
+      place-items: center;
+      border-radius: 999px;
+      color: white;
+      background: var(--peach);
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow: 0 5px 14px rgba(214, 77, 53, .28);
+    }
+    .meal.selected .selected-badge { display: grid; }
+    .meal-body { padding: 12px; }
+    .meal h3 { margin: 0; min-height: 43px; font-size: 16px; line-height: 1.35; }
+    .meal-meta { min-height: 19px; margin: 5px 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; font-weight: 750; }
+    .add, .primary, .secondary, .danger, .stepper button {
+      border: 0;
+      border-radius: 14px;
+      cursor: pointer;
+      font-weight: 900;
+    }
+    .add { width: 100%; min-height: 40px; color: var(--peach-dark); background: #ffe8de; }
+    .add:disabled, button:disabled { opacity: .48; cursor: not-allowed; }
+    .stepper { display: none; align-items: center; justify-content: space-between; gap: 7px; }
+    .meal.selected .add { display: none; }
+    .meal.selected .stepper { display: flex; }
+    .stepper button { width: 38px; height: 38px; color: var(--peach-dark); background: #ffe8de; font-size: 20px; }
+    .stepper strong { min-width: 25px; text-align: center; }
+    .empty, .error {
+      grid-column: 1 / -1;
+      padding: 34px 20px;
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 24px;
+      color: var(--muted);
+      background: rgba(255, 253, 249, .78);
+      font-weight: 750;
+      line-height: 1.7;
+    }
+    .error { color: #9a4b38; }
+    .cart-bar {
+      position: fixed;
+      z-index: 20;
+      left: 50%;
+      bottom: max(14px, env(safe-area-inset-bottom));
+      width: min(720px, calc(100% - 24px));
+      min-height: 66px;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px 10px 17px;
+      border: 1px solid rgba(255,255,255,.17);
+      border-radius: 23px;
+      color: white;
+      background: rgba(76, 45, 35, .96);
+      box-shadow: 0 18px 44px rgba(58, 31, 23, .3);
+      backdrop-filter: blur(15px);
+    }
+    .cart-icon { position: relative; font-size: 26px; }
+    .cart-badge { position: absolute; top: -8px; right: -11px; min-width: 21px; height: 21px; display: grid; place-items: center; padding: 0 5px; border-radius: 999px; color: white; background: var(--peach); font-size: 11px; font-weight: 900; }
+    .cart-copy { min-width: 0; flex: 1; }
+    .cart-copy strong { display: block; font-size: 15px; }
+    .cart-copy small { display: block; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #eadbd5; }
+    .cart-bar button { min-height: 43px; padding: 0 17px; border: 0; border-radius: 15px; color: white; background: var(--peach); font-weight: 900; cursor: pointer; }
+    .overlay { position: fixed; z-index: 40; inset: 0; display: none; align-items: flex-end; justify-content: center; padding-top: 30px; background: rgba(55, 34, 27, .5); backdrop-filter: blur(5px); }
+    .overlay.show { display: flex; }
+    .sheet { width: min(720px, 100%); max-height: 92vh; overflow-y: auto; padding: 12px 18px max(24px, env(safe-area-inset-bottom)); border-radius: 30px 30px 0 0; background: var(--paper); box-shadow: 0 -20px 60px rgba(58,31,23,.22); }
+    .handle { width: 43px; height: 5px; margin: 2px auto 17px; border-radius: 99px; background: #dcc8bb; }
+    .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .sheet-head h2 { margin: 0; }
+    .icon-button { width: 40px; height: 40px; border: 0; border-radius: 14px; color: var(--cocoa); background: #f6e9df; cursor: pointer; font-size: 18px; }
+    .cart-list { display: grid; gap: 9px; margin: 16px 0; }
+    .cart-row { display: grid; grid-template-columns: 1fr auto; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 17px; background: #fffaf5; }
+    .cart-row strong { display: block; }
+    .cart-row small { color: var(--muted); }
+    .cart-row .stepper { display: flex; }
+    .item-note { grid-column: 1 / -1; width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px; outline: 0; color: var(--cocoa); background: white; font-size: 13px; font-weight: 700; }
+    .item-note:focus { border-color: var(--peach); box-shadow: 0 0 0 3px rgba(243,109,78,.1); }
+    label { display: block; margin: 13px 0 6px; font-size: 13px; font-weight: 900; }
+    .field { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 15px; outline: 0; color: var(--cocoa); background: white; font-weight: 700; }
+    textarea.field { min-height: 82px; resize: vertical; }
+    .field:focus { border-color: var(--peach); box-shadow: 0 0 0 3px rgba(243,109,78,.12); }
+    .actions { display: grid; grid-template-columns: 1fr 1.5fr; gap: 10px; margin-top: 18px; }
+    .primary, .secondary, .danger { min-height: 49px; padding: 0 15px; }
+    .primary { color: white; background: var(--peach); }
+    .secondary { color: var(--cocoa); background: #f4e7dd; }
+    .success { display: none; margin: 14px 0; padding: 15px; border: 1px solid #b9ddc3; border-radius: 17px; color: #286a40; background: var(--mint); font-weight: 800; line-height: 1.55; }
+    .success.show { display: block; }
+    .toast { position: fixed; z-index: 80; left: 50%; top: 24px; max-width: calc(100% - 32px); transform: translate(-50%, -20px); opacity: 0; pointer-events: none; padding: 12px 16px; border-radius: 15px; color: white; background: rgba(76,45,35,.96); box-shadow: var(--shadow); font-weight: 800; transition: .2s ease; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    @media (min-width: 720px) {
+      .shell { padding-top: 28px; }
+      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+      .meal-body { padding: 15px; }
+    }
+    @media (min-width: 1000px) { .grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="eyebrow">EATWHAT · 客人点菜</div>
+      <h1 id="title">正在打开菜单…</h1>
+      <p id="subtitle">主人已经备好菜谱，挑你真正想吃的。</p>
+      <div class="hero-meta">
+        <span class="pill" id="household">🏠 主人家</span>
+        <span class="pill" id="eventTime" hidden>🗓 聚餐时间</span>
+        <span class="pill open" id="status">● 正在点菜</span>
+      </div>
+    </section>
+
+    <section class="toolbar">
+      <div class="search"><span>⌕</span><input id="search" autocomplete="off" placeholder="搜索菜名、分类或口味"></div>
+      <div class="filters" id="filters"></div>
+    </section>
+
+    <div class="section-head"><h2>今天想吃什么</h2><span class="count" id="count">加载中</span></div>
+    <section class="grid" id="mealGrid"><div class="empty">正在端上菜单…</div></section>
+  </main>
+
+  <div class="cart-bar" id="cartBar">
+    <div class="cart-icon">🧺<span class="cart-badge" id="cartBadge">0</span></div>
+    <div class="cart-copy"><strong id="cartTitle">还没选菜</strong><small id="cartHint">看到喜欢的就点“想吃”</small></div>
+    <button id="openCart" disabled>查看菜单</button>
+  </div>
+
+  <div class="overlay" id="overlay" aria-hidden="true">
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="handle"></div>
+      <div class="sheet-head"><h2 id="sheetTitle">我的点菜单</h2><button class="icon-button" id="closeCart" aria-label="关闭">✕</button></div>
+      <div class="success" id="success">✅ 已把点菜单告诉主人。点菜仍开放时，你可以继续修改并再次提交。</div>
+      <div class="cart-list" id="cartList"></div>
+      <label for="guestName">你的称呼</label>
+      <input class="field" id="guestName" maxlength="30" placeholder="例如：小王、二姨、邻居老张">
+      <label for="orderNote">整单备注（选填）</label>
+      <textarea class="field" id="orderNote" maxlength="300" placeholder="例如：带一个小朋友、整体少辣、晚上七点到"></textarea>
+      <div class="actions"><button class="secondary" id="continue">继续选菜</button><button class="primary" id="submitOrder">提交给主人</button></div>
+    </section>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    (() => {
+      const token = decodeURIComponent(location.pathname.split('/').filter(Boolean).pop() || '');
+      const apiRoot = `/guest-orders/public/${encodeURIComponent(token)}`;
+      const storageKey = `eatwhat.guestOrder.${token}`;
+      const state = { session: null, meals: [], category: '全部', search: '', cart: new Map(), order: null, accessToken: localStorage.getItem(storageKey) || '', busy: false };
+      const $ = id => document.getElementById(id);
+      let toastTimer;
+
+      function toast(message) {
+        $('toast').textContent = message;
+        $('toast').classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2600);
+      }
+
+      async function jsonRequest(url, options = {}) {
+        const response = await fetch(url, {
+          ...options,
+          headers: { 'Accept': 'application/json', ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) }
+        });
+        const text = await response.text();
+        let body = {};
+        try { body = text ? JSON.parse(text) : {}; } catch (_) { body = { error: text }; }
+        if (!response.ok) throw new Error(body.error || body.message || `请求失败 ${response.status}`);
+        return body;
+      }
+
+      function dateText(value) {
+        if (!value) return '';
+        const date = new Date(value);
+        return Number.isNaN(date.getTime()) ? '' : new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false }).format(date);
+      }
+
+      function statusCopy(status) {
+        return ({ open: '● 正在点菜', locked: '🔒 主人已锁单', completed: '✓ 宴请已完成', cancelled: '已取消', expired: '链接已过期' })[status] || status;
+      }
+
+      function canOrder() { return state.session && state.session.canOrder === true; }
+
+      function safeImageUrl(value) {
+        try {
+          const url = new URL(String(value || ''), location.origin);
+          return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+        } catch (_) { return ''; }
+      }
+
+      function mealMeta(meal) {
+        return [meal.category, meal.subcategory, ...(Array.isArray(meal.taste) ? meal.taste.slice(0, 1) : [])].filter(Boolean).join(' · ') || '主人家的私房菜';
+      }
+
+      function categories() {
+        const counts = new Map();
+        state.meals.forEach(meal => {
+          const category = String(meal.category || '其他');
+          counts.set(category, (counts.get(category) || 0) + 1);
+        });
+        return ['全部', ...[...counts.keys()].sort((a, b) => a.localeCompare(b, 'zh-CN'))];
+      }
+
+      function visibleMeals() {
+        const query = state.search.trim().toLowerCase();
+        return state.meals.filter(meal => {
+          const category = String(meal.category || '其他');
+          if (state.category !== '全部' && category !== state.category) return false;
+          if (!query) return true;
+          return [meal.name, meal.category, meal.subcategory, meal.description, ...(meal.tags || []), ...(meal.taste || [])].join(' ').toLowerCase().includes(query);
+        });
+      }
+
+      function renderHeader() {
+        const session = state.session || {};
+        $('title').textContent = session.title || '来家里吃饭';
+        $('subtitle').textContent = canOrder() ? '主人已经备好菜谱，挑你真正想吃的。' : '本次点菜已经结束，下面是你最后保存的点菜单。';
+        $('household').textContent = `🏠 ${session.householdName || '主人家'}`;
+        const eventText = dateText(session.eventAt);
+        $('eventTime').hidden = !eventText;
+        $('eventTime').textContent = eventText ? `🗓 ${eventText}` : '';
+        $('status').textContent = statusCopy(session.status);
+        $('status').className = `pill ${canOrder() ? 'open' : 'closed'}`;
+      }
+
+      function renderFilters() {
+        $('filters').replaceChildren(...categories().map(category => {
+          const button = document.createElement('button');
+          button.className = `filter${state.category === category ? ' active' : ''}`;
+          button.textContent = category;
+          button.addEventListener('click', () => { state.category = category; renderFilters(); renderMeals(); });
+          return button;
+        }));
+      }
+
+      function setQuantity(meal, next) {
+        if (!canOrder()) return toast('主人已经锁单，暂时不能修改');
+        if (next <= 0) state.cart.delete(String(meal._id));
+        else state.cart.set(String(meal._id), { meal, quantity: Math.min(20, next), note: state.cart.get(String(meal._id))?.note || '' });
+        renderMeals();
+        renderCartBar();
+        renderCartList();
+      }
+
+      function mealCard(meal) {
+        const id = String(meal._id);
+        const item = state.cart.get(id);
+        const card = document.createElement('article');
+        card.className = `meal${item ? ' selected' : ''}`;
+        const photo = document.createElement('div');
+        photo.className = 'photo';
+        const fallback = document.createElement('div');
+        fallback.className = 'fallback'; fallback.textContent = '🍽️';
+        photo.appendChild(fallback);
+        const imageUrl = safeImageUrl(meal.imageUrl);
+        if (imageUrl) {
+          const image = document.createElement('img'); image.loading = 'lazy'; image.alt = meal.name || '菜品'; image.src = imageUrl;
+          image.addEventListener('error', () => image.remove());
+          photo.appendChild(image);
+        }
+        const badge = document.createElement('span'); badge.className = 'selected-badge'; badge.textContent = item?.quantity || '';
+        photo.appendChild(badge);
+        const body = document.createElement('div'); body.className = 'meal-body';
+        const title = document.createElement('h3'); title.textContent = meal.name || '未命名菜品';
+        const meta = document.createElement('div'); meta.className = 'meal-meta'; meta.textContent = mealMeta(meal);
+        const add = document.createElement('button'); add.className = 'add'; add.textContent = canOrder() ? '＋ 想吃' : '已停止点菜'; add.disabled = !canOrder(); add.addEventListener('click', () => setQuantity(meal, 1));
+        const stepper = document.createElement('div'); stepper.className = 'stepper';
+        const minus = document.createElement('button'); minus.textContent = '−'; minus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 1) - 1));
+        const quantity = document.createElement('strong'); quantity.textContent = item?.quantity || 0;
+        const plus = document.createElement('button'); plus.textContent = '+'; plus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 0) + 1));
+        stepper.append(minus, quantity, plus); body.append(title, meta, add, stepper); card.append(photo, body); return card;
+      }
+
+      function renderMeals() {
+        const meals = visibleMeals();
+        $('count').textContent = `${meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
+        if (!state.session) return;
+        if (!state.meals.length && !canOrder()) {
+          const closed = document.createElement('div'); closed.className = 'empty'; closed.textContent = '本次点菜已经结束。你仍可通过下方点菜单查看自己已提交的内容。'; $('mealGrid').replaceChildren(closed); return;
+        }
+        if (!meals.length) {
+          const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '没有找到匹配的菜，换个关键词试试。'; $('mealGrid').replaceChildren(empty); return;
+        }
+        $('mealGrid').replaceChildren(...meals.map(mealCard));
+      }
+
+      function totals() {
+        const items = [...state.cart.values()];
+        return { dishes: items.length, quantity: items.reduce((sum, item) => sum + item.quantity, 0) };
+      }
+
+      function renderCartBar() {
+        const total = totals();
+        $('cartBadge').textContent = total.quantity;
+        $('cartTitle').textContent = total.dishes ? `已选 ${total.dishes} 道菜` : '还没选菜';
+        $('cartHint').textContent = total.dishes ? `合计 ${total.quantity} 份${state.order ? ' · 已提交，可继续修改' : ''}` : '看到喜欢的就点“想吃”';
+        $('openCart').disabled = !total.dishes && !state.order;
+        $('openCart').textContent = state.order ? '查看 / 修改' : '查看菜单';
+      }
+
+      function renderCartList() {
+        const rows = [...state.cart.values()].map(item => {
+          const row = document.createElement('div'); row.className = 'cart-row';
+          const copy = document.createElement('div');
+          const name = document.createElement('strong'); name.textContent = item.meal.name;
+          const note = document.createElement('small'); note.textContent = item.note || '可在提交前填写整单备注';
+          copy.append(name, note);
+          const stepper = document.createElement('div'); stepper.className = 'stepper';
+          const minus = document.createElement('button'); minus.textContent = '−'; minus.addEventListener('click', () => setQuantity(item.meal, item.quantity - 1));
+          const quantity = document.createElement('strong'); quantity.textContent = item.quantity;
+          const plus = document.createElement('button'); plus.textContent = '+'; plus.addEventListener('click', () => setQuantity(item.meal, item.quantity + 1));
+          const itemNote = document.createElement('input'); itemNote.className = 'item-note'; itemNote.maxLength = 120; itemNote.placeholder = '这道菜备注：例如少辣、不要葱'; itemNote.value = item.note || '';
+          itemNote.addEventListener('input', event => { item.note = event.target.value; });
+          stepper.append(minus, quantity, plus); row.append(copy, stepper, itemNote); return row;
+        });
+        if (!rows.length) {
+          const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '点菜单还是空的，先去挑几道菜吧。'; rows.push(empty);
+        }
+        $('cartList').replaceChildren(...rows);
+        $('success').classList.toggle('show', Boolean(state.order));
+        $('submitOrder').disabled = state.busy || !canOrder() || !state.cart.size;
+        $('submitOrder').textContent = state.busy ? '正在提交…' : state.order ? '保存修改' : '提交给主人';
+      }
+
+      function openCart() { renderCartList(); $('overlay').classList.add('show'); $('overlay').setAttribute('aria-hidden', 'false'); }
+      function closeCart() { $('overlay').classList.remove('show'); $('overlay').setAttribute('aria-hidden', 'true'); }
+
+      function restoreOrder(order) {
+        state.order = order;
+        $('guestName').value = order.guestName || '';
+        $('orderNote').value = order.note || '';
+        state.cart.clear();
+        (order.items || []).forEach(item => {
+          const itemMealId = String(item.mealId?._id || item.mealId || '');
+          const meal = state.meals.find(candidate => String(candidate._id) === itemMealId) || {
+            _id: itemMealId,
+            name: item.name || '已选菜品',
+            imageUrl: item.imageUrl || '',
+            category: '',
+            subcategory: ''
+          };
+          if (meal._id) state.cart.set(String(meal._id), { meal, quantity: Number(item.quantity || 1), note: item.note || '' });
+        });
+      }
+
+      async function loadOwnOrder() {
+        if (!state.accessToken) return;
+        try {
+          const data = await jsonRequest(`${apiRoot}/orders/${encodeURIComponent(state.accessToken)}`);
+          restoreOrder(data.order || {});
+        } catch (error) {
+          if (/未找到/.test(error.message)) { localStorage.removeItem(storageKey); state.accessToken = ''; }
+        }
+      }
+
+      async function loadSession(first = false) {
+        try {
+          const data = await jsonRequest(apiRoot);
+          state.session = data.session || {};
+          if (Array.isArray(data.meals) && (data.meals.length || first)) state.meals = data.meals;
+          if (first) await loadOwnOrder();
+          renderHeader(); renderFilters(); renderMeals(); renderCartBar(); renderCartList();
+        } catch (error) {
+          if (first) {
+            $('title').textContent = '点菜链接打不开';
+            $('subtitle').textContent = error.message;
+            const box = document.createElement('div'); box.className = 'error'; box.textContent = `${error.message}。请让主人重新分享链接。`; $('mealGrid').replaceChildren(box);
+            $('count').textContent = '加载失败';
+          }
+        }
+      }
+
+      async function submitOrder() {
+        if (state.busy || !state.cart.size) return;
+        const guestName = $('guestName').value.trim();
+        if (!guestName) { $('guestName').focus(); return toast('请先填写你的称呼'); }
+        state.busy = true; renderCartList();
+        const body = {
+          guestName,
+          note: $('orderNote').value.trim(),
+          items: [...state.cart.values()].map(item => ({ mealId: item.meal._id, quantity: item.quantity, note: item.note || '' })),
+          ...(state.order ? { revision: state.order.revision } : {})
+        };
+        try {
+          const updating = Boolean(state.accessToken && state.order);
+          const data = await jsonRequest(updating ? `${apiRoot}/orders/${encodeURIComponent(state.accessToken)}` : `${apiRoot}/orders`, { method: updating ? 'PUT' : 'POST', body: JSON.stringify(body) });
+          if (data.accessToken) { state.accessToken = data.accessToken; localStorage.setItem(storageKey, state.accessToken); }
+          state.order = data.order;
+          toast(updating ? '修改已保存，主人能看到最新菜单' : '点菜单已提交给主人');
+          renderCartBar(); renderCartList();
+        } catch (error) {
+          toast(error.message);
+          if (/其他设备更新/.test(error.message)) await loadOwnOrder();
+        } finally { state.busy = false; renderCartList(); }
+      }
+
+      $('search').addEventListener('input', event => { state.search = event.target.value; renderMeals(); });
+      $('openCart').addEventListener('click', openCart);
+      $('closeCart').addEventListener('click', closeCart);
+      $('continue').addEventListener('click', closeCart);
+      $('submitOrder').addEventListener('click', submitOrder);
+      $('overlay').addEventListener('click', event => { if (event.target === $('overlay')) closeCart(); });
+      addEventListener('keydown', event => { if (event.key === 'Escape') closeCart(); });
+
+      loadSession(true);
+      setInterval(() => loadSession(false), 15000);
+    })();
+  </script>
+</body>
+</html>

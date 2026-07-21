@@ -6,6 +6,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const logger = require('./utils/logger');
+const { safeRequestBody, safeRequestHeaders, safeRequestUrl } = require('./utils/requestLog');
 
 const mealRoutes = require('./routes/mealRoutes');
 const scheduleRoutes = require('./routes/scheduleRoutes');
@@ -23,6 +24,8 @@ const defaultMealRoutes = require('./routes/defaultMealRoutes');
 const mealImageIssueRoutes = require('./routes/mealImageIssueRoutes');
 const anniversaryTemplateRoutes = require('./routes/anniversaryTemplateRoutes');
 const reviewRoutes = require('./routes/reviewRoutes');
+const guestOrderRoutes = require('./routes/guestOrderRoutes');
+const guestOrderController = require('./controllers/guestOrderController');
 
 dotenv.config();
 const app = express();
@@ -42,13 +45,14 @@ app.use(cors({
 app.use(express.json());
 app.use('/uploads', express.static(require('path').join(__dirname, 'uploads')));
 app.use('/api/uploads', express.static(require('path').join(__dirname, 'uploads')));
+app.get('/guest-order/:shareToken', guestOrderController.page);
 
 app.use((req, res, next) => {
 	const start = Date.now();
 	logger.info(`---- API请求开始 ----`);
-	logger.info(`${req.method} ${req.url}`);
-	logger.info(`请求头: ${JSON.stringify(req.headers)}`);
-	if (req.body && Object.keys(req.body).length > 0) logger.info(`请求体: ${JSON.stringify(req.body)}`);
+	logger.info(`${req.method} ${safeRequestUrl(req.url)}`);
+	logger.info(`请求头: ${JSON.stringify(safeRequestHeaders(req.headers))}`);
+	if (req.body && Object.keys(req.body).length > 0) logger.info(`请求体: ${JSON.stringify(safeRequestBody(req))}`);
 	res.on('finish', () => {
 		const duration = Date.now() - start;
 		const logLevel = res.statusCode >= 400 ? 'error' : 'info';
@@ -74,6 +78,7 @@ app.use('/default-meals', defaultMealRoutes);
 app.use('/meal-image-issues', mealImageIssueRoutes);
 app.use('/anniversary-templates', anniversaryTemplateRoutes);
 app.use('/review', reviewRoutes);
+app.use('/guest-orders', guestOrderRoutes);
 app.use('/debug', debugRoutes);
 
 app.get('/health', (req, res) => res.send('healthy'));
@@ -88,7 +93,7 @@ app.use((err, req, res, next) => {
 		message = '\u56fe\u7247\u6587\u4ef6\u592a\u5927\uff0c\u8bf7\u9009\u62e9\u8f83\u5c0f\u56fe\u7247\u6216\u91cd\u65b0\u62cd\u7167\u4e0a\u4f20\uff08\u5355\u5f20\u4e0d\u8d85\u8fc7 15MB\uff09';
 	}
 	logger.error(`\u9519\u8bef: ${message}`);
-	logger.error(`\u9519\u8bef\u8be6\u60c5: status=${status} name=${err.name || ''} code=${err.code || ''} field=${err.field || ''} route=${req.method} ${req.originalUrl}`);
+	logger.error(`\u9519\u8bef\u8be6\u60c5: status=${status} name=${err.name || ''} code=${err.code || ''} field=${err.field || ''} route=${req.method} ${safeRequestUrl(req.originalUrl)}`);
 	if (err.uploadDetails) logger.error(`\u4e0a\u4f20\u8be6\u60c5: ${err.uploadDetails}`);
 	res.status(status).json({ error: message });
 });
