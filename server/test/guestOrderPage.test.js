@@ -14,6 +14,8 @@ test('guest ordering page contains the essential ordering controls', () => {
   assert.match(html, /guest-orders\/public/);
   assert.match(html, /localStorage/);
   assert.match(html, /setInterval\(\(\) => loadSession\(false\), 15000\)/);
+  assert.match(html, /statusOnly=1/);
+  assert.match(html, /\[hidden\]\s*\{\s*display:\s*none\s*!important/);
 });
 
 test('guest ordering page inline script parses as JavaScript', () => {

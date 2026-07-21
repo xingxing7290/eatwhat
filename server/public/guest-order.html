@@ -19,6 +19,7 @@
       --shadow: 0 14px 40px rgba(111, 63, 42, .12);
     }
     * { box-sizing: border-box; }
+    [hidden] { display: none !important; }
     html { background: var(--cream); }
     body {
       margin: 0;
@@ -478,11 +479,17 @@
 
       async function loadSession(first = false) {
         try {
-          const data = await jsonRequest(apiRoot);
+          const wasOpen = canOrder();
+          const data = await jsonRequest(first ? apiRoot : `${apiRoot}?statusOnly=1`);
           state.session = data.session || {};
           if (Array.isArray(data.meals) && (data.meals.length || first)) state.meals = data.meals;
           if (first) await loadOwnOrder();
-          renderHeader(); renderFilters(); renderMeals(); renderCartBar(); renderCartList();
+          renderHeader();
+          if (first) {
+            renderFilters(); renderMeals(); renderCartBar(); renderCartList();
+          } else if (wasOpen !== canOrder()) {
+            renderMeals(); renderCartBar(); renderCartList();
+          }
         } catch (error) {
           if (first) {
             $('title').textContent = '点菜链接打不开';

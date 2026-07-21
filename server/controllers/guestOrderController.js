@@ -253,8 +253,9 @@ exports.publicDetail = async (req, res, next) => {
     const session = await publicSessionByToken(req.params.shareToken);
     const status = effectiveSessionStatus(session);
     const household = await Household.findById(session.householdId).select('name').lean();
+    const statusOnly = req.query.statusOnly === '1';
     let meals = [];
-    if (!['cancelled', 'expired'].includes(status)) {
+    if (!statusOnly && !['cancelled', 'expired'].includes(status)) {
       meals = await Meal.find({ householdId: session.householdId })
         .select('_id defaultKey name category subcategory imageUrl description tags servingSize prepTime cookTime taste spiceLevel isDefault')
         .sort({ isDefault: -1, category: 1, name: 1 })
@@ -271,7 +272,7 @@ exports.publicDetail = async (req, res, next) => {
         canOrder: status === 'open',
         expiresAt: session.expiresAt
       },
-      meals
+      ...(statusOnly ? {} : { meals })
     });
   } catch (error) {
     next(error);

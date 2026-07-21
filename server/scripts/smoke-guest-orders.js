@@ -58,6 +58,11 @@ async function main() {
   assert(Array.isArray(publicMenu.body.meals) && publicMenu.body.meals.length >= 407, '访客菜单没有返回完整家庭菜谱');
   const [firstMeal, secondMeal] = publicMenu.body.meals;
 
+  const statusOnly = await request(`/guest-orders/public/${encodeURIComponent(shareToken)}?statusOnly=1`);
+  assert(statusOnly.response.status === 200, '访客状态轮询失败');
+  assert(statusOnly.body.session?.status === 'open', '访客状态轮询内容错误');
+  assert(!Object.prototype.hasOwnProperty.call(statusOnly.body, 'meals'), '访客状态轮询不应重复返回完整菜谱');
+
   const submitted = await request(`/guest-orders/public/${encodeURIComponent(shareToken)}/orders`, {
     method: 'POST',
     body: JSON.stringify({
