@@ -747,7 +747,20 @@ async function main () {
   blockEditorSave = false
   await page.waitForURL('**/meals')
 
+  let releaseEditorLoad
+  const delayEditorLoad = async route => {
+    if (route.request().method() === 'GET') await new Promise(resolve => { releaseEditorLoad = resolve })
+    await route.fallback()
+  }
+  await page.route('**/api/meals/meal-a', delayEditorLoad)
   await page.goto(`${base}/meals/editor/meal-a`)
+  for (let i = 0; i < 100 && !releaseEditorLoad; i++) await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(typeof releaseEditorLoad, 'function')
+  assert.equal(await page.getByPlaceholder('给这道菜起个名字').isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
+  releaseEditorLoad()
+  await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '番茄炒蛋')
+  await page.unroute('**/api/meals/meal-a', delayEditorLoad)
   await page.getByPlaceholder('给这道菜起个名字').fill('修改后菜名')
   assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
   await page.locator('.user-menu-btn').click()

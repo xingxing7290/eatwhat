@@ -185,8 +185,19 @@ if (rawInvitedCode) {
 }
 
 const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true } = {}) => {
+  const previousHousehold = household.value;
+  const nameDraftDirty = householdName.value !== (previousHousehold.name || '');
   user.value = res.user || user.value;
-  household.value = res.household || res.user?.household || household.value;
+  const nextHousehold = res.household || res.user?.household || previousHousehold;
+  const sameHousehold = !!previousHousehold.id && String(previousHousehold.id) === String(nextHousehold?.id || '');
+  if (!syncHouseholdName && sameHousehold && nameDraftDirty) {
+    // Keep the version that the unsaved name was based on, even if an
+    // unrelated profile or invitation response contains newer household data.
+    household.value = { ...nextHousehold, name: previousHousehold.name, nameVersion: previousHousehold.nameVersion, supportsConditionalNameUpdate: previousHousehold.supportsConditionalNameUpdate };
+  } else {
+    household.value = nextHousehold;
+    if (!syncHouseholdName && sameHousehold && !nameDraftDirty) householdName.value = household.value.name || '';
+  }
   if (syncDisplayName) displayName.value = user.value.displayName || '';
   if (syncHouseholdName) householdName.value = household.value.name || '';
   replaceSessionUser(user.value);

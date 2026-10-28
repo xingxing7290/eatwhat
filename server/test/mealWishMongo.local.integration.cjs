@@ -907,10 +907,18 @@ async function main() {
       await namePageB.getByPlaceholder('请输入昵称').fill('并发时保留昵称');
       await namePageA.getByRole('button', { name: '保存小家' }).click();
       await namePageA.getByText('小家已更新').waitFor();
+      await namePageB.getByRole('button', { name: '保存', exact: true }).click();
+      await namePageB.getByText('保存成功').waitFor();
+      assert.equal(await namePageB.getByPlaceholder('给你们的小家取个名字').inputValue(), '真实并发名称乙');
+      const nameHouseholdCard = namePageB.locator('.settings-card').filter({ hasText: '情侣小家' });
+      await nameHouseholdCard.getByRole('button', { name: '刷新', exact: true }).click();
+      await namePageB.getByRole('button', { name: '刷新邀请码' }).click();
+      await namePageB.getByText('邀请码已刷新').waitFor();
+      await namePageB.getByPlaceholder('请输入昵称').fill('重新修改的昵称草稿');
       await namePageB.getByRole('button', { name: '保存小家' }).click();
       await namePageB.getByText('小家名称已被修改，本次没有保存。').waitFor();
       assert.equal(await namePageB.getByPlaceholder('给你们的小家取个名字').inputValue(), '真实并发名称乙');
-      assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '并发时保留昵称');
+      assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '重新修改的昵称草稿');
       await namePageB.getByRole('button', { name: '核对最新名称' }).click();
       await namePageB.getByText('最新名称：真实并发名称甲').waitFor();
       await namePageB.getByRole('button', { name: '保留我的名称' }).click();
@@ -918,7 +926,7 @@ async function main() {
       await namePageB.getByRole('button', { name: '保存小家' }).click();
       await namePageB.getByText('小家已更新').waitFor();
       assert.equal((await Household.findById(nameHome._id)).name, '真实并发名称乙');
-      assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '并发时保留昵称');
+      assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '重新修改的昵称草稿');
       await Promise.all(nameContexts.map(context => context.close()));
       const reviewContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       await reviewContext.addInitScript(({ token, user, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id: user, householdId, username: 'test-local-review' })); }, { token: reviewToken, user: String(reviewUser._id), householdId: String(reviewHome._id) });

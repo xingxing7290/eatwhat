@@ -9,7 +9,8 @@ const route = useRoute();
 const router = useRouter();
 const mealStore = useMealStore();
 const formRef = ref(null);
-const loading = ref(false);
+// Keep edit fields unavailable from the first render until the existing recipe arrives.
+const loading = ref(!!route.params.id);
 const submitting = ref(false);
 const saveUncertain = ref(false);
 const conflict = ref(false);
@@ -127,7 +128,7 @@ const buildPayload = () => {
   return fd;
 };
 const submit = async () => {
-  if (submitting.value || saveUncertain.value || conflict.value || !versionAvailable.value || !formRef.value) return;
+  if (loading.value || submitting.value || saveUncertain.value || conflict.value || !versionAvailable.value || !formRef.value) return;
   submitting.value = true;
   try {
     let valid = false;
@@ -173,11 +174,11 @@ onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); loa
 
 <template>
   <div class="meal-editor" v-loading="loading">
-    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push('/meals')">取消</el-button><el-button type="primary" :disabled="saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
+    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push('/meals')">取消</el-button><el-button type="primary" :disabled="loading || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
     <el-alert v-if="editMode && !loading && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供有效的菜谱版本，暂时无法安全保存。" />
     <el-alert v-if="conflict" type="warning" :closable="false" show-icon title="这道菜已被其他成员修改，本次未保存。"><span>你的输入和选择的图片仍在当前页面。请先复制需要保留的内容，再查看最新菜谱并重新加载编辑页。</span> <a :href="latestMealUrl" target="_blank" rel="noopener noreferrer">查看最新菜谱</a></el-alert>
     <el-alert v-if="saveUncertain" type="warning" :closable="false" show-icon title="保存结果未确认，请先在菜谱列表核对，避免重复提交。"><el-button link type="primary" @click="allowRetry">已核对，允许重试</el-button></el-alert>
-    <el-form ref="formRef" :model="form" :rules="rules" :disabled="submitting" label-position="top" class="editor-grid">
+    <el-form ref="formRef" :model="form" :rules="rules" :disabled="loading || submitting" label-position="top" class="editor-grid">
       <section class="main-column">
         <el-card><template #header>基础信息</template>
           <div class="two-cols"><el-form-item label="菜品名称" prop="name"><el-input v-model="form.name" placeholder="给这道菜起个名字" maxlength="100" show-word-limit /></el-form-item><el-form-item label="分类"><el-input v-model="form.category" placeholder="家常菜、外食、甜品..." /></el-form-item></div>

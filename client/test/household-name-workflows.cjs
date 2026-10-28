@@ -9,8 +9,8 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'home-a', username: 'test' })) })
-    let name = '原来的小家'; let revision = 'rev-1'; let mode = 'normal'; let writes = 0; let release
-    const payload = () => ({ id: 'home-a', name, inviteCode: 'CODE', members: [{ _id: 'u1', username: 'test' }], supportsConditionalNameUpdate: true, nameVersion: { revision } })
+    let name = '原来的小家'; let revision = 'rev-1'; let inviteCode = 'CODE'; let mode = 'normal'; let writes = 0; let release
+    const payload = () => ({ id: 'home-a', name, inviteCode, members: [{ _id: 'u1', username: 'test' }], supportsConditionalNameUpdate: true, nameVersion: { revision } })
     const profile = () => ({ user: { id: 'u1', username: 'test', displayName: '原昵称', householdId: 'home-a' }, household: payload() })
     await page.route('**/api/**', async route => {
       const req = route.request(); const path = new URL(req.url()).pathname.replace(/^\/api/, '')
@@ -21,6 +21,9 @@ async function main () {
         if (mode === 'legacy') delete result.household.supportsConditionalNameUpdate
         return route.fulfill({ json: result })
       }
+      if (path === '/auth/profile' && req.method() === 'PUT') { const result = profile(); result.user.displayName = req.postDataJSON().displayName; return route.fulfill({ json: result }) }
+      if (path === '/auth/avatar' && req.method() === 'POST') { const result = profile(); result.user.avatarUrl = '/uploads/avatar.png'; return route.fulfill({ json: result }) }
+      if (path === '/household/invite/refresh' && req.method() === 'POST') { inviteCode = 'CODE2'; return route.fulfill({ json: { household: payload() } }) }
       if (path === '/household/me' && req.method() === 'PUT') {
         writes++; const data = req.postDataJSON()
         if (mode === 'hold') await new Promise(resolve => { release = resolve })
@@ -37,8 +40,21 @@ async function main () {
     await page.goto(`${base}/settings`)
     await page.getByPlaceholder('给你们的小家取个名字').waitFor()
     await page.getByPlaceholder('给你们的小家取个名字').fill('我的小家名称')
-    await page.getByPlaceholder('请输入昵称').fill('需要保留的昵称')
+    await page.getByPlaceholder('请输入昵称').fill('先保存的昵称')
     name = '家人刚修改的名称'; revision = 'rev-other'
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByText('保存成功').waitFor()
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
+    await page.locator('input[type=file]').setInputFiles({ name: 'avatar.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aXcAAAAASUVORK5CYII=', 'base64') })
+    await page.getByRole('button', { name: '上传头像' }).click()
+    await page.getByText('头像已更新').waitFor()
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
+    const householdCard = page.locator('.settings-card').filter({ hasText: '情侣小家' })
+    await householdCard.getByRole('button', { name: '刷新', exact: true }).click()
+    await page.getByRole('button', { name: '刷新邀请码' }).click()
+    await page.getByText('邀请码已刷新').waitFor()
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
+    await page.getByPlaceholder('请输入昵称').fill('需要保留的昵称')
     await page.getByRole('button', { name: '保存小家' }).click()
     await page.getByText('小家名称已被修改，本次没有保存。').waitFor()
     if (process.env.EATWHAT_NAME_SHOT) await page.screenshot({ path: process.env.EATWHAT_NAME_SHOT, fullPage: true })
@@ -105,6 +121,13 @@ async function main () {
     release(); await page.getByRole('button', { name: '保存小家' }).waitFor({ state: 'visible' })
     await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存小家') && !button.disabled))
     assert.equal(writes, count)
+    mode = 'normal'; name = '无草稿时的最新名称'; revision = 'rev-latest'
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('input[placeholder="给你们的小家取个名字"]')?.value === '无草稿时的最新名称')
+    await page.getByPlaceholder('给你们的小家取个名字').fill('基于最新版本的名称')
+    await page.getByRole('button', { name: '保存小家' }).click()
+    await page.waitForFunction(() => document.querySelector('input[placeholder="给你们的小家取个名字"]')?.value === '基于最新版本的名称' && [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存小家') && !button.disabled))
+    assert.equal(name, '基于最新版本的名称')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.close()
 
