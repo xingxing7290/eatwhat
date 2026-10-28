@@ -1,35 +1,50 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
-import { useMealStore } from '../stores/meal';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
 import MealCard from '../components/MealCard.vue';
-import { ElMessage } from 'element-plus';
-import { format } from 'date-fns';
+import { useDraftGuard } from '../composables/useDraftGuard';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { Grid, Menu, Search, Filter } from '@element-plus/icons-vue';
 import api from '../services/api';
 
 const route = useRoute();
 const router = useRouter();
-const mealStore = useMealStore();
 const scheduleStore = useScheduleStore();
 
 const date = computed(() => route.query.date);
 const mealType = computed(() => route.query.mealType);
 
-const isLoading = ref(false);
+const isInitializing = ref(false);
+const isSaving = ref(false);
+const catalogLoading = ref(false);
+const catalogError = ref('');
+const metadataError = ref(false);
 const loadError = ref(false);
 const conflict = ref(false);
+const saveUncertain = ref(false);
 const expectedVersion = ref(null);
 const searchQuery = ref('');
 const selectedMeals = ref([]);
+const initialIds = ref([]);
+const displayedMeals = ref([]);
+const totalMeals = ref(0);
+const categories = ref([]);
+const tags = ref([]);
 const currentPage = ref(1);
 const pageSize = ref(8);
 const selectedTag = ref('');
 const selectedCategory = ref('');
 const selectedSubcategory = ref('');
-const currentView = ref('grouped');
+const currentView = ref('grid');
 const showAdvancedFilters = ref(false);
+let catalogSequence = 0;
+let selectionSequence = 0;
+let catalogTimer = null;
+
+const idsFor = meals => meals.map(meal => String(meal._id || meal.id)).sort();
+const selectionDirty = computed(() => JSON.stringify(idsFor(selectedMeals.value)) !== JSON.stringify(initialIds.value));
+useDraftGuard({ dirty: selectionDirty, busy: isSaving, uncertain: saveUncertain, label: '餐食安排' });
 
 const hasActiveFilters = computed(() => {
   return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value);
@@ -50,55 +65,9 @@ const pageTitle = computed(() => {
   return `为 ${date.value} 选择${mealTypeText.value}`;
 });
 
-// 计算所有标签
-const allTags = computed(() => {
-  const tagsSet = new Set();
-  
-  mealStore.meals.forEach(meal => {
-    if (meal.tags && Array.isArray(meal.tags)) {
-      meal.tags.forEach(tag => tagsSet.add(tag));
-    }
-  });
-  
-  return Array.from(tagsSet);
-});
-
-// 计算过滤后的菜品
-const filteredMeals = computed(() => {
-  let result = mealStore.meals;
-  
-  // 搜索过滤
-  if (searchQuery.value) {
-    const query = searchQuery.value.toLowerCase();
-    result = result.filter(meal => 
-      meal.name.toLowerCase().includes(query) || 
-      meal.description?.toLowerCase().includes(query)
-    );
-  }
-  
-  // 标签过滤
-  if (selectedTag.value) {
-    result = result.filter(meal => 
-      meal.tags && meal.tags.includes(selectedTag.value)
-    );
-  }
-
-  if (selectedCategory.value) {
-    result = result.filter(meal => (meal.category || '') === selectedCategory.value);
-  }
-
-  if (selectedSubcategory.value) {
-    result = result.filter(meal => (meal.subcategory || '') === selectedSubcategory.value);
-  }
-  
-  return result;
-});
-
 const categoryOptions = computed(() => {
   const set = new Set();
-  const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
-    ? mealStore.categories
-    : mealStore.meals.map(m => ({ category: m.category || '' }));
+  const rows = categories.value.length ? categories.value : displayedMeals.value;
   rows.forEach(r => {
     if (r.category) set.add(r.category);
   });
@@ -108,9 +77,7 @@ const categoryOptions = computed(() => {
 const subcategoryOptions = computed(() => {
   if (!selectedCategory.value) return [];
   const set = new Set();
-  const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
-    ? mealStore.categories
-    : mealStore.meals.map(m => ({ category: m.category || '', subcategory: m.subcategory || '' }));
+  const rows = categories.value.length ? categories.value : displayedMeals.value;
   rows.forEach(r => {
     if (r.category === selectedCategory.value && r.subcategory) set.add(r.subcategory);
   });
@@ -119,7 +86,7 @@ const subcategoryOptions = computed(() => {
 
 const groupedMeals = computed(() => {
   const groups = new Map();
-  for (const meal of filteredMeals.value) {
+  for (const meal of displayedMeals.value) {
     const c = meal.category || '未分类';
     const s = meal.subcategory || '其它';
     if (!groups.has(c)) groups.set(c, new Map());
@@ -140,13 +107,6 @@ const groupedMeals = computed(() => {
   return out;
 });
 
-// 计算分页后的菜品
-const paginatedMeals = computed(() => {
-  const startIndex = (currentPage.value - 1) * pageSize.value;
-  const endIndex = startIndex + pageSize.value;
-  return filteredMeals.value.slice(startIndex, endIndex);
-});
-
 // 检查菜品是否被选中
 const isMealSelected = (meal) => {
   if (!meal) return false;
@@ -162,7 +122,7 @@ const isMealSelected = (meal) => {
 
 // 切换菜品选中状态
 const toggleMealSelection = (meal) => {
-  if (!meal) {
+  if (!meal || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) {
     return;
   }
   
@@ -186,13 +146,14 @@ const toggleMealSelection = (meal) => {
 
 // 保存餐食安排
 const saveSelection = async () => {
+  if (isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
   // 确保有日期和餐食类型
   if (!date.value || !mealType.value) {
     ElMessage.error('参数无效，请返回重试');
     return;
   }
   
-  isLoading.value = true;
+  isSaving.value = true;
   
   try {
     // 过滤掉null或undefined的ID，优先使用_id，其次使用id
@@ -203,7 +164,6 @@ const saveSelection = async () => {
     // 如果没有选择有效的菜品，则提示用户
     if (mealIds.length === 0 && selectedMeals.value.length > 0) {
       ElMessage.warning('所选菜品ID无效，请重新选择');
-      isLoading.value = false;
       return;
     }
     
@@ -218,18 +178,20 @@ const saveSelection = async () => {
       }
     }
     
-    // 跳回日历页
-    router.push({ name: 'calendar' });
+    initialIds.value = idsFor(selectedMeals.value);
+    isSaving.value = false;
+    await router.push({ name: 'calendar' });
     
   } catch (error) {
     if (error?.code === 'SCHEDULE_CONFLICT') {
       conflict.value = true;
       loadError.value = true;
     } else {
-      ElMessage.error('保存餐食安排失败');
+      saveUncertain.value = true;
+      ElMessage.warning('保存结果未确认，请先重新核对日历安排');
     }
   } finally {
-    isLoading.value = false;
+    isSaving.value = false;
   }
 };
 
@@ -248,18 +210,15 @@ const clearFilters = () => {
   currentPage.value = 1;
 };
 
-// 搜索处理
-const handleSearch = () => {
-  currentPage.value = 1; // 重置为第一页
-};
-
 // 页码变化处理
 const handlePageChange = (page) => {
   currentPage.value = page;
+  scheduleCatalogFetch(0);
 };
 
 watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory], () => {
   currentPage.value = 1;
+  scheduleCatalogFetch();
 });
 
 watch(selectedCategory, () => {
@@ -271,7 +230,69 @@ const goToNewMeal = () => {
   router.push({ name: 'MealEditor' });
 };
 
-const loadSelection = async () => {
+const legacyMatches = (meal) => {
+  const query = searchQuery.value.trim().toLowerCase();
+  const mealTags = Array.isArray(meal.tags) ? meal.tags : [];
+  const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
+  const steps = Array.isArray(meal.steps) ? meal.steps : [];
+  const fields = [meal.name, meal.description, meal.tips, ...mealTags, ...ingredients.map(item => item?.name || item), ...steps.map(step => step?.description || step)];
+  return (!query || fields.some(value => String(value || '').toLowerCase().includes(query))) &&
+    (!selectedTag.value || mealTags.includes(selectedTag.value)) &&
+    (!selectedCategory.value || meal.category === selectedCategory.value) &&
+    (!selectedSubcategory.value || meal.subcategory === selectedSubcategory.value);
+};
+
+const fetchCatalog = async () => {
+  const sequence = ++catalogSequence;
+  catalogLoading.value = true;
+  catalogError.value = '';
+  try {
+    const params = { page: currentPage.value, limit: pageSize.value };
+    if (searchQuery.value.trim()) params.search = searchQuery.value.trim();
+    if (selectedCategory.value) params.category = selectedCategory.value;
+    if (selectedSubcategory.value) params.subcategory = selectedSubcategory.value;
+    if (selectedTag.value) params.tag = selectedTag.value;
+    const result = await api.meal.getAllMeals(params);
+    if (sequence !== catalogSequence) return;
+    let rows = result.data;
+    let total = result.total;
+    // Older servers return a complete array and ignore pagination; keep their
+    // existing client-side filtering behavior without rendering all cards.
+    if (result.page == null && result.limit == null && rows.length === total) {
+      const filtered = rows.filter(legacyMatches);
+      total = filtered.length;
+      rows = filtered.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value);
+    }
+    const lastPage = Math.max(1, Math.ceil(total / pageSize.value));
+    if (currentPage.value > lastPage) {
+      currentPage.value = lastPage;
+      return fetchCatalog();
+    }
+    displayedMeals.value = rows;
+    totalMeals.value = total;
+  } catch (error) {
+    if (sequence === catalogSequence) catalogError.value = error?.error || error?.message || '菜品列表加载失败';
+  } finally {
+    if (sequence === catalogSequence) catalogLoading.value = false;
+  }
+};
+
+const scheduleCatalogFetch = (delay = 160) => {
+  catalogSequence++;
+  catalogLoading.value = true;
+  catalogError.value = '';
+  if (catalogTimer) clearTimeout(catalogTimer);
+  catalogTimer = setTimeout(fetchCatalog, delay);
+};
+
+const loadMetadata = async () => {
+  const [categoryResult, tagResult] = await Promise.allSettled([api.meal.getMealCategories(), api.meal.getMealTags()]);
+  categories.value = categoryResult.status === 'fulfilled' ? categoryResult.value.data : [];
+  tags.value = tagResult.status === 'fulfilled' ? tagResult.value.data : [];
+  metadataError.value = categoryResult.status === 'rejected' || tagResult.status === 'rejected';
+};
+
+const loadSelection = async ({ includeSuggestion = true } = {}) => {
   // 检查必要参数
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value || '') || !['breakfast', 'lunch', 'dinner'].includes(mealType.value)) {
     ElMessage.error('缺少必要参数');
@@ -279,45 +300,82 @@ const loadSelection = async () => {
     return;
   }
 
-  isLoading.value = true;
+  const sequence = ++selectionSequence;
+  isInitializing.value = true;
   loadError.value = false;
-  conflict.value = false;
   try {
-    if (!mealStore.allLoaded) {
-      await mealStore.fetchAllMeals();
-    }
     const schedule = await api.schedule.getScheduleByDate(date.value);
-    if (typeof schedule?.scheduleExists !== 'boolean' ||
+    if (sequence !== selectionSequence) return;
+    if (schedule?.date !== date.value || typeof schedule?.scheduleExists !== 'boolean' ||
         (schedule.scheduleExists && (typeof schedule.scheduleVersion !== 'string' || !Number.isFinite(Date.parse(schedule.scheduleVersion)))) ||
         (!schedule.scheduleExists && schedule.scheduleVersion !== null)) {
       throw new Error('服务器未提供有效的安排版本，暂时无法安全保存');
     }
     expectedVersion.value = schedule.scheduleVersion;
-    const items = schedule?.meals?.[mealType.value] || [];
-    const existingIds = items.map(item => {
-      const meal = item?.meal || item;
+    const items = schedule?.meals?.[mealType.value];
+    if (!Array.isArray(items)) throw new Error('现有餐食安排不完整，请刷新后重试');
+    const existingMeals = items.map(item => {
+      const meal = item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'meal') ? item.meal : item;
+      return meal;
+    });
+    const existingIds = existingMeals.map(meal => {
       return meal?._id || meal?.id || (typeof meal === 'string' ? meal : '');
     }).filter(Boolean).map(String);
     if (existingIds.length !== items.length) {
       throw new Error('现有安排中有无法读取的菜品，请先在日历中检查');
     }
-    const suggestedId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
+    if (new Set(existingIds).size !== existingIds.length) throw new Error('现有安排包含重复菜品，请先在日历中检查');
+    const suggestedId = includeSuggestion && typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
     const ids = [...new Set([...existingIds, suggestedId].filter(Boolean))];
-    selectedMeals.value = mealStore.getMealsByIds(ids);
-    if (selectedMeals.value.length !== ids.length) {
-      throw new Error('部分已安排的菜品无法读取，请刷新后重试');
-    }
-    try {
-      await mealStore.fetchMealCategories();
-    } catch (_) {}
+    const known = new Map(existingMeals.filter(meal => meal && typeof meal === 'object' && typeof meal.name === 'string' && (meal._id || meal.id)).map(meal => [String(meal._id || meal.id), meal]));
+    const resolved = await Promise.all(ids.map(async id => known.get(id) || api.meal.getMealById(id)));
+    if (sequence !== selectionSequence) return;
+    if (resolved.some((meal, index) => !meal || String(meal._id || meal.id || '') !== ids[index] || typeof meal.name !== 'string')) throw new Error('部分已安排的菜品无法读取，请刷新后重试');
+    selectedMeals.value = resolved;
+    initialIds.value = [...new Set(existingIds)].sort();
+    conflict.value = false;
+    saveUncertain.value = false;
   } catch (error) {
-    loadError.value = true;
-    ElMessage.error(error?.message || '加载页面数据失败，请重试');
+    if (sequence === selectionSequence) {
+      loadError.value = true;
+      ElMessage.error(error?.error || error?.message || '加载页面数据失败，请重试');
+    }
   } finally {
-    isLoading.value = false;
+    if (sequence === selectionSequence) isInitializing.value = false;
   }
 };
-onMounted(loadSelection);
+
+const reloadSelection = async () => {
+  if (selectionDirty.value || saveUncertain.value) {
+    try {
+      await ElMessageBox.confirm('重新加载会用服务器上的最新安排替换当前选择；如果上次保存结果未确认，请先记下需要保留的菜品。', '确认重新加载？', { type: 'warning', confirmButtonText: '重新加载', cancelButtonText: '继续核对' });
+    } catch (_) { return; }
+  }
+  await loadSelection({ includeSuggestion: false });
+};
+
+onBeforeRouteUpdate(async (to, from) => {
+  if (to.fullPath === from.fullPath) return true;
+  if (isSaving.value) { ElMessage.warning('操作正在进行，请稍候'); return false; }
+  if (!selectionDirty.value && !saveUncertain.value) return true;
+  try {
+    await ElMessageBox.confirm('切换餐食会放弃当前未保存或未确认的选择。', '确认切换？', { type: 'warning', confirmButtonText: '放弃并切换', cancelButtonText: '继续编辑' });
+    return true;
+  } catch (_) { return false; }
+});
+watch(() => route.fullPath, () => {
+  selectedMeals.value = [];
+  initialIds.value = [];
+  conflict.value = false;
+  saveUncertain.value = false;
+  loadSelection();
+});
+onMounted(() => { loadSelection(); fetchCatalog(); loadMetadata(); });
+onBeforeUnmount(() => {
+  selectionSequence++;
+  catalogSequence++;
+  if (catalogTimer) clearTimeout(catalogTimer);
+});
 </script>
 
 <template>
@@ -330,16 +388,16 @@ onMounted(loadSelection);
         <el-button 
           type="primary" 
           @click="saveSelection" 
-          :disabled="isLoading || loadError"
-          :loading="isLoading"
+          :disabled="isInitializing || isSaving || loadError || saveUncertain"
+          :loading="isSaving"
         >
           保存安排
         </el-button>
       </div>
     </div>
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="conflict ? '其他成员刚刚更新了安排，当前选择尚未保存。' : '无法读取完整的现有安排，为保护数据暂时不能保存。'">
-      <span v-if="conflict">重新加载会用最新安排替换当前选择，请先记下需要保留的菜品。</span>
-      <el-button link type="primary" @click="loadSelection">{{ conflict ? '重新加载最新安排' : '重新加载' }}</el-button>
+    <el-alert v-if="loadError || saveUncertain" type="error" :closable="false" show-icon :title="saveUncertain ? '保存结果未确认，请先核对最新安排。' : conflict ? '其他成员刚刚更新了安排，当前选择尚未保存。' : '无法读取完整的现有安排，为保护数据暂时不能保存。'">
+      <span v-if="conflict || saveUncertain">重新加载会用最新安排替换当前选择，请先记下需要保留的菜品。</span>
+      <el-button link type="primary" :disabled="isInitializing" @click="reloadSelection">{{ conflict || saveUncertain ? '重新加载最新安排' : '重新加载' }}</el-button>
     </el-alert>
     
     <div class="selection-info">
@@ -348,25 +406,26 @@ onMounted(loadSelection);
       </div>
       
       <div class="selected-meals" v-if="selectedMeals.length > 0">
-        <el-tag 
+        <button
           v-for="meal in selectedMeals" 
           :key="meal._id || meal.id"
-          closable
-          @close="toggleMealSelection(meal)"
+          type="button"
+          :aria-label="`移除${meal.name}`"
+          :disabled="isInitializing || isSaving || loadError || saveUncertain"
+          @click="toggleMealSelection(meal)"
           class="selected-meal-tag"
         >
-          {{ meal.name }}
-        </el-tag>
+          {{ meal.name }} <span aria-hidden="true">×</span>
+        </button>
       </div>
     </div>
         <div class="filters-container">
       <div class="search-container">
         <el-input
           v-model="searchQuery"
-          placeholder="搜索菜品名称或描述"
+          placeholder="搜索菜名、食材或做法"
+          aria-label="搜索可选菜品"
           clearable
-          @input="handleSearch"
-          @clear="handleSearch"
         >
           <template #prefix>
             <el-icon><Search /></el-icon>
@@ -375,11 +434,11 @@ onMounted(loadSelection);
       </div>
 
       <div class="toolbar-row">
-        <el-radio-group v-model="currentView" size="small">
-          <el-radio-button value="grouped">
+        <el-radio-group v-model="currentView" size="small" aria-label="菜品显示方式">
+          <el-radio-button value="grouped" aria-label="分组视图" title="分组视图">
             <el-icon><Menu /></el-icon>
           </el-radio-button>
-          <el-radio-button value="grid">
+          <el-radio-button value="grid" aria-label="网格视图" title="网格视图">
             <el-icon><Grid /></el-icon>
           </el-radio-button>
         </el-radio-group>
@@ -428,7 +487,7 @@ onMounted(loadSelection);
           <div class="filter-item">
             <el-select v-model="selectedTag" placeholder="选择标签" clearable style="width: 100%;">
               <el-option
-                v-for="tag in allTags"
+                v-for="tag in tags"
                 :key="tag"
                 :label="tag"
                 :value="tag"
@@ -438,16 +497,27 @@ onMounted(loadSelection);
         </div>
       </el-collapse-transition>
       
-      <div v-if="false"></div>
+      <div v-if="!catalogLoading && !catalogError" class="catalog-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
     </div>
-    
-    <div class="meals-container">
-      <el-skeleton :loading="isLoading" animated :count="4" :throttle="500">
+
+    <div class="catalog-layout">
+      <aside class="category-sidebar" aria-label="菜品分类">
+        <div class="category-heading">菜品分类</div>
+        <nav class="category-list" aria-label="选择菜品分类">
+          <button type="button" :class="{ active: !selectedCategory }" :aria-pressed="!selectedCategory" @click="selectedCategory = ''">全部菜品</button>
+          <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="selectedCategory = category">{{ category }}</button>
+        </nav>
+        <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button type="button" @click="loadMetadata">重试</button></div>
+      </aside>
+    <section class="meals-container" aria-label="可选菜品">
+      <el-alert v-if="catalogError && !catalogLoading" type="error" :closable="false" show-icon :title="`无法加载菜品：${catalogError}`"><el-button link type="primary" @click="fetchCatalog">重新加载菜品</el-button></el-alert>
+      <el-skeleton v-else :loading="catalogLoading || isInitializing" animated :count="4" :throttle="500">
         <template #default>
-          <div v-if="filteredMeals.length === 0" class="empty-state">
-            <el-empty description="没有找到匹配的菜品">
+          <div v-if="displayedMeals.length === 0" class="empty-state">
+            <el-empty :description="hasActiveFilters ? '没有找到匹配的菜品' : '暂无菜品'">
               <template #extra>
-                <el-button type="primary" @click="goToNewMeal">
+                <el-button v-if="hasActiveFilters" @click="clearFilters">清除筛选</el-button>
+                <el-button v-else type="primary" @click="goToNewMeal">
                   添加新菜品
                 </el-button>
               </template>
@@ -475,6 +545,7 @@ onMounted(loadSelection);
                             :showActions="false"
                             :selected="isMealSelected(meal)"
                             :selectable="true"
+                            :aria-disabled="isInitializing || isSaving || loadError || saveUncertain"
                             @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
                           />
                         </div>
@@ -486,30 +557,37 @@ onMounted(loadSelection);
             </div>
 
             <div v-else class="meals-grid">
-              <div v-for="meal in paginatedMeals" :key="meal._id || meal.id" class="meal-item">
+              <div v-for="meal in displayedMeals" :key="meal._id || meal.id" class="meal-item">
                 <MealCard 
                   :meal="meal" 
                   :showActions="false"
                   :selected="isMealSelected(meal)"
                   :selectable="true"
+                  :aria-disabled="isInitializing || isSaving || loadError || saveUncertain"
                   @select="(selectedMeal) => toggleMealSelection(selectedMeal)"
                 />
               </div>
             </div>
 
-            <div class="pagination-container" v-if="currentView !== 'grouped' && filteredMeals.length > 0">
+            <div class="pagination-container desktop-pagination" v-if="totalMeals > pageSize">
               <el-pagination
                 layout="prev, pager, next"
-                :total="filteredMeals.length"
+                :total="totalMeals"
                 :page-size="pageSize"
                 v-model:current-page="currentPage"
                 @current-change="handlePageChange"
                 background
               />
             </div>
+            <div v-if="totalMeals > pageSize" class="mobile-pagination" aria-label="菜品分页">
+              <el-button :disabled="currentPage <= 1 || catalogLoading" @click="handlePageChange(currentPage - 1)">上一页</el-button>
+              <span>第 {{ currentPage }} / {{ Math.ceil(totalMeals / pageSize) }} 页</span>
+              <el-button :disabled="currentPage >= Math.ceil(totalMeals / pageSize) || catalogLoading" @click="handlePageChange(currentPage + 1)">下一页</el-button>
+            </div>
           </div>
         </template>
       </el-skeleton>
+    </section>
     </div>
   </div>
 </template>
@@ -529,9 +607,6 @@ onMounted(loadSelection);
       font-size: 24px;
       font-weight: 600;
       color: var(--text-primary);
-      background: var(--gradient-primary);
-      -webkit-background-clip: text;
-      color: transparent;
     }
     
     .header-actions {
@@ -562,9 +637,16 @@ onMounted(loadSelection);
       gap: 8px;
       
       .selected-meal-tag {
-        background-color: var(--primary-color);
-        color: white;
+        min-height: 36px;
+        padding: 6px 12px;
+        border: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
         border-radius: 20px;
+        font: inherit;
+        cursor: pointer;
+        &:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
+        &:disabled { cursor: not-allowed; opacity: .65; }
       }
     }
   }
@@ -645,7 +727,7 @@ onMounted(loadSelection);
   .meals-container {
     .meals-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr));
       grid-gap: 20px;
     }
     
@@ -661,8 +743,29 @@ onMounted(loadSelection);
   }
 }
 
+.catalog-layout { display: grid; grid-template-columns: minmax(130px, 180px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.category-sidebar { position: sticky; top: calc(var(--header-height, 64px) + 12px); max-height: calc(100vh - var(--header-height, 64px) - 24px); overflow-y: auto; padding: 18px 12px; border: 1px solid var(--border-color); border-radius: 24px; background: var(--bg-primary); box-shadow: 0 16px 38px var(--shadow-color); }
+.category-heading { padding: 0 10px 12px; color: var(--text-secondary); font-size: 12px; font-weight: 700; }
+.category-list { display: flex; flex-direction: column; gap: 5px; }
+.category-list button { width: 100%; border: 0; border-radius: 14px; background: transparent; color: var(--text-secondary); padding: 11px 12px; text-align: left; font: inherit; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
+.category-list button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.category-list button.active { background: #f9e6dc; color: #713d30; font-weight: 700; box-shadow: inset 3px 0 0 #c77c5c; }
+.category-list button:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
+.metadata-warning { padding: 12px 8px 0; color: var(--text-secondary); font-size: 12px; }
+.metadata-warning button { border: 0; background: none; color: var(--text-primary); padding: 6px 0; text-decoration: underline; font: inherit; cursor: pointer; }
+.catalog-summary { color: var(--text-secondary); font-size: 13px; }
+.meals-container { min-width: 0; }
+.mobile-pagination { display: none; }
+:global(html.dark .meal-selection .category-list button.active) { color: var(--text-primary); background: #604131; box-shadow: inset 3px 0 0 var(--secondary-color); }
+:global(html.dark .meal-selection .meals-grouped .el-collapse-item__header),
+:global(html.dark .meal-selection .meals-grouped .el-collapse-item__wrap) { color: var(--text-primary); background: var(--bg-primary); border-color: var(--border-color); }
+:global(.meal-selection .el-radio-button__original-radio:focus-visible + .el-radio-button__inner) { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
+
 @media (max-width: 768px) {
   .meal-selection {
+    .page-header { align-items: flex-start; flex-direction: column; gap: 14px; }
+    .header-actions { width: 100%; }
+    .header-actions .el-button { flex: 1; min-height: 44px; }
     .filters-container {
       .advanced-filters {
         grid-template-columns: 1fr;
@@ -671,10 +774,29 @@ onMounted(loadSelection);
 
     .meals-container {
       .meals-grid {
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        grid-gap: 15px;
+        grid-template-columns: minmax(0, 1fr);
+        grid-gap: 10px;
       }
     }
   }
+  .meal-selection :deep(.meal-card-wrapper) { margin-bottom: 0; border-radius: 16px; }
+  .meal-selection :deep(.meal-card-wrapper .el-card__body) { padding: 0; }
+  .meal-selection :deep(.meal-card-content) { flex-direction: row; align-items: flex-start; }
+  .meal-selection :deep(.meal-image-container) { width: 88px; height: 88px; flex: 0 0 88px; margin: 10px; border-radius: 12px; }
+  .meal-selection :deep(.meal-image) { border-radius: 12px; }
+  .meal-selection :deep(.photo-pin) { width: 28px; height: 8px; top: 7px; }
+  .meal-selection :deep(.meal-info) { min-width: 0; padding: 14px 10px 12px 0; gap: 6px; }
+  .meal-selection :deep(.meal-name) { font-size: 15px; overflow-wrap: anywhere; }
+  .meal-selection :deep(.meal-description) { font-size: 12px; -webkit-line-clamp: 2; }
+  .meal-selection :deep(.meal-tags),
+  .meal-selection :deep(.meal-ingredients) { display: none; }
+  .catalog-layout { grid-template-columns: 82px minmax(0, 1fr); gap: 10px; }
+  .category-sidebar { padding: 12px 5px; border-radius: 18px; }
+  .category-heading { padding: 0 5px 9px; font-size: 11px; }
+  .category-list button { min-height: 44px; padding: 10px 6px; font-size: 12px; border-radius: 10px; }
+  .metadata-warning { padding: 8px 4px 0; }
+  .desktop-pagination { display: none !important; }
+  .mobile-pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--text-secondary); }
+  .mobile-pagination :deep(.el-button) { min-height: 44px; padding: 8px 10px; }
 }
 </style>

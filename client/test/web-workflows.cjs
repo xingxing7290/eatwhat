@@ -115,6 +115,7 @@ async function main () {
     else if (method === 'GET' && path === '/meals/categories') data = [{ category: '家常菜' }, { category: '川菜' }]
     else if (method === 'GET' && path === '/meals/tags') data = []
     else if (method === 'GET' && path === '/meals/meal-a') data = { ...meals[0], supportsConditionalEdit: supportsMealEdit, editVersion: mealEditVersion }
+    else if (method === 'GET' && path.startsWith('/meals/')) data = meals.find(meal => meal._id === path.split('/').pop()) || {}
     else if (method === 'GET' && path === '/memories' && failMemories) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '回忆测试读取失败' }) })
     else if (method === 'GET' && path === '/memories') data = memoryFixture
     else if (method === 'POST' && path === '/memories') {
@@ -135,7 +136,7 @@ async function main () {
     else if (method === 'PUT' && path === `/schedules/${today}/dinner`) {
       writes.push({ path, body: request.postDataJSON() })
       if (conflictSchedule) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' }) })
-      data = request.postDataJSON().mealIds.length === 0 ? { ...schedule, updatedAt: '2026-10-28T09:00:00.000Z', meals: { ...schedule.meals, dinner: [] } } : schedule
+      data = { ...schedule, updatedAt: '2026-10-28T09:00:00.000Z', meals: { ...schedule.meals, dinner: request.postDataJSON().mealIds.map(id => ({ meal: meals.find(meal => meal._id === id) || { _id: id, name: '测试菜品' } })) } }
     }
     else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
     else if (method === 'POST' && path === '/wishlist') {
@@ -263,9 +264,13 @@ async function main () {
   assert.equal(writes.filter(item => item.path === '/wishlist/wish-a/status').length, 1)
   conflictSchedule = false
   await page.getByRole('button', { name: '重新加载最新安排' }).click()
+  await page.getByRole('button', { name: '重新加载', exact: true }).click()
   await page.getByText('其他成员刚刚更新了安排').waitFor({ state: 'hidden' })
   await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存安排') && !button.disabled))
   assert.equal(await page.getByRole('button', { name: '保存安排' }).isEnabled(), true)
+  assert.doesNotMatch(await page.locator('.selection-info').innerText(), /麻婆豆腐/)
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.waitForURL('**/calendar')
 
   dailySchedule = { date: today, meals: schedule.meals }
   await page.goto(`${base}/selection?date=${today}&mealType=dinner`)

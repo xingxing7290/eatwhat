@@ -84,6 +84,18 @@ export const useScheduleStore = defineStore('schedule', {
         console.log(`保存餐食安排: ${date} ${mealType}`, validMealIds);
         const schedule = await scheduleApi.setMeal(date, mealType, validMealIds, options);
 
+        const returnedMeals = schedule?.meals?.[mealType];
+        if (schedule?.date !== date || !Array.isArray(returnedMeals) || !schedule.updatedAt || !Number.isFinite(Date.parse(schedule.updatedAt))) {
+          throw new Error('服务器响应不完整，保存结果未确认');
+        }
+        const returnedIds = returnedMeals.map(item => {
+          const meal = item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'meal') ? item.meal : item;
+          return String(meal?._id || meal?.id || (typeof meal === 'string' ? meal : ''));
+        });
+        if (returnedIds.length !== validMealIds.length || returnedIds.some((id, index) => id !== validMealIds[index])) {
+          throw new Error('服务器返回的菜品与提交内容不一致，保存结果未确认');
+        }
+
         // 更新本地状态：以服务端返回为准（包含 meal + addedBy 信息）
         const index = this.schedules.findIndex(s => s.date === date);
         if (index !== -1) {
@@ -93,7 +105,7 @@ export const useScheduleStore = defineStore('schedule', {
         }
         
         ElMessage.success(`${date} 的${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐'}安排已保存`);
-        return true;
+        return schedule;
       } catch (err) {
         this.error = err?.error || err?.message || '保存餐食安排失败';
         if (err?.code !== 'SCHEDULE_CONFLICT') ElMessage.error(this.error);

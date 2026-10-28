@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test:workflows": "node test/web-workflows.cjs",
+    "test:selection": "node test/selection-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
     "test:dashboard-theme": "node test/dashboard-theme.cjs",
     "test:media": "node --test test/uploaded-image.test.mjs",

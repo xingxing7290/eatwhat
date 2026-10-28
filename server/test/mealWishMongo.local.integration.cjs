@@ -18,10 +18,12 @@ process.env.JWT_SECRET = 'isolated-local-test-secret-never-use-in-production';
 const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const Meal = require('../models/mealModel');
+const Schedule = require('../models/scheduleModel');
 const WishlistItem = require('../models/wishlistModel');
 const wishlist = require('../controllers/wishlistController');
 const mealController = require('../controllers/mealController');
 const dashboardController = require('../controllers/dashboardController');
+const scheduleController = require('../controllers/scheduleController');
 const authController = require('../controllers/authController');
 const requireAuth = require('../middleware/auth');
 const { auditAndApply } = require('../scripts/meal-wish-index');
@@ -65,6 +67,7 @@ async function main() {
     ownedMongo = true;
     assert.equal(mongoose.connection.name, 'isolated_meal_wish');
     assert.equal((await mongoose.connection.db.listCollections().toArray()).length, 0, 'refuse a non-empty database');
+    await Schedule.collection.createIndex({ householdId: 1, date: 1 }, { unique: true });
 
     const [homeA, homeB] = await Household.create([{ name: 'Test A', inviteCode: 'LOCAL-A' }, { name: 'Test B', inviteCode: 'LOCAL-B' }]);
     const hash = await bcrypt.hash('test-only-password', 4);
@@ -99,6 +102,10 @@ async function main() {
     app.get('/meals', mealController.getAllMeals);
     app.get('/meals/categories', mealController.getMealCategories);
     app.get('/meals/tags', mealController.getMealTags);
+    app.get('/meals/:id', mealController.getMealById);
+    app.get('/schedules', scheduleController.validateSchedulesQuery, scheduleController.getSchedules);
+    app.get('/schedules/day/:date', scheduleController.validateScheduleDate, scheduleController.getScheduleByDate);
+    app.put('/schedules/:date/:mealType', scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
     app.get('/dashboard/summary', dashboardController.summary);
     app.get('/wishlist', wishlist.list);
     let legacyCalls = 0;
@@ -194,6 +201,7 @@ async function main() {
       webServer = await new Promise(resolve => { const instance = frontend.listen(0, '127.0.0.1', () => resolve(instance)); });
       const webBase = `http://127.0.0.1:${webServer.address().port}`;
       const uiMeal = await Meal.create({ householdId: homeA._id, name: '浏览器并发菜', category: '家常菜' });
+      const secondMeal = await Meal.create({ householdId: homeA._id, name: '浏览器排餐二', category: '家常菜' });
       const playwright = require('../../client/node_modules/playwright');
       browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined });
       const contexts = await Promise.all([
@@ -234,9 +242,39 @@ async function main() {
       assert.ok(atomicCalls > beforeAtomic, 'browser must use the atomic endpoint');
       assert.equal(legacyCalls, beforeLegacy, 'browser must not use legacy create on a capable server');
       assert.equal(await WishlistItem.countDocuments({ householdId: homeA._id, mealId: uiMeal._id, status: 'open' }), 1);
+      await Meal.create(Array.from({ length: 10 }, (_, index) => ({ householdId: homeA._id, name: `浏览器分页${index}`, category: '家常菜' })));
+      // Two family members open the same absent day, then the second must
+      // reload rather than overwrite the first member's saved selection.
+      const dinnerDate = '2026-10-29';
+      await Promise.all([
+        pages[0].goto(`${webBase}/selection?date=${dinnerDate}&mealType=dinner&suggestedMealId=${uiMeal._id}`),
+        pages[1].goto(`${webBase}/selection?date=${dinnerDate}&mealType=dinner&suggestedMealId=${secondMeal._id}`)
+      ]);
+      await Promise.all([
+        pages[0].getByRole('button', { name: '移除浏览器并发菜' }).waitFor(),
+        pages[1].getByRole('button', { name: '移除浏览器排餐二' }).waitFor()
+      ]);
+      assert.ok(await pages[0].locator('.meals-grid .meal-card-wrapper').count() <= 8);
+      await pages[0].getByRole('button', { name: '保存安排' }).click();
+      await pages[0].waitForURL('**/calendar');
+      await pages[1].getByRole('button', { name: '保存安排' }).click();
+      await pages[1].getByText('其他成员刚刚更新了安排').waitFor();
+      assert.equal(await pages[1].getByRole('button', { name: '保存安排' }).isDisabled(), true);
+      await pages[1].getByRole('button', { name: '重新加载最新安排' }).click();
+      await pages[1].getByRole('button', { name: '重新加载', exact: true }).click();
+      await pages[1].getByRole('button', { name: '移除浏览器并发菜' }).waitFor();
+      assert.equal(await pages[1].getByRole('button', { name: '移除浏览器排餐二' }).count(), 0);
+      await pages[1].getByRole('textbox', { name: '搜索可选菜品' }).fill('浏览器排餐二');
+      await pages[1].getByRole('button', { name: '选择浏览器排餐二' }).click();
+      await pages[1].getByRole('button', { name: '保存安排' }).click();
+      await pages[1].waitForURL('**/calendar');
+      const savedDinner = await request(`/schedules/day/${dinnerDate}`, { token: tokenA });
+      assert.equal(savedDinner.status, 200);
+      assert.deepEqual(savedDinner.data.meals.dinner.map(item => String(item.meal._id)), [String(uiMeal._id), String(secondMeal._id)]);
+      assert.equal((await request(`/schedules/day/${dinnerDate}`, { token: tokenB })).data.scheduleExists, false);
       assert.deepEqual(browserErrors, []);
       await pages[1].screenshot({ path: path.join(root, 'mobile-catalog.png'), fullPage: true });
-      console.log('Real browser integration passed: partner reminders, search, category filtering and desktop/mobile atomic meal wishes.');
+      console.log('Real browser integration passed: partner reminders, catalog, atomic meal wishes and desktop/mobile conflict-safe meal selection.');
     }
     await WishlistItem.create(Array.from({ length: 8 }, (_, index) => ({ householdId: homeA._id, title: `priority-burst-${index}`, status: 'open', priority: 'high', votes: [partnerA._id], createdBy: partnerA._id })));
     const limitedDashboard = await request('/dashboard/summary', { token: tokenA });
