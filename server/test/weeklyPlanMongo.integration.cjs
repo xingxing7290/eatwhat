@@ -45,6 +45,7 @@ async function main() {
     app.use(requireAuth());
     app.get('/weekly-plans', weekly.list);
     app.post('/weekly-plans/apply', weekly.apply);
+    app.get('/schedules', schedules.getSchedules);
     app.get('/schedules/day/:date', schedules.getScheduleByDate);
     app.put('/schedules/:date/:mealType', schedules.updateSchedule);
     app.get('/wishlist', wishlist.list);
@@ -109,6 +110,13 @@ async function main() {
     assert.equal(success.status, 200);
     assert.equal(success.data.applied, 7);
     assert.equal(await Schedule.countDocuments({ householdId: house._id }), 7);
+    const monthly = await request('/schedules?year=2026&month=10');
+    assert.equal(monthly.status, 200);
+    assert.equal(monthly.data.length, 31);
+    const monthEnd = monthly.data.find(day => day.date === '2026-10-31');
+    assert.equal(monthEnd.scheduleExists, true);
+    assert.ok(monthEnd.scheduleVersion);
+    assert.equal(String(monthEnd.meals.dinner[0].meal._id), String(mealA._id));
 
     // A schedule created after preflight must not be overwritten by the batch.
     const nextWeek = ['2026-11-02', '2026-11-03', '2026-11-04', '2026-11-05', '2026-11-06', '2026-11-07', '2026-11-08'];

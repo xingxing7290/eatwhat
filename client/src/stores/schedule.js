@@ -104,39 +104,24 @@ export const useScheduleStore = defineStore('schedule', {
     },
     
     // 删除某日某餐的安排
-    async deleteMeal(date, mealType) {
+    async deleteMeal(date, mealType, options = {}) {
       this.loading = true;
       this.error = null;
       
       try {
-        await scheduleApi.deleteMeal(date, mealType);
+        const result = await scheduleApi.deleteMeal(date, mealType, options);
         
         // 更新本地状态
         const index = this.schedules.findIndex(s => s.date === date);
         if (index !== -1) {
-          const schedule = { ...this.schedules[index] };
-          if (schedule.meals) {
-            schedule.meals[mealType] = [];
-          }
-          
-          // 检查是否该日所有餐食都空了，如果是则删除整个日期条目
-          const hasAnyMeal = ['breakfast', 'lunch', 'dinner'].some(type => 
-            schedule.meals && schedule.meals[type] && schedule.meals[type].length > 0
-          );
-          
-          if (hasAnyMeal) {
-            this.schedules[index] = schedule;
-          } else {
-            // 所有餐食都为空，删除该日期条目
-            this.schedules.splice(index, 1);
-          }
+          this.schedules[index] = { ...result, scheduleExists: true, scheduleVersion: result.updatedAt || null };
         }
         
         ElMessage.success(`${date} 的${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐'}安排已删除`);
         return true;
       } catch (err) {
-        this.error = err.message || '删除餐食安排失败';
-        ElMessage.error(this.error);
+        this.error = err?.error || err?.message || '删除餐食安排失败';
+        if (err?.code !== 'SCHEDULE_CONFLICT') ElMessage.error(this.error);
         throw err;
       } finally {
         this.loading = false;

@@ -72,11 +72,11 @@ exports.getSchedules = async (req, res, next) => {
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
     const { household } = await ensureUserHousehold(req.user.uid);
     const { year, month } = req.query;
-    const startDate = new Date(year, month - 1, 1);
     const endDate = new Date(year, month, 0);
+    const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
     const schedulesInDb = await Schedule.find({
       householdId: household._id,
-      date: { $gte: startDate.toISOString().split('T')[0], $lte: endDate.toISOString().split('T')[0] }
+      date: { $gte: `${monthPrefix}-01`, $lte: `${monthPrefix}-${String(endDate.getDate()).padStart(2, '0')}` }
     });
     schedulesInDb.forEach(s => normalizeMealItems(s));
     schedulesInDb.forEach(s => fillMissingAddedBy(s, req.user.uid));
@@ -92,7 +92,11 @@ exports.getSchedules = async (req, res, next) => {
     const fullMonthSchedules = [];
     for (let day = 1; day <= endDate.getDate(); day++) {
       const currentDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      fullMonthSchedules.push(scheduleMap.get(currentDateStr) || { date: currentDateStr, meals: { breakfast: [], lunch: [], dinner: [] } });
+      const schedule = scheduleMap.get(currentDateStr);
+      fullMonthSchedules.push(schedule ? {
+        ...schedule.toObject(), scheduleExists: true,
+        scheduleVersion: schedule.updatedAt ? schedule.updatedAt.toISOString() : null
+      } : { date: currentDateStr, meals: { breakfast: [], lunch: [], dinner: [] }, scheduleExists: false, scheduleVersion: null });
     }
     res.status(200).json(fullMonthSchedules);
   } catch (error) { logger.error(`获取餐食安排失败: ${error.message}`); next(error); }

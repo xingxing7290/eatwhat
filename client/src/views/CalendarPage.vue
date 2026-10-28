@@ -13,6 +13,8 @@ const mealStore = useMealStore();
 
 const currentDate = ref(new Date());
 const isLoading = ref(false);
+const loadError = ref('');
+const deleting = ref(false);
 const meals = ref([]);
 const partnerWishlist = ref([]);
 
@@ -90,6 +92,8 @@ const arrangeWishlistDinner = (item) => {
 };
 const fetchMonthSchedules = async () => {
   isLoading.value = true;
+  loadError.value = '';
+  partnerWishlist.value = [];
   
   try {
     const year = getYear(currentDate.value);
@@ -104,7 +108,7 @@ const fetchMonthSchedules = async () => {
     meals.value = mealStore.meals;
     await loadPartnerWishlist();
   } catch (error) {
-    ElMessage.error('获取月度安排失败');
+    loadError.value = error?.error || error?.message || '获取月度安排失败';
   } finally {
     isLoading.value = false;
   }
@@ -112,6 +116,7 @@ const fetchMonthSchedules = async () => {
 
 // 新增：处理编辑日程的函数
 const handleEditSchedule = (date, mealType) => {
+  if (deleting.value || isLoading.value || loadError.value) return;
   const formattedDate = format(date, 'yyyy-MM-dd');
   const currentMealIds = scheduleStore.getMealIdsByDateAndType(formattedDate, mealType);
   
@@ -127,6 +132,7 @@ const handleEditSchedule = (date, mealType) => {
 
 // 跳转到菜品选择页面
 const navigateToMealSelection = (date, type) => {
+  if (deleting.value || isLoading.value || loadError.value) return;
   const formattedDate = format(date, 'yyyy-MM-dd');
   router.push({
     name: 'MealSelection',
@@ -241,6 +247,13 @@ const getAddedByInitial = (item) => {
 
 // 删除餐食安排
 const handleDeleteSchedule = async (date, mealType) => {
+  if (deleting.value || isLoading.value || loadError.value) return;
+  const snapshot = getDateSchedule(date);
+  if (!snapshot?.meals?.[mealType]?.length) return;
+  if (snapshot.scheduleExists !== true || typeof snapshot.scheduleVersion !== 'string' || !Number.isFinite(Date.parse(snapshot.scheduleVersion))) {
+    return ElMessage.warning('服务器未提供有效的安排版本，暂时无法安全删除，请刷新后重试');
+  }
+  deleting.value = true;
   try {
     const formattedDate = format(date, 'yyyy-MM-dd');
     const result = await ElMessageBox.confirm(
@@ -254,14 +267,17 @@ const handleDeleteSchedule = async (date, mealType) => {
     );
     
     if (result === 'confirm') {
-      await scheduleStore.deleteMeal(formattedDate, mealType);
+      await scheduleStore.deleteMeal(formattedDate, mealType, { expectedVersion: snapshot.scheduleVersion });
     }
   } catch (error) {
     // 用户取消删除操作或其他错误
-    if (error !== 'cancel') {
+    if (error?.code === 'SCHEDULE_CONFLICT') {
+      ElMessage.warning('这天的安排已被更新，未执行删除；请查看最新安排');
+      await fetchMonthSchedules();
+    } else if (error !== 'cancel' && error !== 'close') {
       ElMessage.error('删除餐食安排失败');
     }
-  }
+  } finally { deleting.value = false; }
 };
 
 // 监听当前日期变化，切换月份时获取该月安排
@@ -287,7 +303,8 @@ onMounted(() => {
           <div class="month-navigation">
             <el-button 
               @click="changeMonth(-1)" 
-              :disabled="isLoading"
+              :disabled="isLoading || deleting"
+              aria-label="上个月"
               class="nav-btn"
             >
               <el-icon><ArrowLeft /></el-icon>
@@ -297,7 +314,8 @@ onMounted(() => {
             
             <el-button 
               @click="changeMonth(1)" 
-              :disabled="isLoading"
+              :disabled="isLoading || deleting"
+              aria-label="下个月"
               class="nav-btn"
             >
               <el-icon><ArrowRight /></el-icon>
@@ -306,7 +324,7 @@ onMounted(() => {
           
           <el-button 
             @click="goToToday" 
-            :disabled="isLoading"
+            :disabled="isLoading || deleting"
             class="today-btn"
           >
             今天
@@ -325,7 +343,8 @@ onMounted(() => {
       <div class="mobile-nav-controls">
         <el-button 
           @click="changeMonth(-1)" 
-          :disabled="isLoading"
+          :disabled="isLoading || deleting"
+          aria-label="上个月"
           size="small"
           class="mobile-nav-btn"
         >
@@ -336,7 +355,8 @@ onMounted(() => {
         
         <el-button 
           @click="changeMonth(1)" 
-          :disabled="isLoading"
+          :disabled="isLoading || deleting"
+          aria-label="下个月"
           size="small"
           class="mobile-nav-btn"
         >
@@ -345,7 +365,7 @@ onMounted(() => {
         
         <el-button 
           @click="goToToday" 
-          :disabled="isLoading"
+          :disabled="isLoading || deleting"
           size="small"
           class="mobile-today-btn inline"
         >
@@ -354,7 +374,8 @@ onMounted(() => {
       </div>
     </div>
     
-    <el-skeleton :loading="isLoading" animated>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载月度安排：${loadError}`"><el-button link type="primary" @click="fetchMonthSchedules">重新加载</el-button></el-alert>
+    <el-skeleton v-else :loading="isLoading" animated>
       <template #default>
         <!-- 桌面端日历网格 -->
         <div class="calendar-grid desktop-only">
@@ -416,6 +437,8 @@ onMounted(() => {
                             type="primary"
                             size="small" 
                             circle
+                            :disabled="deleting"
+                            :aria-label="`编辑${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                             @click.stop="handleEditSchedule(day, mealType.key)"
                           >
                             <el-icon><Edit /></el-icon>
@@ -425,6 +448,8 @@ onMounted(() => {
                             type="danger" 
                             size="small" 
                             circle
+                            :disabled="deleting"
+                            :aria-label="`删除${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                             @click.stop="handleDeleteSchedule(day, mealType.key)"
                           >
                             <el-icon><Delete /></el-icon>
@@ -455,9 +480,12 @@ onMounted(() => {
                   </template>
                   
                   <!-- 如果没有安排 -->
-                  <div 
+                  <button
                     v-else 
+                    type="button"
                     class="add-meal" 
+                    :disabled="deleting"
+                    :aria-label="`安排${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                     @click="navigateToMealSelection(day, mealType.key)"
                     :style="{ 'border-color': `${mealType.color}50` }"
                   >
@@ -466,7 +494,7 @@ onMounted(() => {
                     </el-icon>
                     <span class="meal-label" :style="{ color: mealType.color }">{{ mealType.label }}</span>
                     <el-icon class="add-icon" :style="{ color: mealType.color }"><Plus /></el-icon>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -505,17 +533,23 @@ onMounted(() => {
                     <span class="meal-type-label" :style="{ color: mealType.color }">{{ mealType.label }}</span>
                     <div class="meal-type-actions">
                       <el-button 
+                        v-if="getDateSchedule(day)?.meals?.[mealType.key]?.length"
                         type="primary" 
                         size="small" 
                         circle
+                        :disabled="deleting"
+                        :aria-label="`编辑${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                         @click="handleEditSchedule(day, mealType.key)"
                       >
                         <el-icon><Edit /></el-icon>
                       </el-button>
                       <el-button 
+                        v-if="getDateSchedule(day)?.meals?.[mealType.key]?.length"
                         type="danger" 
                         size="small" 
                         circle
+                        :disabled="deleting"
+                        :aria-label="`删除${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                         @click="handleDeleteSchedule(day, mealType.key)"
                       >
                         <el-icon><Delete /></el-icon>
@@ -544,15 +578,18 @@ onMounted(() => {
                   </div>
 
                   <!-- 如果没有安排 -->
-                  <div 
+                  <button
                     v-else 
+                    type="button"
                     class="mobile-add-meal"
+                    :disabled="deleting"
+                    :aria-label="`安排${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                     @click="navigateToMealSelection(day, mealType.key)"
                     :style="{ 'border-color': `${mealType.color}50` }"
                   >
                     <el-icon class="add-icon" :style="{ color: mealType.color }"><Plus /></el-icon>
                     <span class="add-text" :style="{ color: mealType.color }">添加{{ mealType.label }}</span>
-                  </div>
+                  </button>
                 </div>
               </div>
             </div>
@@ -565,6 +602,7 @@ onMounted(() => {
 
 <style lang="scss" scoped>
 .partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
+.add-meal, .mobile-add-meal { width: 100%; font: inherit; }
 .partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }
 .partner-wishlist-banner strong { color: var(--text-primary); }
 .partner-wishlist-banner span { background: var(--bg-secondary); border-radius: 999px; padding: 4px 10px; }

@@ -182,13 +182,13 @@ export const scheduleApi = {
 	},
 	
 	// 删除某日餐食
-	deleteMeal: (date, mealType) => {
+	deleteMeal: (date, mealType, options = {}) => {
 		if (USE_MOCK) {
 			ElMessage.success('餐食安排已删除（模拟数据）');
 			return mockResponse({ success: true });
 		}
 		// 将餐食设置为空数组即为清空该餐
-		return api.put(`/schedules/${date}/${mealType}`, { mealIds: [] }, {
+		return api.put(`/schedules/${date}/${mealType}`, { mealIds: [], ...options }, {
 			headers: { 'Content-Type': 'application/json' }
 		});
 	}

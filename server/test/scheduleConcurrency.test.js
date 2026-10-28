@@ -86,3 +86,28 @@ test('daily read returns the persisted version to web and keeps the mobile respo
   assert.equal(mobile.data.scheduleVersion, undefined);
   assert.equal(mobile.data.date, '2026-10-28');
 });
+
+test('monthly query uses local calendar boundaries and exposes versions', async () => {
+  const priorTimezone = process.env.TZ;
+  process.env.TZ = 'Asia/Shanghai';
+  try {
+    let filter;
+    const doc = {
+      date: '2024-02-29', updatedAt: new Date('2024-02-29T08:00:00.000Z'),
+      meals: { breakfast: [], lunch: [], dinner: [] },
+      toObject() { return { date: this.date, meals: this.meals, updatedAt: this.updatedAt }; }
+    };
+    Schedule.find = async value => { filter = value; return [doc]; };
+    Schedule.populate = async () => {};
+    const res = response();
+    await controller.getSchedules({ user: { uid: 'user-a' }, query: { year: '2024', month: '2' }, headers: {} }, res, error => { throw error; });
+    assert.deepEqual(filter.date, { $gte: '2024-02-01', $lte: '2024-02-29' });
+    assert.equal(res.data.length, 29);
+    assert.equal(res.data[0].scheduleExists, false);
+    assert.equal(res.data[28].scheduleExists, true);
+    assert.equal(res.data[28].scheduleVersion, '2024-02-29T08:00:00.000Z');
+  } finally {
+    if (priorTimezone === undefined) delete process.env.TZ;
+    else process.env.TZ = priorTimezone;
+  }
+});

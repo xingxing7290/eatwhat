@@ -11,7 +11,7 @@ const meals = [
   { _id: 'created-meal', name: '想吃的新菜', category: '家常菜', description: '', tags: [] }
 ]
 const today = '2026-10-28'
-const schedule = { date: today, scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }, { meal: meals[2] }] } }
+const schedule = { date: today, _id: 'schedule-a', updatedAt: '2026-10-28T08:00:00.000Z', scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }, { meal: meals[2] }] } }
 const weekDates = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']
 const weekDays = weekDates.map(date => date === today ? { ...schedule, hints: [] } : { date, scheduleExists: false, scheduleVersion: null, meals: { breakfast: [], lunch: [], dinner: [] }, hints: [] })
 const draftDays = weekDates.map(date => ({ date, meals: { breakfast: [], lunch: [], dinner: ['meal-a'] } }))
@@ -26,6 +26,7 @@ async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
   const page = await context.newPage()
+  await page.clock.setFixedTime(new Date('2026-10-28T12:00:00'))
   const errors = []
   const writes = []
   const reads = []
@@ -44,6 +45,7 @@ async function main () {
   let failMemories = false
   let failAnniversaries = false
   let failAnniversarySave = false
+  let failMonth = false
   const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [] }]
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
@@ -74,7 +76,7 @@ async function main () {
     else if (method === 'PUT' && path === `/schedules/${today}/dinner`) {
       writes.push({ path, body: request.postDataJSON() })
       if (conflictSchedule) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' }) })
-      data = schedule
+      data = request.postDataJSON().mealIds.length === 0 ? { ...schedule, updatedAt: '2026-10-28T09:00:00.000Z', meals: { ...schedule.meals, dinner: [] } } : schedule
     }
     else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
     else if (method === 'POST' && path === '/wishlist') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'new-wish' } }
@@ -99,7 +101,8 @@ async function main () {
       if (weeklyApplyMode === 'incomplete') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'WEEKLY_PLAN_INCOMPLETE', error: '未完整应用', uncertainDate: weekDates[1], appliedDates: weekDates.slice(0, 1) }) })
       data = { applied: 7 }
     }
-    else if (method === 'GET' && path === '/schedules') data = []
+    else if (method === 'GET' && path === '/schedules' && failMonth) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '日历测试读取失败' }) })
+    else if (method === 'GET' && path === '/schedules') data = [schedule]
     else if (method === 'GET' && path === '/shopping-list' && failShopping) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '购物清单测试读取失败' }) })
     else if (method === 'GET' && path === '/shopping-list') data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: false }] }
     else if (method === 'PATCH' && path === '/shopping-list/items/item-a') {
@@ -243,6 +246,27 @@ async function main () {
   await page.getByRole('button', { name: '重新加载' }).click()
   await page.locator('.photo-card').click()
   await page.getByRole('dialog', { name: '饭桌回忆' }).waitFor()
+
+  failMonth = true
+  await page.goto(`${base}/calendar`)
+  await page.getByText('无法加载月度安排').waitFor()
+  assert.equal(await page.locator('.calendar-grid:visible').count(), 0)
+  failMonth = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  const deleteDinner = page.locator('.desktop-only').getByRole('button', { name: `删除${today}晚餐` })
+  await deleteDinner.waitFor()
+  conflictSchedule = true
+  await deleteDinner.click()
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await page.getByText('这天的安排已被更新').waitFor()
+  const calendarDelete = writes.filter(item => item.path === `/schedules/${today}/dinner`).at(-1)
+  assert.equal(calendarDelete.body.expectedVersion, schedule.scheduleVersion)
+  assert.deepEqual(calendarDelete.body.mealIds, [])
+  conflictSchedule = false
+  await deleteDinner.waitFor()
+  await deleteDinner.click()
+  await page.getByRole('button', { name: '确认', exact: true }).click()
+  await deleteDinner.waitFor({ state: 'hidden' })
 
   failWeekly = true
   await page.goto(`${base}/weekly-plan`)
@@ -397,6 +421,12 @@ async function main () {
   await page.waitForTimeout(700)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile anniversaries should not overflow horizontally')
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-anniversaries-mobile.png'), fullPage: true })
+  await page.goto(`${base}/calendar`)
+  await page.locator('.mobile-date-list').getByRole('button', { name: `删除${today}晚餐` }).waitFor()
+  assert.equal(await page.locator('.mobile-date-list').getByRole('button', { name: `删除${today}早餐` }).count(), 0)
+  assert.equal(await page.locator('.mobile-date-list').getByRole('button', { name: `安排${today}早餐` }).count(), 1)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile calendar should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-calendar-mobile.png') })
   assert.deepEqual(errors, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()
