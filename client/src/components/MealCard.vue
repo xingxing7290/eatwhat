@@ -57,6 +57,12 @@ const handleCardClick = () => {
   emit('view', props.meal);
 };
 
+const handleCardKeydown = (event) => {
+  if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  handleCardClick();
+};
+
 const totalTime = computed(() => {
   const prep = Number(props.meal.prepTime || 0);
   const cook = Number(props.meal.cookTime || 0);
@@ -99,7 +105,12 @@ const imageUrl = computed(() => {
   <el-card
     :class="cardClass"
     :shadow="selectable ? 'hover' : 'always'"
+    role="button"
+    tabindex="0"
+    :aria-label="`${selectable ? '选择' : '查看'}${meal.name}`"
+    :aria-pressed="selectable ? selected : undefined"
     @click="handleCardClick"
+    @keydown="handleCardKeydown"
     class="meal-card-wrapper"
   >
     <div class="meal-card-content">
@@ -122,6 +133,7 @@ const imageUrl = computed(() => {
             type="info"
             size="small"
             circle
+            :aria-label="`查看${meal.name}`"
             @click.stop="emit('view', meal)"
             class="mobile-view-btn"
           >
@@ -131,6 +143,7 @@ const imageUrl = computed(() => {
             type="warning"
             size="small"
             circle
+            :aria-label="`加入想吃清单：${meal.name}`"
             @click.stop="emit('share', meal)"
             class="mobile-share-btn"
           >
@@ -140,6 +153,7 @@ const imageUrl = computed(() => {
             type="primary"
             size="small"
             circle
+            :aria-label="`编辑${meal.name}`"
             @click.stop="emit('edit', meal)"
             class="mobile-edit-btn"
           >
@@ -149,6 +163,7 @@ const imageUrl = computed(() => {
             type="danger"
             size="small"
             circle
+            :aria-label="`删除${meal.name}`"
             @click.stop="emit('delete', meal)"
             class="mobile-delete-btn"
           >
@@ -165,6 +180,7 @@ const imageUrl = computed(() => {
               type="info"
               size="small"
               circle
+              :aria-label="`查看${meal.name}`"
               @click.stop="emit('view', meal)"
             >
               <el-icon><View /></el-icon>
@@ -173,6 +189,7 @@ const imageUrl = computed(() => {
               type="warning"
               size="small"
               circle
+              :aria-label="`加入想吃清单：${meal.name}`"
               @click.stop="emit('share', meal)"
               class="feed-btn"
             >
@@ -182,6 +199,7 @@ const imageUrl = computed(() => {
               type="warning"
               size="small"
               circle
+              :aria-label="`反馈${meal.name}图片问题`"
               @click.stop="emit('imageIssue', meal)"
             >
               <el-icon><Warning /></el-icon>
@@ -190,6 +208,7 @@ const imageUrl = computed(() => {
               type="primary"
               size="small"
               circle
+              :aria-label="`编辑${meal.name}`"
               @click.stop="emit('edit', meal)"
             >
               <el-icon><Edit /></el-icon>
@@ -198,6 +217,7 @@ const imageUrl = computed(() => {
               type="danger"
               size="small"
               circle
+              :aria-label="`删除${meal.name}`"
               @click.stop="emit('delete', meal)"
             >
               <el-icon><Delete /></el-icon>
@@ -252,6 +272,10 @@ const imageUrl = computed(() => {
 </template>
 
 <style scoped>
+.meal-card-wrapper:focus-visible {
+  outline: 2px solid var(--secondary-color);
+  outline-offset: 3px;
+}
 .meal-card-wrapper {
   transition: all 0.3s ease;
   border-radius: 10px;
@@ -716,6 +740,27 @@ const imageUrl = computed(() => {
 
 .meal-info {
   padding: 18px 20px 20px;
+}
+
+.meal-header {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.meal-actions {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meal-actions .el-button + .el-button {
+  margin-left: 0;
+}
+
+@media (max-width: 768px) {
+  .mobile-actions { display: none; }
+  .desktop-actions { display: flex; }
+  .meal-actions .el-button { min-width: 40px; min-height: 40px; }
 }
 
 .meal-name {

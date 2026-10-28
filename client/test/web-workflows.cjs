@@ -56,6 +56,7 @@ async function main () {
   let failAnniversarySave = false
   let failMonth = false
   let failMealList = false
+  let failMealCategories = false
   let simulateMealPagination = false
   let shrinkMealList = false
   let releaseSlowSearch
@@ -104,8 +105,12 @@ async function main () {
       else if (simulateMealPagination && url.searchParams.has('page')) {
         const pageNumber = Number(url.searchParams.get('page'))
         data = { data: [pageNumber === 2 && !shrinkMealList ? meals[1] : meals[0]], total: shrinkMealList ? 1 : 9 }
+      } else if (url.searchParams.get('category')) {
+        const filtered = meals.filter(meal => meal.category === url.searchParams.get('category'))
+        data = { data: filtered, total: filtered.length }
       } else data = url.searchParams.has('page') ? { data: meals, total: meals.length } : meals
     }
+    else if (method === 'GET' && path === '/meals/categories' && failMealCategories) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '分类暂不可用' }) })
     else if (method === 'GET' && path === '/meals/categories') data = [{ category: '家常菜' }, { category: '川菜' }]
     else if (method === 'GET' && path === '/meals/tags') data = []
     else if (method === 'GET' && path === '/meals/meal-a') data = { ...meals[0], supportsConditionalEdit: supportsMealEdit, editVersion: mealEditVersion }
@@ -271,11 +276,17 @@ async function main () {
   await page.getByText('把好味道留给家人').waitFor()
   await Promise.all([
     page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/meals') && new URL(request.url()).searchParams.get('category') === '川菜'),
-    page.locator('.category-strip').getByRole('button', { name: '川菜' }).click()
+    page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '川菜' }).click()
   ])
-  await page.waitForFunction(() => document.querySelector('.category-strip button[aria-pressed="true"]')?.textContent === '川菜')
+  await page.waitForFunction(() => document.querySelector('.category-list button[aria-pressed="true"]')?.textContent === '川菜')
+  await page.locator('.meals-container').getByText('麻婆豆腐').first().waitFor()
+  assert.equal(await page.locator('.meals-container').getByText('番茄炒蛋').count(), 0)
   assert.equal(reads.some(item => item.includes('/meals?') && item.includes('category=')), true)
-  await page.locator('.category-strip').getByRole('button', { name: '全部菜品' }).click()
+  await page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '全部菜品' }).click()
+  await page.locator('.meal-card-wrapper').filter({ hasText: '番茄炒蛋' }).first().focus()
+  await page.keyboard.press('Enter')
+  await page.waitForURL('**/meals/detail/meal-a')
+  await page.goto(`${base}/meals`)
   await page.getByRole('button', { name: '投喂灵感' }).click()
   await page.waitForFunction(() => document.body.innerText.includes('已加入小家的想吃清单'))
   assert.equal(writes.find(item => item.path === '/wishlist')?.body.mealId, 'meal-a')
@@ -298,6 +309,22 @@ async function main () {
   failMealList = false
   await page.getByRole('button', { name: '重新加载' }).click()
   await page.locator('.meals-container').getByText('番茄炒蛋').first().waitFor()
+
+  failMealCategories = true
+  await page.goto(`${base}/meals`)
+  await page.getByText('分类可能不完整').waitFor()
+  failMealCategories = false
+  await page.getByRole('button', { name: '重试' }).click()
+  await page.getByText('分类可能不完整').waitFor({ state: 'hidden' })
+
+  simulateMealPagination = true
+  await Promise.all([
+    page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/meals') && new URL(request.url()).searchParams.get('limit') === '8'),
+    page.getByText('分组', { exact: true }).click()
+  ])
+  await page.getByText('按当前页分组', { exact: false }).waitFor()
+  assert.equal(await page.locator('.desktop-only .el-pagination').isVisible(), true)
+  simulateMealPagination = false
 
   wishlist = [{ _id: 'convert-wish', title: '想吃的新菜', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
   failAttach = true
@@ -844,9 +871,14 @@ async function main () {
   simulateMealPagination = true
   await page.goto(`${base}/meals`)
   await page.locator('.mobile-pagination').getByText('第 1 / 2 页').waitFor()
+  assert.equal(await page.getByRole('complementary', { name: '菜品分类' }).isVisible(), true)
+  assert.equal(await page.getByRole('textbox', { name: '搜索菜品' }).isVisible(), true)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile meal catalog should not overflow horizontally')
   await page.locator('.mobile-pagination').getByRole('button', { name: '下一页' }).click()
   await page.locator('.mobile-pagination').getByText('第 2 / 2 页').waitFor()
   assert.equal(await page.locator('.meals-container').getByText('麻婆豆腐').count() > 0, true)
+  assert.equal(await page.locator('.meal-card-wrapper').getByRole('button', { name: '编辑麻婆豆腐' }).isVisible(), true)
+  assert.equal(await page.locator('.meal-card-wrapper').getByRole('button', { name: '删除麻婆豆腐' }).isVisible(), true)
   await page.waitForTimeout(500)
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-meals-pagination-mobile.png'), fullPage: true })
   await page.locator('.mobile-pagination').getByRole('button', { name: '上一页' }).click()

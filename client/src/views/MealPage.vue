@@ -22,6 +22,7 @@ const currentPage = ref(1);
 const pageSize = ref(8);
 const loading = ref(false);
 const loadError = ref('');
+const categoryLoadFailed = ref(false);
 const displayedMeals = ref([]);
 const totalMeals = ref(0);
 let fetchSequence = 0;
@@ -173,15 +174,13 @@ const fetchMeals = async () => {
     if (selectedDifficulty.value) params.difficulty = selectedDifficulty.value;
     if (favoriteOnly.value) params.favorite = 'true';
 
-    if (currentView.value !== 'grouped') {
-      params.page = currentPage.value;
-      params.limit = pageSize.value;
-    }
+    params.page = currentPage.value;
+    params.limit = pageSize.value;
 
     const result = await api.meal.getAllMeals(params);
     if (sequence !== fetchSequence) return;
     const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
-    if (currentView.value !== 'grouped' && currentPage.value > lastPage) {
+    if (currentPage.value > lastPage) {
       currentPage.value = lastPage;
       return fetchMeals();
     }
@@ -206,6 +205,12 @@ const handleEditMeal = (meal) => {
 const handleViewMeal = (meal) => {
   const mealId = meal._id || meal.id;
   router.push({ name: 'MealDetail', params: { id: mealId } });
+};
+
+const handleMealKeydown = (event, meal) => {
+  if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
+  event.preventDefault();
+  handleViewMeal(meal);
 };
 
 const sharingMealIds = new Set();
@@ -363,12 +368,19 @@ watch(currentView, () => {
   scheduleFetch(0);
 });
 
-onMounted(async () => {
-  await fetchMeals();
+const loadCategories = async () => {
+  categoryLoadFailed.value = false;
   try {
     await mealStore.fetchMealCategories();
-    await mealStore.fetchMealTags();
-  } catch (_) {}
+  } catch (_) {
+    categoryLoadFailed.value = true;
+  }
+};
+
+onMounted(async () => {
+  await fetchMeals();
+  await loadCategories();
+  try { await mealStore.fetchMealTags(); } catch (_) {}
 });
 onBeforeUnmount(() => {
   fetchSequence++;
@@ -416,16 +428,12 @@ onBeforeUnmount(() => {
 
     <!-- 搜索和过滤区域 -->
     <div class="filter-section">
-      <div class="category-strip" aria-label="菜品分类">
-        <button type="button" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部菜品</button>
-        <button type="button" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
-        <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = selectedCategory === category ? '' : category">{{ category }}</button>
-      </div>
       <div class="filter-row">
         <div class="search-box">
           <el-input
             v-model="searchQuery"
             placeholder="搜索菜名、描述、食材或做法..."
+            aria-label="搜索菜品"
             clearable
             class="search-input"
             :prefix-icon="Search"
@@ -520,9 +528,20 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </el-collapse-transition>
-      <div v-if="!loading && !loadError" class="results-summary">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道</div>
+      <div v-if="!loading && !loadError" class="results-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
         </div>
 
+    <div class="catalog-layout">
+      <aside class="category-sidebar" aria-label="菜品分类">
+        <div class="category-heading">菜品分类</div>
+        <nav class="category-list" aria-label="选择菜品分类">
+          <button type="button" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部菜品</button>
+          <button type="button" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
+          <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = category">{{ category }}</button>
+        </nav>
+        <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button type="button" @click="loadCategories">重试</button></div>
+      </aside>
+      <section class="catalog-content" aria-label="菜品列表">
     <!-- 加载状态 -->
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="fetchMeals">重新加载</el-button></el-alert>
     <div v-else-if="loading" class="loading-container">
@@ -582,7 +601,11 @@ onBeforeUnmount(() => {
           v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
           class="meal-list-item"
+          role="button"
+          tabindex="0"
+          :aria-label="`查看${meal.name}`"
           @click="handleViewMeal(meal)"
+          @keydown="handleMealKeydown($event, meal)"
         >
           <div class="meal-list-image">
             <img
@@ -756,7 +779,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 分页器 (仅桌面端) -->
-      <div v-if="currentView !== 'grouped' && Math.ceil(totalMeals / pageSize) > 1" class="pagination-container desktop-only">
+      <div v-if="Math.ceil(totalMeals / pageSize) > 1" class="pagination-container desktop-only">
             <el-pagination
               v-model:current-page="currentPage"
           :page-size="pageSize"
@@ -765,7 +788,7 @@ onBeforeUnmount(() => {
               @current-change="handlePageChange"
             />
           </div>
-      <div v-if="currentView !== 'grouped' && Math.ceil(totalMeals / pageSize) > 1" class="mobile-pagination mobile-only" aria-label="菜品分页">
+      <div v-if="Math.ceil(totalMeals / pageSize) > 1" class="mobile-pagination mobile-only" aria-label="菜品分页">
         <el-button :disabled="currentPage <= 1" @click="handlePageChange(currentPage - 1)">上一页</el-button>
         <span>第 {{ currentPage }} / {{ Math.ceil(totalMeals / pageSize) }} 页</span>
         <el-button :disabled="currentPage >= Math.ceil(totalMeals / pageSize)" @click="handlePageChange(currentPage + 1)">下一页</el-button>
@@ -789,6 +812,8 @@ onBeforeUnmount(() => {
           添加菜品
         </el-button>
       </div>
+    </div>
+      </section>
     </div>
 
     <!-- 添加菜品对话框 -->
@@ -1923,9 +1948,25 @@ onBeforeUnmount(() => {
   }
 }
 
-.category-strip { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: thin; }
-.category-strip button { flex: 0 0 auto; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-primary); color: var(--text-secondary); padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer; }
-.category-strip button:hover, .category-strip button.active { color: var(--text-primary); background: var(--bg-tertiary); border-color: var(--secondary-color); }
-.category-strip button:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
+.catalog-layout { display: grid; grid-template-columns: minmax(130px, 180px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.category-sidebar { position: sticky; top: calc(var(--header-height, 64px) + 12px); max-height: calc(100vh - var(--header-height, 64px) - 24px); overflow-y: auto; padding: 18px 12px; border: 1px solid rgba(224,159,103,.18); border-radius: 24px; background: var(--bg-primary); box-shadow: 0 16px 38px rgba(117,78,58,.09); }
+.category-heading { padding: 0 10px 12px; color: var(--text-secondary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
+.category-list { display: flex; flex-direction: column; gap: 5px; }
+.category-list button { width: 100%; border: 0; border-radius: 14px; background: transparent; color: var(--text-secondary); padding: 11px 12px; text-align: left; font: inherit; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
+.category-list button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.category-list button.active { color: #713d30; background: #f9e6dc; font-weight: 700; box-shadow: inset 3px 0 0 #c77c5c; }
+.category-list button:focus-visible, .meal-list-item:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
+.category-error { padding: 12px 8px 0; color: var(--text-secondary); font-size: 12px; }
+.category-error button { display: block; padding: 6px 0; border: 0; background: none; color: var(--text-primary); text-decoration: underline; font: inherit; cursor: pointer; }
+.catalog-content { min-width: 0; }
+.catalog-content .meals-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); }
+@media (max-width: 768px) {
+  .catalog-layout { grid-template-columns: 82px minmax(0, 1fr); gap: 10px; }
+  .category-sidebar { padding: 12px 5px; border-radius: 18px; }
+  .category-heading { padding: 0 5px 9px; font-size: 11px; letter-spacing: 0; }
+  .category-list button { padding: 10px 6px; font-size: 12px; border-radius: 10px; }
+  .category-error { padding: 8px 4px 0; }
+  .catalog-content .meals-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+}
 .results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
 </style>
