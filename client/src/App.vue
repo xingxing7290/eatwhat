@@ -8,6 +8,7 @@ import { ElMessage } from 'element-plus'
 import ApiLogger from './components/ApiLogger.vue';
 import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present, SwitchButton, ArrowDown } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
+import { useScheduleStore } from './stores/schedule';
 
 const route = useRoute();
 const router = useRouter();
@@ -72,6 +73,7 @@ watch(() => route.fullPath, () => {
 const appName = "安排吃啥"
 
 const mealStore = useMealStore();
+const scheduleStore = useScheduleStore();
 const isLoggedIn = computed(() => !!authToken.value);
 const currentUserName = computed(() => authUser.value?.displayName || authUser.value?.username || '我的账号');
 const currentUserInitial = computed(() => currentUserName.value.slice(0, 1).toUpperCase());
@@ -86,13 +88,8 @@ const loadAuthState = () => {
 };
 
 const clearMealState = () => {
-  mealStore.meals = [];
-  mealStore.currentMeal = null;
-  mealStore.categories = [];
-  mealStore.tags = [];
-  mealStore.totalMeals = 0;
-  mealStore.allLoaded = false;
-  mealStore.error = null;
+  mealStore.$reset();
+  scheduleStore.$reset();
 };
 
 const handleLogout = () => {

@@ -24,6 +24,7 @@ async function main () {
   const page = await context.newPage()
   const errors = []
   const writes = []
+  const reads = []
   let wishlist = []
   let failSchedule = false
   page.on('pageerror', error => errors.push(error.message))
@@ -37,6 +38,7 @@ async function main () {
     const url = new URL(request.url())
     const path = url.pathname.replace(/^\/api/, '')
     const method = request.method()
+    if (method === 'GET') reads.push(`${path}${url.search}`)
     let data
     if (method === 'GET' && path === '/dashboard/summary') data = summary
     else if (method === 'GET' && path === '/meals') data = url.searchParams.has('page') ? { data: meals, total: meals.length } : meals
@@ -57,6 +59,10 @@ async function main () {
     else if (method === 'POST' && path === '/weekly-plans/apply') { writes.push({ path, body: request.postDataJSON() }); data = {} }
     else if (method === 'GET' && path === '/schedules') data = []
     else if (method === 'GET' && path === '/shopping-list') data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: false }] }
+    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { name: '测试小家', inviteCode: 'ABC123', members: [] } }
+    else if (method === 'GET' && path === '/default-meals/status') data = { total: 3, imported: 3, missing: 0 }
+    else if (method === 'GET' && path === '/meal-image-issues') data = []
+    else if (method === 'POST' && path === '/household/join') { writes.push({ path, body: request.postDataJSON() }); data = {} }
     else data = {}
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
   })
@@ -93,6 +99,13 @@ async function main () {
 
   await page.goto(`${base}/meals`)
   await page.getByText('把好味道留给家人').waitFor()
+  await Promise.all([
+    page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/meals') && new URL(request.url()).searchParams.get('category') === '川菜'),
+    page.locator('.category-strip').getByRole('button', { name: '川菜' }).click()
+  ])
+  await page.waitForFunction(() => document.querySelector('.category-strip button[aria-pressed="true"]')?.textContent === '川菜')
+  assert.equal(reads.some(item => item.includes('/meals?') && item.includes('category=')), true)
+  await page.locator('.category-strip').getByRole('button', { name: '全部菜品' }).click()
   await page.getByRole('button', { name: '投喂灵感' }).click()
   await page.waitForFunction(() => document.body.innerText.includes('已加入小家的想吃清单'))
   assert.equal(writes.find(item => item.path === '/wishlist')?.body.mealId, 'meal-a')
@@ -117,6 +130,13 @@ async function main () {
   await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor()
   assert.equal(await page.locator('input').evaluateAll(items => items.some(item => item.value === '做过一次：番茄炒蛋')), true)
   assert.equal(writes.some(item => item.path === '/memories'), false)
+
+  await page.goto(`${base}/settings`)
+  await page.getByPlaceholder('输入伴侣的邀请码').fill('OTHER1')
+  await page.getByRole('button', { name: '加入', exact: true }).click()
+  await page.getByText('加入其他小家会切换当前账号所属家庭').waitFor()
+  await page.getByRole('button', { name: '取消' }).last().click()
+  assert.equal(writes.some(item => item.path === '/household/join'), false)
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/dashboard`)

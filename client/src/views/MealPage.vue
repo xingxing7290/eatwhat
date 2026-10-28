@@ -397,6 +397,11 @@ onBeforeUnmount(() => {
 
     <!-- 搜索和过滤区域 -->
     <div class="filter-section">
+      <div class="category-strip" aria-label="菜品分类">
+        <button type="button" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部菜品</button>
+        <button type="button" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
+        <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = selectedCategory === category ? '' : category">{{ category }}</button>
+      </div>
       <div class="filter-row">
         <div class="search-box">
           <el-input
@@ -496,6 +501,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </el-collapse-transition>
+      <div class="results-summary">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ mealStore.totalMeals }} 道</div>
         </div>
 
     <!-- 加载状态 -->
@@ -1888,4 +1894,9 @@ onBeforeUnmount(() => {
   }
 }
 
+.category-strip { display: flex; gap: 8px; overflow-x: auto; padding: 0 0 12px; scrollbar-width: thin; }
+.category-strip button { flex: 0 0 auto; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-primary); color: var(--text-secondary); padding: 8px 14px; font: inherit; font-size: 13px; cursor: pointer; }
+.category-strip button:hover, .category-strip button.active { color: var(--text-primary); background: var(--bg-tertiary); border-color: var(--secondary-color); }
+.category-strip button:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
+.results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
 </style>

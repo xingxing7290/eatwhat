@@ -96,8 +96,13 @@
 
 <script setup>
 import { computed, onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
+import { useMealStore } from '@/stores/meal';
+import { useScheduleStore } from '@/stores/schedule';
+
+const mealStore = useMealStore();
+const scheduleStore = useScheduleStore();
 
 const themeOptions = [
   { value: 'cream', label: '奶油原木', desc: '温柔奶白与焦糖木色', colors: ['#FDFBF7', '#F5EBE6', '#FFB4A2', '#E09F67'] },
@@ -154,13 +159,15 @@ const saveHousehold = async () => {
   finally { householdSaving.value = false; }
 };
 const refreshInvite = async () => {
+  try { await ElMessageBox.confirm('刷新后原邀请码将失效，已加入的家庭成员不受影响。', '刷新邀请码', { type: 'warning', confirmButtonText: '刷新邀请码', cancelButtonText: '取消' }); } catch (_) { return; }
   try { refreshing.value = true; const res = await api.household.refreshInvite(); household.value = res.household; ElMessage.success('邀请码已刷新'); }
   catch (e) { ElMessage.error(e?.error || '刷新失败'); }
   finally { refreshing.value = false; }
 };
 const joinHousehold = async () => {
   if (!joinCode.value.trim()) return ElMessage.warning('请输入邀请码');
-  try { joining.value = true; applyProfile(await api.household.join(joinCode.value)); joinCode.value = ''; ElMessage.success('已加入小家'); }
+  try { await ElMessageBox.confirm('加入其他小家会切换当前账号所属家庭，原家庭的菜谱、计划和回忆不会自动转移。', '确认切换小家', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '取消' }); } catch (_) { return; }
+  try { joining.value = true; applyProfile(await api.household.join(joinCode.value)); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; await loadGovernance(); ElMessage.success('已加入小家'); }
   catch (e) { ElMessage.error(e?.error || '加入失败'); }
   finally { joining.value = false; }
 };
@@ -183,6 +190,7 @@ const importMissingDefaultMeals = async () => {
   finally { defaultLoading.value = false; }
 };
 const restoreDefaultImages = async () => {
+  try { await ElMessageBox.confirm('将默认菜品图片恢复为系统图片，可能替换当前设置的图片。', '恢复默认图片', { type: 'warning', confirmButtonText: '确认恢复', cancelButtonText: '取消' }); } catch (_) { return; }
   try { defaultLoading.value = true; const res = await api.defaultMeal.restoreImages(); defaultStatus.value = res.status || defaultStatus.value; ElMessage.success('默认菜品图片已恢复'); }
   catch (e) { ElMessage.error(e?.error || '恢复失败'); }
   finally { defaultLoading.value = false; }

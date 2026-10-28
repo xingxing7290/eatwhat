@@ -9,6 +9,7 @@ const meals = ref([]);
 const templates = ref([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
+const saving = ref(false);
 const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
@@ -34,9 +35,12 @@ const load = async () => {
   finally { loading.value = false; }
 };
 const save = async () => {
+  if (!form.title.trim() || !form.date) return ElMessage.warning('请填写标题和日期');
+  if (saving.value) return;
+  saving.value = true;
   try {
     const fd = new FormData();
-    fd.append('title', form.title);
+    fd.append('title', form.title.trim());
     fd.append('date', form.date);
     fd.append('theme', form.theme);
     fd.append('description', form.description);
@@ -48,6 +52,7 @@ const save = async () => {
     reset();
     await load();
   } catch (e) { ElMessage.error(e?.error || '保存失败'); }
+  finally { saving.value = false; }
 };
 const remove = async (item) => {
   try { await ElMessageBox.confirm('确定删除这个纪念日菜单吗？', '删除确认'); await api.anniversary.delete(item._id); await load(); }
@@ -91,7 +96,7 @@ onMounted(load);
         </el-form-item>
         <el-form-item label="照片"><el-upload action="#" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </div>
 </template>
