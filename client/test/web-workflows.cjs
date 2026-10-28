@@ -29,6 +29,9 @@ async function main () {
   let failSchedule = false
   let conflictSchedule = false
   let dailySchedule = schedule
+  let failWeekly = false
+  let failShopping = false
+  let releaseShoppingUpdate
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
   await page.addInitScript(() => {
@@ -60,11 +63,18 @@ async function main () {
     else if (method === 'POST' && path === '/wishlist') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'new-wish' } }
     else if (method === 'POST' && path === '/meals') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'created-meal', name: '想吃的新菜' } }
     else if (method === 'PATCH' && path === '/wishlist/convert-wish/meal') { writes.push({ path, body: request.postDataJSON() }); data = {} }
-    else if (method === 'GET' && path === '/weekly-plans') data = { days: [] }
+    else if (method === 'GET' && path === '/weekly-plans' && failWeekly) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '周计划测试读取失败' }) })
+    else if (method === 'GET' && path === '/weekly-plans') data = { weekStart: today, days: [{ date: today, meals: schedule.meals, hints: [] }] }
     else if (method === 'POST' && path === '/weekly-plans/generate') data = { days: [{ date: today, meals: { breakfast: [], lunch: [], dinner: ['meal-a'] } }], preview: [{ date: today, meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, hints: [] }] }
     else if (method === 'POST' && path === '/weekly-plans/apply') { writes.push({ path, body: request.postDataJSON() }); data = {} }
     else if (method === 'GET' && path === '/schedules') data = []
+    else if (method === 'GET' && path === '/shopping-list' && failShopping) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '购物清单测试读取失败' }) })
     else if (method === 'GET' && path === '/shopping-list') data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: false }] }
+    else if (method === 'PATCH' && path === '/shopping-list/items/item-a') {
+      writes.push({ path, body: request.postDataJSON() })
+      await new Promise(resolve => { releaseShoppingUpdate = resolve })
+      data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
+    }
     else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { name: '测试小家', inviteCode: 'ABC123', members: [] } }
     else if (method === 'GET' && path === '/default-meals/status') data = { total: 3, imported: 3, missing: 0 }
     else if (method === 'GET' && path === '/meal-image-issues') data = []
@@ -149,9 +159,17 @@ async function main () {
   await page.waitForFunction(() => document.body.innerText.includes('已创建并关联菜谱'))
   assert.equal(writes.find(item => item.path === '/wishlist/convert-wish/meal')?.body.mealId, 'created-meal')
 
+  failWeekly = true
   await page.goto(`${base}/weekly-plan`)
+  await page.getByText('无法读取当前日历安排').waitFor()
+  assert.equal(await page.getByRole('button', { name: '生成草稿' }).isDisabled(), true)
+  failWeekly = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.getByText('无法读取当前日历安排').waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: '生成草稿' }).click()
   await page.getByText('规则生成草稿').waitFor()
+  assert.match(await page.locator('.week-summary').innerText(), /已安排 1 餐/)
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-weekly-desktop.png'), fullPage: true })
   await page.getByRole('button', { name: '应用到日历' }).click()
   await page.getByText('应用草稿会替换这一周').waitFor()
   await page.getByRole('button', { name: '再检查一下' }).click()
@@ -181,9 +199,36 @@ async function main () {
   await page.locator('.mobile-nav').getByRole('link', { name: '购物清单' }).click()
   assert.equal(await page.locator('.mobile-nav').getAttribute('aria-hidden'), 'true')
   await page.getByText('鸡蛋', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile shopping list should not overflow horizontally')
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-shopping-mobile.png'), fullPage: true })
   await page.getByRole('button', { name: '清空已购' }).click()
   await page.getByText('将删除 1 项已购食材。').waitFor()
   await page.getByRole('button', { name: '取消' }).last().click()
+  await page.waitForFunction(() => !document.querySelector('[aria-label="删除鸡蛋"]')?.disabled)
+  await Promise.all([
+    page.waitForRequest(request => request.method() === 'PATCH' && new URL(request.url()).pathname.endsWith('/shopping-list/items/item-a')),
+    page.getByText('鸡蛋', { exact: true }).click()
+  ])
+  await page.waitForFunction(() => document.querySelector('[aria-label="删除鸡蛋"]')?.disabled)
+  assert.equal(await page.getByRole('button', { name: '从排餐生成' }).isDisabled(), true)
+  assert.equal(await page.getByLabel('选择购物清单日期').isDisabled(), true)
+  releaseShoppingUpdate()
+  await page.waitForFunction(() => !document.querySelector('[aria-label="删除鸡蛋"]')?.disabled)
+  failShopping = true
+  await page.goto(`${base}/shopping-list`)
+  await page.locator('.load-error').waitFor()
+  assert.match(await page.locator('.load-error').innerText(), /购物清单测试读取失败/)
+  assert.equal(await page.getByRole('button', { name: '从排餐生成' }).isDisabled(), true)
+  assert.equal(await page.getByText('鸡蛋', { exact: true }).count(), 0)
+  failShopping = false
+  await page.getByRole('button', { name: '重试' }).click()
+  await page.getByText('鸡蛋', { exact: true }).waitFor()
+  await page.goto(`${base}/weekly-plan`)
+  await page.getByText('当前日历安排').waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile weekly plan should not overflow horizontally')
+  await page.waitForTimeout(700)
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-weekly-mobile.png'), fullPage: true })
   assert.deepEqual(errors, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()
@@ -199,4 +244,4 @@ async function main () {
   await browser.close()
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1 })
+main().catch(error => { console.error(error); process.exit(1) })
