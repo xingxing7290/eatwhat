@@ -217,6 +217,7 @@ const handleMealKeydown = (event, meal) => {
 const sharingMealIds = reactive({});
 const pendingWishes = ref([]);
 const pendingStorageAvailable = ref(true);
+const legacyWishlistServer = ref(false);
 const wishStorageKey = (() => {
   try {
     const user = JSON.parse(localStorage.getItem('user') || '{}');
@@ -239,9 +240,10 @@ const removePendingWish = (id) => {
   persistPendingWishes();
 };
 const getOpenWishes = async () => {
-  const items = await api.wishlist.list({ status: 'open' });
-  if (!Array.isArray(items)) throw new Error('清单响应不完整');
-  return items;
+  const result = await api.wishlist.list({ status: 'open', includeCapabilities: 'true' });
+  if (Array.isArray(result)) return { items: result, mode: 'legacy' };
+  if (!Array.isArray(result?.items) || typeof result.supportsAtomicMealWish !== 'boolean') throw new Error('清单响应不完整');
+  return { items: result.items, mode: result.supportsAtomicMealWish ? 'atomic' : 'unavailable' };
 };
 const wishMatchesMeal = (item, id) => String(item.mealId?._id || item.mealId?.id || item.mealId || '') === String(id);
 const handleShareMeal = async (meal) => {
@@ -251,11 +253,17 @@ const handleShareMeal = async (meal) => {
   let existing;
   try {
     existing = await getOpenWishes();
-    if (existing.some(item => wishMatchesMeal(item, id))) {
+    if (existing.items.some(item => wishMatchesMeal(item, id))) {
       ElMessage.info('这道菜已经在想吃清单中');
       delete sharingMealIds[id];
       return;
     }
+    if (existing.mode === 'unavailable') {
+      ElMessage.warning('服务器尚未启用安全点菜，本次没有提交');
+      delete sharingMealIds[id];
+      return;
+    }
+    if (existing.mode === 'legacy') legacyWishlistServer.value = true;
   } catch (_) {
     ElMessage.warning('无法核对想吃清单，本次没有提交');
     delete sharingMealIds[id];
@@ -264,10 +272,14 @@ const handleShareMeal = async (meal) => {
   pendingWishes.value.push({ id, name: String(meal.name || '这道菜'), reviewed: false, reviewing: false });
   persistPendingWishes();
   try {
-    const created = await api.wishlist.create({ title: meal.name, mealId: id, category: meal.category || '', priority: 'normal' });
+    const result = existing.mode === 'atomic'
+      ? await api.wishlist.createMealWish(id)
+      : await api.wishlist.create({ title: meal.name, mealId: id, category: meal.category || '', priority: 'normal' });
+    const created = existing.mode === 'atomic' ? result?.item : result;
     if (!created?._id && !created?.id) throw new Error('保存响应不完整');
     removePendingWish(id);
-    ElMessage.success(`「${meal.name}」已加入小家的想吃清单`);
+    if (result?.alreadyExists) ElMessage.info('这道菜已经在想吃清单中');
+    else ElMessage.success(`「${meal.name}」已加入小家的想吃清单`);
   } catch (_) {
     ElMessage.warning(`「${meal.name}」加入结果未确认，请先核对想吃清单`);
   } finally {
@@ -280,8 +292,8 @@ const reviewPendingWish = async (item) => {
   item.reviewing = true;
   item.reviewed = false;
   try {
-    const items = await getOpenWishes();
-    if (items.some(wish => wishMatchesMeal(wish, item.id))) {
+    const result = await getOpenWishes();
+    if (result.items.some(wish => wishMatchesMeal(wish, item.id))) {
       removePendingWish(item.id);
       ElMessage.success(`已在想吃清单中找到「${item.name}」`);
     } else {
@@ -489,6 +501,9 @@ onBeforeUnmount(() => {
       </el-button>
     </div>
 
+    <el-alert v-if="legacyWishlistServer" type="info" :closable="false" show-icon class="wish-recovery" title="当前服务器为旧版本">
+      多个设备同时添加同一道菜时仍可能出现重复；升级并启用服务端安全点菜后可避免。
+    </el-alert>
     <el-alert v-for="item in pendingWishes" :key="item.id" type="warning" :closable="false" show-icon class="wish-recovery" :title="`「${item.name}」${sharingMealIds[item.id] ? '正在添加' : '加入结果未确认'}`">
       <p v-if="sharingMealIds[item.id]">正在提交，请稍候。</p>
       <p v-else>请先核对想吃清单。原请求可能仍在处理，立即重试可能产生重复记录。<span v-if="!pendingStorageAvailable">当前浏览器无法暂存此提示，离开页面后提示可能丢失。</span></p>

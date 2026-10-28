@@ -414,6 +414,7 @@ export const memoryApi = {
 export const wishlistApi = {
 	list: (params = {}) => api.get('/wishlist', { params }),
 	create: (payload) => api.post('/wishlist', payload, { headers: { 'Content-Type': 'application/json' } }),
+	createMealWish: (mealId) => api.post('/wishlist/meal', { mealId }, { headers: { 'Content-Type': 'application/json' } }),
 	vote: (id) => api.post(`/wishlist/${id}/vote`),
 	updateStatus: (id, status) => api.patch(`/wishlist/${id}/status`, { status }, { headers: { 'Content-Type': 'application/json' } }),
 	attachMeal: (id, mealId, options = {}) => api.patch(`/wishlist/${id}/meal`, { mealId, ...options }, { headers: { 'Content-Type': 'application/json' } }),

@@ -47,6 +47,7 @@ async function main () {
   let failMemorySave = false
   let memoryFixture = []
   let failWishlistLoad = false
+  let atomicWishlistMode = 'legacy'
   let failWishSave = false
   let blockMemorySave = false
   let releaseMemorySave
@@ -128,7 +129,9 @@ async function main () {
     else if (method === 'GET' && path === `/schedules/day/${today}` && failSchedule) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) })
     else if (method === 'GET' && path === `/schedules/day/${today}`) data = dailySchedule
     else if (method === 'GET' && path === '/wishlist' && failWishlistLoad) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试清单读取失败' }) })
-    else if (method === 'GET' && path === '/wishlist') data = wishlist
+    else if (method === 'GET' && path === '/wishlist') data = url.searchParams.get('includeCapabilities') === 'true' && atomicWishlistMode !== 'legacy'
+      ? { items: wishlist, supportsAtomicMealWish: atomicWishlistMode === 'ready' }
+      : wishlist
     else if (method === 'PUT' && path === `/schedules/${today}/dinner`) {
       writes.push({ path, body: request.postDataJSON() })
       if (conflictSchedule) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' }) })
@@ -140,6 +143,10 @@ async function main () {
       if (blockWishSave) await new Promise(resolve => { releaseWishSave = resolve })
       if (failWishSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试想吃保存未确认' }) })
       data = { _id: 'new-wish' }
+    }
+    else if (method === 'POST' && path === '/wishlist/meal') {
+      writes.push({ path, body: request.postDataJSON() })
+      data = { item: { _id: 'atomic-wish' }, alreadyExists: false }
     }
     else if (method === 'POST' && path === '/meals') {
       if ((request.headers()['content-type'] || '').includes('multipart/form-data')) {
@@ -345,6 +352,18 @@ async function main () {
     page.locator('.meals-table').getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
   ])
   await page.getByText('网格', { exact: true }).click()
+  atomicWishlistMode = 'unavailable'
+  const atomicAttempts = writes.filter(item => item.path === '/wishlist/meal').length
+  await page.locator('.meal-card-wrapper').filter({ hasText: '麻婆豆腐' }).getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
+  await page.getByText('服务器尚未启用安全点菜，本次没有提交').waitFor()
+  assert.equal(writes.filter(item => item.path === '/wishlist/meal').length, atomicAttempts)
+  atomicWishlistMode = 'ready'
+  await Promise.all([
+    page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/wishlist/meal'),
+    page.locator('.meal-card-wrapper').filter({ hasText: '麻婆豆腐' }).getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
+  ])
+  assert.equal(writes.filter(item => item.path === '/wishlist/meal').at(-1).body.mealId, 'meal-b')
+  atomicWishlistMode = 'legacy'
 
   const search = page.getByPlaceholder('搜索菜名、描述、食材或做法...')
   await Promise.all([
