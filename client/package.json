@@ -12,6 +12,7 @@
     "test:shopping-filter": "node test/shopping-filter-workflows.cjs",
     "test:shopping-theme": "node test/shopping-theme.cjs",
     "test:weekly": "node test/weekly-workflows.cjs",
+    "test:weekly-impact": "node test/weekly-impact-workflows.cjs",
     "test:invitation": "node test/invitation-workflows.cjs",
     "test:album": "node test/album-workflows.cjs",
     "test:album-theme": "node test/album-theme.cjs",

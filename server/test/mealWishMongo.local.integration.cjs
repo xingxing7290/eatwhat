@@ -1407,6 +1407,16 @@ async function main() {
       await pages[0].goto(`${webBase}/weekly-plan`);
       await pages[0].getByRole('button', { name: '生成草稿' }).click();
       await pages[0].getByText('规则生成草稿').waitFor();
+      const impactValues = await pages[0].locator('.impact-summary > div strong').allTextContents();
+      assert.equal(impactValues.reduce((sum, value) => sum + Number(value), 0), 21, 'impact totals cover all seven days and three meal slots');
+      const beforeDiscard = JSON.stringify(await Schedule.find({ householdId: homeA._id }).sort({ _id: 1 }).lean());
+      await pages[0].getByRole('button', { name: '放弃草稿', exact: true }).click();
+      const discardPrompt = pages[0].getByRole('dialog', { name: '放弃周计划草稿？' });
+      await discardPrompt.getByRole('button', { name: '放弃草稿', exact: true }).click();
+      await pages[0].getByText('规则生成草稿').waitFor({ state: 'hidden' });
+      assert.equal(JSON.stringify(await Schedule.find({ householdId: homeA._id }).sort({ _id: 1 }).lean()), beforeDiscard, 'discarding a draft must not modify schedules');
+      await pages[0].getByRole('button', { name: '生成草稿' }).click();
+      await pages[0].getByText('规则生成草稿').waitFor();
       const editableMeal = await Meal.create({ householdId: homeA._id, name: '周计划手动加菜', category: '家常菜' });
       const beforeDraftEdit = await Schedule.countDocuments({ householdId: homeA._id });
       await pages[0].getByRole('button', { name: '调整2026-10-26晚餐' }).click();
@@ -1417,6 +1427,7 @@ async function main() {
       await pages[0].locator('.draft-card').getByText('周计划手动加菜', { exact: true }).waitFor();
       assert.equal(await Schedule.countDocuments({ householdId: homeA._id }), beforeDraftEdit, 'editing the draft must not write any schedules');
       await pages[0].getByRole('button', { name: '应用到日历' }).click();
+      await pages[0].getByRole('dialog', { name: '确认应用周计划' }).getByText('其他排餐信息也可能变化', { exact: false }).waitFor();
       await pages[0].getByRole('button', { name: '确认替换' }).click();
       await pages[0].getByText('已应用到日历').waitFor();
       assert.equal(await pages[0].getByText('规则生成草稿').count(), 0);

@@ -11,6 +11,7 @@ const weekStart = ref('');
 const weekChoice = ref('');
 const changingWeek = ref(false);
 const generating = ref(false);
+const discarding = ref(false);
 const current = ref(null);
 const draft = ref(null);
 const slotEditor = ref(null);
@@ -20,7 +21,7 @@ const applyIssue = ref('');
 let loadSequence = 0;
 const mealTypes = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const draftDirty = computed(() => !!draft.value);
-const busy = computed(() => applying.value || generating.value || changingWeek.value);
+const busy = computed(() => applying.value || generating.value || changingWeek.value || discarding.value);
 const uncertain = computed(() => !!applyIssue.value);
 useDraftGuard({ dirty: draftDirty, busy, uncertain, label: '周计划' });
 const scheduledSlots = computed(() => (current.value?.days || []).reduce((total, day) => total + Object.keys(mealTypes).filter(type => day.meals?.[type]?.length).length, 0));
@@ -51,6 +52,30 @@ const mealId = meal => meal?._id || meal?.id || '';
 const scheduleMealId = item => {
   const meal = item && typeof item === 'object' && 'meal' in item ? item.meal : item;
   return typeof meal === 'string' ? meal : mealId(meal);
+};
+const classifySlot = (before, after) => {
+  const previous = before.map(item => String(scheduleMealId(item)));
+  if (JSON.stringify(previous) === JSON.stringify(after)) return 'same';
+  if (!previous.length) return 'added';
+  if (!after.length) return 'cleared';
+  return 'replaced';
+};
+const draftImpact = computed(() => {
+  if (!draft.value || !current.value) return null;
+  const impact = { added: 0, replaced: 0, cleared: 0, same: 0 };
+  for (let index = 0; index < 7; index++) {
+    const before = current.value.days[index]; const after = draft.value.days[index];
+    for (const type of Object.keys(mealTypes)) {
+      impact[classifySlot(before.meals[type], after.meals[type])]++;
+    }
+  }
+  return impact;
+});
+const slotChange = (date, type) => {
+  const before = current.value?.days.find(day => day.date === date);
+  const after = draft.value?.days.find(day => day.date === date);
+  if (!before || !after) return '';
+  return { added: '新增', replaced: '将替换', cleared: '将清空', same: '' }[classifySlot(before.meals[type], after.meals[type])];
 };
 const validMeals = meals => meals && Object.keys(mealTypes).every(type => Array.isArray(meals[type]));
 const hasReadableMeal = item => {
@@ -141,6 +166,15 @@ const generate = async () => {
   } catch (e) { ElMessage.error(e?.error || e?.message || '生成失败'); }
   finally { loading.value = false; generating.value = false; }
 };
+const discardDraft = async () => {
+  if (!draft.value || busy.value || loading.value || slotEditor.value) return;
+  discarding.value = true;
+  try {
+    try { await ElMessageBox.confirm('放弃后，本次草稿和已调整的餐次会丢失；当前日历安排不会改变。', '放弃周计划草稿？', { type: 'warning', confirmButtonText: '放弃草稿', cancelButtonText: '继续编辑' }); } catch (_) { return; }
+    draft.value = null; editedDates.value = [];
+    ElMessage.success('已放弃草稿，日历未改变');
+  } finally { discarding.value = false; }
+};
 const applyDraft = async () => {
   if (!draft.value?.days?.length || loading.value || busy.value || loadError.value || applyIssue.value || !versionsAvailable.value) return;
   const currentDates = current.value.days.map(day => day.date);
@@ -150,7 +184,8 @@ const applyDraft = async () => {
   applying.value = true;
   try {
     try {
-      await ElMessageBox.confirm('应用草稿会替换这一周每天的早餐、午餐和晚餐，包括草稿中的空餐次。请确认已检查当前安排。', '确认应用周计划', { type: 'warning', confirmButtonText: '确认替换', cancelButtonText: '再检查一下' });
+      const impact = draftImpact.value;
+      await ElMessageBox.confirm(`应用草稿会替换这一周每天的早餐、午餐和晚餐，包括草稿中的空餐次。按当前读取的数据比较：新增 ${impact.added} 餐，替换 ${impact.replaced} 餐，清空 ${impact.cleared} 餐，菜品相同 ${impact.same} 餐。比较仅包含菜品及顺序；应用仍会写入所有七天，其他排餐信息也可能变化。`, '确认应用周计划', { type: 'warning', confirmButtonText: '确认替换', cancelButtonText: '再检查一下' });
     } catch (_) { return; }
     const expectedVersions = Object.fromEntries(current.value.days.map(day => [day.date, day.scheduleVersion]));
     const result = await api.weeklyPlan.apply(draft.value.days, expectedVersions);
@@ -191,7 +226,7 @@ onBeforeUnmount(() => { loadSequence++; });
 </script>
 
 <template>
-  <div class="weekly-page" v-loading="loading">
+  <div class="weekly-page" v-loading="loading" element-loading-text="正在处理周计划" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header">
       <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>本周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
       <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || busy || !!loadError || !!applyIssue || !versionsAvailable" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
@@ -199,7 +234,9 @@ onBeforeUnmount(() => { loadSequence++; });
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
-    <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><strong>规则生成草稿</strong><span>可逐餐调整，应用后才会写入日历</span></div></template><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length" class="muted">空</span></div><el-button link type="primary" class="edit-slot" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
+    <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><div><strong>规则生成草稿</strong><span>可逐餐调整，应用后才会写入日历</span></div><el-button :disabled="loading || busy" @click="discardDraft">放弃草稿</el-button></div></template>
+      <div v-if="draftImpact" class="impact-summary" aria-label="草稿对当前安排的影响"><div><span>新增</span><strong>{{ draftImpact.added }}</strong><small>餐</small></div><div><span>替换</span><strong>{{ draftImpact.replaced }}</strong><small>餐</small></div><div :class="{ caution: draftImpact.cleared > 0 }"><span>清空</span><strong>{{ draftImpact.cleared }}</strong><small>餐</small></div><div><span>菜品相同</span><strong>{{ draftImpact.same }}</strong><small>餐</small></div><p>按当前读取的菜品和顺序比较，“菜品相同”包括均为空的餐次；应用仍会写入全部七天，其他排餐信息也可能变化。</p></div>
+      <div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length && !slotChange(day.date, type)" class="muted">空</span><span v-if="slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-card v-else><template #header>当前日历安排</template><div class="plan-grid"><div v-for="day in current?.days || []" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="item in day.meals?.[type] || []" :key="item.meal?._id || item._id" effect="plain">{{ item.meal?.name || item.name || '未命名' }}</el-tag><span v-if="!day.meals?.[type]?.length" class="muted">未安排</span></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div><el-empty v-if="current && !current.days?.length" description="这一周暂无安排" /></el-card>
@@ -208,9 +245,9 @@ onBeforeUnmount(() => { loadSequence++; });
 </template>
 
 <style scoped>
-.weekly-page { display: flex; flex-direction: column; gap: 18px; }
+.weekly-page { --weekly-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 20px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 26px; padding: clamp(22px, 3vw, 36px); box-shadow: 0 12px 28px var(--shadow-color); }
-h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-family: Georgia, 'Songti SC', serif; font-size: clamp(26px, 3vw, 36px); } .eyebrow { color: var(--secondary-color); font-size: 11px; letter-spacing: .14em; font-weight: 800; } .page-header p,.muted{color:var(--text-secondary)}
+h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-family: Georgia, 'Songti SC', serif; font-size: clamp(26px, 3vw, 36px); } .eyebrow { color: var(--weekly-accent); font-size: 11px; letter-spacing: .14em; font-weight: 800; } .page-header p,.muted{color:var(--text-secondary)}
 .week-summary { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 13px; } .week-summary span { border: 1px solid var(--border-light); border-radius: 999px; padding: 5px 10px; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 12px; }
@@ -218,14 +255,26 @@ h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-fam
 .slot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .slot strong { min-width: 42px; }.hints { display: flex; gap: 6px; flex-wrap: wrap; }
 .draft-card { border-color: var(--secondary-color); }
-.draft-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.draft-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: center; gap: 12px; }
+.draft-heading > div { display: flex; flex-direction: column; gap: 5px; color: var(--text-primary); }
 .draft-heading span,.edited-note { color: var(--text-secondary); font-size: 12px; }
+.impact-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+.impact-summary > div { display: flex; align-items: baseline; flex-wrap: wrap; gap: 5px; padding: 12px; border: 1px solid var(--border-light); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); }
+.impact-summary strong { font-size: 22px; color: var(--weekly-accent); }
+.impact-summary small, .impact-summary p { color: var(--text-secondary); font-size: 12px; }
+.impact-summary .caution { border-color: var(--weekly-accent); }
+.impact-summary p { grid-column: 1 / -1; margin: 2px 0 0; line-height: 1.6; }
+.change-note { color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .draft-slot { flex-wrap: nowrap; align-items: flex-start; }
 .draft-slot strong { padding-top: 7px; }
 .slot-meals { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; gap: 5px; padding-top: 4px; overflow-wrap: anywhere; }
 .slot-meals :deep(.el-tag) { max-width: 100%; height: auto; min-height: 24px; white-space: normal; }
-.edit-slot { min-width: 40px; min-height: 34px; flex-shrink: 0; }
+.edit-slot { min-width: 40px; min-height: 34px; flex-shrink: 0; color: var(--weekly-accent); }
 .edited-note { margin: 0; line-height: 1.5; }
 @media (max-width: 720px) { .page-header { flex-direction: column; align-items: stretch; } .actions { justify-content: flex-start; } .actions .el-button { min-height: 44px; margin-left: 0; } }
 @media (max-width: 720px) { .edit-slot { min-width: 44px; min-height: 44px; } }
+:global(html.dark .weekly-page) { --weekly-accent: var(--secondary-color); }
+:global(html:not(.dark) .weekly-page .slot .el-tag) { color: #8e4938; background: #fff8f4; border-color: #e8baaa; }
+:global(html.dark .weekly-page .slot .el-tag) { color: var(--text-primary); background: var(--bg-tertiary); border-color: var(--border-color); }
+@media (max-width: 600px) { .impact-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .draft-heading .el-button { min-height: 44px; } }
 </style>
