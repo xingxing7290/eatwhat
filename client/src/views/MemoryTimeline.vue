@@ -5,6 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture } from '@element-plus/icons-vue';
 import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import { useUncertainCreate } from '@/composables/useUncertainCreate';
+import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 
 const memories = ref([]);
 const route = useRoute();
@@ -20,7 +22,10 @@ const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${St
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', mealIds: [] });
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
-useDraftGuard({ dirty, busy: saving, label: '饭后回忆' });
+const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => resetForm(), reopen: () => { dialogVisible.value = true; }, label: '回忆' });
+const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
+const busy = computed(() => saving.value || reviewing.value || deciding.value);
+useDraftGuard({ dirty, busy, uncertain: saveUncertain, label: '饭后回忆' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
 const supportedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const supportedPhotoExts = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
@@ -109,7 +114,7 @@ const load = async () => {
 };
 const save = async () => {
   if (!form.date) return ElMessage.warning('请选择日期');
-  if (saving.value) return;
+  if (saving.value || saveUncertain.value || reviewing.value || loading.value || loadError.value) return;
   try {
     const invalidPhoto = photoFiles.value.find(file => !isSupportedPhoto(file.raw || file));
     if (invalidPhoto) {
@@ -122,12 +127,13 @@ const save = async () => {
     const fd = new FormData();
     Object.entries(form).forEach(([key, value]) => fd.append(key, Array.isArray(value) ? JSON.stringify(value) : value));
     photoFiles.value.forEach(file => fd.append('photos', file.raw || file));
-    await api.memory.create(fd);
+    const created = await api.memory.create(fd);
+    if (!created?._id && !created?.id) throw new Error('保存响应不完整');
     ElMessage.success('回忆已保存');
     dialogVisible.value = false;
     resetForm();
     await load();
-  } catch (e) { ElMessage.error(e?.error || '保存失败'); }
+  } catch (_) { markUncertain(); }
   finally { saving.value = false; }
 };
 const remove = async (item) => {
@@ -151,6 +157,8 @@ onMounted(load);
       <el-button type="primary" :disabled="loading || !!loadError || !!deletingId" @click="dialogVisible = true"><el-icon><Plus /></el-icon>记录一餐</el-button>
     </div>
 
+    <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
+
     <div v-loading="loading" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
       <el-empty v-else-if="!loading && !memories.length" description="还没有饭后回忆" />
@@ -170,7 +178,8 @@ onMounted(load);
     </div>
 
     <el-dialog v-model="dialogVisible" title="记录饭后回忆" width="min(560px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
-      <el-form label-position="top" :disabled="saving">
+      <CreateRecoveryNotice v-if="saveUncertain" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
+      <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" type="date" /></el-form-item>
         <el-form-item label="餐次"><el-select v-model="form.mealType"><el-option v-for="(label, key) in mealTypeText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item label="相关菜品"><el-select v-model="form.mealIds" multiple filterable><el-option v-for="meal in meals" :key="meal._id || meal.id" :label="meal.name" :value="meal._id || meal.id" /></el-select></el-form-item>
@@ -178,9 +187,9 @@ onMounted(load);
         <el-form-item label="心情"><el-input v-model="form.mood" placeholder="开心、满足、想再吃一次..." /></el-form-item>
         <el-form-item label="评分"><el-rate v-model="form.rating" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
-        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :disabled="saving" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
+        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
       </el-form>
-      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || loading || !!loadError" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </div>
 </template>

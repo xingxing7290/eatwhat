@@ -4,6 +4,8 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture } from '@element-plus/icons-vue';
 import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import { useUncertainCreate } from '@/composables/useUncertainCreate';
+import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 
 const menus = ref([]);
 const meals = ref([]);
@@ -13,13 +15,15 @@ const loadError = ref('');
 const dialogVisible = ref(false);
 const saving = ref(false);
 const deletingId = ref('');
-const saveUncertain = ref(false);
 const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
-useDraftGuard({ dirty, busy: saving, label: '纪念日菜单' });
+const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '纪念日菜单' });
+const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
+const busy = computed(() => saving.value || reviewing.value || deciding.value);
+useDraftGuard({ dirty, busy, uncertain: saveUncertain, label: '纪念日菜单' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const allowedPhotoTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream']);
 const allowedPhotoExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
@@ -68,7 +72,7 @@ const load = async () => {
 };
 const save = async () => {
   if (!form.title.trim() || !form.date) return ElMessage.warning('请填写标题和日期');
-  if (saving.value || saveUncertain.value || loading.value || loadError.value) return;
+  if (saving.value || saveUncertain.value || reviewing.value || loading.value || loadError.value) return;
   const invalid = photoFiles.value.map(photoError).find(Boolean);
   if (invalid) return ElMessage.warning(invalid);
   if (photoFiles.value.length > 12) return ElMessage.warning('最多上传 12 张照片');
@@ -81,12 +85,13 @@ const save = async () => {
     fd.append('description', form.description);
     fd.append('meals', JSON.stringify(form.meals));
     photoFiles.value.forEach(file => fd.append('photos', file.raw || file));
-    await api.anniversary.create(fd);
+    const created = await api.anniversary.create(fd);
+    if (!created?._id && !created?.id) throw new Error('保存响应不完整');
     ElMessage.success('纪念日菜单已保存');
     dialogVisible.value = false;
     reset();
     await load();
-  } catch (e) { saveUncertain.value = true; ElMessage.warning('保存结果未确认，请先核对菜单，避免重复创建'); }
+  } catch (_) { markUncertain(); }
   finally { saving.value = false; }
 };
 const remove = async (item) => {
@@ -95,11 +100,6 @@ const remove = async (item) => {
   try { await ElMessageBox.confirm('确定删除这个纪念日菜单吗？', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }); await api.anniversary.delete(item._id); await load(); }
   catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.error || '删除失败'); }
   finally { deletingId.value = ''; }
-};
-const reviewAfterError = async () => {
-  dialogVisible.value = false;
-  await load();
-  if (!loadError.value) saveUncertain.value = false;
 };
 onMounted(load);
 </script>
@@ -110,6 +110,8 @@ onMounted(load);
       <div><span class="eyebrow">SPECIAL DAYS · 特别的日子</span><h1>纪念日菜单</h1><p>为生日、纪念日、节日和特别的周末，提前保存一份菜单。</p></div>
       <el-button type="primary" :disabled="loading || !!loadError || !!deletingId" @click="dialogVisible = true"><el-icon><Plus /></el-icon>新增菜单</el-button>
     </div>
+
+    <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="纪念日菜单" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载纪念日菜单：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <div v-else v-loading="loading" class="menu-grid">
@@ -129,8 +131,8 @@ onMounted(load);
     </div>
 
     <el-dialog v-model="dialogVisible" title="新增纪念日菜单" width="min(620px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
-      <el-alert v-if="saveUncertain" type="warning" :closable="false" show-icon title="保存结果未确认，请先返回菜单核对，避免重复创建。"><el-button link type="primary" @click="reviewAfterError">返回并核对</el-button></el-alert>
-      <el-form label-position="top" :disabled="saving">
+      <CreateRecoveryNotice v-if="saveUncertain" label="纪念日菜单" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
+      <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="菜单模板"><div class="template-list"><el-button v-for="tpl in templates" :key="tpl.key" size="small" @click="applyTemplate(tpl)">{{ tpl.title }}</el-button></div></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" maxlength="100" show-word-limit placeholder="比如：三周年晚餐" /></el-form-item>
         <el-form-item label="日期"><el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" /></el-form-item>
@@ -139,7 +141,7 @@ onMounted(load);
         <el-form-item v-for="(label, key) in mealTypeText" :key="key" :label="label">
           <el-select v-model="form.meals[key]" multiple filterable style="width: 100%;"><el-option v-for="meal in meals" :key="meal._id || meal.id" :label="meal.name" :value="meal._id || meal.id" /></el-select>
         </el-form-item>
-        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。</small></el-form-item>
+        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。</small></el-form-item>
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>

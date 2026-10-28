@@ -44,6 +44,10 @@ async function main () {
   let failAlbum = false
   let failMealCreate = false
   let failMemories = false
+  let failMemorySave = false
+  let memoryFixture = []
+  let failWishlistLoad = false
+  let failWishSave = false
   let blockMemorySave = false
   let releaseMemorySave
   let blockWishSave = false
@@ -106,14 +110,19 @@ async function main () {
     else if (method === 'GET' && path === '/meals/tags') data = []
     else if (method === 'GET' && path === '/meals/meal-a') data = { ...meals[0], supportsConditionalEdit: supportsMealEdit, editVersion: mealEditVersion }
     else if (method === 'GET' && path === '/memories' && failMemories) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '回忆测试读取失败' }) })
-    else if (method === 'GET' && path === '/memories') data = []
+    else if (method === 'GET' && path === '/memories') data = memoryFixture
     else if (method === 'POST' && path === '/memories') {
       writes.push({ path })
       if (blockMemorySave) await new Promise(resolve => { releaseMemorySave = resolve })
+      if (failMemorySave) {
+        memoryFixture = [{ _id: 'possibly-saved', date: today, mealType: 'dinner', title: '结果不确定的回忆', photos: [], mealIds: [] }]
+        return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试回忆保存未确认' }) })
+      }
       data = { _id: 'memory-new' }
     }
     else if (method === 'GET' && path === `/schedules/day/${today}` && failSchedule) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) })
     else if (method === 'GET' && path === `/schedules/day/${today}`) data = dailySchedule
+    else if (method === 'GET' && path === '/wishlist' && failWishlistLoad) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试清单读取失败' }) })
     else if (method === 'GET' && path === '/wishlist') data = wishlist
     else if (method === 'PUT' && path === `/schedules/${today}/dinner`) {
       writes.push({ path, body: request.postDataJSON() })
@@ -124,6 +133,7 @@ async function main () {
     else if (method === 'POST' && path === '/wishlist') {
       writes.push({ path, body: request.postDataJSON() })
       if (blockWishSave) await new Promise(resolve => { releaseWishSave = resolve })
+      if (failWishSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试想吃保存未确认' }) })
       data = { _id: 'new-wish' }
     }
     else if (method === 'POST' && path === '/meals') {
@@ -321,6 +331,33 @@ async function main () {
   releaseWishSave()
   blockWishSave = false
   await page.getByRole('dialog', { name: '添加想吃' }).waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: '添加想吃' }).click()
+  await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').fill('结果不确定的想吃')
+  failWishSave = true
+  await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '保存' }).click()
+  await page.locator('.el-dialog .el-alert').filter({ hasText: '想吃记录保存结果未确认' }).waitFor()
+  const wishAttemptsAfterFailure = writes.filter(item => item.path === '/wishlist').length
+  assert.equal(await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '保存' }).isDisabled(), true)
+  failWishlistLoad = true
+  await page.getByRole('button', { name: '刷新列表并核对' }).click()
+  await page.getByRole('dialog', { name: '添加想吃' }).waitFor({ state: 'hidden' })
+  await page.getByText('想吃清单暂时无法加载').waitFor()
+  assert.equal(await page.getByRole('button', { name: '已核对，允许重试' }).count(), 0)
+  failWishlistLoad = false
+  await page.getByRole('button', { name: '刷新列表并核对' }).click()
+  const wishRecovery = page.locator('.wishlist-page > .el-alert').filter({ hasText: '想吃记录保存结果未确认' })
+  await wishRecovery.getByRole('button', { name: '已核对，允许重试' }).waitFor()
+  await wishRecovery.getByRole('button', { name: '已核对，允许重试' }).click()
+  await page.getByRole('button', { name: '继续核对' }).click()
+  assert.equal(await wishRecovery.getByRole('button', { name: '已核对，允许重试' }).count(), 1)
+  assert.equal(writes.filter(item => item.path === '/wishlist').length, wishAttemptsAfterFailure)
+  await wishRecovery.getByRole('button', { name: '已核对，允许重试' }).click()
+  await page.locator('.el-message-box:visible').getByRole('button', { name: '已核对，允许重试' }).click()
+  assert.equal(await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').inputValue(), '结果不确定的想吃')
+  failWishSave = false
+  await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '保存' }).click()
+  await page.getByRole('dialog', { name: '添加想吃' }).waitFor({ state: 'hidden' })
+  assert.equal(writes.filter(item => item.path === '/wishlist').length, wishAttemptsAfterFailure + 1)
   await page.getByRole('button', { name: '转菜品' }).click()
   await page.getByText('关联尚未确认').waitFor()
   assert.equal(writes.filter(item => item.path === '/meals').length, 1)
@@ -476,6 +513,40 @@ async function main () {
   releaseMemorySave()
   blockMemorySave = false
   await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: '记录一餐' }).click()
+  await page.getByPlaceholder('比如：周五晚上的番茄牛腩').fill('结果不确定的回忆')
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).locator('input[type=file]').setInputFiles({ name: 'draft.png', mimeType: 'image/png', buffer: Buffer.from('test') })
+  failMemorySave = true
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '保存' }).click()
+  await page.locator('.el-dialog .el-alert').filter({ hasText: '回忆保存结果未确认' }).waitFor()
+  const memoryAttemptsAfterFailure = writes.filter(item => item.path === '/memories').length
+  assert.equal(await page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '保存' }).isDisabled(), true)
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '取消' }).click()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByText('当前饭后回忆的保存结果尚未确认，离开后本页草稿和核对提示会丢失。').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  await page.getByRole('button', { name: '记录一餐' }).click()
+  failMemories = true
+  await page.getByRole('button', { name: '刷新列表并核对' }).click()
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor({ state: 'hidden' })
+  await page.getByText('无法加载回忆').waitFor()
+  assert.equal(await page.getByRole('button', { name: '已有记录，放弃草稿' }).count(), 0)
+  failMemories = false
+  await page.getByRole('button', { name: '刷新列表并核对' }).click()
+  await page.getByText('结果不确定的回忆', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '已有记录，放弃草稿' }).click()
+  await page.getByRole('button', { name: '继续核对' }).click()
+  await page.getByRole('button', { name: '记录一餐' }).click()
+  assert.equal(await page.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '结果不确定的回忆')
+  assert.equal(await page.locator('.el-upload-list__item').count(), 1)
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '取消' }).click()
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor({ state: 'hidden' })
+  await page.locator('.memory-page > .el-alert').filter({ hasText: '回忆保存结果未确认' }).getByRole('button', { name: '已有记录，放弃草稿' }).click()
+  await page.getByRole('button', { name: '确认放弃草稿' }).click()
+  assert.equal(await page.locator('.memory-page > .el-alert').filter({ hasText: '回忆保存结果未确认' }).count(), 0)
+  assert.equal(writes.filter(item => item.path === '/memories').length, memoryAttemptsAfterFailure)
+  failMemorySave = false
+  memoryFixture = []
 
   failAnniversaries = true
   await page.goto(`${base}/anniversaries`)
@@ -499,17 +570,20 @@ async function main () {
   await page.waitForFunction(() => document.querySelectorAll('.el-upload-list__item').length === 0)
   failAnniversarySave = true
   await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '保存' }).click()
-  await page.getByText('保存结果未确认，请先返回菜单核对').waitFor()
+  await page.locator('.el-dialog .el-alert').filter({ hasText: '纪念日菜单保存结果未确认' }).waitFor()
   assert.equal(await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '保存' }).isDisabled(), true)
   assert.equal(writes.filter(item => item.path === '/anniversaries').length, 1)
   failAnniversarySave = false
-  await page.getByRole('button', { name: '返回并核对' }).click()
+  await page.getByRole('button', { name: '刷新列表并核对' }).click()
+  await page.getByRole('dialog', { name: '新增纪念日菜单' }).waitFor({ state: 'hidden' })
   await page.getByText('周年晚餐').waitFor()
+  await page.locator('.anniversary-page > .el-alert').filter({ hasText: '纪念日菜单保存结果未确认' }).getByRole('button', { name: '已核对，允许重试' }).waitFor()
   await page.locator('.nav-link').getByText('首页').click()
-  await page.getByText('当前纪念日菜单尚未保存').waitFor()
+  await page.getByText('当前纪念日菜单的保存结果尚未确认').waitFor()
   await page.getByRole('button', { name: '继续编辑' }).click()
   await page.getByRole('button', { name: '新增菜单' }).click()
   assert.equal(await page.getByPlaceholder('比如：三周年晚餐').inputValue(), '自己的标题')
+  assert.equal(await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '保存' }).isDisabled(), true)
   await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '取消' }).click()
   await page.locator('.nav-link').getByText('首页').click()
   await page.getByRole('button', { name: '放弃并离开' }).click()

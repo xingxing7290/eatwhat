@@ -5,6 +5,8 @@ import { useRouter } from 'vue-router';
 import { Plus, Delete, Check, Star, Calendar } from '@element-plus/icons-vue';
 import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import { useUncertainCreate } from '@/composables/useUncertainCreate';
+import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 
 const items = ref([]);
 const router = useRouter();
@@ -24,8 +26,10 @@ const linkError = ref('');
 const form = reactive({ title: '', note: '', category: '', priority: 'normal' });
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value);
-const busy = computed(() => saving.value || !!convertingId.value);
-useDraftGuard({ dirty, busy, label: '想吃记录' });
+const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '想吃记录' });
+const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
+const busy = computed(() => saving.value || !!convertingId.value || reviewing.value || deciding.value);
+useDraftGuard({ dirty, busy, uncertain: saveUncertain, label: '想吃记录' });
 const statusText = { open: '想吃', planned: '已安排', done: '已完成' };
 const priorityText = { low: '随缘', normal: '普通', high: '超想吃' };
 const grouped = computed(() => ['open', 'planned', 'done'].map(status => ({ status, items: items.value.filter(item => item.status === status) })));
@@ -43,15 +47,16 @@ const load = async () => {
 const reset = () => { Object.assign(form, { title: '', note: '', category: '', priority: 'normal' }); initialForm.value = JSON.stringify(form); };
 const save = async () => {
   if (!form.title.trim()) return ElMessage.warning('请填写想吃什么');
-  if (saving.value) return;
+  if (saving.value || saveUncertain.value || reviewing.value || loading.value || loadError.value) return;
   saving.value = true;
   try {
-    await api.wishlist.create({ ...form, title: form.title.trim() });
+    const created = await api.wishlist.create({ ...form, title: form.title.trim() });
+    if (!created?._id && !created?.id) throw new Error('保存响应不完整');
     ElMessage.success('已加入想吃清单');
     dialogVisible.value = false;
     reset();
     await load();
-  } catch (e) { ElMessage.error(e?.error || '保存失败'); }
+  } catch (_) { markUncertain(); }
   finally { saving.value = false; }
 };
 const vote = async (item) => { try { await api.wishlist.vote(item._id); await load(); } catch (e) { ElMessage.error(e?.error || '投票失败'); } };
@@ -124,8 +129,10 @@ onMounted(load);
   <div class="wishlist-page">
     <div class="page-header">
       <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、对方提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可安排到今天晚餐。</small></div>
-      <el-button type="primary" @click="dialogVisible = true"><el-icon><Plus /></el-icon>添加想吃</el-button>
+      <el-button type="primary" :disabled="loading || !!loadError || reviewing" @click="dialogVisible = true"><el-icon><Plus /></el-icon>添加想吃</el-button>
     </div>
+
+    <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="想吃记录" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <div v-else v-loading="loading" class="board">
@@ -154,13 +161,14 @@ onMounted(load);
     </div>
 
     <el-dialog v-model="dialogVisible" title="添加想吃" width="min(520px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
-      <el-form label-position="top" :disabled="saving">
+      <CreateRecoveryNotice v-if="saveUncertain" label="想吃记录" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
+      <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="想吃什么"><el-input v-model="form.title" placeholder="比如：冬阴功火锅、楼下那家牛肉面" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="3" /></el-form-item>
         <el-form-item label="分类"><el-input v-model="form.category" placeholder="外食、家常、甜品、周末计划..." /></el-form-item>
         <el-form-item label="优先级"><el-select v-model="form.priority"><el-option label="随缘" value="low" /><el-option label="普通" value="normal" /><el-option label="超想吃" value="high" /></el-select></el-form-item>
       </el-form>
-      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || loading || !!loadError" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="linkDialog" title="关联已有菜谱" width="min(520px, 92vw)">
       <p>为「{{ linkItem?.title }}」选择已有菜谱，不会创建新菜品。</p>
