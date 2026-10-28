@@ -10,7 +10,7 @@ function redactSensitivePayload(value) {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key,
-    /(password|token|secret|authorization|invite[_-]?code)/i.test(key)
+    /(password|token|secret|authorization|invite[_-]?code|creation[_-]?key|share[_-]?url)/i.test(key)
       ? '[redacted]'
       : redactSensitivePayload(item)
   ]));
@@ -30,6 +30,9 @@ function safeRequestBody(req) {
       hasNote: Boolean(body.note),
       revision: body.revision
     };
+  }
+  if (/\/guest-orders(?:\/|\?|$)/.test(String(req.originalUrl || req.url || ''))) {
+    return { hasTitle: Boolean(body.title), hasEventAt: Boolean(body.eventAt), hasExpiry: Boolean(body.expiresAt), hasExpectedVersion: Boolean(body.expectedEditVersion) };
   }
   return redactSensitivePayload(body);
 }

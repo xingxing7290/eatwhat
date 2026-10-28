@@ -201,6 +201,7 @@ onBeforeUnmount(() => {
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item><router-link to="/wishlist">想吃清单</router-link></el-dropdown-item>
+                  <el-dropdown-item><router-link to="/guest-orders">宴请点菜</router-link></el-dropdown-item>
                   <el-dropdown-item><router-link to="/memories">饭后回忆</router-link></el-dropdown-item>
                   <el-dropdown-item><router-link to="/photo-album">饭桌相册</router-link></el-dropdown-item>
                   <el-dropdown-item><router-link to="/anniversaries">纪念日</router-link></el-dropdown-item>
@@ -332,6 +333,10 @@ onBeforeUnmount(() => {
           <router-link to="/wishlist" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Star /></el-icon>
             <span>想吃</span>
+          </router-link>
+          <router-link to="/guest-orders" class="mobile-nav-link" @click="closeMobileMenu">
+            <el-icon><Food /></el-icon>
+            <span>宴请点菜</span>
           </router-link>
           <router-link to="/anniversaries" class="mobile-nav-link" @click="closeMobileMenu">
             <el-icon><Present /></el-icon>

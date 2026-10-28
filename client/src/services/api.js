@@ -45,7 +45,7 @@ function redactLogData(value) {
 	if (Array.isArray(value)) return value.map(redactLogData);
 	if (!value || typeof value !== 'object') return value;
 	return Object.fromEntries(Object.entries(value).map(([key, item]) => [
-		key, /(password|token|secret|authorization|invite[_-]?code)/i.test(key) ? '[已隐藏]' : redactLogData(item)
+		key, /(password|token|secret|authorization|invite[_-]?code|creation[_-]?key|share[_-]?url)/i.test(key) ? '[已隐藏]' : redactLogData(item)
 	]));
 }
 
@@ -54,7 +54,8 @@ const logAPI = (type, url, data, status) => {
 	if (!ENABLE_API_LOGS) return;
 	// Login and registration payloads can contain passwords and access tokens.
 	const authSensitive = /\/auth\/(?:login|register)(?:\?|$)/i.test(String(url));
-	data = authSensitive ? '[认证数据已隐藏]' : redactLogData(data);
+	const guestSensitive = /\/guest-orders(?:\/|\?|$)/i.test(String(url));
+	data = authSensitive ? '[认证数据已隐藏]' : guestSensitive ? '[宴请数据已隐藏]' : redactLogData(data);
 
 	const timestamp = new Date();
 	const timeString = timestamp.toLocaleTimeString();
@@ -143,6 +144,7 @@ api.interceptors.response.use(
 			if (ENABLE_API_LOGS) {
 				let requestData = '非JSON或无数据';
 				if (/\/auth\/(?:login|register)(?:\?|$)/i.test(error.config?.url || '')) requestData = '[认证数据已隐藏]';
+				else if (/\/guest-orders(?:\/|\?|$)/i.test(error.config?.url || '')) requestData = '[宴请数据已隐藏]';
 				else if (error.config?.data && typeof error.config.data === 'string') {
 					try { requestData = redactLogData(JSON.parse(error.config.data)); } catch (_) { requestData = '非JSON或无数据'; }
 				}
@@ -150,7 +152,7 @@ api.interceptors.response.use(
 					url: error.config?.url,
 					method: error.config?.method,
 					status: response.status,
-					data: redactLogData(response.data),
+					data: /\/guest-orders(?:\/|\?|$)/i.test(error.config?.url || '') ? '[宴请数据已隐藏]' : redactLogData(response.data),
 					requestData
 				});
 			}
@@ -363,6 +365,15 @@ export const dashboardApi = {
 	summary: () => api.get('/dashboard/summary')
 };
 
+export const guestOrderApi = {
+	capabilities: () => api.get('/guest-orders/capabilities'),
+	list: () => api.get('/guest-orders'),
+	get: id => api.get(`/guest-orders/${encodeURIComponent(id)}`),
+	createSafe: payload => api.post('/guest-orders/idempotent', payload),
+	update: (id, payload) => api.patch(`/guest-orders/${encodeURIComponent(id)}`, payload),
+	rotate: (id, expectedEditVersion) => api.post(`/guest-orders/${encodeURIComponent(id)}/rotate-link`, { expectedEditVersion })
+};
+
 // 本周饭桌计划API
 export const weeklyPlanApi = {
 	get: (weekStart) => api.get('/weekly-plans', { params: { weekStart } }),
@@ -444,6 +455,7 @@ export default {
 	wishlist: wishlistApi,
 	anniversary: anniversaryApi,
 	dashboard: dashboardApi,
+	guestOrder: guestOrderApi,
 	weeklyPlan: weeklyPlanApi,
 	shoppingList: shoppingListApi,
 	photoAlbum: photoAlbumApi,

@@ -104,6 +104,7 @@ test('request logging redacts capability tokens and private guest fields', () =>
   assert.deepEqual(safeRequestBody({ originalUrl: '/auth/register', body: { username: 'guest', password: 'private', inviteCode: 'family-secret' } }), {
     username: 'guest', password: '[redacted]', inviteCode: '[redacted]'
   });
+  assert.deepEqual(safeRequestBody({ originalUrl: '/guest-orders/idempotent', body: { title: '测试', creationKey: 'private-capability' } }), { hasTitle: true, hasEventAt: false, hasExpiry: false, hasExpectedVersion: false });
   assert.equal(
     safeRequestUrl('/guest-orders/public/share-secret/orders/order-secret'),
     '/guest-orders/public/[share-token]/orders/[order-token]'

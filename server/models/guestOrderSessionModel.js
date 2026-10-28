@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 
 const guestOrderSessionSchema = new mongoose.Schema({
   householdId: {
@@ -43,8 +44,19 @@ const guestOrderSessionSchema = new mongoose.Schema({
   closedAt: {
     type: Date,
     default: null
-  }
+  },
+  editRevision: { type: String, default: null },
+  creationFingerprint: { type: String, default: null, select: false }
 }, { timestamps: true });
+
+guestOrderSessionSchema.pre('save', function () { this.editRevision = randomUUID(); });
+for (const operation of ['findOneAndUpdate', 'updateOne', 'updateMany']) {
+  guestOrderSessionSchema.pre(operation, function () {
+    const update = this.getUpdate();
+    if (Array.isArray(update)) update.push({ $set: { editRevision: randomUUID() } });
+    else this.set({ editRevision: randomUUID() });
+  });
+}
 
 guestOrderSessionSchema.index({ householdId: 1, status: 1, createdAt: -1 });
 guestOrderSessionSchema.index({ householdId: 1, createdAt: -1 });

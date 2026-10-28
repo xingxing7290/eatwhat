@@ -46,6 +46,11 @@ function expiresAtFrom(value) {
   return parsed;
 }
 
+function sessionHasFutureExpiry(session) {
+  const time = session?.expiresAt ? new Date(session.expiresAt).getTime() : NaN;
+  return Number.isFinite(time) && time > Date.now();
+}
+
 function orderPayload(order) {
   const source = order?.toObject ? order.toObject() : order;
   if (!source) return null;
@@ -64,8 +69,11 @@ function orderPayload(order) {
 function sessionPayload(req, session, extra = {}) {
   const source = session?.toObject ? session.toObject() : session;
   const token = source?.shareToken || session?.shareToken || '';
+  const updated = source?.updatedAt ? new Date(source.updatedAt) : null;
+  const validVersion = !updated || Number.isFinite(updated.getTime());
   return {
     id: String(source?._id || source?.id || ''),
+    householdId: String(source?.householdId || ''),
     title: source?.title || '来家里吃饭',
     eventAt: source?.eventAt || null,
     status: effectiveSessionStatus(source),
@@ -74,10 +82,28 @@ function sessionPayload(req, session, extra = {}) {
     closedAt: source?.closedAt || null,
     createdAt: source?.createdAt,
     updatedAt: source?.updatedAt,
+    supportsConditionalSession: validVersion,
+    editVersion: validVersion ? { revision: source?.editRevision || null, updatedAt: updated ? updated.toISOString() : null } : null,
     shareUrl: token ? shareUrl(req, token) : '',
     ...extra
   };
 }
+
+function conditionalVersion(body) {
+  if (!Object.prototype.hasOwnProperty.call(body || {}, 'expectedEditVersion')) return undefined;
+  const version = body.expectedEditVersion;
+  if (!version || typeof version !== 'object' || Array.isArray(version) || !Object.prototype.hasOwnProperty.call(version, 'revision') || !Object.prototype.hasOwnProperty.call(version, 'updatedAt') || (version.revision !== null && (typeof version.revision !== 'string' || !version.revision || version.revision.length > 128)) || (version.updatedAt !== null && (typeof version.updatedAt !== 'string' || !Number.isFinite(Date.parse(version.updatedAt))))) throw httpError('宴请版本无效，请重新加载', 400);
+  return version;
+}
+
+function versionFilter(session, version) {
+  return { _id: session._id, householdId: session.householdId, editRevision: version.revision, updatedAt: version.updatedAt === null ? null : new Date(version.updatedAt) };
+}
+
+exports.capabilities = async (req, res, next) => {
+  try { const { household } = await hostContext(req); res.json({ householdId: String(household._id), supportsConditionalSession: true, supportsIdempotentSessionCreate: true }); }
+  catch (error) { next(error); }
+};
 
 async function hostContext(req) {
   return ensureUserHousehold(req.user.uid);
@@ -227,6 +253,45 @@ exports.create = async (req, res, next) => {
   }
 };
 
+exports.createIdempotent = async (req, res, next) => {
+  try {
+    const { household } = await hostContext(req);
+    const key = req.body?.creationKey;
+    if (typeof req.body?.expectedHouseholdId !== 'string' || req.body.expectedHouseholdId !== String(household._id)) return res.status(409).json({ code: 'GUEST_HOUSEHOLD_CHANGED', error: '当前家庭已变化，请重新核对后创建' });
+    if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key)) throw httpError('安全创建凭证无效', 400);
+    const title = cleanText(req.body.title, 80) || '来家里吃饭';
+    const eventAt = dateOrNull(req.body.eventAt);
+    const expiresAt = dateOrNull(req.body.expiresAt);
+    if (!expiresAt) throw httpError('请提供链接有效期', 400);
+    const payload = JSON.stringify({ title, eventAt: eventAt?.toISOString() || null, expiresAt: expiresAt.toISOString() });
+    const id = new mongoose.Types.ObjectId(crypto.createHash('sha256').update('eatwhat-host-session-v1\0').update(String(household._id)).update('\0').update(key).digest('hex').slice(0, 24));
+    const fingerprint = crypto.createHmac('sha256', key).update(payload).digest('hex');
+    const replay = async () => {
+      const item = await GuestOrderSession.findById(id).select('+shareToken +creationFingerprint');
+      if (!item) return null;
+      if (String(item.householdId) !== String(household._id) || item.creationFingerprint !== fingerprint || !item.shareToken) throw httpError('安全创建凭证已用于其他内容，请先核对', 409);
+      return item;
+    };
+    let session = await replay();
+    let replayed = !!session;
+    if (!session) {
+      try {
+        await GuestOrderSession.create({ _id: id, householdId: household._id, createdBy: req.user.uid, title, eventAt, expiresAt: expiresAtFrom(expiresAt), shareToken: createCapabilityToken(), status: 'open', creationFingerprint: fingerprint });
+      } catch (error) {
+        if (error?.code !== 11000) throw error;
+        session = await replay();
+        if (!session) throw error;
+        replayed = true;
+      }
+      if (!session) session = await replay();
+    }
+    if (!session) throw new Error('无法确认新建的宴请');
+    const orders = await GuestOrder.find({ sessionId: session._id }).sort({ submittedAt: 1 }).lean();
+    const summary = buildOrderSummary(orders);
+    return res.status(replayed ? 200 : 201).json({ session: sessionPayload(req, session, { ...summary, summary, orders: orders.map(orderPayload) }), replayed });
+  } catch (error) { next(error); }
+};
+
 exports.detail = async (req, res, next) => {
   try {
     const { session } = await hostSession(req, { includeToken: true });
@@ -240,15 +305,19 @@ exports.detail = async (req, res, next) => {
       })
     });
   } catch (error) {
+    if (error.status === 404) return res.status(404).json({ code: 'GUEST_SESSION_NOT_FOUND', error: error.message });
     next(error);
   }
 };
 
 exports.update = async (req, res, next) => {
   try {
-    const { session } = await hostSession(req, { includeToken: true });
+    let { session } = await hostSession(req, { includeToken: true });
+    const expected = conditionalVersion(req.body);
+    const changes = {};
     const requestedStatus = cleanText(req.body.status, 20);
     if (requestedStatus) {
+      if (requestedStatus === 'open' && !sessionHasFutureExpiry(session)) throw httpError('点菜链接已过期，不能重新开放', 409);
       const transitions = {
         open: ['locked', 'completed', 'cancelled'],
         locked: ['open', 'completed', 'cancelled'],
@@ -258,18 +327,23 @@ exports.update = async (req, res, next) => {
       if (requestedStatus !== session.status && !transitions[session.status].includes(requestedStatus)) {
         throw httpError('当前宴请状态不能执行这个操作', 409);
       }
-      session.status = requestedStatus;
-      session.closedAt = ['completed', 'cancelled'].includes(requestedStatus) ? new Date() : null;
+      changes.status = requestedStatus;
+      changes.closedAt = ['completed', 'cancelled'].includes(requestedStatus) ? new Date() : null;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, 'title')) {
       const title = cleanText(req.body.title, 80);
       if (!title) throw httpError('宴请名称不能为空');
-      session.title = title;
+      changes.title = title;
     }
     if (Object.prototype.hasOwnProperty.call(req.body, 'eventAt')) {
-      session.eventAt = dateOrNull(req.body.eventAt);
+      changes.eventAt = dateOrNull(req.body.eventAt);
     }
-    await session.save();
+    if (expected) {
+      const filter = versionFilter(session, expected);
+      if (requestedStatus === 'open') filter.expiresAt = { $gt: new Date() };
+      session = await GuestOrderSession.findOneAndUpdate(filter, { $set: changes }, { new: true, runValidators: true }).select('+shareToken');
+      if (!session) return res.status(409).json({ code: 'GUEST_SESSION_CONFLICT', error: '宴请已被其他成员更新，请重新核对' });
+    } else { Object.assign(session, changes); await session.save(); }
     const orders = await GuestOrder.find({ sessionId: session._id }).sort({ submittedAt: 1 }).lean();
     const summary = buildOrderSummary(orders);
     res.json({ session: sessionPayload(req, session, { ...summary, summary, orders: orders.map(orderPayload) }) });
@@ -280,12 +354,16 @@ exports.update = async (req, res, next) => {
 
 exports.rotateLink = async (req, res, next) => {
   try {
-    const { session } = await hostSession(req, { includeToken: true });
-    if (effectiveSessionStatus(session) === 'expired' || ['completed', 'cancelled'].includes(session.status)) {
+    let { session } = await hostSession(req, { includeToken: true });
+    const expected = conditionalVersion(req.body);
+    if (!sessionHasFutureExpiry(session) || ['completed', 'cancelled'].includes(session.status)) {
       throw httpError('已结束的宴请不能刷新分享链接', 409);
     }
-    session.shareToken = createCapabilityToken();
-    await session.save();
+    const newToken = createCapabilityToken();
+    if (expected) {
+      session = await GuestOrderSession.findOneAndUpdate({ ...versionFilter(session, expected), expiresAt: { $gt: new Date() } }, { $set: { shareToken: newToken } }, { new: true, runValidators: true }).select('+shareToken');
+      if (!session) return res.status(409).json({ code: 'GUEST_SESSION_CONFLICT', error: '宴请已被其他成员更新，请重新核对' });
+    } else { session.shareToken = newToken; await session.save(); }
     res.json({ session: sessionPayload(req, session) });
   } catch (error) {
     next(error);
