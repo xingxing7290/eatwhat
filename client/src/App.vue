@@ -25,6 +25,7 @@ const showMobileMenu = ref(false);
 const viewportWidth = ref(window.innerWidth);
 const authToken = ref(localStorage.getItem('token') || '');
 const authUser = ref(null);
+const loggingOut = ref(false);
 
 // 检测是否为移动设备
 const isMobile = computed(() => {
@@ -92,14 +93,25 @@ const clearMealState = () => {
   scheduleStore.$reset();
 };
 
-const handleLogout = () => {
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
-  loadAuthState();
-  clearMealState();
-  closeMobileMenu();
-  ElMessage.success('已退出登录');
-  router.replace({ name: 'login' });
+const handleLogout = async () => {
+  if (loggingOut.value) return;
+  loggingOut.value = true;
+  try {
+    // Let the current page finish or reject navigation before clearing auth.
+    // A cancelled unsaved-changes dialog must leave the session intact.
+    if (route.name !== 'login') {
+      const failure = await router.replace({ name: 'login' });
+      if (failure) return;
+    }
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    loadAuthState();
+    clearMealState();
+    closeMobileMenu();
+    ElMessage.success('已退出登录');
+  } catch (_) {
+    ElMessage.error('无法退出，请稍后重试');
+  } finally { loggingOut.value = false; }
 };
 
 const handleUserCommand = (command) => {
@@ -212,7 +224,7 @@ onBeforeUnmount(() => {
               class="user-dropdown"
               @command="handleUserCommand"
             >
-              <el-button class="user-menu-btn">
+              <el-button class="user-menu-btn" :disabled="loggingOut">
                 <span class="user-avatar">{{ currentUserInitial }}</span>
                 <span class="user-name">{{ currentUserName }}</span>
                 <el-icon><ArrowDown /></el-icon>
@@ -223,7 +235,7 @@ onBeforeUnmount(() => {
                     <el-icon><User /></el-icon>
                     账号设置
                   </el-dropdown-item>
-                  <el-dropdown-item command="logout" divided>
+                  <el-dropdown-item command="logout" divided :disabled="loggingOut">
                     <el-icon><SwitchButton /></el-icon>
                     退出登录
                   </el-dropdown-item>
@@ -234,6 +246,7 @@ onBeforeUnmount(() => {
             <el-button
               v-if="isLoggedIn"
               class="desktop-logout-btn"
+              :loading="loggingOut"
               @click="handleLogout"
             >
               <el-icon><SwitchButton /></el-icon>
@@ -328,7 +341,7 @@ onBeforeUnmount(() => {
                 <span>当前账号</span>
               </div>
             </div>
-            <el-button type="danger" class="mobile-logout-btn" @click="handleLogout">
+            <el-button type="danger" class="mobile-logout-btn" :loading="loggingOut" @click="handleLogout">
               <el-icon><SwitchButton /></el-icon>
               退出登录
             </el-button>
