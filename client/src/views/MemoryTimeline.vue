@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture } from '@element-plus/icons-vue';
@@ -46,24 +46,27 @@ const logRejectedPhoto = (file, reason) => {
   });
 };
 
-const handlePhotoChange = (_uploadFile, uploadFiles) => {
-  const nextFiles = [];
+const handlePhotoChange = async (_uploadFile, uploadFiles) => {
+  const invalidIds = new Set();
   let rejectedReason = '';
   uploadFiles.forEach(file => {
     const reason = photoValidationError(file.raw || file);
     if (reason) {
       rejectedReason = rejectedReason || reason;
       logRejectedPhoto(file, reason);
+      invalidIds.add(file.uid);
       return;
     }
-    nextFiles.push(file);
   });
   if (rejectedReason === 'size') {
     ElMessage.warning('\u56fe\u7247\u4e0d\u80fd\u8d85\u8fc7 5MB');
   } else if (rejectedReason) {
     ElMessage.warning('\u53ea\u652f\u6301 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
   }
-  photoFiles.value = nextFiles;
+  if (invalidIds.size) {
+    await nextTick();
+    photoFiles.value = photoFiles.value.filter(file => !invalidIds.has(file.uid));
+  }
 };
 
 

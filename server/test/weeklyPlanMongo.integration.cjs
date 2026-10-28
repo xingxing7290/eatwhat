@@ -12,6 +12,7 @@ const WishlistItem = require('../models/wishlistModel');
 const weekly = require('../controllers/weeklyPlanController');
 const schedules = require('../controllers/scheduleController');
 const wishlist = require('../controllers/wishlistController');
+const anniversary = require('../controllers/anniversaryController');
 const authController = require('../controllers/authController');
 const requireAuth = require('../middleware/auth');
 
@@ -48,6 +49,7 @@ async function main() {
     app.put('/schedules/:date/:mealType', schedules.updateSchedule);
     app.get('/wishlist', wishlist.list);
     app.patch('/wishlist/:id/meal', wishlist.attachMeal);
+    app.post('/anniversaries', anniversary.create);
     app.use((error, req, res, next) => res.status(500).json({ error: error.message }));
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -155,7 +157,14 @@ async function main() {
     assert.equal(String((await WishlistItem.findById(wish._id)).mealId), String(mealA._id));
     const foreignLink = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', token: loginB.data.token, body: { mealId: String(mealA._id), onlyIfUnlinked: true } });
     assert.equal(foreignLink.status, 400);
-    console.log('Mongo integration passed: real login and JWT, schedule conflicts, partial writes, retry, wish linking and household isolation');
+    const anniversaryBody = { title: 'Integration anniversary', date: dates[0], meals: { breakfast: [String(mealA._id)], lunch: [String(mealA._id)], dinner: [String(mealA._id)] } };
+    const repeatedMeal = await request('/anniversaries', { method: 'POST', body: anniversaryBody });
+    assert.equal(repeatedMeal.status, 201);
+    assert.equal(String(repeatedMeal.data.meals.breakfast[0]._id), String(mealA._id));
+    assert.equal(String(repeatedMeal.data.meals.dinner[0]._id), String(mealA._id));
+    const foreignMenu = await request('/anniversaries', { method: 'POST', token: loginB.data.token, body: anniversaryBody });
+    assert.equal(foreignMenu.status, 400);
+    console.log('Mongo integration passed: real login and JWT, schedules, wish linking, anniversary meals and household isolation');
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     await mongoose.disconnect();

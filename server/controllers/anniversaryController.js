@@ -27,7 +27,7 @@ function populateQuery(q) {
   return q.populate('meals.breakfast').populate('meals.lunch').populate('meals.dinner').populate('createdBy', 'username displayName avatarUrl');
 }
 async function assertMealsInHousehold(meals, householdId) {
-  const ids = allMealIds(meals);
+  const ids = [...new Set(allMealIds(meals).map(String))];
   if (!ids.length) return true;
   const count = await Meal.countDocuments({ _id: { $in: ids }, householdId });
   return count === ids.length;

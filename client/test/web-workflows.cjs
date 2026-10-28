@@ -42,11 +42,17 @@ async function main () {
   let failAlbum = false
   let failMealCreate = false
   let failMemories = false
+  let failAnniversaries = false
+  let failAnniversarySave = false
+  const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [] }]
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
   await page.addInitScript(() => {
     localStorage.setItem('token', 'test-token')
     localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户' }))
+    const createObjectURL = URL.createObjectURL.bind(URL)
+    window.__testObjectUrlNames = {}
+    URL.createObjectURL = blob => { const url = createObjectURL(blob); window.__testObjectUrlNames[url] = blob.name; return url }
   })
   await page.route('**/api/**', async route => {
     const request = route.request()
@@ -104,6 +110,14 @@ async function main () {
     else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { name: '测试小家', inviteCode: 'ABC123', members: [] } }
     else if (method === 'GET' && path === '/photo-album' && failAlbum) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '相册测试读取失败' }) })
     else if (method === 'GET' && path === '/photo-album') data = { photos: [{ photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="200"%3E%3Crect width="300" height="200" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'memory-a', date: today, mealType: 'dinner', title: '测试晚餐' }] }
+    else if (method === 'GET' && path === '/anniversaries' && failAnniversaries) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '纪念日测试读取失败' }) })
+    else if (method === 'GET' && path === '/anniversaries') data = anniversaryMenus
+    else if (method === 'GET' && path === '/anniversary-templates') data = [{ key: 'birthday', title: '生日小餐桌', theme: '生日', description: '一起庆祝', structure: ['主菜'] }]
+    else if (method === 'POST' && path === '/anniversaries') {
+      writes.push({ path })
+      if (failAnniversarySave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试保存未确认' }) })
+      data = { _id: 'ann-new' }
+    }
     else if (method === 'GET' && path === '/default-meals/status') data = { total: 3, imported: 3, missing: 0 }
     else if (method === 'GET' && path === '/meal-image-issues') data = []
     else if (method === 'POST' && path === '/household/join') { writes.push({ path, body: request.postDataJSON() }); data = {} }
@@ -278,7 +292,42 @@ async function main () {
   await page.getByRole('button', { name: '重新加载' }).click()
   await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor()
   assert.equal(await page.locator('input').evaluateAll(items => items.some(item => item.value === '做过一次：番茄炒蛋')), true)
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).locator('input[type=file]').setInputFiles([
+    { name: 'valid.png', mimeType: 'image/png', buffer: Buffer.from('test') },
+    { name: 'not-image.txt', mimeType: 'text/plain', buffer: Buffer.from('test') }
+  ])
+  await page.waitForFunction(() => document.querySelectorAll('.el-upload-list__item').length === 1)
+  assert.equal(await page.locator('.el-upload-list__item img').evaluate(img => window.__testObjectUrlNames[img.src]), 'valid.png')
   assert.equal(writes.some(item => item.path === '/memories'), false)
+
+  failAnniversaries = true
+  await page.goto(`${base}/anniversaries`)
+  await page.getByText('无法加载纪念日菜单').waitFor()
+  assert.equal(await page.getByText('还没有纪念日菜单').count(), 0)
+  assert.equal(await page.getByRole('button', { name: '新增菜单' }).isDisabled(), true)
+  failAnniversaries = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.getByText('周年晚餐').waitFor()
+  await page.getByRole('button', { name: '删除周年晚餐' }).click()
+  await page.getByText('确定删除这个纪念日菜单吗').waitFor()
+  await page.getByRole('button', { name: '取消' }).last().click()
+  await page.getByRole('button', { name: '新增菜单' }).click()
+  await page.getByPlaceholder('比如：三周年晚餐').fill('自己的标题')
+  await page.getByRole('button', { name: '生日小餐桌' }).click()
+  await page.getByText('使用模板会替换当前标题').waitFor()
+  await page.getByRole('button', { name: '取消' }).last().click()
+  assert.equal(await page.getByPlaceholder('比如：三周年晚餐').inputValue(), '自己的标题')
+  await page.getByRole('dialog', { name: '新增纪念日菜单' }).locator('input[type=file]').setInputFiles({ name: 'not-image.txt', mimeType: 'text/plain', buffer: Buffer.from('test') })
+  await page.getByText('只支持 JPG、PNG').waitFor()
+  await page.waitForFunction(() => document.querySelectorAll('.el-upload-list__item').length === 0)
+  failAnniversarySave = true
+  await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '保存' }).click()
+  await page.getByText('保存结果未确认，请先返回菜单核对').waitFor()
+  assert.equal(await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '保存' }).isDisabled(), true)
+  assert.equal(writes.filter(item => item.path === '/anniversaries').length, 1)
+  failAnniversarySave = false
+  await page.getByRole('button', { name: '返回并核对' }).click()
+  await page.getByText('周年晚餐').waitFor()
 
   await page.goto(`${base}/settings`)
   await page.getByPlaceholder('输入伴侣的邀请码').fill('OTHER1')
@@ -343,6 +392,11 @@ async function main () {
   await page.waitForTimeout(700)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile memories should not overflow horizontally')
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-memories-mobile.png'), fullPage: true })
+  await page.goto(`${base}/anniversaries`)
+  await page.getByText('周年晚餐').waitFor()
+  await page.waitForTimeout(700)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile anniversaries should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-anniversaries-mobile.png'), fullPage: true })
   assert.deepEqual(errors, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()
