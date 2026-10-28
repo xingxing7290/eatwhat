@@ -17,6 +17,7 @@
     "test:wishlist": "node test/wishlist-workflows.cjs",
     "test:wishlist-edit": "node test/wishlist-edit-workflows.cjs",
     "test:meal-detail": "node test/meal-detail-workflows.cjs",
+    "test:meal-editor": "node test/meal-editor-switch-workflows.cjs",
     "test:meal-archive": "node test/meal-archive-workflows.cjs",
     "test:guest-order": "node test/guest-order-workflows.cjs",
     "test:guest-menu": "node test/guest-menu-workflows.cjs",

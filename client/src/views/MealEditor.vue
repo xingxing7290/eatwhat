@@ -1,9 +1,10 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { onBeforeRouteLeave, onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Upload } from '@element-plus/icons-vue';
 import { useMealStore } from '../stores/meal';
+import api from '@/services/api';
 
 const route = useRoute();
 const router = useRouter();
@@ -11,6 +12,8 @@ const mealStore = useMealStore();
 const formRef = ref(null);
 // Keep edit fields unavailable from the first render until the existing recipe arrives.
 const loading = ref(!!route.params.id);
+const loadError = ref('');
+let loadSequence = 0;
 const submitting = ref(false);
 const saveUncertain = ref(false);
 const conflict = ref(false);
@@ -27,11 +30,12 @@ const versionAvailable = computed(() => !editMode.value || (supportsConditionalE
   (editVersion.value.updatedAt === null || (typeof editVersion.value.updatedAt === 'string' && Number.isFinite(Date.parse(editVersion.value.updatedAt))))));
 const latestMealUrl = computed(() => editMode.value ? router.resolve({ name: 'MealDetail', params: { id: route.params.id } }).href : '');
 
-const form = reactive({
+const emptyForm = () => ({
   name: '', description: '', category: '', subcategory: '', tags: [], imageUrl: '', existingPhotos: [],
   ingredients: [], steps: [], tips: '', servingSize: '', prepTime: 0, cookTime: 0,
   difficulty: '', taste: [], healthTags: [], spiceLevel: 0, source: '', sourcePath: '', favorite: false, rating: 0
 });
+const form = reactive(emptyForm());
 const newIngredient = reactive({ name: '', amount: '' });
 const newStep = reactive({ description: '', imageFile: null, imagePreview: '' });
 const rules = { name: [{ required: true, whitespace: true, message: '请输入菜品名称', trigger: 'blur' }] };
@@ -97,17 +101,36 @@ const fillForm = (meal) => {
   imagePreview.value = meal.imageUrl || '';
 };
 const load = async () => {
-  if (!editMode.value) return;
-  loading.value = true;
+  const id = typeof route.params.id === 'string' ? route.params.id : '';
+  const sequence = ++loadSequence;
+  loading.value = !!id;
+  loadError.value = '';
+  for (const url of previews) URL.revokeObjectURL(url);
+  previews.clear();
+  Object.assign(form, emptyForm());
+  Object.assign(newIngredient, { name: '', amount: '' });
+  Object.assign(newStep, { description: '', imageFile: null, imagePreview: '' });
+  imageFile.value = null; imagePreview.value = ''; photoFiles.value = [];
+  saved.value = false; saveUncertain.value = false; conflict.value = false;
+  supportsConditionalEdit.value = false; editVersion.value = null;
+  initialForm.value = JSON.stringify(form);
+  formRef.value?.clearValidate();
+  if (!id) return;
   try {
-    const meal = await mealStore.fetchMeal(route.params.id);
+    const meal = await api.meal.getMealById(id);
+    if (sequence !== loadSequence) return;
+    if (!meal || String(meal._id || meal.id || '') !== id || typeof meal.name !== 'string' || !meal.name.trim() ||
+        ['ingredients', 'steps', 'photos', 'tags', 'taste', 'healthTags'].some(key => meal[key] != null && !Array.isArray(meal[key])) ||
+        (meal.ingredients || []).some(item => !item || (typeof item !== 'string' && typeof item !== 'object')) ||
+        (meal.steps || []).some(item => !item || (typeof item !== 'string' && typeof item !== 'object')) ||
+        (meal.photos || []).some(item => typeof item !== 'string')) throw new Error('菜品数据不完整或不属于当前页面');
     fillForm(meal);
     supportsConditionalEdit.value = meal?.supportsConditionalEdit === true;
     editVersion.value = meal?.editVersion || null;
     initialForm.value = JSON.stringify(form);
   }
-  catch (e) { ElMessage.error('加载菜品失败'); router.push('/meals'); }
-  finally { loading.value = false; }
+  catch (e) { if (sequence === loadSequence) loadError.value = e?.error || e?.message || '加载菜品失败'; }
+  finally { if (sequence === loadSequence) loading.value = false; }
 };
 const buildPayload = () => {
   const fd = new FormData();
@@ -128,7 +151,7 @@ const buildPayload = () => {
   return fd;
 };
 const submit = async () => {
-  if (loading.value || submitting.value || saveUncertain.value || conflict.value || !versionAvailable.value || !formRef.value) return;
+  if (loading.value || loadError.value || submitting.value || saveUncertain.value || conflict.value || !versionAvailable.value || !formRef.value) return;
   submitting.value = true;
   try {
     let valid = false;
@@ -158,27 +181,31 @@ const submit = async () => {
 const allowRetry = async () => {
   try { await ElMessageBox.confirm('请先在菜谱列表核对是否已经保存，再决定是否重新提交。', '确认已核对', { type: 'warning', confirmButtonText: '已核对，允许重试', cancelButtonText: '取消' }); saveUncertain.value = false; } catch (_) {}
 };
-onBeforeRouteLeave(async () => {
+const confirmLeave = async () => {
   if (submitting.value && !saved.value) return false;
   if (saved.value || !dirty.value) return true;
   try { await ElMessageBox.confirm('当前编辑内容尚未保存，离开后会丢失。', '放弃未保存的修改？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
-});
+};
+onBeforeRouteLeave(confirmLeave);
+onBeforeRouteUpdate((to, from) => String(to.params.id || '') === String(from.params.id || '') ? true : confirmLeave());
 const warnBeforeUnload = (event) => {
   if (!dirty.value || saved.value) return;
   event.preventDefault();
   event.returnValue = '';
 };
-onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); for (const url of previews) URL.revokeObjectURL(url); });
-onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); load(); });
+onBeforeUnmount(() => { loadSequence++; window.removeEventListener('beforeunload', warnBeforeUnload); for (const url of previews) URL.revokeObjectURL(url); });
+onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); });
+watch(() => route.params.id, load, { immediate: true });
 </script>
 
 <template>
-  <div class="meal-editor" v-loading="loading">
-    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push('/meals')">取消</el-button><el-button type="primary" :disabled="loading || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
-    <el-alert v-if="editMode && !loading && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供有效的菜谱版本，暂时无法安全保存。" />
+  <div class="meal-editor" v-loading="loading" element-loading-text="正在加载菜品" :aria-busy="loading ? 'true' : 'false'">
+    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push('/meals')">取消</el-button><el-button type="primary" :disabled="loading || !!loadError || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
+    <el-alert v-if="editMode && !loading && !loadError && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供有效的菜谱版本，暂时无法安全保存。" />
     <el-alert v-if="conflict" type="warning" :closable="false" show-icon title="这道菜已被其他成员修改，本次未保存。"><span>你的输入和选择的图片仍在当前页面。请先复制需要保留的内容，再查看最新菜谱并重新加载编辑页。</span> <a :href="latestMealUrl" target="_blank" rel="noopener noreferrer">查看最新菜谱</a></el-alert>
     <el-alert v-if="saveUncertain" type="warning" :closable="false" show-icon title="保存结果未确认，请先在菜谱列表核对，避免重复提交。"><el-button link type="primary" @click="allowRetry">已核对，允许重试</el-button></el-alert>
-    <el-form ref="formRef" :model="form" :rules="rules" :disabled="loading || submitting" label-position="top" class="editor-grid">
+    <el-form v-if="!loadError" ref="formRef" :model="form" :rules="rules" :disabled="loading || submitting" label-position="top" class="editor-grid">
       <section class="main-column">
         <el-card><template #header>基础信息</template>
           <div class="two-cols"><el-form-item label="菜品名称" prop="name"><el-input v-model="form.name" placeholder="给这道菜起个名字" maxlength="100" show-word-limit /></el-form-item><el-form-item label="分类"><el-input v-model="form.category" placeholder="家常菜、外食、甜品..." /></el-form-item></div>
