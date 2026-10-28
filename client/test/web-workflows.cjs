@@ -138,7 +138,8 @@ async function main () {
       if (conflictSchedule) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' }) })
       data = { ...schedule, updatedAt: '2026-10-28T09:00:00.000Z', meals: { ...schedule.meals, dinner: request.postDataJSON().mealIds.map(id => ({ meal: meals.find(meal => meal._id === id) || { _id: id, name: '测试菜品' } })) } }
     }
-    else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
+    else if (method === 'GET' && path === '/wishlist/wish-a') data = { _id: 'wish-a', status: 'open', mealId: { _id: 'meal-b' }, supportsConditionalActions: true, editVersion: { revision: 'wish-v1', updatedAt: '2026-10-28T00:00:00.000Z' } }
+    else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'wish-a', status: 'planned', supportsConditionalActions: true, editVersion: { revision: 'wish-v2', updatedAt: '2026-10-28T00:00:01.000Z' } } }
     else if (method === 'POST' && path === '/wishlist') {
       writes.push({ path, body: request.postDataJSON() })
       if (blockWishSave) await new Promise(resolve => { releaseWishSave = resolve })

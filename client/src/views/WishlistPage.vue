@@ -7,6 +7,7 @@ import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
+import { validWishVersion } from '@/utils/wishlistVersion.mjs';
 
 const items = ref([]);
 const router = useRouter();
@@ -89,20 +90,24 @@ const runAction = async (item, label, action) => {
   if (!item?._id || busy.value || loading.value || loadError.value || actionIssue.value) return;
   actionId.value = item._id;
   try { await action(); await load(); }
-  catch (_) { actionIssue.value = `${label}结果未确认，请刷新清单并核对后再操作；先前请求仍可能稍后完成。`; }
+  catch (e) { actionIssue.value = e?.code === 'WISH_CONFLICT' ? '这条想吃已被其他成员修改或删除，本次未操作；请刷新清单并核对。' : `${label}结果未确认，请刷新清单并核对后再操作；先前请求仍可能稍后完成。`; }
   finally { actionId.value = ''; }
 };
 const vote = item => {
   if (!item.supportsSetVote || typeof item.votedByMe !== 'boolean') return ElMessage.warning('服务器未提供安全投票能力，请稍后重试');
   return runAction(item, '投票', () => api.wishlist.setVote(item._id, !item.votedByMe));
 };
-const setStatus = (item, status) => runAction(item, '状态更新', () => api.wishlist.updateStatus(item._id, status));
+const setStatus = (item, status) => {
+  if (!validWishVersion(item)) return ElMessage.warning('服务器未提供有效的记录版本，暂时不能安全修改状态');
+  return runAction(item, '状态更新', () => api.wishlist.updateStatus(item._id, status, item.editVersion));
+};
 const remove = async (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value) return;
+  if (!validWishVersion(item)) return ElMessage.warning('服务器未提供有效的记录版本，暂时不能安全删除');
   confirmingId.value = item._id;
   try { await ElMessageBox.confirm('确定删除这个想吃项吗？', '删除确认'); } catch (_) { return; }
   finally { confirmingId.value = ''; }
-  await runAction(item, '删除', () => api.wishlist.delete(item._id));
+  await runAction(item, '删除', () => api.wishlist.delete(item._id, item.editVersion));
 };
 const convertToMeal = async (item) => {
   if (item.mealId) return ElMessage.info('这条想吃已经关联菜谱');
@@ -214,15 +219,16 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
           <p v-if="pendingLinks[item._id]" class="pending-note">菜谱已创建，关联尚未确认。请重试关联，避免重复创建。</p>
           <div class="vote-row"><el-button link type="warning" :disabled="busy || loading || !!actionIssue || !item.supportsSetVote || typeof item.votedByMe !== 'boolean'" :aria-pressed="item.votedByMe === true" :aria-label="`${item.votedByMe ? '取消想吃' : '我想吃'}${item.title}`" @click="vote(item)"><el-icon><Star /></el-icon>{{ item.votedByMe ? '已想吃' : '我想吃' }} · {{ item.votes?.length || 0 }} 票</el-button><span>{{ item.category }}</span></div>
           <p v-if="!item.supportsSetVote || typeof item.votedByMe !== 'boolean'" class="pending-note">服务器暂不支持安全投票。</p>
+          <p v-if="!validWishVersion(item)" class="pending-note">服务器未提供记录版本，暂不能安全修改状态或删除。</p>
           <div class="actions">
             <el-button v-if="!item.mealId && !pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || !item.supportsSafeMealLink || !!uncertainCreates[item._id]" @click="convertToMeal(item)">转菜品</el-button>
             <el-button v-if="!item.mealId && !pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || !item.supportsSafeMealLink" @click="openLinkDialog(item)">关联已有菜谱</el-button>
             <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :loading="convertingId === item._id" :disabled="busy || loading || !!actionIssue" @click="attachExisting(item, pendingLinks[item._id])">重试关联</el-button>
             <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
-            <el-button v-if="item.status === 'open'" size="small" :disabled="busy || loading || !!actionIssue" @click="setStatus(item, 'planned')">标记已安排</el-button>
-            <el-button v-if="item.status !== 'done'" size="small" type="success" :disabled="busy || loading || !!actionIssue" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>
-            <el-button v-if="item.status !== 'open'" size="small" :disabled="busy || loading || !!actionIssue" @click="setStatus(item, 'open')">重新想吃</el-button>
-            <el-button size="small" type="danger" :disabled="busy || loading || !!actionIssue" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button>
+            <el-button v-if="item.status === 'open'" size="small" :disabled="busy || loading || !!actionIssue || !validWishVersion(item)" @click="setStatus(item, 'planned')">标记已安排</el-button>
+            <el-button v-if="item.status !== 'done'" size="small" type="success" :disabled="busy || loading || !!actionIssue || !validWishVersion(item)" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>
+            <el-button v-if="item.status !== 'open'" size="small" :disabled="busy || loading || !!actionIssue || !validWishVersion(item)" @click="setStatus(item, 'open')">重新想吃</el-button>
+            <el-button size="small" type="danger" :disabled="busy || loading || !!actionIssue || !validWishVersion(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button>
           </div>
         </el-card>
       </section>

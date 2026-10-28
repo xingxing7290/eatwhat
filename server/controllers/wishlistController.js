@@ -7,6 +7,19 @@ const { hasSafeMealWishIndex, isMealWishDuplicate } = require('../utils/mealWish
 function populateQuery(q, householdId) {
   return q.populate({ path: 'mealId', match: { householdId } }).populate({ path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' }).populate({ path: 'votes', match: { householdId }, select: 'username displayName avatarUrl' });
 }
+function parseEditVersion(value) {
+  let version = value;
+  try { if (typeof value === 'string') version = JSON.parse(value); } catch (_) { return null; }
+  if (!version || typeof version !== 'object' || Array.isArray(version)) return null;
+  if (!Object.prototype.hasOwnProperty.call(version, 'revision') || !Object.prototype.hasOwnProperty.call(version, 'updatedAt')) return null;
+  if (version.revision !== null && (typeof version.revision !== 'string' || !version.revision || version.revision.length > 128)) return null;
+  if (version.updatedAt !== null && (typeof version.updatedAt !== 'string' || !Number.isFinite(Date.parse(version.updatedAt)))) return null;
+  return version;
+}
+function addVersionFilter(filter, version) {
+  filter.editRevision = version.revision;
+  filter.updatedAt = version.updatedAt === null ? null : new Date(version.updatedAt);
+}
 function decorateItem(item, uid) {
   const obj = item?.toObject ? item.toObject() : item;
   if (!obj) return obj;
@@ -17,6 +30,9 @@ function decorateItem(item, uid) {
   obj.partnerSignal = obj.createdByPartner || obj.votedByPartner;
   obj.supportsSafeMealLink = true;
   obj.supportsSetVote = true;
+  const updatedAt = obj.updatedAt ? new Date(obj.updatedAt) : null;
+  obj.supportsConditionalActions = !updatedAt || Number.isFinite(updatedAt.getTime());
+  obj.editVersion = obj.supportsConditionalActions ? { revision: obj.editRevision || null, updatedAt: updatedAt ? updatedAt.toISOString() : null } : null;
   return obj;
 }
 function decorateList(items, uid) { return (items || []).map(item => decorateItem(item, uid)); }
@@ -33,6 +49,16 @@ exports.list = async (req, res, next) => {
       return res.json({ items: decorated, supportsAtomicMealWish });
     }
     res.json(decorated);
+  } catch (err) { next(err); }
+};
+
+exports.get = async (req, res, next) => {
+  try {
+    const { household } = await ensureUserHousehold(req.user.uid);
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '想吃编号无效' });
+    const item = await populateQuery(WishlistItem.findOne({ _id: req.params.id, householdId: household._id }), household._id);
+    if (!item) return res.status(404).json({ code: 'WISH_NOT_FOUND', error: '未找到想吃项' });
+    res.json(decorateItem(item, req.user.uid));
   } catch (err) { next(err); }
 };
 
@@ -122,8 +148,13 @@ exports.updateStatus = async (req, res, next) => {
     const { household } = await ensureUserHousehold(req.user.uid);
     const status = ['open', 'planned', 'done'].includes(req.body.status) ? req.body.status : null;
     if (!status) return res.status(400).json({ error: '状态无效' });
-    const item = await populateQuery(WishlistItem.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, { status }, { new: true }), household._id);
-    if (!item) return res.status(404).json({ error: '未找到想吃项' });
+    const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedEditVersion');
+    const version = conditional ? parseEditVersion(req.body.expectedEditVersion) : null;
+    if (conditional && !version) return res.status(400).json({ error: '想吃记录版本无效，请重新加载' });
+    const filter = { _id: req.params.id, householdId: household._id };
+    if (conditional) addVersionFilter(filter, version);
+    const item = await populateQuery(WishlistItem.findOneAndUpdate(filter, { status }, { new: true }), household._id);
+    if (!item) return conditional ? res.status(409).json({ code: 'WISH_CONFLICT', error: '想吃记录已修改或删除，请刷新核对' }) : res.status(404).json({ error: '未找到想吃项' });
     res.json(decorateItem(item, req.user.uid));
   } catch (err) {
     if (isMealWishDuplicate(err)) return res.status(409).json({ code: 'WISH_ALREADY_OPEN', error: '这道菜已在想吃清单中，请刷新查看' });
@@ -162,8 +193,13 @@ exports.attachMeal = async (req, res, next) => {
 exports.remove = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const deleted = await WishlistItem.findOneAndDelete({ _id: req.params.id, householdId: household._id });
-    if (!deleted) return res.status(404).json({ error: '未找到想吃项' });
+    const conditional = Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedEditVersion');
+    const version = conditional ? parseEditVersion(req.query.expectedEditVersion) : null;
+    if (conditional && !version) return res.status(400).json({ error: '想吃记录版本无效，请重新加载' });
+    const filter = { _id: req.params.id, householdId: household._id };
+    if (conditional) addVersionFilter(filter, version);
+    const deleted = await WishlistItem.findOneAndDelete(filter);
+    if (!deleted) return conditional ? res.status(409).json({ code: 'WISH_CONFLICT', error: '想吃记录已修改或删除，请刷新核对' }) : res.status(404).json({ error: '未找到想吃项' });
     res.status(204).send();
   } catch (err) { next(err); }
 };

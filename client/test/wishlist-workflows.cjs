@@ -10,7 +10,8 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test' })) })
-    let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, supportsSetVote: true, supportsSafeMealLink: true }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+    const version = revision => ({ revision, updatedAt: '2026-10-28T12:00:00.000Z' })
+    let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, supportsSetVote: true, supportsSafeMealLink: true, supportsConditionalActions: true, editVersion: version('v1') }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
     let voteMode = 'unknown'; let statusMode = 'unknown'; let deleteMode = 'unknown'; let releaseVote; let releaseSlow; const reads = []; const writes = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
@@ -25,19 +26,23 @@ async function main () {
       } else if (req.method() === 'PUT' && path === '/wishlist/wish-a/vote') {
         const voted = req.postDataJSON().voted; writes.push({ path, voted })
         if (voteMode === 'hold') await new Promise(resolve => { releaseVote = resolve })
-        items = items.map(item => item._id === 'wish-a' ? { ...item, votedByMe: voted, votes: voted ? [{ _id: 'u1' }] : [] } : item)
+        items = items.map(item => item._id === 'wish-a' ? { ...item, votedByMe: voted, votes: voted ? [{ _id: 'u1' }] : [], editVersion: version(voted ? 'v2' : 'v3') } : item)
         if (voteMode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
         data = items[0]
       } else if (req.method() === 'PATCH' && path === '/wishlist/wish-a/status') {
-        items = items.map(item => item._id === 'wish-a' ? { ...item, status: req.postDataJSON().status } : item)
+        assert.deepEqual(req.postDataJSON().expectedEditVersion, items[0].editVersion)
+        if (statusMode === 'conflict') { items = items.map(item => item._id === 'wish-a' ? { ...item, status: 'done', editVersion: version('external') } : item); return route.fulfill({ status: 409, json: { code: 'WISH_CONFLICT', error: '发生冲突' } }) }
+        items = items.map(item => item._id === 'wish-a' ? { ...item, status: req.postDataJSON().status, editVersion: version('status') } : item)
         if (statusMode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
         data = items[0]
       } else if (req.method() === 'DELETE' && path === '/wishlist/wish-a') {
+        assert.deepEqual(JSON.parse(url.searchParams.get('expectedEditVersion')), items[0].editVersion)
+        if (deleteMode === 'conflict') { items = items.map(item => item._id === 'wish-a' ? { ...item, note: '家人刚修改', editVersion: version('external-delete') } : item); return route.fulfill({ status: 409, json: { code: 'WISH_CONFLICT', error: '发生冲突' } }) }
         items = items.filter(item => item._id !== 'wish-a')
         if (deleteMode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
       } else if (req.method() === 'PATCH' && path === '/wishlist/wish-a/meal') {
         writes.push({ path, body: req.postDataJSON() })
-        items = items.map(item => item._id === 'wish-a' ? { ...item, mealId: meals.find(meal => meal._id === req.postDataJSON().mealId) } : item)
+        items = items.map(item => item._id === 'wish-a' ? { ...item, mealId: meals.find(meal => meal._id === req.postDataJSON().mealId), editVersion: version('linked') } : item)
         data = items[0]
       }
       await route.fulfill({ status: 200, json: data })
@@ -47,6 +52,7 @@ async function main () {
     await vote.waitFor()
     assert.equal(reads.length, 0)
     assert.equal(await page.getByRole('button', { name: '我想吃旧服务记录' }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: '删除旧服务记录' }).isDisabled(), true)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     if (process.env.EATWHAT_WISHLIST_SHOT) await page.screenshot({ path: process.env.EATWHAT_WISHLIST_SHOT })
     await vote.click()
@@ -82,10 +88,22 @@ async function main () {
     await dialog.getByRole('button', { name: '确认关联' }).click()
     await page.getByRole('button', { name: '安排今天晚餐' }).waitFor()
     assert.equal(writes.find(item => item.path.endsWith('/meal')).body.mealId, 'meal-75')
+    statusMode = 'conflict'
     await page.getByRole('button', { name: '标记已安排' }).first().click()
+    await page.getByText('这条想吃已被其他成员修改或删除', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '刷新清单并核对' }).click()
+    statusMode = 'unknown'
+    await page.getByRole('button', { name: '重新想吃' }).click()
     await page.getByText('状态更新结果未确认', { exact: false }).waitFor()
     await page.getByRole('button', { name: '刷新清单并核对' }).click()
-    await page.getByRole('button', { name: '重新想吃' }).waitFor()
+    await page.getByRole('button', { name: '标记已安排' }).first().waitFor()
+    deleteMode = 'conflict'
+    await page.getByRole('button', { name: '删除想吃面条' }).click()
+    await page.getByRole('button', { name: '确定', exact: true }).click()
+    await page.getByText('这条想吃已被其他成员修改或删除', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '刷新清单并核对' }).click()
+    await page.getByText('家人刚修改').waitFor()
+    deleteMode = 'unknown'
     await page.getByRole('button', { name: '删除想吃面条' }).click()
     await page.getByRole('button', { name: '确定', exact: true }).click()
     await page.getByText('删除结果未确认', { exact: false }).waitFor()

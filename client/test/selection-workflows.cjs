@@ -28,6 +28,8 @@ async function main () {
     let malformedSchedule = false
     let saveMode = 'uncertain'
     let releaseSlow
+    let wishMode = 'done'
+    const wishWrites = []
     const reads = []
     const writes = []
     await page.route('**/api/**', async route => {
@@ -53,6 +55,8 @@ async function main () {
           data = { data: filtered.slice((current - 1) * limit, current * limit), total: filtered.length, page: current, limit }
         }
       } else if (method === 'GET' && pathname.startsWith('/meals/')) data = meals.find(meal => pathname.endsWith(meal._id)) || {}
+      else if (method === 'GET' && pathname === '/wishlist/wish-a') data = { _id: 'wish-a', status: wishMode === 'done' ? 'done' : 'open', mealId: { _id: wishMode === 'mismatch' ? 'meal-01' : 'meal-20' }, supportsConditionalActions: wishMode !== 'old', editVersion: { revision: 'wish-v1', updatedAt: '2026-10-29T08:00:00.000Z' } }
+      else if (method === 'PATCH' && pathname === '/wishlist/wish-a/status') { wishWrites.push(req.postDataJSON()); data = { _id: 'wish-a', status: 'planned', supportsConditionalActions: true, editVersion: { revision: 'wish-v2', updatedAt: '2026-10-29T09:00:00.000Z' } } }
       else if (method === 'GET' && pathname === `/schedules/day/${date}`) data = {
         date: malformedSchedule === 'date' ? '2026-10-28' : date, scheduleExists: true, scheduleVersion: version,
         meals: malformedSchedule === true ? {} : { breakfast: [], lunch: [], dinner: selected.map(meal => ({ meal })) }
@@ -155,6 +159,17 @@ async function main () {
     await page.getByRole('button', { name: '选择测试菜02' }).waitFor()
     assert.equal(await page.getByRole('button', { name: '选择测试菜01' }).count(), 0)
     assert.equal(await page.locator('.meals-grid .meal-card-wrapper').count(), 8)
+    for (const mode of ['done', 'old', 'mismatch', 'open']) {
+      wishMode = mode
+      await page.goto(`${base}/selection?date=${date}&mealType=dinner&suggestedMealId=meal-20&wishlistId=wish-a`)
+      if (mode === 'done') await page.getByText('这条想吃已完成', { exact: false }).waitFor()
+      if (mode === 'old' || mode === 'mismatch') await page.getByText('无法确认想吃记录的最新状态', { exact: false }).waitFor()
+      await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存安排') && !button.disabled))
+      await page.getByRole('button', { name: '保存安排' }).click()
+      await page.waitForURL('**/calendar')
+    }
+    assert.equal(wishWrites.length, 1, 'only a matching open wish on a compatible server may be marked planned')
+    assert.deepEqual(wishWrites[0].expectedEditVersion, { revision: 'wish-v1', updatedAt: '2026-10-29T08:00:00.000Z' })
     assert.deepEqual(errors, [])
     console.log('Selection workflows passed: pagination, race, drafts, uncertain saves, malformed data and legacy filtering')
   } finally { await browser.close() }

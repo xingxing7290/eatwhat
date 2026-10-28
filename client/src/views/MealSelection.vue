@@ -7,6 +7,7 @@ import { useDraftGuard } from '../composables/useDraftGuard';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Grid, Menu, Search, Filter } from '@element-plus/icons-vue';
 import api from '../services/api';
+import { validWishVersion } from '../utils/wishlistVersion.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,6 +25,8 @@ const loadError = ref(false);
 const conflict = ref(false);
 const saveUncertain = ref(false);
 const expectedVersion = ref(null);
+const wishSnapshot = ref(null);
+const wishNotice = ref('');
 const searchQuery = ref('');
 const selectedMeals = ref([]);
 const initialIds = ref([]);
@@ -171,11 +174,12 @@ const saveSelection = async () => {
     const suggestedId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
     const wishlistId = typeof route.query.wishlistId === 'string' ? route.query.wishlistId : '';
     if (wishlistId && suggestedId && mealIds.some(id => String(id) === suggestedId)) {
-      try {
-        await api.wishlist.updateStatus(wishlistId, 'planned');
-      } catch (_) {
-        ElMessage.warning('餐食已保存，但想吃清单状态未更新，请在想吃清单中检查');
-      }
+      if (wishSnapshot.value?.status === 'open' && String(wishSnapshot.value._id || wishSnapshot.value.id) === wishlistId && validWishVersion(wishSnapshot.value)) {
+        try {
+          const updated = await api.wishlist.updateStatus(wishlistId, 'planned', wishSnapshot.value.editVersion);
+          if (String(updated?._id || updated?.id || '') !== wishlistId || updated?.status !== 'planned' || !validWishVersion(updated)) throw new Error('状态响应不完整');
+        } catch (_) { ElMessage.warning('餐食已保存，但想吃清单状态未确认或已变化，请在想吃清单中检查'); }
+      } else if (wishSnapshot.value?.status !== 'planned') ElMessage.warning('餐食已保存，想吃清单状态未自动修改，请在清单中检查');
     }
     
     initialIds.value = idsFor(selectedMeals.value);
@@ -303,6 +307,8 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
   const sequence = ++selectionSequence;
   isInitializing.value = true;
   loadError.value = false;
+  wishSnapshot.value = null;
+  wishNotice.value = '';
   try {
     const schedule = await api.schedule.getScheduleByDate(date.value);
     if (sequence !== selectionSequence) return;
@@ -331,6 +337,21 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
     const resolved = await Promise.all(ids.map(async id => known.get(id) || api.meal.getMealById(id)));
     if (sequence !== selectionSequence) return;
     if (resolved.some((meal, index) => !meal || String(meal._id || meal.id || '') !== ids[index] || typeof meal.name !== 'string')) throw new Error('部分已安排的菜品无法读取，请刷新后重试');
+    const wishlistId = typeof route.query.wishlistId === 'string' ? route.query.wishlistId : '';
+    const linkedMealId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
+    if (wishlistId && linkedMealId) {
+      try {
+        const wish = await api.wishlist.get(wishlistId);
+        if (sequence !== selectionSequence) return;
+        const linked = typeof wish?.mealId === 'string' ? wish.mealId : wish?.mealId?._id || wish?.mealId?.id;
+        if (String(wish?._id || wish?.id || '') !== wishlistId || String(linked || '') !== linkedMealId || !validWishVersion(wish) || !['open', 'planned', 'done'].includes(wish.status)) throw new Error('想吃记录或版本不可用');
+        wishSnapshot.value = wish;
+        if (wish.status === 'done') wishNotice.value = '这条想吃已完成，保存排餐时不会自动修改其状态。';
+      } catch (_) {
+        if (sequence !== selectionSequence) return;
+        wishNotice.value = '无法确认想吃记录的最新状态；仍可保存排餐，但不会自动修改清单。';
+      }
+    }
     selectedMeals.value = resolved;
     initialIds.value = [...new Set(existingIds)].sort();
     conflict.value = false;
@@ -399,6 +420,7 @@ onBeforeUnmount(() => {
       <span v-if="conflict || saveUncertain">重新加载会用最新安排替换当前选择，请先记下需要保留的菜品。</span>
       <el-button link type="primary" :disabled="isInitializing" @click="reloadSelection">{{ conflict || saveUncertain ? '重新加载最新安排' : '重新加载' }}</el-button>
     </el-alert>
+    <el-alert v-if="wishNotice" type="info" :closable="false" show-icon :title="wishNotice" />
     
     <div class="selection-info">
       <div class="selected-count">
