@@ -1,20 +1,23 @@
 <template>
   <div class="settings-page">
+    <header class="settings-intro"><div><span class="eyebrow">YOUR HOME, YOUR WAY</span><h1>小家设置</h1><p>管理个人资料、家庭成员和餐桌的样子。</p></div><span class="intro-badge">把日常过成喜欢的模样</span></header>
+    <el-alert v-if="profileError" :title="profileError" type="error" :closable="false" show-icon><el-button link type="primary" :loading="profileLoading" @click="reload">重新加载</el-button></el-alert>
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>用户设置</span></div></template>
-      <el-form label-width="90px">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="头像">
           <div class="avatar-row">
-            <div class="avatar-preview"><img v-if="user.avatarUrl" :src="user.avatarUrl" alt="avatar" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
+            <div class="avatar-preview"><img v-if="avatarPreview || user.avatarUrl" :src="avatarPreview || user.avatarUrl" alt="头像预览" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
             <div class="avatar-actions">
               <input ref="fileInputRef" type="file" accept="image/*" class="file-input" @change="onFileChange" />
-              <el-button @click="chooseFile">选择图片</el-button>
-              <el-button type="primary" :loading="avatarUploading" :disabled="!avatarFile" @click="uploadAvatar">上传头像</el-button>
+              <el-button :disabled="saving || avatarUploading" @click="chooseFile">选择图片</el-button>
+              <el-button type="primary" :loading="avatarUploading" :disabled="!avatarFile || saving" @click="uploadAvatar">上传头像</el-button>
+              <span v-if="avatarFile" class="file-name">{{ avatarFile.name }} · 尚未上传</span>
             </div>
           </div>
         </el-form-item>
         <el-form-item label="昵称"><el-input v-model="displayName" placeholder="请输入昵称" maxlength="20" show-word-limit /></el-form-item>
-        <el-form-item><el-button type="primary" :loading="saving" @click="saveProfile">保存</el-button><el-button @click="reload">刷新</el-button></el-form-item>
+        <el-form-item><el-button type="primary" :loading="saving" :disabled="avatarUploading" @click="saveProfile">保存</el-button><el-button :disabled="saving || avatarUploading" @click="reload">刷新</el-button></el-form-item>
       </el-form>
     </el-card>
 
@@ -32,6 +35,7 @@
           type="button"
           class="theme-card"
           :class="{ active: selectedTheme === theme.value }"
+          :aria-pressed="selectedTheme === theme.value"
           @click="selectTheme(theme.value)"
         >
           <span class="theme-name">{{ theme.label }}</span>
@@ -51,36 +55,41 @@
 
 
     <el-card class="settings-card">
-      <template #header><div class="card-header"><span>默认菜品管理</span><el-tag>{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
-      <div class="governance-row">
+      <template #header><div class="card-header"><span>默认菜品管理</span><el-tag v-if="defaultStatus && !defaultError">{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
+      <el-alert v-if="defaultError" title="默认菜品状态加载失败，请重试后再操作。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
+      <div v-else-if="defaultStatus" class="governance-row">
         <div class="governance-metric"><span>缺失默认菜品</span><strong>{{ defaultStatus.missing }}</strong></div>
-        <el-button type="primary" :loading="defaultLoading" @click="importMissingDefaultMeals">导入缺失默认菜品</el-button>
-        <el-button :loading="defaultLoading" @click="restoreDefaultImages">恢复默认菜品图片</el-button>
+        <el-button type="primary" :loading="defaultLoading" :disabled="joining || governanceLoading" @click="importMissingDefaultMeals">导入缺失默认菜品</el-button>
+        <el-button :loading="defaultLoading" :disabled="joining || governanceLoading" @click="restoreDefaultImages">恢复默认菜品图片</el-button>
       </div>
+      <p v-else class="status-note">正在加载菜品状态…</p>
     </el-card>
 
     <el-card class="settings-card">
-      <template #header><div class="card-header"><span>待修正图片</span><el-tag type="warning">{{ imageIssues.length }}</el-tag></div></template>
-      <el-empty v-if="!imageIssues.length" description="暂无待修正图片" />
+      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
+      <el-alert v-if="issuesError" title="图片反馈加载失败，请重试。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
+      <p v-else-if="!imageIssues" class="status-note">正在加载图片反馈…</p>
+      <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
       <div v-else class="issue-list">
         <div v-for="issue in imageIssues" :key="issue._id" class="issue-item">
-          <img v-if="issue.mealId?.imageUrl" :src="issue.mealId.imageUrl" />
+          <img v-if="issue.mealId?.imageUrl" :src="issue.mealId.imageUrl" :alt="`${issue.mealId?.name || '菜品'}的图片`" />
+          <div v-else class="issue-placeholder">无图片</div>
           <div class="issue-main">
             <strong>{{ issue.mealId?.name || '未知菜品' }}</strong>
             <span>{{ issue.note || '图片与菜名不匹配' }}</span>
           </div>
-          <el-button size="small" type="success" @click="resolveIssue(issue, 'fixed')">标记已修正</el-button>
-          <el-button size="small" @click="resolveIssue(issue, 'ignored')">忽略</el-button>
+          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining" @click="resolveIssue(issue, 'fixed')">标记已修正</el-button>
+          <el-button size="small" :disabled="!!resolvingIssue || joining" @click="resolveIssue(issue, 'ignored')">忽略</el-button>
         </div>
       </div>
     </el-card>
 
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>情侣小家</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
-      <el-form label-width="90px">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="小家名称"><el-input v-model="householdName" placeholder="给你们的小家取个名字" /></el-form-item>
         <el-form-item label="邀请码">
-          <div class="invite-row"><el-input :model-value="household.inviteCode" readonly /><el-button @click="copyInvite">复制</el-button><el-button :loading="refreshing" @click="refreshInvite">刷新</el-button></div>
+          <div class="invite-row"><el-input :model-value="household.inviteCode" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制</el-button><el-button :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码仅用于加入当前小家，请只分享给信任的人。</small></div>
         </el-form-item>
         <el-form-item label="加入小家">
           <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" /><el-button type="primary" :loading="joining" @click="joinHousehold">加入</el-button></div>
@@ -95,7 +104,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
@@ -126,30 +135,64 @@ const refreshing = ref(false);
 const joining = ref(false);
 const avatarFile = ref(null);
 const avatarUploading = ref(false);
-const defaultStatus = ref({ total: 0, imported: 0, missing: 0 });
-const imageIssues = ref([]);
+const defaultStatus = ref(null);
+const imageIssues = ref(null);
 const defaultLoading = ref(false);
+const governanceLoading = ref(false);
+const defaultError = ref(false);
+const issuesError = ref(false);
+const resolvingIssue = ref('');
+const profileLoading = ref(false);
+const profileReady = ref(false);
+const profileError = ref('');
+const avatarPreview = ref('');
 const fileInputRef = ref(null);
 const initial = computed(() => memberInitial(user.value));
 const memberInitial = (member) => ((member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase());
 
-const applyProfile = (res) => {
+const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true } = {}) => {
   user.value = res.user || user.value;
   household.value = res.household || res.user?.household || household.value;
-  displayName.value = user.value.displayName || '';
-  householdName.value = household.value.name || '';
+  if (syncDisplayName) displayName.value = user.value.displayName || '';
+  if (syncHouseholdName) householdName.value = household.value.name || '';
   localStorage.setItem('user', JSON.stringify(user.value));
 };
 const loadGovernance = async () => {
+  if (governanceLoading.value) return;
+  governanceLoading.value = true;
   try {
-    const [status, issues] = await Promise.all([api.defaultMeal.status(), api.mealImageIssue.list({ status: 'open' })]);
-    defaultStatus.value = status || defaultStatus.value;
-    imageIssues.value = issues || [];
-  } catch (_) {}
+    const [status, issues] = await Promise.allSettled([api.defaultMeal.status(), api.mealImageIssue.list({ status: 'open' })]);
+    defaultError.value = status.status !== 'fulfilled';
+    issuesError.value = issues.status !== 'fulfilled';
+    if (!defaultError.value) defaultStatus.value = status.value;
+    if (!issuesError.value) imageIssues.value = issues.value;
+  } finally { governanceLoading.value = false; }
 };
-const reload = async () => { applyProfile(await api.auth.me()); await loadGovernance(); };
+const clearAvatarFile = () => {
+  avatarFile.value = null;
+  if (avatarPreview.value) URL.revokeObjectURL(avatarPreview.value);
+  avatarPreview.value = '';
+  if (fileInputRef.value) fileInputRef.value.value = '';
+};
+const reload = async () => {
+  if (profileLoading.value || saving.value || avatarUploading.value || joining.value) return;
+  if (profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || avatarFile.value)) {
+    try { await ElMessageBox.confirm('刷新会放弃未保存的昵称、小家名称和待上传头像。', '确认刷新', { type: 'warning', confirmButtonText: '放弃并刷新', cancelButtonText: '继续编辑' }); } catch (_) { return; }
+  }
+  try {
+    profileLoading.value = true;
+    profileError.value = '';
+    applyProfile(await api.auth.me());
+    profileReady.value = true;
+    clearAvatarFile();
+    await loadGovernance();
+  } catch (e) {
+    profileError.value = e?.error || '用户信息加载失败，请重新加载。';
+  } finally { profileLoading.value = false; }
+};
 const saveProfile = async () => {
-  try { saving.value = true; applyProfile(await api.auth.updateProfile({ displayName: displayName.value })); ElMessage.success('保存成功'); }
+  if (saving.value || avatarUploading.value) return;
+  try { saving.value = true; applyProfile(await api.auth.updateProfile({ displayName: displayName.value }), { syncHouseholdName: false }); ElMessage.success('保存成功'); }
   catch (e) { ElMessage.error(e?.error || '保存失败'); }
   finally { saving.value = false; }
 };
@@ -165,9 +208,11 @@ const refreshInvite = async () => {
   finally { refreshing.value = false; }
 };
 const joinHousehold = async () => {
+  if (joining.value || saving.value || avatarUploading.value || householdSaving.value || refreshing.value || defaultLoading.value || resolvingIssue.value || governanceLoading.value) return;
   if (!joinCode.value.trim()) return ElMessage.warning('请输入邀请码');
-  try { await ElMessageBox.confirm('加入其他小家会切换当前账号所属家庭，原家庭的菜谱、计划和回忆不会自动转移。', '确认切换小家', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '取消' }); } catch (_) { return; }
-  try { joining.value = true; applyProfile(await api.household.join(joinCode.value)); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; await loadGovernance(); ElMessage.success('已加入小家'); }
+  try { await ElMessageBox.confirm('加入其他小家会切换当前账号所属家庭，原家庭的菜谱、计划和回忆不会自动转移，未保存的设置也会放弃。', '确认切换小家', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '取消' }); } catch (_) { return; }
+  if (joining.value) return;
+  try { joining.value = true; applyProfile(await api.household.join(joinCode.value)); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; await loadGovernance(); ElMessage.success('已加入小家'); }
   catch (e) { ElMessage.error(e?.error || '加入失败'); }
   finally { joining.value = false; }
 };
@@ -183,7 +228,16 @@ const selectTheme = (theme) => {
   ElMessage.success('\u4e3b\u9898\u5df2\u5207\u6362');
 };
 const chooseFile = () => fileInputRef.value?.click();
-const onFileChange = (e) => { avatarFile.value = e.target?.files?.[0] || null; };
+const onFileChange = (e) => {
+  const file = e.target?.files?.[0];
+  clearAvatarFile();
+  if (!file) return;
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream', ''];
+  if (!['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension) || !allowedTypes.includes(file.type.toLowerCase())) return ElMessage.warning('请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片');
+  avatarFile.value = file;
+  avatarPreview.value = URL.createObjectURL(file);
+};
 const importMissingDefaultMeals = async () => {
   try { defaultLoading.value = true; const res = await api.defaultMeal.importMissing(); defaultStatus.value = res.after || res.status || defaultStatus.value; ElMessage.success('默认菜品已补齐'); }
   catch (e) { ElMessage.error(e?.error || '导入失败'); }
@@ -196,8 +250,10 @@ const restoreDefaultImages = async () => {
   finally { defaultLoading.value = false; }
 };
 const resolveIssue = async (issue, status) => {
-  try { await api.mealImageIssue.update(issue._id, { status }); await loadGovernance(); ElMessage.success('已更新'); }
+  if (resolvingIssue.value) return;
+  try { resolvingIssue.value = issue._id; await api.mealImageIssue.update(issue._id, { status }); await loadGovernance(); ElMessage.success('已更新'); }
   catch (e) { ElMessage.error(e?.error || '更新失败'); }
+  finally { resolvingIssue.value = ''; }
 };
 const uploadAvatar = async () => {
   if (!avatarFile.value) return;
@@ -205,20 +261,25 @@ const uploadAvatar = async () => {
     avatarUploading.value = true;
     const fd = new FormData();
     fd.append('avatar', avatarFile.value);
-    applyProfile(await api.auth.uploadAvatar(fd));
-    avatarFile.value = null;
-    if (fileInputRef.value) fileInputRef.value.value = '';
+    applyProfile(await api.auth.uploadAvatar(fd), { syncDisplayName: false, syncHouseholdName: false });
+    clearAvatarFile();
     ElMessage.success('头像已更新');
   } catch (e) { ElMessage.error(e?.error || '上传失败'); }
   finally { avatarUploading.value = false; }
 };
-onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.error || '获取用户信息失败'); } });
+onMounted(reload);
+onBeforeUnmount(clearAvatarFile);
 </script>
 
 <style scoped>
-.settings-page { max-width: 820px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
-.settings-card { border-radius: 12px; }
-.card-header { display: flex; align-items: center; justify-content: space-between; }
+.settings-page { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.settings-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: clamp(22px, 4vw, 36px); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 26px; box-shadow: 0 12px 28px var(--shadow-color); }
+.settings-intro h1 { margin: 8px 0; font: 700 clamp(26px, 3vw, 36px) Georgia, 'Songti SC', serif; }
+.settings-intro p, .status-note, .invite-row small, .file-name { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.eyebrow { color: var(--secondary-color); font-size: 11px; letter-spacing: .14em; font-weight: 800; }
+.intro-badge { flex-shrink: 0; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: 12px; }
+.settings-card { border-radius: 20px; border-color: var(--border-color); background: var(--bg-primary); }
+.card-header { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; }
 .avatar-row { display: flex; align-items: center; gap: 16px; }
 .avatar-preview, .member-avatar { border-radius: 999px; overflow: hidden; background: rgba(216, 95, 101, 0.14); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 .avatar-preview { width: 56px; height: 56px; }
@@ -227,6 +288,7 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
 .avatar-placeholder { font-weight: 700; color: rgba(141, 90, 80, 0.95); }
 .avatar-actions, .invite-row, .member-list { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .invite-row .el-input { flex: 1; min-width: 220px; }
+.invite-row small { width: 100%; }
 .member-list { gap: 12px; }
 .member-item { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border-radius: 999px; padding: 6px 12px 6px 6px; }
 .file-input { display: none; }
@@ -237,6 +299,7 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
 .issue-list { display: flex; flex-direction: column; gap: 10px; }
 .issue-item { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
+.issue-placeholder { width: 64px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: var(--bg-primary); color: var(--text-secondary); font-size: 12px; }
 .issue-main { display: flex; flex-direction: column; gap: 4px; }
 .theme-settings-card { overflow: hidden; }
 .theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
@@ -247,7 +310,7 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
   padding: 16px;
   border: 1px solid var(--border-color);
   border-radius: 18px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.38));
+  background: var(--bg-primary);
   box-shadow: 0 12px 28px rgba(117, 78, 58, 0.08);
   color: var(--text-primary);
   cursor: pointer;
@@ -259,10 +322,10 @@ onMounted(async () => { try { await reload(); } catch (e) { ElMessage.error(e?.e
   transition: all 0.3s ease-in-out;
 }
 .theme-card:hover, .theme-card.active { transform: translateY(-2px); border-color: var(--secondary-color); box-shadow: 0 18px 36px rgba(117, 78, 58, 0.14); }
-.theme-card.active { background: linear-gradient(135deg, rgba(255, 255, 255, 0.86), var(--bg-secondary)); }
+.theme-card.active { background: var(--bg-secondary); }
 .theme-name { font-size: 16px; font-weight: 700; }
 .theme-desc { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .theme-swatches { display: flex; gap: 7px; margin-top: auto; }
 .theme-swatch { width: 24px; height: 24px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.78); box-shadow: 0 4px 10px rgba(74, 62, 61, 0.14); }
-@media (max-width: 640px) { .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .issue-item { grid-template-columns: 1fr; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .settings-intro { align-items: flex-start; flex-direction: column; } .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .issue-item { grid-template-columns: 1fr; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
 </style>

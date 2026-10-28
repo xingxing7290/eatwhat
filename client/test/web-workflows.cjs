@@ -51,6 +51,8 @@ async function main () {
   let shrinkMealList = false
   let releaseSlowSearch
   let failEditorSave = false
+  let failDefaultStatus = false
+  let failImageIssues = false
   let blockEditorSave = false
   let releaseEditorSave
   let conflictMealEdit = false
@@ -141,7 +143,11 @@ async function main () {
       await new Promise(resolve => { releaseShoppingUpdate = resolve })
       data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
     }
-    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { name: '测试小家', inviteCode: 'ABC123', members: [] } }
+    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
+    else if (method === 'PUT' && path === '/auth/profile') {
+      writes.push({ path, body: request.postDataJSON() })
+      data = { user: { id: 'user-a', username: 'test', displayName: request.postDataJSON().displayName }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: request.postDataJSON().displayName }] } }
+    }
     else if (method === 'GET' && path === '/photo-album' && failAlbum) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '相册测试读取失败' }) })
     else if (method === 'GET' && path === '/photo-album') data = { photos: [{ photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="200"%3E%3Crect width="300" height="200" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'memory-a', date: today, mealType: 'dinner', title: '测试晚餐' }] }
     else if (method === 'GET' && path === '/anniversaries' && failAnniversaries) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '纪念日测试读取失败' }) })
@@ -152,7 +158,9 @@ async function main () {
       if (failAnniversarySave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试保存未确认' }) })
       data = { _id: 'ann-new' }
     }
+    else if (method === 'GET' && path === '/default-meals/status' && failDefaultStatus) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '状态不可用' }) })
     else if (method === 'GET' && path === '/default-meals/status') data = { total: 3, imported: 3, missing: 0 }
+    else if (method === 'GET' && path === '/meal-image-issues' && failImageIssues) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '反馈不可用' }) })
     else if (method === 'GET' && path === '/meal-image-issues') data = []
     else if (method === 'POST' && path === '/household/join') { writes.push({ path, body: request.postDataJSON() }); data = {} }
     else data = {}
@@ -499,7 +507,30 @@ async function main () {
   await page.getByRole('button', { name: '放弃并离开' }).click()
   await page.waitForURL('**/meals')
 
+  failDefaultStatus = true
+  failImageIssues = true
   await page.goto(`${base}/settings`)
+  await page.getByText('默认菜品状态加载失败，请重试后再操作。').waitFor()
+  await page.getByText('图片反馈加载失败，请重试。').waitFor()
+  assert.equal(await page.getByText('暂无待修正图片').count(), 0)
+  assert.equal(await page.getByRole('button', { name: '导入缺失默认菜品' }).count(), 0)
+  failDefaultStatus = false
+  failImageIssues = false
+  await page.getByRole('button', { name: '重新加载' }).first().click()
+  await page.getByText('暂无待修正图片').waitFor()
+  await page.getByPlaceholder('给你们的小家取个名字').fill('尚未保存的小家')
+  await page.getByPlaceholder('请输入昵称').fill('新的昵称')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByText('保存成功').waitFor()
+  assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的小家')
+  assert.equal(await page.locator('.member-item > span').innerText(), '新的昵称')
+  await page.getByRole('button', { name: '刷新', exact: true }).first().click()
+  await page.getByText('刷新会放弃未保存的昵称、小家名称和待上传头像。').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的小家')
+  await page.locator('input[type=file]').setInputFiles({ name: 'wrong.txt', mimeType: 'text/plain', buffer: Buffer.from('no') })
+  await page.getByText('请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片').waitFor()
+  assert.equal(await page.getByRole('button', { name: '上传头像' }).isDisabled(), true)
   await page.getByPlaceholder('输入伴侣的邀请码').fill('OTHER1')
   await page.getByRole('button', { name: '加入', exact: true }).click()
   await page.getByText('加入其他小家会切换当前账号所属家庭').waitFor()
@@ -507,6 +538,11 @@ async function main () {
   assert.equal(writes.some(item => item.path === '/household/join'), false)
 
   await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto(`${base}/settings`)
+  await page.getByRole('heading', { name: '小家设置' }).waitFor()
+  await page.getByText('暂无待修正图片').waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile settings should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-settings-mobile.png'), fullPage: true })
   await page.goto(`${base}/dashboard`)
   await page.getByRole('heading', { name: /好好吃饭/ }).waitFor()
   await page.screenshot({ path: process.env.EATWHAT_MOBILE_SHOT || path.join(os.tmpdir(), 'eatwhat-web-dashboard-mobile.png'), fullPage: true })

@@ -126,6 +126,7 @@ exports.updateProfile = async (req, res, next) => {
 		const user = await User.findByIdAndUpdate(uid, { $set: { displayName: safeDisplayName } }, { new: true });
 		if (!user) return res.status(404).json({ error: '\u7528\u6237\u4e0d\u5b58\u5728' });
 		const { household } = await ensureUserHousehold(uid);
+		await household.populate({ path: 'members', select: 'username displayName avatarUrl' });
 		return res.json({ user: toSafeUser(user, household), household: householdPayload(household) });
 	} catch (err) { next(err); }
 };
@@ -139,6 +140,7 @@ exports.uploadAvatar = async (req, res, next) => {
 		const user = await User.findByIdAndUpdate(uid, { $set: { avatarUrl } }, { new: true });
 		if (!user) return res.status(404).json({ error: '用户不存在' });
 		const { household } = await ensureUserHousehold(uid);
+		await household.populate({ path: 'members', select: 'username displayName avatarUrl' });
 		return res.json({ user: toSafeUser(user, household), household: householdPayload(household) });
 	} catch (err) { next(err); }
 };

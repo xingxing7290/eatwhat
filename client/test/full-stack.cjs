@@ -36,6 +36,22 @@ async function main () {
     assert.equal(me.household.name, 'E2E 家庭甲')
     console.log('E2E: login and household loaded')
 
+    await page.goto(`${base}/settings`)
+    await page.getByPlaceholder('给你们的小家取个名字').fill('尚未保存的家庭名')
+    await page.getByPlaceholder('请输入昵称').fill('联调昵称')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByText('保存成功').waitFor()
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的家庭名')
+    await page.locator('input[type=file]').setInputFiles({ name: 'avatar.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
+    await page.getByRole('button', { name: '上传头像' }).click()
+    await page.getByText('头像已更新').waitFor()
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的家庭名')
+    const updatedProfile = await apiGet('/auth/me')
+    assert.equal(updatedProfile.user.displayName, '联调昵称')
+    assert.equal(updatedProfile.household.members[0].displayName, '联调昵称')
+    assert.ok(updatedProfile.household.members[0].avatarUrl.includes('/uploads/'))
+    console.log('E2E: profile and avatar saved without discarding household draft')
+
     await page.goto(`${base}/meals`)
     await Promise.all([
       page.waitForResponse(response => new URL(response.url()).pathname === '/api/meals' && new URL(response.url()).searchParams.get('search') === '联调菜谱 01' && response.status() === 200),
