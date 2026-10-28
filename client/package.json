@@ -23,6 +23,8 @@
     "test:guest-host": "node test/guest-host-workflows.cjs",
     "test:guest-host-theme": "node test/guest-host-theme.cjs",
     "test:guest-host-list": "node test/guest-host-list-workflows.cjs",
+    "test:review": "node test/review-workflows.cjs",
+    "test:review-theme": "node test/review-theme.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",

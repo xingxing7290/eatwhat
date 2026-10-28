@@ -110,7 +110,7 @@ onMounted(load);
       <el-card class="quick-card">
         <template #header><div class="card-title"><el-icon><ShoppingCart /></el-icon><span>准备下一顿</span></div></template>
         <p class="quick-description">计划、食材和灵感，放在顺手的位置。</p>
-        <div class="quick-links"><router-link to="/weekly-plan">生成周计划 <span>→</span></router-link><router-link to="/shopping-list">查看购物清单 <span>→</span></router-link><router-link to="/meals">探索全部菜谱 <span>→</span></router-link></div>
+        <div class="quick-links"><router-link to="/weekly-plan">生成周计划 <span>→</span></router-link><router-link to="/shopping-list">查看购物清单 <span>→</span></router-link><router-link to="/meals">探索全部菜谱 <span>→</span></router-link><router-link to="/review">回顾饭桌时光 <span>→</span></router-link></div>
       </el-card>
     </section>
   </div>

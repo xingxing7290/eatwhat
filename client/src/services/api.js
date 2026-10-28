@@ -55,7 +55,8 @@ const logAPI = (type, url, data, status) => {
 	// Login and registration payloads can contain passwords and access tokens.
 	const authSensitive = /\/auth\/(?:login|register)(?:\?|$)/i.test(String(url));
 	const guestSensitive = /\/guest-orders(?:\/|\?|$)/i.test(String(url));
-	data = authSensitive ? '[认证数据已隐藏]' : guestSensitive ? '[宴请数据已隐藏]' : redactLogData(data);
+	const reviewSensitive = /\/review(?:\/|\?|$)/i.test(String(url));
+	data = authSensitive ? '[认证数据已隐藏]' : guestSensitive ? '[宴请数据已隐藏]' : reviewSensitive ? '[回顾数据已隐藏]' : redactLogData(data);
 
 	const timestamp = new Date();
 	const timeString = timestamp.toLocaleTimeString();
@@ -152,7 +153,7 @@ api.interceptors.response.use(
 					url: error.config?.url,
 					method: error.config?.method,
 					status: response.status,
-					data: /\/guest-orders(?:\/|\?|$)/i.test(error.config?.url || '') ? '[宴请数据已隐藏]' : redactLogData(response.data),
+					data: /\/guest-orders(?:\/|\?|$)/i.test(error.config?.url || '') ? '[宴请数据已隐藏]' : /\/review(?:\/|\?|$)/i.test(error.config?.url || '') ? '[回顾数据已隐藏]' : redactLogData(response.data),
 					requestData
 				});
 			}
@@ -365,6 +366,11 @@ export const dashboardApi = {
 	summary: () => api.get('/dashboard/summary')
 };
 
+export const reviewApi = {
+	monthly: month => api.get('/review/monthly', { params: { month } }),
+	yearly: year => api.get('/review/yearly', { params: { year } })
+};
+
 export const guestOrderApi = {
 	capabilities: () => api.get('/guest-orders/capabilities'),
 	list: (params = {}) => api.get('/guest-orders', { params }),
@@ -455,6 +461,7 @@ export default {
 	wishlist: wishlistApi,
 	anniversary: anniversaryApi,
 	dashboard: dashboardApi,
+	review: reviewApi,
 	guestOrder: guestOrderApi,
 	weeklyPlan: weeklyPlanApi,
 	shoppingList: shoppingListApi,

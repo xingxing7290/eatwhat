@@ -87,6 +87,12 @@ const router = createRouter({
       meta: { title: '饭桌相册' }
     },
     {
+      path: '/review',
+      name: 'review',
+      component: () => import('../views/ReviewPage.vue'),
+      meta: { title: '饭桌回顾' }
+    },
+    {
       path: '/wishlist',
       name: 'wishlist',
       component: () => import('../views/WishlistPage.vue')

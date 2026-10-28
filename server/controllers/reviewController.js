@@ -11,7 +11,10 @@ function pad(n) { return String(n).padStart(2, '0'); }
 
 function yearRange(yearValue) {
   const now = new Date();
-  const year = /^\d{4}$/.test(String(yearValue || '')) ? Number(yearValue) : now.getFullYear();
+  if (yearValue !== undefined && (typeof yearValue !== 'string' || !/^\d{4}$/.test(yearValue) || Number(yearValue) < 2000 || Number(yearValue) > 2100)) {
+    const error = new Error('年份无效，请选择 2000 至 2100 年'); error.status = 400; throw error;
+  }
+  const year = yearValue === undefined ? now.getFullYear() : Number(yearValue);
   return {
     year: String(year),
     start: `${year}-01-01`,
@@ -21,6 +24,9 @@ function yearRange(yearValue) {
 
 function selectedRange(req, type) {
   if (type === 'year') return yearRange(req.query.year);
+  if (req.query.month !== undefined && (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month) || Number(req.query.month.slice(0, 4)) < 2000 || Number(req.query.month.slice(0, 4)) > 2100)) {
+    const error = new Error('月份无效，请使用 2000-01 至 2100-12'); error.status = 400; throw error;
+  }
   return monthRange(req.query.month);
 }
 
@@ -104,7 +110,7 @@ function photoWall(memories, limit = 12) {
 function moodStats(memories) {
   const counts = new Map();
   memories.forEach(memory => {
-    const mood = String(memory.mood || '').trim() || '???';
+    const mood = String(memory.mood || '').trim() || '未填写心情';
     counts.set(mood, (counts.get(mood) || 0) + 1);
   });
   return Array.from(counts.entries())
@@ -123,7 +129,7 @@ function bestMemory(memories) {
     id: memory._id,
     date: memory.date,
     mealType: memory.mealType,
-    title: memory.title || '????????',
+    title: memory.title || '一段饭桌回忆',
     mood: memory.mood,
     note: memory.note,
     rating: memory.rating,
@@ -135,7 +141,7 @@ function bestMemory(memories) {
 function categoryStats(mealCounter) {
   const counts = new Map();
   mealCounter.forEach(item => {
-    const category = String(item.category || '').trim() || '???';
+    const category = String(item.category || '').trim() || '未分类';
     counts.set(category, (counts.get(category) || 0) + item.count);
   });
   return Array.from(counts.entries())
@@ -159,18 +165,18 @@ function healthTagStats(mealCounter) {
 }
 
 function summarySentence({ type, label, memoryCount, plannedCount, topMealsList, photoCount }) {
-  const periodText = type === 'year' ? `${label} ?` : `${label.replace('-', ' ? ')} ?`;
+  const periodText = type === 'year' ? `${label} 年` : `${label.slice(0, 4)} 年 ${Number(label.slice(5))} 月`;
   const topMeal = topMealsList[0]?.name;
   if (memoryCount === 0 && plannedCount === 0) {
-    return `${periodText}?????????????????????`;
+    return `${periodText}还没有排餐或饭后回忆，留一顿饭的记录吧。`;
   }
   if (topMeal) {
-    return `${periodText}????? ${memoryCount} ????????? ${plannedCount} ??????????${topMeal}??`;
+    return `${periodText}记录了 ${plannedCount} 条排餐和 ${memoryCount} 条回忆，最常出现的菜品是${topMeal}。`;
   }
   if (photoCount > 0) {
-    return `${periodText}??? ${photoCount} ??????????????????`;
+    return `${periodText}留下了 ${photoCount} 张饭桌照片和 ${memoryCount} 条回忆。`;
   }
-  return `${periodText}???????????????????????????`;
+  return `${periodText}记录了 ${plannedCount} 条排餐和 ${memoryCount} 条饭后回忆。`;
 }
 
 async function buildReview(req, type) {
@@ -181,13 +187,14 @@ async function buildReview(req, type) {
 
   const [memories, schedules, wishlistOpen, mealTotal, favoriteTotal] = await Promise.all([
     MealMemory.find({ householdId: household._id, date: dateQuery })
-      .populate('mealIds')
-      .populate('createdBy', 'username displayName avatarUrl')
-      .sort({ date: -1, createdAt: -1 }),
+      .populate({ path: 'mealIds', match: { householdId: household._id } })
+      .populate({ path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' })
+      .populate({ path: 'participants', match: { householdId: household._id }, select: 'username displayName avatarUrl' })
+      .sort({ date: -1, createdAt: -1, _id: -1 }),
     Schedule.find({ householdId: household._id, date: dateQuery })
-      .populate('meals.breakfast.meal')
-      .populate('meals.lunch.meal')
-      .populate('meals.dinner.meal')
+      .populate({ path: 'meals.breakfast.meal', match: { householdId: household._id } })
+      .populate({ path: 'meals.lunch.meal', match: { householdId: household._id } })
+      .populate({ path: 'meals.dinner.meal', match: { householdId: household._id } })
       .sort({ date: 1 }),
     WishlistItem.countDocuments({ householdId: household._id, status: 'open' }),
     Meal.countDocuments({ householdId: household._id, archived: { $ne: true } }),
@@ -200,10 +207,12 @@ async function buildReview(req, type) {
 
   const topMealsList = topItems(mealCounter);
   const photos = photoWall(memories);
+  const photoCount = memories.reduce((sum, memory) => sum + (memory.photos || []).length, 0);
   const plannedCount = schedules.reduce((sum, schedule) => sum + countScheduledMeals(schedule), 0);
-  const reviewedDates = new Set([...memories.map(item => item.date), ...schedules.map(item => item.date)]);
+  const reviewedDates = new Set([...memories.map(item => item.date), ...schedules.filter(item => countScheduledMeals(item) > 0).map(item => item.date)]);
 
   return {
+    supportsHouseholdScopedReview: true,
     type,
     label,
     range: { start: range.start, end: range.end },
@@ -211,11 +220,11 @@ async function buildReview(req, type) {
       memoryCount: memories.length,
       plannedMealCount: plannedCount,
       reviewedDayCount: reviewedDates.size,
-      photoCount: memories.reduce((sum, memory) => sum + (memory.photos || []).length, 0),
+      photoCount,
       wishlistOpen,
       mealTotal,
       favoriteTotal,
-      sentence: summarySentence({ type, label, memoryCount: memories.length, plannedCount, topMealsList, photoCount: photos.length })
+      sentence: summarySentence({ type, label, memoryCount: memories.length, plannedCount, topMealsList, photoCount })
     },
     topMeals: topMealsList,
     moodStats: moodStats(memories),
