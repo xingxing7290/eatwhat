@@ -53,6 +53,8 @@ async function main () {
   let failEditorSave = false
   let failDefaultStatus = false
   let failImageIssues = false
+  let simulateJoinTimeout = false
+  let switchedHousehold = false
   let blockEditorSave = false
   let releaseEditorSave
   let conflictMealEdit = false
@@ -143,7 +145,7 @@ async function main () {
       await new Promise(resolve => { releaseShoppingUpdate = resolve })
       data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
     }
-    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
+    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: switchedHousehold ? { id: 'home-b', name: '已切换家庭', inviteCode: 'DEF456', members: [{ _id: 'user-a', displayName: '测试用户' }] } : { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
     else if (method === 'PUT' && path === '/auth/profile') {
       writes.push({ path, body: request.postDataJSON() })
       data = { user: { id: 'user-a', username: 'test', displayName: request.postDataJSON().displayName }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: request.postDataJSON().displayName }] } }
@@ -162,7 +164,11 @@ async function main () {
     else if (method === 'GET' && path === '/default-meals/status') data = { total: 3, imported: 3, missing: 0 }
     else if (method === 'GET' && path === '/meal-image-issues' && failImageIssues) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '反馈不可用' }) })
     else if (method === 'GET' && path === '/meal-image-issues') data = []
-    else if (method === 'POST' && path === '/household/join') { writes.push({ path, body: request.postDataJSON() }); data = {} }
+    else if (method === 'POST' && path === '/household/join') {
+      writes.push({ path, body: request.postDataJSON() })
+      if (simulateJoinTimeout) { switchedHousehold = true; return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试切换结果不确定' }) }) }
+      data = {}
+    }
     else data = {}
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(data) })
   })
@@ -528,6 +534,11 @@ async function main () {
   await page.getByText('刷新会放弃未保存的昵称、小家名称和待上传头像。').waitFor()
   await page.getByRole('button', { name: '继续编辑' }).click()
   assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的小家')
+  assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+  await page.locator('.nav-link').getByText('购物清单').click()
+  await page.getByText('昵称、小家名称或头像尚未保存，离开后会丢失。').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的小家')
   await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copiedInvite = text } } }))
   await page.getByRole('button', { name: '复制邀请链接' }).click()
   const copiedInvite = new URL(await page.evaluate(() => window.__copiedInvite))
@@ -544,6 +555,20 @@ async function main () {
   await page.getByText('加入其他小家会切换当前账号所属家庭').waitFor()
   await page.getByRole('button', { name: '取消' }).last().click()
   assert.equal(writes.some(item => item.path === '/household/join'), false)
+  simulateJoinTimeout = true
+  await page.getByRole('button', { name: '加入', exact: true }).click()
+  await page.getByRole('button', { name: '确认加入' }).click()
+  await page.getByText('家庭切换结果未确认').waitFor()
+  assert.equal(await page.getByRole('button', { name: '加入', exact: true }).isDisabled(), true)
+  await page.getByRole('button', { name: '重新核对家庭' }).click()
+  await page.getByRole('button', { name: '放弃并刷新' }).click()
+  await page.getByText('已切换家庭').waitFor()
+  assert.equal(await page.getByText('家庭切换结果未确认').count(), 0)
+  await page.goto(`${base}/apply-account#invite=OTHER2`)
+  await page.getByRole('button', { name: '使用当前账号加入' }).click()
+  await page.waitForURL('**/settings')
+  assert.equal(await page.getByPlaceholder('输入伴侣的邀请码').inputValue(), 'OTHER2')
+  assert.equal(writes.filter(item => item.path === '/household/join').length, 1, 'opening an invitation must not join automatically')
 
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto(`${base}/settings`)

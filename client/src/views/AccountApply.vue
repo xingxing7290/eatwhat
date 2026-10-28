@@ -17,6 +17,10 @@
         请先用刚填写的用户名和密码尝试登录，避免重复创建账号。如果无法登录，再返回此页重新填写。
         <div><el-button link type="primary" @click="goToLogin">前往登录</el-button><el-button link @click="uncertain = false">继续填写</el-button></div>
       </el-alert>
+      <div v-if="hasExistingSession && inviteFromLink" class="existing-account">
+        <p>已经登录？可以使用当前账号加入邀请的小家，无需重新注册。</p>
+        <el-button :disabled="loading" @click="useCurrentAccount">使用当前账号加入</el-button>
+      </div>
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top" class="apply-form" :disabled="loading || uncertain" @submit.prevent="onSubmit">
         <div class="mode-heading">选择小家</div>
         <el-radio-group v-model="mode" class="mode-picker" aria-label="选择小家方式">
@@ -111,6 +115,7 @@ const route = useRoute()
 const formRef = ref()
 const loading = ref(false)
 const uncertain = ref(false)
+const hasExistingSession = !!localStorage.getItem('token')
 const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '')
 const linkInvite = hashParams.get('invite') || (typeof route.query.invite === 'string' ? route.query.invite : '')
 const inviteFromLink = linkInvite.trim().slice(0, 20)
@@ -133,6 +138,7 @@ if (inviteFromLink) {
 }
 
 const goToLogin = () => router.push({ name: 'login', query: { username: form.value.username.trim() } })
+const useCurrentAccount = () => router.push({ name: 'settings', hash: `#invite=${encodeURIComponent(form.value.inviteCode.trim())}` })
 const onSubmit = async () => {
   if (loading.value || uncertain.value || !formRef.value) return
   loading.value = true
@@ -297,6 +303,8 @@ const rules = {
 .mode-picker :deep(.el-radio-button__inner) { width: 100%; }
 .mode-hint { margin: 10px 0 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .uncertain-alert { margin-bottom: 20px; }
+.existing-account { margin-bottom: 20px; padding: 14px; border-radius: 14px; background: var(--bg-secondary); }
+.existing-account p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 .uncertain-alert :deep(.el-alert__description) { line-height: 1.6; }
 .apply-form :deep(.el-form-item__label) { line-height: 1.4; padding-bottom: 6px; color: var(--text-primary); font-weight: 600; }
 

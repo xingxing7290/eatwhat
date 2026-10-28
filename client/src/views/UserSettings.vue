@@ -2,9 +2,10 @@
   <div class="settings-page">
     <header class="settings-intro"><div><span class="eyebrow">YOUR HOME, YOUR WAY</span><h1>小家设置</h1><p>管理个人资料、家庭成员和餐桌的样子。</p></div><span class="intro-badge">把日常过成喜欢的模样</span></header>
     <el-alert v-if="profileError" :title="profileError" type="error" :closable="false" show-icon><el-button link type="primary" :loading="profileLoading" @click="reload">重新加载</el-button></el-alert>
+    <el-alert v-if="joinUncertain" title="家庭切换结果未确认" type="warning" :closable="false" show-icon>请先重新核对当前家庭，再决定是否重试；在确认前本页的家庭操作暂不可用。 <el-button link type="primary" :loading="profileLoading" @click="reload">重新核对家庭</el-button></el-alert>
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>用户设置</span></div></template>
-      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || saving || avatarUploading || householdSaving || refreshing || joining">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || joinUncertain || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="头像">
           <div class="avatar-row">
             <div class="avatar-preview"><img v-if="avatarPreview || user.avatarUrl" :src="avatarPreview || resolveUploadedImage(user.avatarUrl)" alt="头像预览" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
@@ -56,18 +57,20 @@
 
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>默认菜品管理</span><el-tag v-if="defaultStatus && !defaultError">{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
-      <el-alert v-if="defaultError" title="默认菜品状态加载失败，请重试后再操作。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
+      <p v-if="joinUncertain" class="status-note">请先核对当前小家。</p>
+      <el-alert v-else-if="defaultError" title="默认菜品状态加载失败，请重试后再操作。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
       <div v-else-if="defaultStatus" class="governance-row">
         <div class="governance-metric"><span>缺失默认菜品</span><strong>{{ defaultStatus.missing }}</strong></div>
-        <el-button type="primary" :loading="defaultLoading" :disabled="joining || governanceLoading" @click="importMissingDefaultMeals">导入缺失默认菜品</el-button>
-        <el-button :loading="defaultLoading" :disabled="joining || governanceLoading" @click="restoreDefaultImages">恢复默认菜品图片</el-button>
+        <el-button type="primary" :loading="defaultLoading" :disabled="joining || joinUncertain || governanceLoading" @click="importMissingDefaultMeals">导入缺失默认菜品</el-button>
+        <el-button :loading="defaultLoading" :disabled="joining || joinUncertain || governanceLoading" @click="restoreDefaultImages">恢复默认菜品图片</el-button>
       </div>
       <p v-else class="status-note">正在加载菜品状态…</p>
     </el-card>
 
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
-      <el-alert v-if="issuesError" title="图片反馈加载失败，请重试。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
+      <p v-if="joinUncertain" class="status-note">请先核对当前小家。</p>
+      <el-alert v-else-if="issuesError" title="图片反馈加载失败，请重试。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
       <p v-else-if="!imageIssues" class="status-note">正在加载图片反馈…</p>
       <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
       <div v-else class="issue-list">
@@ -78,15 +81,15 @@
             <strong>{{ issue.mealId?.name || '未知菜品' }}</strong>
             <span>{{ issue.note || '图片与菜名不匹配' }}</span>
           </div>
-          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining" @click="resolveIssue(issue, 'fixed')">标记已修正</el-button>
-          <el-button size="small" :disabled="!!resolvingIssue || joining" @click="resolveIssue(issue, 'ignored')">忽略</el-button>
+          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining || joinUncertain" @click="resolveIssue(issue, 'fixed')">标记已修正</el-button>
+          <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain" @click="resolveIssue(issue, 'ignored')">忽略</el-button>
         </div>
       </div>
     </el-card>
 
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>情侣小家</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
-      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || saving || avatarUploading || householdSaving || refreshing || joining">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || joinUncertain || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="小家名称"><el-input v-model="householdName" placeholder="给你们的小家取个名字" /></el-form-item>
         <el-form-item label="邀请码">
           <div class="invite-row"><el-input :model-value="household.inviteCode" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
@@ -110,11 +113,12 @@ import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
-import { useRouter } from 'vue-router';
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 const mealStore = useMealStore();
 const scheduleStore = useScheduleStore();
 const router = useRouter();
+const route = useRoute();
 
 const themeOptions = [
   { value: 'cream', label: '奶油原木', desc: '温柔奶白与焦糖木色', colors: ['#FDFBF7', '#F5EBE6', '#FFB4A2', '#E09F67'] },
@@ -131,11 +135,14 @@ const user = ref({ id: '', username: '', displayName: '', avatarUrl: '' });
 const household = ref({ name: '', inviteCode: '', members: [] });
 const displayName = ref('');
 const householdName = ref('');
-const joinCode = ref('');
+const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '');
+const invitedCode = (hashParams.get('invite') || '').trim().slice(0, 20);
+const joinCode = ref(invitedCode);
 const saving = ref(false);
 const householdSaving = ref(false);
 const refreshing = ref(false);
 const joining = ref(false);
+const joinUncertain = ref(false);
 const avatarFile = ref(null);
 const avatarUploading = ref(false);
 const defaultStatus = ref(null);
@@ -152,6 +159,13 @@ const avatarPreview = ref('');
 const fileInputRef = ref(null);
 const initial = computed(() => memberInitial(user.value));
 const memberInitial = (member) => ((member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase());
+const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value));
+const mutationPending = computed(() => saving.value || avatarUploading.value || householdSaving.value || refreshing.value || joining.value || defaultLoading.value || !!resolvingIssue.value);
+if (invitedCode) {
+  hashParams.delete('invite');
+  const rest = hashParams.toString();
+  router.replace({ path: route.path, query: route.query, hash: rest ? `#${rest}` : '' });
+}
 
 const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true } = {}) => {
   user.value = res.user || user.value;
@@ -179,7 +193,7 @@ const clearAvatarFile = () => {
 };
 const reload = async () => {
   if (profileLoading.value || saving.value || avatarUploading.value || joining.value) return;
-  if (profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || avatarFile.value)) {
+  if (dirty.value) {
     try { await ElMessageBox.confirm('刷新会放弃未保存的昵称、小家名称和待上传头像。', '确认刷新', { type: 'warning', confirmButtonText: '放弃并刷新', cancelButtonText: '继续编辑' }); } catch (_) { return; }
   }
   try {
@@ -188,6 +202,8 @@ const reload = async () => {
     applyProfile(await api.auth.me());
     profileReady.value = true;
     clearAvatarFile();
+    if (joinUncertain.value) { mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; }
+    joinUncertain.value = false;
     await loadGovernance();
   } catch (e) {
     profileError.value = e?.error || '用户信息加载失败，请重新加载。';
@@ -200,7 +216,7 @@ const saveProfile = async () => {
   finally { saving.value = false; }
 };
 const saveHousehold = async () => {
-  try { householdSaving.value = true; const res = await api.household.update({ name: householdName.value }); household.value = res.household; ElMessage.success('小家已更新'); }
+  try { householdSaving.value = true; const res = await api.household.update({ name: householdName.value }); household.value = res.household; householdName.value = household.value.name || ''; ElMessage.success('小家已更新'); }
   catch (e) { ElMessage.error(e?.error || '保存小家失败'); }
   finally { householdSaving.value = false; }
 };
@@ -215,8 +231,15 @@ const joinHousehold = async () => {
   if (!joinCode.value.trim()) return ElMessage.warning('请输入邀请码');
   try { await ElMessageBox.confirm('加入其他小家会切换当前账号所属家庭，原家庭的菜谱、计划和回忆不会自动转移，未保存的设置也会放弃。', '确认切换小家', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '取消' }); } catch (_) { return; }
   if (joining.value) return;
-  try { joining.value = true; applyProfile(await api.household.join(joinCode.value)); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; await loadGovernance(); ElMessage.success('已加入小家'); }
-  catch (e) { ElMessage.error(e?.error || '加入失败'); }
+  try {
+    joining.value = true;
+    const result = await api.household.join(joinCode.value);
+    if (!result?.user?.id || !result?.household?.id) throw new Error('家庭切换响应不完整');
+    applyProfile(result); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; await loadGovernance(); ElMessage.success('已加入小家');
+  } catch (e) {
+    if (e?.error === '邀请码无效' || e?.error === '请输入邀请码') ElMessage.error(e.error);
+    else { joinUncertain.value = true; mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; }
+  }
   finally { joining.value = false; }
 };
 const copyInvite = async () => {
@@ -278,8 +301,18 @@ const uploadAvatar = async () => {
   } catch (e) { ElMessage.error(e?.error || '上传失败'); }
   finally { avatarUploading.value = false; }
 };
-onMounted(reload);
-onBeforeUnmount(clearAvatarFile);
+const warnBeforeUnload = event => {
+  if (!dirty.value && !mutationPending.value) return;
+  event.preventDefault();
+  event.returnValue = '';
+};
+onBeforeRouteLeave(async () => {
+  if (mutationPending.value) { ElMessage.warning('操作正在进行，请稍候'); return false; }
+  if (!dirty.value) return true;
+  try { await ElMessageBox.confirm('昵称、小家名称或头像尚未保存，离开后会丢失。', '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
+});
+onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); reload(); });
+onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); clearAvatarFile(); });
 </script>
 
 <style scoped>
