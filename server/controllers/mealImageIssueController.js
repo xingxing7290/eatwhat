@@ -2,14 +2,18 @@ const MealImageIssue = require('../models/mealImageIssueModel');
 const Meal = require('../models/mealModel');
 const { ensureUserHousehold } = require('../utils/household');
 
-function populate(q) { return q.populate('mealId').populate('createdBy', 'username displayName avatarUrl').populate('resolvedBy', 'username displayName avatarUrl'); }
+function populate(q, householdId) {
+  return q.populate({ path: 'mealId', match: { householdId } })
+    .populate({ path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' })
+    .populate({ path: 'resolvedBy', match: { householdId }, select: 'username displayName avatarUrl' });
+}
 
 exports.list = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const query = { householdId: household._id };
     if (req.query.status) query.status = req.query.status;
-    res.json(await populate(MealImageIssue.find(query).sort({ status: 1, createdAt: -1 }).limit(200)));
+    res.json(await populate(MealImageIssue.find(query).sort({ status: 1, createdAt: -1 }).limit(200), household._id));
   } catch (err) { next(err); }
 };
 
@@ -25,7 +29,7 @@ exports.create = async (req, res, next) => {
       note: String(req.body.note || '').trim(),
       createdBy: req.user.uid
     });
-    res.status(201).json(await populate(MealImageIssue.findById(issue._id)));
+    res.status(201).json(await populate(MealImageIssue.findById(issue._id), household._id));
   } catch (err) { next(err); }
 };
 
@@ -39,7 +43,7 @@ exports.update = async (req, res, next) => {
       update.resolvedAt = new Date();
     }
     if (req.body.note !== undefined) update.note = String(req.body.note || '').trim();
-    const issue = await populate(MealImageIssue.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, update, { new: true }));
+    const issue = await populate(MealImageIssue.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, update, { new: true }), household._id);
     if (!issue) return res.status(404).json({ error: '图片问题不存在' });
     res.json(issue);
   } catch (err) { next(err); }
