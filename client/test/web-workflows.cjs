@@ -10,7 +10,7 @@ const meals = [
   { _id: 'meal-c', name: '清炒青菜', category: '家常菜', description: '清爽', tags: [] }
 ]
 const today = '2026-10-28'
-const schedule = { date: today, meals: { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }, { meal: meals[2] }] } }
+const schedule = { date: today, scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }, { meal: meals[2] }] } }
 const summary = {
   today, todaySchedule: schedule, todayHints: [],
   week: { days: [{ date: today, meals: schedule.meals }], plannedMeals: 2 },
@@ -27,6 +27,8 @@ async function main () {
   const reads = []
   let wishlist = []
   let failSchedule = false
+  let conflictSchedule = false
+  let dailySchedule = schedule
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
   await page.addInitScript(() => {
@@ -47,9 +49,13 @@ async function main () {
     else if (method === 'GET' && path === '/meals/meal-a') data = meals[0]
     else if (method === 'GET' && path === '/memories') data = []
     else if (method === 'GET' && path === `/schedules/day/${today}` && failSchedule) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) })
-    else if (method === 'GET' && path === `/schedules/day/${today}`) data = schedule
+    else if (method === 'GET' && path === `/schedules/day/${today}`) data = dailySchedule
     else if (method === 'GET' && path === '/wishlist') data = wishlist
-    else if (method === 'PUT' && path === `/schedules/${today}/dinner`) { writes.push({ path, body: request.postDataJSON() }); data = schedule }
+    else if (method === 'PUT' && path === `/schedules/${today}/dinner`) {
+      writes.push({ path, body: request.postDataJSON() })
+      if (conflictSchedule) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' }) })
+      data = schedule
+    }
     else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
     else if (method === 'POST' && path === '/wishlist') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'new-wish' } }
     else if (method === 'POST' && path === '/meals') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'created-meal', name: '想吃的新菜' } }
@@ -89,6 +95,7 @@ async function main () {
   await page.getByRole('button', { name: '保存安排' }).click()
   await page.waitForURL('**/calendar')
   assert.deepEqual(writes.find(item => item.path.includes('/schedules/'))?.body.mealIds, ['meal-a', 'meal-c', 'meal-b'])
+  assert.equal(writes.find(item => item.path.includes('/schedules/'))?.body.expectedVersion, schedule.scheduleVersion)
   assert.equal(writes.find(item => item.path === '/wishlist/wish-a/status')?.body.status, 'planned')
 
   failSchedule = true
@@ -96,6 +103,31 @@ async function main () {
   await page.getByText('无法读取完整的现有安排').waitFor()
   assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
   failSchedule = false
+
+  conflictSchedule = true
+  await page.goto(`${base}/selection?date=${today}&mealType=dinner&suggestedMealId=meal-b`)
+  await page.getByText('已选择:').waitFor()
+  await page.getByRole('button', { name: '保存安排' }).click()
+  await page.getByText('其他成员刚刚更新了安排').waitFor()
+  assert.match(await page.locator('.selection-info').innerText(), /麻婆豆腐/)
+  assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
+  assert.equal(writes.filter(item => item.path === '/wishlist/wish-a/status').length, 1)
+  conflictSchedule = false
+  await page.getByRole('button', { name: '重新加载最新安排' }).click()
+  await page.getByText('其他成员刚刚更新了安排').waitFor({ state: 'hidden' })
+  assert.equal(await page.getByRole('button', { name: '保存安排' }).isEnabled(), true)
+
+  dailySchedule = { date: today, meals: schedule.meals }
+  await page.goto(`${base}/selection?date=${today}&mealType=dinner`)
+  await page.getByText('无法读取完整的现有安排').waitFor()
+  assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
+  dailySchedule = { date: today, scheduleExists: false, scheduleVersion: null, meals: { breakfast: [], lunch: [], dinner: [] } }
+  await page.goto(`${base}/selection?date=${today}&mealType=dinner`)
+  await page.getByText('已选择:').waitFor()
+  await page.getByRole('button', { name: '保存安排' }).click()
+  await page.waitForURL('**/calendar')
+  assert.equal(writes.filter(item => item.path.includes('/schedules/')).at(-1).body.expectedVersion, null)
+  dailySchedule = schedule
 
   await page.goto(`${base}/meals`)
   await page.getByText('把好味道留给家人').waitFor()

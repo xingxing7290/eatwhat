@@ -19,6 +19,8 @@ const mealType = computed(() => route.query.mealType);
 
 const isLoading = ref(false);
 const loadError = ref(false);
+const conflict = ref(false);
+const expectedVersion = ref(null);
 const searchQuery = ref('');
 const selectedMeals = ref([]);
 const currentPage = ref(1);
@@ -205,7 +207,7 @@ const saveSelection = async () => {
       return;
     }
     
-    await scheduleStore.setMeal(date.value, mealType.value, mealIds);
+    await scheduleStore.setMeal(date.value, mealType.value, mealIds, { expectedVersion: expectedVersion.value });
     const suggestedId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
     const wishlistId = typeof route.query.wishlistId === 'string' ? route.query.wishlistId : '';
     if (wishlistId && suggestedId && mealIds.some(id => String(id) === suggestedId)) {
@@ -220,7 +222,12 @@ const saveSelection = async () => {
     router.push({ name: 'calendar' });
     
   } catch (error) {
-    ElMessage.error('保存餐食安排失败');
+    if (error?.code === 'SCHEDULE_CONFLICT') {
+      conflict.value = true;
+      loadError.value = true;
+    } else {
+      ElMessage.error('保存餐食安排失败');
+    }
   } finally {
     isLoading.value = false;
   }
@@ -274,11 +281,18 @@ const loadSelection = async () => {
 
   isLoading.value = true;
   loadError.value = false;
+  conflict.value = false;
   try {
     if (!mealStore.allLoaded) {
       await mealStore.fetchAllMeals();
     }
     const schedule = await api.schedule.getScheduleByDate(date.value);
+    if (typeof schedule?.scheduleExists !== 'boolean' ||
+        (schedule.scheduleExists && (typeof schedule.scheduleVersion !== 'string' || !Number.isFinite(Date.parse(schedule.scheduleVersion)))) ||
+        (!schedule.scheduleExists && schedule.scheduleVersion !== null)) {
+      throw new Error('服务器未提供有效的安排版本，暂时无法安全保存');
+    }
+    expectedVersion.value = schedule.scheduleVersion;
     const items = schedule?.meals?.[mealType.value] || [];
     const existingIds = items.map(item => {
       const meal = item?.meal || item;
@@ -323,8 +337,9 @@ onMounted(loadSelection);
         </el-button>
       </div>
     </div>
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon title="无法读取完整的现有安排，为保护数据暂时不能保存。">
-      <el-button link type="primary" @click="loadSelection">重新加载</el-button>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="conflict ? '其他成员刚刚更新了安排，当前选择尚未保存。' : '无法读取完整的现有安排，为保护数据暂时不能保存。'">
+      <span v-if="conflict">重新加载会用最新安排替换当前选择，请先记下需要保留的菜品。</span>
+      <el-button link type="primary" @click="loadSelection">{{ conflict ? '重新加载最新安排' : '重新加载' }}</el-button>
     </el-alert>
     
     <div class="selection-info">

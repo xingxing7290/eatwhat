@@ -171,12 +171,12 @@ export const scheduleApi = {
 	},
 	
 	// 设置某日餐食
-	setMeal: (date, mealType, mealIds) => {
+	setMeal: (date, mealType, mealIds, options = {}) => {
 		if (USE_MOCK) {
 			ElMessage.success('餐食安排已保存（模拟数据）');
 			return mockResponse({ success: true });
 		}
-		return api.put(`/schedules/${date}/${mealType}`, { mealIds }, {
+		return api.put(`/schedules/${date}/${mealType}`, { mealIds, ...options }, {
 			headers: { 'Content-Type': 'application/json' }
 		});
 	},

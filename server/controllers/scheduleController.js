@@ -106,7 +106,7 @@ exports.getScheduleByDate = async (req, res, next) => {
     const { date } = req.params;
     const schedule = await Schedule.findOne({ householdId: household._id, date });
     if (!schedule) {
-      return res.status(200).json({ date, meals: { breakfast: [], lunch: [], dinner: [] } });
+      return res.status(200).json({ date, meals: { breakfast: [], lunch: [], dinner: [] }, scheduleExists: false, scheduleVersion: null });
     }
     normalizeMealItems(schedule);
     fillMissingAddedBy(schedule, req.user.uid);
@@ -118,7 +118,10 @@ exports.getScheduleByDate = async (req, res, next) => {
       { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
       { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
     ]);
-    res.status(200).json(isMobileClient(req) ? compactSchedule(schedule) : schedule);
+    res.status(200).json(isMobileClient(req) ? compactSchedule(schedule) : {
+      ...schedule.toObject(), scheduleExists: true,
+      scheduleVersion: schedule.updatedAt ? schedule.updatedAt.toISOString() : null
+    });
   } catch (error) { logger.error(`Failed to get daily schedule: ${error.message}`); next(error); }
 };
 
@@ -128,6 +131,12 @@ exports.updateSchedule = async (req, res, next) => {
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
     const { household } = await ensureUserHousehold(req.user.uid);
     const { date, mealType } = req.params;
+    const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedVersion');
+    const expectedVersion = req.body.expectedVersion;
+    if (conditional && expectedVersion !== null &&
+        (typeof expectedVersion !== 'string' || !Number.isFinite(Date.parse(expectedVersion)))) {
+      return res.status(400).json({ error: '餐食安排版本无效，请重新加载' });
+    }
     const mealIds = Array.isArray(req.body.mealIds) ? req.body.mealIds.filter(Boolean) : [];
     if (mealIds.length > 0) {
       const meals = await Meal.find({ _id: { $in: mealIds }, householdId: household._id });
@@ -135,18 +144,34 @@ exports.updateSchedule = async (req, res, next) => {
     }
     const updateData = { householdId: household._id };
     updateData[`meals.${mealType}`] = mealIds.map(mealId => ({ meal: mealId, addedBy: req.user.uid || null }));
-    const schedule = await Schedule.findOneAndUpdate(
-      { householdId: household._id, date },
-      { $set: updateData },
-      { new: true, upsert: true, runValidators: true }
-    ).populate([
+    const population = [
       { path: 'meals.breakfast.meal' },
       { path: 'meals.lunch.meal' },
       { path: 'meals.dinner.meal' },
       { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
       { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
       { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
-    ]);
+    ];
+    let schedule;
+    if (conditional && expectedVersion === null) {
+      try {
+        schedule = await Schedule.create({
+          householdId: household._id, date,
+          meals: { [mealType]: updateData[`meals.${mealType}`] }
+        });
+      } catch (error) {
+        if (error.code === 11000) return res.status(409).json({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' });
+        throw error;
+      }
+      await schedule.populate(population);
+    } else {
+      const filter = { householdId: household._id, date };
+      if (conditional) filter.updatedAt = new Date(expectedVersion);
+      schedule = await Schedule.findOneAndUpdate(filter, { $set: updateData }, {
+        new: true, upsert: !conditional, runValidators: true
+      }).populate(population);
+      if (!schedule) return res.status(409).json({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' });
+    }
     res.status(200).json(schedule);
   } catch (error) { logger.error(`更新餐食安排失败: ${error.message}`); next(error); }
 };

@@ -70,7 +70,7 @@ export const useScheduleStore = defineStore('schedule', {
     },
     
     // 设置某日某餐的菜品
-    async setMeal(date, mealType, mealIds) {
+    async setMeal(date, mealType, mealIds, options = {}) {
       this.loading = true;
       this.error = null;
       
@@ -82,7 +82,7 @@ export const useScheduleStore = defineStore('schedule', {
           : [];
           
         console.log(`保存餐食安排: ${date} ${mealType}`, validMealIds);
-        const schedule = await scheduleApi.setMeal(date, mealType, validMealIds);
+        const schedule = await scheduleApi.setMeal(date, mealType, validMealIds, options);
 
         // 更新本地状态：以服务端返回为准（包含 meal + addedBy 信息）
         const index = this.schedules.findIndex(s => s.date === date);
@@ -95,8 +95,8 @@ export const useScheduleStore = defineStore('schedule', {
         ElMessage.success(`${date} 的${mealType === 'breakfast' ? '早餐' : mealType === 'lunch' ? '午餐' : '晚餐'}安排已保存`);
         return true;
       } catch (err) {
-        this.error = err.message || '保存餐食安排失败';
-        ElMessage.error(this.error);
+        this.error = err?.error || err?.message || '保存餐食安排失败';
+        if (err?.code !== 'SCHEDULE_CONFLICT') ElMessage.error(this.error);
         throw err;
       } finally {
         this.loading = false;
@@ -149,4 +149,4 @@ export const useScheduleStore = defineStore('schedule', {
       this.error = null;
     }
   }
-}); 
+});
