@@ -380,7 +380,7 @@ export const shoppingListApi = {
 
 // 饭桌相册API
 export const photoAlbumApi = {
-	month: (month) => api.get('/photo-album', { params: { month } })
+	month: (month, pagination = {}) => api.get('/photo-album', { params: { month, ...pagination } })
 };
 
 // 默认菜品管理API

@@ -196,7 +196,7 @@ async function main () {
       data = { user: { id: 'user-a', username: 'test', displayName: request.postDataJSON().displayName }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: request.postDataJSON().displayName }] } }
     }
     else if (method === 'GET' && path === '/photo-album' && failAlbum) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '相册测试读取失败' }) })
-    else if (method === 'GET' && path === '/photo-album') data = { photos: [{ photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="200"%3E%3Crect width="300" height="200" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'memory-a', date: today, mealType: 'dinner', title: '测试晚餐' }] }
+    else if (method === 'GET' && path === '/photo-album') data = { month: '2026-10', photos: [{ photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="200"%3E%3Crect width="300" height="200" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'memory-a', date: today, mealType: 'dinner', title: '测试晚餐' }] }
     else if (method === 'GET' && path === '/anniversaries' && failAnniversaries) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '纪念日测试读取失败' }) })
     else if (method === 'GET' && path === '/anniversaries') data = anniversaryMenus
     else if (method === 'GET' && path === '/anniversary-templates') data = [{ key: 'birthday', title: '生日小餐桌', theme: '生日', description: '一起庆祝', structure: ['主菜'] }]

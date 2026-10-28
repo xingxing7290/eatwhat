@@ -11,6 +11,8 @@
     "test:shopping": "node test/shopping-workflows.cjs",
     "test:weekly": "node test/weekly-workflows.cjs",
     "test:invitation": "node test/invitation-workflows.cjs",
+    "test:album": "node test/album-workflows.cjs",
+    "test:memory": "node test/memory-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
     "test:dashboard-theme": "node test/dashboard-theme.cjs",
     "test:media": "node --test test/uploaded-image.test.mjs",
