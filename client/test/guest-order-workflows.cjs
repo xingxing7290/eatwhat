@@ -1,0 +1,131 @@
+const assert = require('node:assert/strict')
+const http = require('node:http')
+const fs = require('node:fs')
+const path = require('node:path')
+const { chromium } = require('playwright')
+
+async function main () {
+  const html = fs.readFileSync(path.join(__dirname, '../../server/public/guest-order.html'))
+  const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(html) })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    page.setDefaultTimeout(10000)
+    const errors = []
+    page.on('pageerror', error => errors.push(error.message))
+    const meals = [{ _id: 'a', name: '测试面条', category: '主食' }, { _id: 'b', name: '测试青菜', category: '素菜' }]
+    const session = { title: '测试宴请', householdName: '测试家庭', status: 'open', canOrder: true }
+    let activeMeals = meals; let mode = 'unavailable'; let orderReads = 0; let writes = 0; let failRead = false; let malformedRead = false; let acceptConfirm = true
+    page.on('dialog', dialog => acceptConfirm ? dialog.accept() : dialog.dismiss())
+    await page.route('**/guest-orders/public/**', async route => {
+      const req = route.request(); const url = new URL(req.url())
+      if (req.method() === 'GET' && url.pathname.endsWith('/orders/access')) {
+        orderReads++
+        if (failRead) return route.fulfill({ status: 503, json: { error: '暂时读取失败' } })
+        if (malformedRead) return route.fulfill({ json: { order: {} } })
+        return route.fulfill({ json: { order: { revision: 2, guestName: '服务端访客', note: '服务端整单备注', items: [{ mealId: 'b', name: '测试青菜', quantity: 2, note: '服务端菜品备注' }] } } })
+      }
+      if (req.method() === 'GET') return route.fulfill({ json: url.searchParams.has('statusOnly') ? { session } : { session, meals: activeMeals } })
+      writes++
+      if (mode === 'unavailable') { activeMeals = [meals[1]]; return route.fulfill({ status: 409, json: { code: 'GUEST_MEAL_UNAVAILABLE', error: '部分菜品已下架或不可用，请核对点菜单', unavailableIds: ['a'] } }) }
+      if (mode === 'conflict') return route.fulfill({ status: 409, json: { error: '订单已在其他设备更新，请刷新后重试' } })
+      if (mode === 'uncertain') return route.fulfill({ status: 503, json: { error: '响应暂时不可用' } })
+      if (mode === 'malformed') return route.fulfill({ json: {} })
+      return route.fulfill({ status: 201, json: { accessToken: 'access', order: { revision: 1, guestName: '测试访客', items: [{ mealId: 'b', name: '测试青菜', quantity: 1 }] } } })
+    })
+    await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/local-test`)
+    const card = name => page.locator('.meal').filter({ hasText: name })
+    await card('测试面条').getByRole('button', { name: '＋ 想吃' }).click()
+    await card('测试青菜').getByRole('button', { name: '＋ 想吃' }).click()
+    await page.getByRole('button', { name: '查看菜单' }).click()
+    await page.locator('#guestName').fill('测试访客')
+    await page.locator('#orderNote').fill('保留整单备注')
+    await page.locator('.cart-row').filter({ hasText: '测试面条' }).locator('.item-note').fill('保留菜品备注')
+    await page.getByRole('button', { name: '提交给主人' }).click()
+    await page.getByText('部分菜品已下架或不可用。你的选择和备注仍保留', { exact: false }).waitFor()
+    if (process.env.EATWHAT_GUEST_ORDER_SHOT) await page.screenshot({ path: process.env.EATWHAT_GUEST_ORDER_SHOT })
+    assert.equal(await page.locator('#orderNote').inputValue(), '保留整单备注')
+    assert.equal(await page.locator('.cart-row').filter({ hasText: '测试面条' }).locator('.item-note').inputValue(), '保留菜品备注')
+    assert.equal(await card('测试面条').count(), 0, 'refreshed menu hides the archived dish')
+    await page.getByRole('button', { name: '移除测试面条' }).click()
+    mode = 'success'
+    await page.getByRole('button', { name: '提交给主人' }).click()
+    await page.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor()
+    await page.locator('#orderNote').fill('本页尚未保存的备注')
+    await page.locator('.cart-row').filter({ hasText: '测试青菜' }).locator('.item-note').fill('本页菜品备注')
+    mode = 'conflict'
+    await page.getByRole('button', { name: '保存修改' }).click()
+    await page.getByText('订单已在其他设备更新，本页修改仍保留', { exact: false }).waitFor()
+    assert.equal(orderReads, 0, 'conflict must not silently reload and replace the draft')
+    assert.equal(await page.locator('#orderNote').inputValue(), '本页尚未保存的备注')
+    assert.equal(await page.locator('.item-note').inputValue(), '本页菜品备注')
+    assert.equal(await page.getByRole('button', { name: '保存修改' }).isDisabled(), true)
+    acceptConfirm = false
+    await page.getByRole('button', { name: '载入最新订单' }).click()
+    assert.equal(orderReads, 0)
+    acceptConfirm = true; failRead = true
+    await page.getByRole('button', { name: '载入最新订单' }).click()
+    await page.getByText('暂时读取失败', { exact: true }).waitFor()
+    assert.equal(await page.locator('#orderNote').inputValue(), '本页尚未保存的备注')
+    failRead = false; malformedRead = true
+    await page.getByRole('button', { name: '载入最新订单' }).click()
+    await page.getByText('订单数据不完整，请稍后重试', { exact: true }).waitFor()
+    assert.equal(await page.locator('#orderNote').inputValue(), '本页尚未保存的备注')
+    malformedRead = false
+    await page.getByRole('button', { name: '载入最新订单' }).click()
+    await page.waitForFunction(() => document.querySelector('#orderNote').value === '服务端整单备注')
+    assert.equal(await page.locator('.item-note').inputValue(), '服务端菜品备注')
+    await page.locator('#orderNote').fill('不确定结果时保留')
+    mode = 'uncertain'
+    await page.getByRole('button', { name: '保存修改' }).click()
+    await page.getByText('提交结果尚未确认', { exact: false }).waitFor()
+    assert.equal(await page.locator('#orderNote').inputValue(), '不确定结果时保留')
+    assert.equal(await page.getByRole('button', { name: '保存修改' }).isDisabled(), true)
+    await page.getByRole('button', { name: '已核对，继续' }).click()
+    mode = 'malformed'
+    await page.getByRole('button', { name: '保存修改' }).click()
+    await page.getByText('提交结果尚未确认', { exact: false }).waitFor()
+    assert.equal(await page.locator('#orderNote').inputValue(), '不确定结果时保留')
+    failRead = true
+    await page.reload()
+    await page.getByRole('button', { name: '查看 / 核对' }).click()
+    await page.getByText('提交结果尚未确认', { exact: false }).waitFor()
+    const beforeAck = writes
+    await page.getByRole('button', { name: '已核对，继续' }).click()
+    assert.equal(writes, beforeAck, 'acknowledgement must not submit an order')
+    await page.getByRole('button', { name: '继续选菜' }).click()
+    await card('测试青菜').getByRole('button', { name: '＋ 想吃' }).click()
+    await page.getByRole('button', { name: '查看 / 核对' }).click()
+    await page.getByText('暂时无法读取之前提交的订单', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '提交给主人' }).isDisabled(), true, 'an unread existing order must not create a duplicate')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    assert.deepEqual(errors, [])
+    const blockedStorage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await blockedStorage.addInitScript(() => {
+      const original = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (this === localStorage && key.startsWith('eatwhat.guestOrder.')) throw new DOMException('blocked', 'SecurityError')
+        return original.call(this, key, value)
+      }
+    })
+    const methods = []
+    await blockedStorage.route('**/guest-orders/public/**', async route => {
+      const req = route.request(); methods.push(req.method())
+      if (req.method() === 'GET') return route.fulfill({ json: { session, meals: [meals[1]] } })
+      return route.fulfill({ status: 200, json: { accessToken: 'access', order: { revision: req.method() === 'POST' ? 1 : 2, guestName: '测试访客', items: [{ mealId: 'b', name: '测试青菜', quantity: 1 }] } } })
+    })
+    await blockedStorage.goto(`http://127.0.0.1:${server.address().port}/guest-order/storage-blocked`)
+    await blockedStorage.locator('.meal').getByRole('button', { name: '＋ 想吃' }).click()
+    await blockedStorage.getByRole('button', { name: '查看菜单' }).click()
+    await blockedStorage.locator('#guestName').fill('测试访客')
+    await blockedStorage.getByRole('button', { name: '提交给主人' }).click()
+    await blockedStorage.getByText('本浏览器无法保存订单凭证', { exact: false }).waitFor()
+    await blockedStorage.getByRole('button', { name: '保存修改' }).click()
+    await blockedStorage.waitForFunction(() => document.querySelector('#submitOrder').textContent === '保存修改' && !document.querySelector('#submitOrder').disabled)
+    assert.deepEqual(methods.filter(method => method !== 'GET'), ['POST', 'PUT'], 'blocked local storage must not cause a duplicate create')
+    await blockedStorage.close()
+    console.log('Guest ordering workflows passed: unavailable dishes, draft-safe conflicts and uncertain submissions')
+  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }
+}
+main().catch(error => { console.error(error); process.exitCode = 1 })

@@ -103,6 +103,7 @@ async function publicSessionByToken(token) {
 }
 
 async function mealMapForItems(session, rawItems) {
+  if (Array.isArray(rawItems) && rawItems.length > 50) throw httpError('单次最多选择 50 道菜');
   const ids = [...new Set((Array.isArray(rawItems) ? rawItems : [])
     .map(item => cleanText(item?.mealId || item?._id || item?.id, 64))
     .filter(Boolean))];
@@ -110,11 +111,24 @@ async function mealMapForItems(session, rawItems) {
     throw httpError('订单中包含不存在的菜品');
   }
   const meals = ids.length
-    ? await Meal.find({ _id: { $in: ids }, householdId: session.householdId })
+    ? await Meal.find({ _id: { $in: ids }, householdId: session.householdId, archived: { $ne: true } })
       .select('_id defaultKey name imageUrl')
       .lean()
     : [];
-  return new Map(meals.map(meal => [String(meal._id), meal]));
+  const mealMap = new Map(meals.map(meal => [String(meal._id), meal]));
+  const unavailableIds = ids.filter(id => !mealMap.has(id));
+  if (unavailableIds.length) {
+    const error = httpError('部分菜品已下架或不可用，请核对点菜单', 409);
+    error.code = 'GUEST_MEAL_UNAVAILABLE';
+    error.unavailableIds = unavailableIds;
+    throw error;
+  }
+  return mealMap;
+}
+
+function handlePublicOrderError(error, res, next) {
+  if (error.code === 'GUEST_MEAL_UNAVAILABLE') return res.status(409).json({ code: error.code, error: error.message, unavailableIds: error.unavailableIds });
+  return next(error);
 }
 
 exports.page = (req, res) => {
@@ -302,7 +316,7 @@ exports.createPublicOrder = async (req, res, next) => {
       order: orderPayload(withToken)
     });
   } catch (error) {
-    next(error);
+    handlePublicOrderError(error, res, next);
   }
 };
 
@@ -346,6 +360,6 @@ exports.updatePublicOrder = async (req, res, next) => {
     }
     res.json({ order: orderPayload(order) });
   } catch (error) {
-    next(error);
+    handlePublicOrderError(error, res, next);
   }
 };
