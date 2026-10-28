@@ -11,6 +11,9 @@ const meals = [
 ]
 const today = '2026-10-28'
 const schedule = { date: today, scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }, { meal: meals[2] }] } }
+const weekDates = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']
+const weekDays = weekDates.map(date => date === today ? { ...schedule, hints: [] } : { date, scheduleExists: false, scheduleVersion: null, meals: { breakfast: [], lunch: [], dinner: [] }, hints: [] })
+const draftDays = weekDates.map(date => ({ date, meals: { breakfast: [], lunch: [], dinner: ['meal-a'] } }))
 const summary = {
   today, todaySchedule: schedule, todayHints: [],
   week: { days: [{ date: today, meals: schedule.meals }], plannedMeals: 2 },
@@ -32,6 +35,8 @@ async function main () {
   let failWeekly = false
   let failShopping = false
   let releaseShoppingUpdate
+  let weeklyApplyMode = 'success'
+  let supportsWeeklyVersions = true
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
   await page.addInitScript(() => {
@@ -64,9 +69,14 @@ async function main () {
     else if (method === 'POST' && path === '/meals') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'created-meal', name: '想吃的新菜' } }
     else if (method === 'PATCH' && path === '/wishlist/convert-wish/meal') { writes.push({ path, body: request.postDataJSON() }); data = {} }
     else if (method === 'GET' && path === '/weekly-plans' && failWeekly) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '周计划测试读取失败' }) })
-    else if (method === 'GET' && path === '/weekly-plans') data = { weekStart: today, days: [{ date: today, meals: schedule.meals, hints: [] }] }
-    else if (method === 'POST' && path === '/weekly-plans/generate') data = { days: [{ date: today, meals: { breakfast: [], lunch: [], dinner: ['meal-a'] } }], preview: [{ date: today, meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, hints: [] }] }
-    else if (method === 'POST' && path === '/weekly-plans/apply') { writes.push({ path, body: request.postDataJSON() }); data = {} }
+    else if (method === 'GET' && path === '/weekly-plans') data = { weekStart: weekDates[0], supportsConditionalApply: supportsWeeklyVersions, days: weekDays }
+    else if (method === 'POST' && path === '/weekly-plans/generate') data = { days: draftDays, preview: draftDays.map(day => ({ ...day, meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, hints: [] })) }
+    else if (method === 'POST' && path === '/weekly-plans/apply') {
+      writes.push({ path, body: request.postDataJSON() })
+      if (weeklyApplyMode === 'conflict') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'WEEKLY_PLAN_CONFLICT', error: '安排已变化', conflictDate: weekDates[2], appliedDates: weekDates.slice(0, 2) }) })
+      if (weeklyApplyMode === 'incomplete') return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'WEEKLY_PLAN_INCOMPLETE', error: '未完整应用', uncertainDate: weekDates[1], appliedDates: weekDates.slice(0, 1) }) })
+      data = { applied: 7 }
+    }
     else if (method === 'GET' && path === '/schedules') data = []
     else if (method === 'GET' && path === '/shopping-list' && failShopping) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '购物清单测试读取失败' }) })
     else if (method === 'GET' && path === '/shopping-list') data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: false }] }
@@ -125,6 +135,7 @@ async function main () {
   conflictSchedule = false
   await page.getByRole('button', { name: '重新加载最新安排' }).click()
   await page.getByText('其他成员刚刚更新了安排').waitFor({ state: 'hidden' })
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存安排') && !button.disabled))
   assert.equal(await page.getByRole('button', { name: '保存安排' }).isEnabled(), true)
 
   dailySchedule = { date: today, meals: schedule.meals }
@@ -174,6 +185,28 @@ async function main () {
   await page.getByText('应用草稿会替换这一周').waitFor()
   await page.getByRole('button', { name: '再检查一下' }).click()
   assert.equal(writes.some(item => item.path === '/weekly-plans/apply'), false)
+  weeklyApplyMode = 'conflict'
+  await page.getByRole('button', { name: '应用到日历' }).click()
+  await page.getByRole('button', { name: '确认替换' }).click()
+  await page.getByText('2026-10-28的安排已变化').waitFor()
+  const firstApply = writes.find(item => item.path === '/weekly-plans/apply')
+  assert.equal(firstApply.body.expectedVersions[today], schedule.scheduleVersion)
+  assert.equal(firstApply.body.expectedVersions[weekDates[0]], null)
+  assert.match(await page.locator('.el-alert').innerText(), /已写入：2026-10-26、2026-10-27/)
+  assert.equal(await page.getByText('规则生成草稿').count(), 0)
+  weeklyApplyMode = 'incomplete'
+  await page.getByRole('button', { name: '生成草稿' }).click()
+  await page.getByRole('button', { name: '应用到日历' }).click()
+  await page.getByRole('button', { name: '确认替换' }).click()
+  await page.getByText('2026-10-27 的写入结果不确定').waitFor()
+  assert.equal(await page.getByText('规则生成草稿').count(), 0)
+  supportsWeeklyVersions = false
+  await page.goto(`${base}/weekly-plan`)
+  await page.getByText('服务器未提供完整的安排版本').waitFor()
+  await page.getByRole('button', { name: '生成草稿' }).click()
+  await page.getByText('规则生成草稿').waitFor()
+  assert.equal(await page.getByRole('button', { name: '应用到日历' }).isDisabled(), true)
+  supportsWeeklyVersions = true
 
   await page.goto(`${base}/meals/detail/meal-a`)
   await page.getByRole('button', { name: '记录做过' }).click()

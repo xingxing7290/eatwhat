@@ -93,7 +93,11 @@ exports.list = async (req, res, next) => {
     const { household } = await ensureUserHousehold(req.user.uid);
     const weekStart = startOfWeek(req.query.weekStart);
     const days = await weekSchedules(household._id, weekStart);
-    res.json({ weekStart, days: days.map(day => ({ date: day.date, meals: day.meals, hints: balanceHintsForDay(day) })) });
+    res.json({ weekStart, supportsConditionalApply: true, days: days.map(day => ({
+      date: day.date, meals: day.meals, hints: balanceHintsForDay(day),
+      scheduleExists: !!day._id,
+      scheduleVersion: day.updatedAt ? day.updatedAt.toISOString() : null
+    })) });
   } catch (err) { next(err); }
 };
 
@@ -118,18 +122,60 @@ exports.apply = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const days = normalizePlan(req.body.days);
+    const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedVersions');
+    const versions = req.body.expectedVersions;
+    if (conditional) {
+      const input = req.body.days;
+      const validDays = Array.isArray(input) && input.length === 7 && days.length === 7 &&
+        weekDates(startOfWeek(days[0].date)).every((date, index) => days[index].date === date) &&
+        input.every(day => day && mealTypes.every(type => Array.isArray(day.meals?.[type])));
+      const validVersions = versions && typeof versions === 'object' && !Array.isArray(versions) &&
+        days.every(day => Object.prototype.hasOwnProperty.call(versions, day.date) &&
+          (versions[day.date] === null || (typeof versions[day.date] === 'string' && Number.isFinite(Date.parse(versions[day.date])))));
+      if (!validDays || !validVersions) return res.status(400).json({ error: '周计划或版本信息不完整，请重新加载' });
+    }
     const ids = [...new Set(days.flatMap(day => mealTypes.flatMap(type => day.meals[type])))];
     if (ids.length) {
       const count = await Meal.countDocuments({ householdId: household._id, _id: { $in: ids } });
       if (count !== ids.length) return res.status(400).json({ error: '计划中包含无效菜品' });
     }
-    for (const day of days) {
-      const update = { householdId: household._id };
-      mealTypes.forEach(type => { update[`meals.${type}`] = day.meals[type].map(id => ({ meal: id, addedBy: req.user.uid })); });
-      await Schedule.findOneAndUpdate({ householdId: household._id, date: day.date }, { $set: update }, { upsert: true, new: true, runValidators: true });
+    const conflict = (date, appliedDates) => res.status(409).json({ code: 'WEEKLY_PLAN_CONFLICT', error: '日历安排已变化，请重新核对', conflictDate: date, appliedDates });
+    if (conditional) {
+      const existing = await Schedule.find({ householdId: household._id, date: { $in: days.map(day => day.date) } });
+      const existingByDate = new Map(existing.map(item => [item.date, item]));
+      for (const day of days) {
+        const entry = existingByDate.get(day.date);
+        const expected = versions[day.date];
+        if ((expected === null && entry) || (expected !== null && (!entry?.updatedAt || entry.updatedAt.getTime() !== new Date(expected).getTime()))) {
+          return conflict(day.date, []);
+        }
+      }
     }
-    const weekStart = startOfWeek(days[0]?.date || dateKey(new Date()));
-    res.json({ weekStart, applied: days.length, days: await weekSchedules(household._id, weekStart) });
+    const appliedDates = [];
+    let activeDate = null;
+    try {
+      for (const day of days) {
+        activeDate = day.date;
+        const update = { householdId: household._id };
+        const meals = {};
+        mealTypes.forEach(type => { meals[type] = day.meals[type].map(id => ({ meal: id, addedBy: req.user.uid })); update[`meals.${type}`] = meals[type]; });
+        if (conditional && versions[day.date] === null) {
+          try { await Schedule.create({ householdId: household._id, date: day.date, meals }); }
+          catch (error) { if (error.code === 11000) return conflict(day.date, appliedDates); throw error; }
+        } else {
+          const filter = { householdId: household._id, date: day.date };
+          if (conditional) filter.updatedAt = new Date(versions[day.date]);
+          const result = await Schedule.findOneAndUpdate(filter, { $set: update }, { upsert: !conditional, new: true, runValidators: true });
+          if (!result) return conflict(day.date, appliedDates);
+        }
+        appliedDates.push(day.date);
+      }
+      activeDate = null;
+      const weekStart = startOfWeek(days[0]?.date || dateKey(new Date()));
+      return res.json({ weekStart, applied: days.length, days: await weekSchedules(household._id, weekStart) });
+    } catch (err) {
+      return res.status(500).json({ code: 'WEEKLY_PLAN_INCOMPLETE', error: '周计划未能完整应用，请重新加载并核对', appliedDates, uncertainDate: activeDate });
+    }
   } catch (err) { next(err); }
 };
 

@@ -9,6 +9,7 @@ const weekStart = ref('');
 const current = ref(null);
 const draft = ref(null);
 const loadError = ref('');
+const applyIssue = ref('');
 let loadSequence = 0;
 const mealTypes = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const scheduledSlots = computed(() => (current.value?.days || []).reduce((total, day) => total + Object.keys(mealTypes).filter(type => day.meals?.[type]?.length).length, 0));
@@ -16,6 +17,10 @@ const displayedRange = computed(() => {
   const days = current.value?.days || [];
   return days.length ? `${days[0].date} — ${days[days.length - 1].date}` : '';
 });
+const versionsAvailable = computed(() => current.value?.supportsConditionalApply === true &&
+  Array.isArray(current.value.days) && current.value.days.length === 7 &&
+  current.value.days.every(day => typeof day.scheduleExists === 'boolean' &&
+    (day.scheduleExists ? typeof day.scheduleVersion === 'string' && Number.isFinite(Date.parse(day.scheduleVersion)) : day.scheduleVersion === null)));
 const monday = () => {
   const d = new Date();
   const day = d.getDay() || 7;
@@ -42,24 +47,37 @@ const generate = async () => {
   if (loading.value || applying.value || loadError.value || !current.value) return;
   loading.value = true;
   draft.value = null;
+  applyIssue.value = '';
   try { draft.value = await api.weeklyPlan.generate(weekStart.value); ElMessage.success('已生成本周菜单草稿'); }
   catch (e) { ElMessage.error(e?.error || '生成失败'); }
   finally { loading.value = false; }
 };
 const applyDraft = async () => {
-  if (!draft.value?.days?.length || loading.value || applying.value || loadError.value || !current.value) return;
+  if (!draft.value?.days?.length || loading.value || applying.value || loadError.value || !versionsAvailable.value) return;
+  const currentDates = current.value.days.map(day => day.date);
+  if (draft.value.days.length !== 7 || draft.value.days.some((day, index) => day.date !== currentDates[index])) return ElMessage.error('草稿与当前周不一致，请重新生成');
   if (!draft.value.days.some(day => Object.values(day.meals || {}).some(items => items?.length))) return ElMessage.warning('草稿中没有菜品，请先添加菜谱');
   applying.value = true;
   try {
     try {
       await ElMessageBox.confirm('应用草稿会替换这一周每天的早餐、午餐和晚餐，包括草稿中的空餐次。请确认已检查当前安排。', '确认应用周计划', { type: 'warning', confirmButtonText: '确认替换', cancelButtonText: '再检查一下' });
     } catch (_) { return; }
-    await api.weeklyPlan.apply(draft.value.days); ElMessage.success('已应用到日历'); draft.value = null; await load();
+    const expectedVersions = Object.fromEntries(current.value.days.map(day => [day.date, day.scheduleVersion]));
+    await api.weeklyPlan.apply(draft.value.days, expectedVersions); ElMessage.success('已应用到日历'); draft.value = null; applyIssue.value = ''; await load();
   }
-  catch (e) { ElMessage.error(e?.error || '应用失败'); }
+  catch (e) {
+    const applied = Array.isArray(e?.appliedDates) ? e.appliedDates : null;
+    if (e?.code === 'WEEKLY_PLAN_CONFLICT' && applied) {
+      applyIssue.value = `${e.conflictDate || '某天'}的安排已变化。${applied.length ? `已写入：${applied.join('、')}；其余日期未写入。` : '本次未写入任何日期。'}请核对最新日历后重新生成草稿。`;
+    } else {
+      applyIssue.value = `${applied?.length ? `已确认写入：${applied.join('、')}。` : ''}${e?.uncertainDate ? `${e.uncertainDate} 的写入结果不确定。` : '可能有部分日期已写入。'}请核对最新日历后重新生成草稿。`;
+    }
+    draft.value = null;
+    await load();
+  }
   finally { applying.value = false; }
 };
-const changeWeek = () => { draft.value = null; if (weekStart.value) load(); else current.value = null; };
+const changeWeek = () => { draft.value = null; applyIssue.value = ''; if (weekStart.value) load(); else current.value = null; };
 onMounted(() => { weekStart.value = monday(); load(); });
 </script>
 
@@ -67,9 +85,11 @@ onMounted(() => { weekStart.value = monday(); load(); });
   <div class="weekly-page" v-loading="loading">
     <div class="page-header">
       <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>本周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
-      <div class="actions"><el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || applying" aria-label="选择周计划日期" @change="changeWeek" /><el-button type="primary" :disabled="loading || applying || !!loadError || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || applying || !!loadError || !current" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
+      <div class="actions"><el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || applying" aria-label="选择周计划日期" @change="changeWeek" /><el-button type="primary" :disabled="loading || applying || !!loadError || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || applying || !!loadError || !versionsAvailable" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
 
+    <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue" />
+    <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
     <el-card v-if="draft" class="draft-card"><template #header>规则生成草稿</template><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3>{{ day.date }}</h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length" class="muted">空</span></div><div class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div></el-card>
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>

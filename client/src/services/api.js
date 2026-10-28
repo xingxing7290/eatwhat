@@ -348,7 +348,7 @@ export const dashboardApi = {
 export const weeklyPlanApi = {
 	get: (weekStart) => api.get('/weekly-plans', { params: { weekStart } }),
 	generate: (weekStart) => api.post('/weekly-plans/generate', { weekStart }, { headers: { 'Content-Type': 'application/json' } }),
-	apply: (days) => api.post('/weekly-plans/apply', { days }, { headers: { 'Content-Type': 'application/json' } })
+	apply: (days, expectedVersions) => api.post('/weekly-plans/apply', { days, expectedVersions }, { headers: { 'Content-Type': 'application/json' } })
 };
 
 // 购物清单API
