@@ -3,6 +3,8 @@ const Schedule = require('../models/scheduleModel');
 const Meal = require('../models/mealModel');
 const { ensureUserHousehold } = require('../utils/household');
 const { startOfWeek, weekDates } = require('../utils/week');
+const mongoose = require('mongoose');
+const { hasSafeShoppingListIndex } = require('../utils/shoppingListIndex');
 
 function categoryFor(name) {
   const text = String(name || '');
@@ -13,36 +15,88 @@ function categoryFor(name) {
   return 'other';
 }
 function itemKey(item) { return `${String(item.name || '').trim().toLowerCase()}|${item.category || categoryFor(item.name)}`; }
+function requestedWeek(value) {
+  if (value === undefined || value === null || value === '') return startOfWeek();
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+  return startOfWeek(value);
+}
 function normalizeItem(body, uid, manual = true) {
   const name = String(body.name || '').trim();
   if (!name) return null;
   return { name, amount: String(body.amount || '').trim(), category: body.category || categoryFor(name), checked: !!body.checked, manual, sourceMealIds: [], addedBy: uid || null };
 }
+async function requireUniqueListIndex() {
+  if (!await hasSafeShoppingListIndex(ShoppingList.collection)) {
+    const error = new Error('购物清单安全索引未就绪，暂不能读取或修改，请联系管理员');
+    error.code = 'SHOPPING_LIST_INDEX_UNAVAILABLE';
+    throw error;
+  }
+}
 async function getOrCreateList(householdId, weekStart, uid) {
   let list = await ShoppingList.findOne({ householdId, weekStart });
-  if (!list) list = await ShoppingList.create({ householdId, weekStart, items: [], createdBy: uid, updatedBy: uid });
+  if (!list) {
+    try { list = await ShoppingList.create({ householdId, weekStart, items: [], createdBy: uid, updatedBy: uid }); }
+    catch (error) {
+      if (error.code !== 11000) throw error;
+      list = await ShoppingList.findOne({ householdId, weekStart });
+      if (!list) throw error;
+    }
+  }
   return list;
 }
-function serializeList(list) { return list.populate ? list : list; }
+function serializeList(list) {
+  return { ...list.toObject(), supportsConditionalUpdates: true, listVersion: Number.isSafeInteger(list.__v) && list.__v >= 0 ? list.__v : null };
+}
+function checkVersion(req, res, list) {
+  const body = req.body || {};
+  const hasBody = Object.prototype.hasOwnProperty.call(body, 'expectedVersion');
+  const hasQuery = Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedVersion');
+  if (!Number.isSafeInteger(list.__v) || list.__v < 0) {
+    res.status(409).json({ code: 'SHOPPING_LIST_VERSION_UNAVAILABLE', error: '购物清单缺少安全版本，请联系管理员核对' });
+    return false;
+  }
+  if (!hasBody && !hasQuery) return true; // Older clients continue to work with server-side optimistic concurrency.
+  const input = hasBody ? body.expectedVersion : req.query.expectedVersion;
+  const parsed = typeof input === 'string' && /^(0|[1-9]\d*)$/.test(input) ? Number(input) : input;
+  if (!Number.isSafeInteger(parsed) || parsed < 0) { res.status(400).json({ error: '购物清单版本无效，请重新加载' }); return false; }
+  if (list.__v !== parsed) {
+    res.status(409).json({ code: 'SHOPPING_LIST_CONFLICT', error: '购物清单已被其他成员更新，请重新加载' });
+    return false;
+  }
+  return true;
+}
+function handleError(err, res, next) {
+  if (err instanceof mongoose.Error.VersionError) return res.status(409).json({ code: 'SHOPPING_LIST_CONFLICT', error: '购物清单已被其他成员更新，请重新加载' });
+  if (err.code === 'SHOPPING_LIST_INDEX_UNAVAILABLE') return res.status(503).json({ code: err.code, error: err.message });
+  return next(err);
+}
 
 exports.get = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.query.weekStart);
+    await requireUniqueListIndex();
+    const weekStart = requestedWeek(req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
-    res.json(list);
-  } catch (err) { next(err); }
+    res.json(serializeList(list));
+  } catch (err) { handleError(err, res, next); }
 };
 
 exports.generate = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.body?.weekStart || req.query.weekStart);
+    await requireUniqueListIndex();
+    const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const dates = weekDates(weekStart);
     const schedules = await Schedule.find({ householdId: household._id, date: { $in: dates } }).populate([
       { path: 'meals.breakfast.meal' }, { path: 'meals.lunch.meal' }, { path: 'meals.dinner.meal' }
     ]);
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
+    if (!checkVersion(req, res, list)) return;
     const checkedMap = new Map((list.items || []).filter(item => !item.manual).map(item => [itemKey(item), !!item.checked]));
     const manualItems = (list.items || []).filter(item => item.manual);
     const generated = new Map();
@@ -57,7 +111,9 @@ exports.generate = async (req, res, next) => {
             const category = categoryFor(name);
             const key = `${name.toLowerCase()}|${category}`;
             const row = generated.get(key) || { name, amountParts: [], category, checked: checkedMap.get(key) || false, manual: false, sourceMealIds: [] };
-            if (ingredient.amount && !row.amountParts.includes(ingredient.amount)) row.amountParts.push(ingredient.amount);
+            // Repeated quantities from separate scheduled meals must not be
+            // deduplicated: two recipes needing one egg still need two eggs.
+            if (ingredient.amount) row.amountParts.push(ingredient.amount);
             if (!row.sourceMealIds.some(id => String(id) === String(meal._id))) row.sourceMealIds.push(meal._id);
             generated.set(key, row);
           }
@@ -71,63 +127,76 @@ exports.generate = async (req, res, next) => {
     list.generatedFrom = `week:${weekStart}:${Date.now()}`;
     list.updatedBy = req.user.uid;
     await list.save();
-    res.json(list);
-  } catch (err) { next(err); }
+    res.json(serializeList(list));
+  } catch (err) { handleError(err, res, next); }
 };
 
 exports.addItem = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.body.weekStart || req.query.weekStart);
+    await requireUniqueListIndex();
+    const weekStart = requestedWeek(req.body.weekStart || req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const item = normalizeItem(req.body, req.user.uid, true);
     if (!item) return res.status(400).json({ error: '食材名称不能为空' });
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
+    if (!checkVersion(req, res, list)) return;
     list.items.push(item);
     list.updatedBy = req.user.uid;
     await list.save();
-    res.status(201).json(list);
-  } catch (err) { next(err); }
+    res.status(201).json(serializeList(list));
+  } catch (err) { handleError(err, res, next); }
 };
 
 exports.updateItem = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.body.weekStart || req.query.weekStart);
+    await requireUniqueListIndex();
+    const weekStart = requestedWeek(req.body.weekStart || req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const list = await ShoppingList.findOne({ householdId: household._id, weekStart });
     if (!list) return res.status(404).json({ error: '购物清单不存在' });
+    if (!checkVersion(req, res, list)) return;
     const item = list.items.id(req.params.id);
     if (!item) return res.status(404).json({ error: '食材项不存在' });
     ['name', 'amount', 'category'].forEach(field => { if (req.body[field] !== undefined) item[field] = String(req.body[field] || '').trim(); });
     if (req.body.checked !== undefined) item.checked = !!req.body.checked;
     list.updatedBy = req.user.uid;
     await list.save();
-    res.json(list);
-  } catch (err) { next(err); }
+    res.json(serializeList(list));
+  } catch (err) { handleError(err, res, next); }
 };
 
 exports.deleteItem = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.query.weekStart || req.body?.weekStart);
+    await requireUniqueListIndex();
+    const weekStart = requestedWeek(req.query.weekStart || req.body?.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const list = await ShoppingList.findOne({ householdId: household._id, weekStart });
     if (!list) return res.status(404).json({ error: '购物清单不存在' });
+    if (!checkVersion(req, res, list)) return;
     list.items = list.items.filter(item => String(item._id) !== String(req.params.id));
     list.updatedBy = req.user.uid;
     await list.save();
+    if (Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedVersion') || Object.prototype.hasOwnProperty.call(req.body || {}, 'expectedVersion')) return res.json(serializeList(list));
     res.status(204).send();
-  } catch (err) { next(err); }
+  } catch (err) { handleError(err, res, next); }
 };
 
 exports.clearPurchased = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.body?.weekStart || req.query.weekStart);
+    await requireUniqueListIndex();
+    const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
+    if (!checkVersion(req, res, list)) return;
     list.items = list.items.filter(item => !item.checked);
     list.updatedBy = req.user.uid;
     await list.save();
-    res.json(list);
-  } catch (err) { next(err); }
+    res.json(serializeList(list));
+  } catch (err) { handleError(err, res, next); }
 };
 
 exports._categoryFor = categoryFor;

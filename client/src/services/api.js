@@ -371,11 +371,11 @@ export const weeklyPlanApi = {
 // 购物清单API
 export const shoppingListApi = {
 	get: (weekStart) => api.get('/shopping-list', { params: { weekStart } }),
-	generate: (weekStart) => api.post('/shopping-list/generate', { weekStart }, { headers: { 'Content-Type': 'application/json' } }),
+	generate: (weekStart, expectedVersion) => api.post('/shopping-list/generate', { weekStart, expectedVersion }, { headers: { 'Content-Type': 'application/json' } }),
 	addItem: (payload) => api.post('/shopping-list/items', payload, { headers: { 'Content-Type': 'application/json' } }),
 	updateItem: (id, payload) => api.patch(`/shopping-list/items/${id}`, payload, { headers: { 'Content-Type': 'application/json' } }),
-	deleteItem: (id, weekStart) => api.delete(`/shopping-list/items/${id}`, { params: { weekStart } }),
-	clearPurchased: (weekStart) => api.delete('/shopping-list/purchased', { params: { weekStart } })
+	deleteItem: (id, weekStart, expectedVersion) => api.delete(`/shopping-list/items/${id}`, { params: { weekStart, expectedVersion } }),
+	clearPurchased: (weekStart, expectedVersion) => api.delete('/shopping-list/purchased', { params: { weekStart, expectedVersion } })
 };
 
 // 饭桌相册API

@@ -17,7 +17,7 @@ const shoppingListSchema = new mongoose.Schema({
   items: { type: [shoppingListItemSchema], default: [] },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   updatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null }
-}, { timestamps: true });
+}, { timestamps: true, optimisticConcurrency: true });
 
 shoppingListSchema.index({ householdId: 1, weekStart: 1 }, { unique: true });
 

@@ -184,11 +184,11 @@ async function main () {
     else if (method === 'GET' && path === '/schedules' && failMonth) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '日历测试读取失败' }) })
     else if (method === 'GET' && path === '/schedules') data = [schedule]
     else if (method === 'GET' && path === '/shopping-list' && failShopping) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '购物清单测试读取失败' }) })
-    else if (method === 'GET' && path === '/shopping-list') data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: false }] }
+    else if (method === 'GET' && path === '/shopping-list') data = { weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: 0, items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: false }] }
     else if (method === 'PATCH' && path === '/shopping-list/items/item-a') {
       writes.push({ path, body: request.postDataJSON() })
       await new Promise(resolve => { releaseShoppingUpdate = resolve })
-      data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
+      data = { weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: 1, items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
     }
     else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: switchedHousehold ? { id: 'home-b', name: '已切换家庭', inviteCode: 'DEF456', members: [{ _id: 'user-a', displayName: '测试用户' }] } : { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
     else if (method === 'PUT' && path === '/auth/profile') {

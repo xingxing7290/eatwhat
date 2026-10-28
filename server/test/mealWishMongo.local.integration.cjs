@@ -19,15 +19,18 @@ const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const Meal = require('../models/mealModel');
 const Schedule = require('../models/scheduleModel');
+const ShoppingList = require('../models/shoppingListModel');
 const WishlistItem = require('../models/wishlistModel');
 const wishlist = require('../controllers/wishlistController');
 const mealController = require('../controllers/mealController');
 const dashboardController = require('../controllers/dashboardController');
 const scheduleController = require('../controllers/scheduleController');
 const weeklyPlanController = require('../controllers/weeklyPlanController');
+const shoppingController = require('../controllers/shoppingListController');
 const authController = require('../controllers/authController');
 const requireAuth = require('../middleware/auth');
 const { auditAndApply } = require('../scripts/meal-wish-index');
+const { auditAndApply: auditShoppingIndex } = require('../scripts/shopping-list-index');
 
 const executable = process.env.EATWHAT_TEST_MONGOD;
 if (!executable || !path.isAbsolute(executable) || !fs.existsSync(executable)) throw new Error('EATWHAT_TEST_MONGOD must name a trusted absolute mongod executable.');
@@ -69,6 +72,7 @@ async function main() {
     assert.equal(mongoose.connection.name, 'isolated_meal_wish');
     assert.equal((await mongoose.connection.db.listCollections().toArray()).length, 0, 'refuse a non-empty database');
     await Schedule.collection.createIndex({ householdId: 1, date: 1 }, { unique: true });
+    await ShoppingList.collection.createIndex({ householdId: 1, weekStart: 1 }, { unique: true });
 
     const [homeA, homeB] = await Household.create([{ name: 'Test A', inviteCode: 'LOCAL-A' }, { name: 'Test B', inviteCode: 'LOCAL-B' }]);
     const hash = await bcrypt.hash('test-only-password', 4);
@@ -109,6 +113,12 @@ async function main() {
     app.put('/schedules/:date/:mealType', scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
     app.get('/weekly-plans', weeklyPlanController.list);
     app.post('/weekly-plans/apply', weeklyPlanController.apply);
+    app.get('/shopping-list', shoppingController.get);
+    app.post('/shopping-list/generate', shoppingController.generate);
+    app.post('/shopping-list/items', shoppingController.addItem);
+    app.patch('/shopping-list/items/:id', shoppingController.updateItem);
+    app.delete('/shopping-list/items/:id', shoppingController.deleteItem);
+    app.delete('/shopping-list/purchased', shoppingController.clearPurchased);
     app.get('/dashboard/summary', dashboardController.summary);
     app.get('/wishlist', wishlist.list);
     let legacyCalls = 0;
@@ -122,7 +132,7 @@ async function main() {
     const base = `http://127.0.0.1:${server.address().port}`;
     async function request(url, { method = 'GET', body, token } = {}) {
       const result = await fetch(base + url, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
-      return { status: result.status, data: await result.json() };
+      return { status: result.status, data: result.status === 204 ? null : await result.json() };
     }
     async function login(username) {
       const result = await request('/auth/login', { method: 'POST', body: { username, password: 'test-only-password' } });
@@ -130,6 +140,76 @@ async function main() {
       return result.data.token;
     }
     const [tokenA, tokenPartner, tokenB] = await Promise.all(['test-local-a', 'test-local-partner', 'test-local-b'].map(login));
+    const shoppingWeek = '2026-11-09';
+    await ShoppingList.collection.dropIndex('householdId_1_weekStart_1');
+    const unsafeShopping = await request(`/shopping-list?weekStart=${shoppingWeek}`, { token: tokenA });
+    assert.equal(unsafeShopping.status, 503);
+    assert.equal(unsafeShopping.data.code, 'SHOPPING_LIST_INDEX_UNAVAILABLE');
+    assert.equal(await ShoppingList.countDocuments({ householdId: homeA._id, weekStart: shoppingWeek }), 0, 'no list is created without a safe unique index');
+    const indexFixtures = await ShoppingList.collection.insertMany([
+      { householdId: homeA._id, weekStart: '2026-12-07' },
+      { householdId: homeA._id, weekStart: '2026-12-07' },
+      { householdId: 'invalid', weekStart: '2026-12-08' },
+      { householdId: homeA._id, weekStart: '2026-13-01' }
+    ]);
+    const shoppingAudit = await auditShoppingIndex(ShoppingList.collection, { database: mongoose.connection.name, apply: false });
+    assert.equal(shoppingAudit.duplicateGroups, 1);
+    assert.equal(shoppingAudit.invalidHouseholds, 1);
+    assert.equal(shoppingAudit.invalidWeekStarts, 2);
+    await assert.rejects(auditShoppingIndex(ShoppingList.collection, { database: mongoose.connection.name, apply: true }));
+    await ShoppingList.collection.updateOne({ _id: indexFixtures.insertedIds[1] }, { $set: { weekStart: '2026-12-14' } });
+    await ShoppingList.collection.updateOne({ _id: indexFixtures.insertedIds[2] }, { $set: { householdId: homeB._id, weekStart: '2026-12-21' } });
+    await ShoppingList.collection.updateOne({ _id: indexFixtures.insertedIds[3] }, { $set: { weekStart: '2026-12-28' } });
+    assert.equal((await auditShoppingIndex(ShoppingList.collection, { database: mongoose.connection.name, apply: true })).created, true);
+    const oldUnversioned = await request('/shopping-list?weekStart=2026-12-07', { token: tokenA });
+    assert.equal(oldUnversioned.data.listVersion, null, 'an old unversioned list must not be advertised as safely writable');
+    const oldEdit = await request('/shopping-list/items', { method: 'POST', token: tokenA, body: { weekStart: '2026-12-07', expectedVersion: 0, name: '不可覆盖' } });
+    assert.equal(oldEdit.status, 409);
+    assert.equal(oldEdit.data.code, 'SHOPPING_LIST_VERSION_UNAVAILABLE');
+    const oldLegacyEdit = await request('/shopping-list/items', { method: 'POST', token: tokenPartner, body: { weekStart: '2026-12-07', name: '旧客户端不可覆盖' } });
+    assert.equal(oldLegacyEdit.status, 409);
+    assert.equal(oldLegacyEdit.data.code, 'SHOPPING_LIST_VERSION_UNAVAILABLE');
+    const initialLists = await Promise.all([tokenA, tokenPartner].map(token => request(`/shopping-list?weekStart=${shoppingWeek}`, { token })));
+    assert.ok(initialLists.every(result => result.status === 200 && result.data.supportsConditionalUpdates && result.data.listVersion === 0));
+    assert.equal(await ShoppingList.countDocuments({ householdId: homeA._id, weekStart: shoppingWeek }), 1, 'concurrent reads create only one list');
+    assert.equal((await request('/shopping-list?weekStart=2026-02-31', { token: tokenA })).status, 400);
+    const firstShopping = await request('/shopping-list/items', { method: 'POST', token: tokenA, body: { weekStart: shoppingWeek, expectedVersion: 0, name: '鸡蛋', amount: '2个' } });
+    assert.equal(firstShopping.status, 201);
+    assert.equal(firstShopping.data.listVersion, 1);
+    const staleShopping = await request('/shopping-list/items', { method: 'POST', token: tokenPartner, body: { weekStart: shoppingWeek, expectedVersion: 0, name: '牛奶' } });
+    assert.equal(staleShopping.status, 409);
+    assert.equal(staleShopping.data.code, 'SHOPPING_LIST_CONFLICT');
+    const concurrentShopping = await Promise.all([tokenA, tokenPartner].map((token, index) => request('/shopping-list/items', { method: 'POST', token, body: { weekStart: shoppingWeek, expectedVersion: 1, name: `并发食材${index}` } })));
+    assert.deepEqual(concurrentShopping.map(result => result.status).sort(), [201, 409], 'only one concurrent edit from a shared version may commit');
+    const afterShopping = await request(`/shopping-list?weekStart=${shoppingWeek}`, { token: tokenA });
+    assert.equal(afterShopping.data.items.length, 2);
+    const egg = afterShopping.data.items.find(item => item.name === '鸡蛋');
+    const toggles = await Promise.all([tokenA, tokenPartner].map(token => request(`/shopping-list/items/${egg._id}`, { method: 'PATCH', token, body: { weekStart: shoppingWeek, expectedVersion: afterShopping.data.listVersion, checked: true } })));
+    assert.deepEqual(toggles.map(result => result.status).sort(), [200, 409]);
+    const updatedShopping = toggles.find(result => result.status === 200).data;
+    const staleClear = await request(`/shopping-list/purchased?weekStart=${shoppingWeek}&expectedVersion=${afterShopping.data.listVersion}`, { method: 'DELETE', token: tokenPartner });
+    assert.equal(staleClear.status, 409);
+    const otherShopping = await request(`/shopping-list?weekStart=${shoppingWeek}`, { token: tokenB });
+    assert.equal(otherShopping.data.items.length, 0, 'shopping lists remain isolated by household');
+    const shoppingMeal = await Meal.create({ householdId: homeA._id, name: '购物清单测试菜', ingredients: [{ name: '番茄', amount: '1个' }] });
+    await Schedule.create({ householdId: homeA._id, date: shoppingWeek, meals: { dinner: [{ meal: shoppingMeal._id, addedBy: userA._id }] } });
+    await Schedule.create({ householdId: homeA._id, date: '2026-11-10', meals: { lunch: [{ meal: shoppingMeal._id, addedBy: partnerA._id }] } });
+    const generatedShopping = await request('/shopping-list/generate', { method: 'POST', token: tokenPartner, body: { weekStart: shoppingWeek, expectedVersion: updatedShopping.listVersion } });
+    assert.equal(generatedShopping.status, 200);
+    assert.ok(generatedShopping.data.items.some(item => item.name === '番茄' && !item.manual));
+    assert.equal(generatedShopping.data.items.find(item => item.name === '番茄').amount, '1个 + 1个', 'equal ingredient amounts from different meals must not disappear');
+    assert.ok(generatedShopping.data.items.some(item => item.name === '鸡蛋' && item.checked && item.manual));
+    const deletedShopping = await request(`/shopping-list/items/${egg._id}?weekStart=${shoppingWeek}&expectedVersion=${generatedShopping.data.listVersion}`, { method: 'DELETE', token: tokenA });
+    assert.equal(deletedShopping.status, 200);
+    assert.equal(deletedShopping.data.items.some(item => item.name === '鸡蛋'), false);
+    const legacyShopping = await Promise.all(Array.from({ length: 8 }, (_, index) => request('/shopping-list/items', {
+      method: 'POST', token: index % 2 ? tokenA : tokenPartner, body: { weekStart: shoppingWeek, name: `旧版并发${index}` }
+    })));
+    assert.ok(legacyShopping.every(result => result.status === 201 || result.status === 409), 'legacy concurrent writes either succeed or conflict');
+    const afterLegacyShopping = await request(`/shopping-list?weekStart=${shoppingWeek}`, { token: tokenA });
+    const successfulLegacyNames = legacyShopping.flatMap((result, index) => result.status === 201 ? [`旧版并发${index}`] : []);
+    assert.ok(successfulLegacyNames.length > 0);
+    assert.ok(successfulLegacyNames.every(name => afterLegacyShopping.data.items.some(item => item.name === name)), 'no acknowledged legacy write is lost');
     assert.equal((await request('/wishlist?includeCapabilities=true', { token: tokenA })).data.supportsAtomicMealWish, false);
     assert.equal((await request('/wishlist/meal', { method: 'POST', token: tokenA, body: { mealId: String(mealA._id) } })).status, 503);
 
@@ -326,15 +406,45 @@ async function main() {
       assert.deepEqual(legacyRace.map(result => result.status), [200, 200], 'legacy concurrent creation must recover from the unique-index race');
       assert.equal(await Schedule.countDocuments({ householdId: homeA._id, date: '2026-11-23' }), 1);
       assert.equal(String(legacyRace[0].data.meals.dinner[0].addedBy._id), String(legacyRace[1].data.meals.dinner[0].addedBy._id), 'both legacy writers retain the actual first creator');
+      await pages[1].clock.setFixedTime(new Date(2026, 9, 29, 12));
+      await Promise.all(pages.map(page => page.goto(`${webBase}/shopping-list`)));
+      await Promise.all(pages.map(page => page.waitForFunction(() => !document.querySelector('input[aria-label="食材名称"]')?.disabled)));
+      await pages[0].getByRole('textbox', { name: '食材名称' }).fill('浏览器鸡蛋');
+      await pages[1].getByRole('textbox', { name: '食材名称' }).fill('浏览器面包');
+      await pages[0].getByRole('button', { name: '添加食材' }).click();
+      await pages[0].getByText('浏览器鸡蛋', { exact: true }).waitFor();
+      await pages[1].getByRole('button', { name: '添加食材' }).click();
+      await pages[1].getByText('其他成员更新了购物清单', { exact: false }).waitFor();
+      assert.equal(await pages[1].getByRole('textbox', { name: '食材名称' }).inputValue(), '浏览器面包');
+      assert.equal(await pages[1].getByRole('button', { name: '添加食材' }).isDisabled(), true);
+      await pages[1].getByRole('button', { name: '重新加载并核对' }).click();
+      await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor();
+      assert.equal(await pages[1].getByRole('textbox', { name: '食材名称' }).inputValue(), '浏览器面包');
+      await pages[1].getByRole('button', { name: '添加食材' }).click();
+      await pages[1].getByText('浏览器面包', { exact: true }).waitFor();
+      assert.equal(await pages[1].evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      const sharedShopping = await request('/shopping-list?weekStart=2026-10-26', { token: tokenA });
+      assert.deepEqual(sharedShopping.data.items.map(item => item.name).sort(), ['浏览器面包', '浏览器鸡蛋'].sort());
+      await pages[1].getByText('浏览器面包', { exact: true }).click();
+      await pages[1].waitForFunction(() => [...document.querySelectorAll('.item-row')].some(row => row.textContent.includes('浏览器面包') && row.querySelector('input')?.checked));
+      await pages[1].getByRole('button', { name: '清空已购' }).click();
+      await pages[1].getByRole('button', { name: '清空', exact: true }).click();
+      await pages[1].getByText('浏览器面包', { exact: true }).waitFor({ state: 'hidden' });
+      await pages[1].getByRole('button', { name: '从排餐生成' }).click();
+      await pages[1].getByText('已按本周排餐生成购物清单').waitFor();
+      await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor();
+      await pages[1].getByRole('button', { name: '删除浏览器鸡蛋' }).click();
+      await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor({ state: 'hidden' });
+      assert.equal((await request('/shopping-list?weekStart=2026-10-26', { token: tokenA })).data.items.length, 0);
       assert.deepEqual(browserErrors, []);
       await pages[1].screenshot({ path: path.join(root, 'mobile-catalog.png'), fullPage: true });
-      console.log('Real browser integration passed: partner reminders, catalog, atomic meal wishes and desktop/mobile conflict-safe meal selection.');
+      console.log('Real browser integration passed: partner reminders, catalog, atomic meal wishes, scheduling and collaborative shopping.');
     }
     await WishlistItem.create(Array.from({ length: 8 }, (_, index) => ({ householdId: homeA._id, title: `priority-burst-${index}`, status: 'open', priority: 'high', votes: [partnerA._id], createdBy: partnerA._id })));
     const limitedDashboard = await request('/dashboard/summary', { token: tokenA });
     assert.equal(limitedDashboard.data.partnerWishlist.length, 6);
     assert.ok(limitedDashboard.data.partnerWishlist.every(item => item.title.startsWith('priority-burst-')), 'the six newest high-priority partner wishes must win over lower-priority items');
-    console.log('Isolated MongoDB integration passed: migration audit, 16 concurrent requests, household isolation, partner reminders, priority ordering, legacy conflicts, and re-add after completion.');
+    console.log('Isolated MongoDB integration passed: migration audits, household isolation, concurrent meal wishes, schedule attribution and versioned shopping.');
     console.log(`Synthetic database directory retained for inspection: ${root}`);
   } finally {
     if (browser) await browser.close();
