@@ -7,7 +7,8 @@ const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 const meals = [
   { _id: 'meal-a', name: '番茄炒蛋', category: '家常菜', description: '家常味道', tags: [] },
   { _id: 'meal-b', name: '麻婆豆腐', category: '川菜', description: '麻辣鲜香', tags: [] },
-  { _id: 'meal-c', name: '清炒青菜', category: '家常菜', description: '清爽', tags: [] }
+  { _id: 'meal-c', name: '清炒青菜', category: '家常菜', description: '清爽', tags: [] },
+  { _id: 'created-meal', name: '想吃的新菜', category: '家常菜', description: '', tags: [] }
 ]
 const today = '2026-10-28'
 const schedule = { date: today, scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }, { meal: meals[2] }] } }
@@ -37,6 +38,9 @@ async function main () {
   let releaseShoppingUpdate
   let weeklyApplyMode = 'success'
   let supportsWeeklyVersions = true
+  let failAttach = false
+  let failAlbum = false
+  let failMealCreate = false
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
   await page.addInitScript(() => {
@@ -66,8 +70,18 @@ async function main () {
     }
     else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
     else if (method === 'POST' && path === '/wishlist') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'new-wish' } }
-    else if (method === 'POST' && path === '/meals') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'created-meal', name: '想吃的新菜' } }
-    else if (method === 'PATCH' && path === '/wishlist/convert-wish/meal') { writes.push({ path, body: request.postDataJSON() }); data = {} }
+    else if (method === 'POST' && path === '/meals') {
+      writes.push({ path, body: request.postDataJSON() })
+      if (failMealCreate) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试创建结果不确定' }) })
+      data = { _id: 'created-meal', name: '想吃的新菜' }
+    }
+    else if (method === 'PATCH' && (path === '/wishlist/convert-wish/meal' || path === '/wishlist/wish-existing/meal')) {
+      writes.push({ path, body: request.postDataJSON() })
+      if (failAttach) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试关联失败' }) })
+      const id = path.split('/')[2]
+      wishlist = wishlist.map(item => item._id === id ? { ...item, mealId: meals.find(meal => meal._id === request.postDataJSON().mealId) } : item)
+      data = {}
+    }
     else if (method === 'GET' && path === '/weekly-plans' && failWeekly) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '周计划测试读取失败' }) })
     else if (method === 'GET' && path === '/weekly-plans') data = { weekStart: weekDates[0], supportsConditionalApply: supportsWeeklyVersions, days: weekDays }
     else if (method === 'POST' && path === '/weekly-plans/generate') data = { days: draftDays, preview: draftDays.map(day => ({ ...day, meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, hints: [] })) }
@@ -86,6 +100,8 @@ async function main () {
       data = { items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
     }
     else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: { name: '测试小家', inviteCode: 'ABC123', members: [] } }
+    else if (method === 'GET' && path === '/photo-album' && failAlbum) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '相册测试读取失败' }) })
+    else if (method === 'GET' && path === '/photo-album') data = { photos: [{ photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="200"%3E%3Crect width="300" height="200" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'memory-a', date: today, mealType: 'dinner', title: '测试晚餐' }] }
     else if (method === 'GET' && path === '/default-meals/status') data = { total: 3, imported: 3, missing: 0 }
     else if (method === 'GET' && path === '/meal-image-issues') data = []
     else if (method === 'POST' && path === '/household/join') { writes.push({ path, body: request.postDataJSON() }); data = {} }
@@ -163,12 +179,54 @@ async function main () {
   await page.waitForFunction(() => document.body.innerText.includes('已加入小家的想吃清单'))
   assert.equal(writes.find(item => item.path === '/wishlist')?.body.mealId, 'meal-a')
 
-  wishlist = [{ _id: 'convert-wish', title: '想吃的新菜', status: 'open', priority: 'normal', votes: [] }]
+  wishlist = [{ _id: 'convert-wish', title: '想吃的新菜', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+  failAttach = true
   await page.goto(`${base}/wishlist`)
   await page.getByText('想吃的新菜').waitFor()
   await page.getByRole('button', { name: '转菜品' }).click()
-  await page.waitForFunction(() => document.body.innerText.includes('已创建并关联菜谱'))
+  await page.getByText('关联尚未确认').waitFor()
+  assert.equal(writes.filter(item => item.path === '/meals').length, 1)
+  failAttach = false
+  await page.getByRole('button', { name: '重试关联' }).click()
+  await page.getByRole('button', { name: '安排今天晚餐' }).waitFor()
+  assert.equal(writes.filter(item => item.path === '/meals').length, 1)
   assert.equal(writes.find(item => item.path === '/wishlist/convert-wish/meal')?.body.mealId, 'created-meal')
+  assert.equal(writes.find(item => item.path === '/wishlist/convert-wish/meal')?.body.onlyIfUnlinked, true)
+
+  wishlist = [{ _id: 'wish-old-server', title: '旧服务器想吃', status: 'open', priority: 'normal', votes: [] }]
+  await page.goto(`${base}/wishlist`)
+  await page.getByText('服务器未提供安全关联能力').waitFor()
+  assert.equal(await page.getByRole('button', { name: '转菜品' }).isDisabled(), true)
+
+  wishlist = [{ _id: 'wish-uncertain', title: '创建状态不确定', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+  failMealCreate = true
+  await page.goto(`${base}/wishlist`)
+  await page.getByRole('button', { name: '转菜品' }).click()
+  await page.getByText('创建结果不确定，请先搜索').waitFor()
+  assert.equal(await page.getByRole('button', { name: '转菜品' }).isDisabled(), true)
+  assert.equal(await page.getByRole('button', { name: '关联已有菜谱' }).isEnabled(), true)
+  failMealCreate = false
+
+  wishlist = [{ _id: 'wish-existing', title: '想吃鸡蛋', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+  await page.goto(`${base}/wishlist`)
+  await page.getByRole('button', { name: '关联已有菜谱' }).click()
+  await page.getByRole('dialog', { name: '关联已有菜谱' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '番茄炒蛋' }).click()
+  await page.getByRole('button', { name: '确认关联' }).click()
+  await page.getByRole('button', { name: '安排今天晚餐' }).click()
+  await page.waitForURL('**/selection?*')
+  assert.equal(new URL(page.url()).searchParams.get('suggestedMealId'), 'meal-a')
+  assert.equal(new URL(page.url()).searchParams.get('wishlistId'), 'wish-existing')
+  assert.equal(writes.some(item => item.path === '/wishlist/wish-existing/status'), false)
+
+  failAlbum = true
+  await page.goto(`${base}/photo-album`)
+  await page.getByText('相册暂时无法加载').waitFor()
+  assert.equal(await page.getByText('这个月还没有饭桌照片').count(), 0)
+  failAlbum = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.locator('.photo-card').click()
+  await page.getByRole('dialog', { name: '饭桌回忆' }).waitFor()
 
   failWeekly = true
   await page.goto(`${base}/weekly-plan`)
@@ -262,6 +320,16 @@ async function main () {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile weekly plan should not overflow horizontally')
   await page.waitForTimeout(700)
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-weekly-mobile.png'), fullPage: true })
+  await page.goto(`${base}/wishlist`)
+  await page.getByRole('heading', { name: '想吃清单' }).waitFor()
+  await page.waitForTimeout(700)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile wishlist should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-wishlist-mobile.png'), fullPage: true })
+  await page.goto(`${base}/photo-album`)
+  await page.locator('.photo-card').waitFor()
+  await page.waitForTimeout(700)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile album should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-album-mobile.png'), fullPage: true })
   assert.deepEqual(errors, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()

@@ -6,8 +6,10 @@ const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const Meal = require('../models/mealModel');
 const Schedule = require('../models/scheduleModel');
+const WishlistItem = require('../models/wishlistModel');
 const weekly = require('../controllers/weeklyPlanController');
 const schedules = require('../controllers/scheduleController');
+const wishlist = require('../controllers/wishlistController');
 
 const uri = process.env.EATWHAT_TEST_MONGO_URI;
 if (uri !== 'mongodb://eatwhat-integration-mongo:27017/isolated_eatwhat_integration') {
@@ -37,6 +39,8 @@ async function main() {
     app.post('/weekly-plans/apply', weekly.apply);
     app.get('/schedules/day/:date', schedules.getScheduleByDate);
     app.put('/schedules/:date/:mealType', schedules.updateSchedule);
+    app.get('/wishlist', wishlist.list);
+    app.patch('/wishlist/:id/meal', wishlist.attachMeal);
     app.use((error, req, res, next) => res.status(500).json({ error: error.message }));
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -117,7 +121,19 @@ async function main() {
     assert.equal(otherDaily.data.scheduleExists, false);
     const crossHouse = await request(`/schedules/${dates[2]}/dinner`, { method: 'PUT', userId: String(otherUser._id), body: { mealIds: [String(mealA._id)], expectedVersion: null } });
     assert.equal(crossHouse.status, 400);
-    console.log('Mongo integration passed: real HTTP, update and insert conflicts, partial writes, retry, stale selection and household isolation');
+
+    const wish = await WishlistItem.create({ householdId: house._id, title: 'Integration wish', status: 'planned', createdBy: user._id });
+    const listing = await request('/wishlist');
+    assert.equal(listing.data[0].supportsSafeMealLink, true);
+    const linked = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', body: { mealId: String(mealA._id), onlyIfUnlinked: true } });
+    assert.equal(linked.status, 200);
+    assert.equal(linked.data.status, 'planned');
+    const linkConflict = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', body: { mealId: String(mealB._id), onlyIfUnlinked: true } });
+    assert.equal(linkConflict.status, 409);
+    assert.equal(String((await WishlistItem.findById(wish._id)).mealId), String(mealA._id));
+    const foreignLink = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', userId: String(otherUser._id), body: { mealId: String(mealA._id), onlyIfUnlinked: true } });
+    assert.equal(foreignLink.status, 400);
+    console.log('Mongo integration passed: real HTTP, schedule conflicts, partial writes, retry, wish linking and household isolation');
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     await mongoose.disconnect();
