@@ -89,7 +89,7 @@
       <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="小家名称"><el-input v-model="householdName" placeholder="给你们的小家取个名字" /></el-form-item>
         <el-form-item label="邀请码">
-          <div class="invite-row"><el-input :model-value="household.inviteCode" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制</el-button><el-button :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码仅用于加入当前小家，请只分享给信任的人。</small></div>
+          <div class="invite-row"><el-input :model-value="household.inviteCode" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
         </el-form-item>
         <el-form-item label="加入小家">
           <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" /><el-button type="primary" :loading="joining" @click="joinHousehold">加入</el-button></div>
@@ -110,9 +110,11 @@ import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { useRouter } from 'vue-router';
 
 const mealStore = useMealStore();
 const scheduleStore = useScheduleStore();
+const router = useRouter();
 
 const themeOptions = [
   { value: 'cream', label: '奶油原木', desc: '温柔奶白与焦糖木色', colors: ['#FDFBF7', '#F5EBE6', '#FFB4A2', '#E09F67'] },
@@ -220,6 +222,14 @@ const joinHousehold = async () => {
 const copyInvite = async () => {
   try { await navigator.clipboard.writeText(household.value.inviteCode || ''); ElMessage.success('邀请码已复制'); }
   catch (_) { ElMessage.warning(`邀请码：${household.value.inviteCode}`); }
+};
+const copyInviteLink = async () => {
+  if (!household.value.inviteCode) return;
+  // URL fragments are not sent in the HTTP request or server access logs.
+  const href = router.resolve({ name: 'accountApply', hash: `#invite=${encodeURIComponent(household.value.inviteCode)}` }).href;
+  const link = new URL(href, window.location.origin).href;
+  try { await navigator.clipboard.writeText(link); ElMessage.success('邀请链接已复制'); }
+  catch (_) { await ElMessageBox.alert(link, '请手动复制邀请链接', { confirmButtonText: '知道了' }); }
 };
 const selectTheme = (theme) => {
   selectedTheme.value = theme;

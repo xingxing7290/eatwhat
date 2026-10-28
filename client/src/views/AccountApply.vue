@@ -9,12 +9,28 @@
             <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.08C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" fill="currentColor"/>
           </svg>
         </div>
-        <h1 class="page-title">申请账号</h1>
-        <p class="page-subtitle">为你们的每一餐，留一个专属小家</p>
+        <h1 class="page-title">创建账号</h1>
+        <p class="page-subtitle">创建自己的小家，或用邀请码加入家人</p>
       </div>
 
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="0" class="apply-form">
-        <el-form-item prop="displayName">
+      <el-alert v-if="uncertain" class="uncertain-alert" title="注册结果未确认" type="warning" :closable="false" show-icon>
+        请先用刚填写的用户名和密码尝试登录，避免重复创建账号。如果无法登录，再返回此页重新填写。
+        <div><el-button link type="primary" @click="goToLogin">前往登录</el-button><el-button link @click="uncertain = false">继续填写</el-button></div>
+      </el-alert>
+      <el-form :model="form" :rules="rules" ref="formRef" label-position="top" class="apply-form" :disabled="loading || uncertain" @submit.prevent="onSubmit">
+        <div class="mode-heading">选择小家</div>
+        <el-radio-group v-model="mode" class="mode-picker" aria-label="选择小家方式">
+          <el-radio-button label="create">创建小家</el-radio-button>
+          <el-radio-button label="join">加入已有小家</el-radio-button>
+        </el-radio-group>
+        <p class="mode-hint">{{ mode === 'join' ? '输入家人分享的邀请码，注册后加入对应小家。' : '注册后会创建一个独立小家，之后可以邀请家人加入。' }}</p>
+        <el-form-item v-if="mode === 'create'" label="小家名称（可选）" prop="householdName">
+          <el-input v-model="form.householdName" placeholder="小家名称，可选" clearable size="large" :prefix-icon="HomeFilled" class="custom-input" maxlength="40" />
+        </el-form-item>
+        <el-form-item v-else label="邀请码" prop="inviteCode">
+          <el-input v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" />
+        </el-form-item>
+        <el-form-item label="昵称（可选）" prop="displayName">
           <el-input
             v-model="form.displayName"
             placeholder="昵称，可选"
@@ -22,32 +38,11 @@
             size="large"
             :prefix-icon="EditPen"
             class="custom-input"
+            maxlength="20"
+            autocomplete="nickname"
           />
         </el-form-item>
-
-        <el-form-item prop="householdName">
-          <el-input
-            v-model="form.householdName"
-            placeholder="小家名称，可选"
-            clearable
-            size="large"
-            :prefix-icon="HomeFilled"
-            class="custom-input"
-          />
-        </el-form-item>
-
-        <el-form-item prop="inviteCode">
-          <el-input
-            v-model="form.inviteCode"
-            placeholder="伴侣邀请码，可选"
-            clearable
-            size="large"
-            :prefix-icon="Key"
-            class="custom-input"
-          />
-        </el-form-item>
-
-        <el-form-item prop="username">
+        <el-form-item label="用户名" prop="username">
           <el-input
             v-model="form.username"
             placeholder="请输入用户名"
@@ -55,10 +50,11 @@
             size="large"
             :prefix-icon="User"
             class="custom-input"
+            autocomplete="username"
           />
         </el-form-item>
 
-        <el-form-item prop="password">
+        <el-form-item label="密码" prop="password">
           <el-input
             v-model="form.password"
             type="password"
@@ -67,10 +63,11 @@
             size="large"
             :prefix-icon="Lock"
             class="custom-input"
+            autocomplete="new-password"
           />
         </el-form-item>
 
-        <el-form-item prop="confirmPassword">
+        <el-form-item label="确认密码" prop="confirmPassword">
           <el-input
             v-model="form.confirmPassword"
             type="password"
@@ -79,6 +76,7 @@
             size="large"
             :prefix-icon="Lock"
             class="custom-input"
+            autocomplete="new-password"
           />
         </el-form-item>
 
@@ -87,10 +85,10 @@
           :loading="loading"
           class="apply-btn"
           size="large"
-          @click="onSubmit"
+          native-type="submit"
         >
-          <span v-if="!loading">提交申请</span>
-          <span v-else>提交中...</span>
+          <span v-if="!loading">创建账号</span>
+          <span v-else>创建中...</span>
         </el-button>
       </el-form>
 
@@ -103,47 +101,65 @@
 
 <script setup>
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { EditPen, HomeFilled, Key, Lock, User } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
 const formRef = ref()
 const loading = ref(false)
+const uncertain = ref(false)
+const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '')
+const linkInvite = hashParams.get('invite') || (typeof route.query.invite === 'string' ? route.query.invite : '')
+const inviteFromLink = linkInvite.trim().slice(0, 20)
+const mode = ref(inviteFromLink ? 'join' : 'create')
 const form = ref({
   displayName: '',
   householdName: '',
-  inviteCode: '',
+  inviteCode: inviteFromLink,
   username: '',
   password: '',
   confirmPassword: ''
 })
 
-const onSubmit = async () => {
-  await formRef.value?.validate(async (valid) => {
-    if (!valid) return
+// Remove the capability-like invite code from the visible address once read.
+if (inviteFromLink) {
+  const { invite, ...query } = route.query
+  hashParams.delete('invite')
+  const rest = hashParams.toString()
+  router.replace({ path: route.path, query, hash: rest ? `#${rest}` : '' })
+}
 
+const goToLogin = () => router.push({ name: 'login', query: { username: form.value.username.trim() } })
+const onSubmit = async () => {
+  if (loading.value || uncertain.value || !formRef.value) return
+  loading.value = true
+  try {
+    let valid = false
+    try { valid = await formRef.value.validate() } catch (_) { return }
+    if (!valid) return
     try {
-      loading.value = true
-      await api.auth.register({
+      const result = await api.auth.register({
         displayName: form.value.displayName.trim(),
-        householdName: form.value.householdName.trim(),
-        inviteCode: form.value.inviteCode.trim(),
+        householdName: mode.value === 'create' ? form.value.householdName.trim() : '',
+        inviteCode: mode.value === 'join' ? form.value.inviteCode.trim().toUpperCase() : '',
         username: form.value.username.trim(),
         password: form.value.password
       })
-      ElMessage.success('账号申请成功，请登录')
-      router.replace({
+      if (!result?.user?.id) throw new Error('注册响应不完整')
+      ElMessage.success('账号已创建，请登录')
+      await router.replace({
         name: 'login',
         query: { username: form.value.username.trim() }
       })
     } catch (e) {
-      ElMessage.error(e?.error || '账号申请失败')
-    } finally {
-      loading.value = false
+      const message = e?.error || ''
+      if (message === '邀请码无效' || message === '用户名已存在') ElMessage.error(message)
+      else uncertain.value = true
     }
-  })
+  } finally { loading.value = false }
 }
 
 const rules = {
@@ -154,11 +170,11 @@ const rules = {
     { max: 40, message: '小家名称不能超过 40 个字符', trigger: 'blur' }
   ],
   inviteCode: [
+    { validator: (_, value, callback) => mode.value !== 'join' || (typeof value === 'string' && value.trim()) ? callback() : callback(new Error('请输入邀请码')), trigger: 'blur' },
     { max: 20, message: '邀请码不能超过 20 个字符', trigger: 'blur' }
   ],
   username: [
-    { required: true, message: '请输入用户名', trigger: 'blur' },
-    { min: 3, max: 20, message: '用户名长度在 3 到 20 个字符', trigger: 'blur' }
+    { validator: (_, value, callback) => typeof value === 'string' && value.trim().length >= 3 && value.trim().length <= 20 ? callback() : callback(new Error('用户名长度在 3 到 20 个字符')), trigger: 'blur' }
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
@@ -275,6 +291,14 @@ const rules = {
 .apply-form {
   margin-bottom: 22px;
 }
+.mode-heading { font-size: 14px; font-weight: 700; color: var(--text-primary); margin-bottom: 10px; }
+.mode-picker { display: flex; width: 100%; }
+.mode-picker :deep(.el-radio-button) { flex: 1; }
+.mode-picker :deep(.el-radio-button__inner) { width: 100%; }
+.mode-hint { margin: 10px 0 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.uncertain-alert { margin-bottom: 20px; }
+.uncertain-alert :deep(.el-alert__description) { line-height: 1.6; }
+.apply-form :deep(.el-form-item__label) { line-height: 1.4; padding-bottom: 6px; color: var(--text-primary); font-weight: 600; }
 
 .custom-input :deep(.el-input__wrapper) {
   border-radius: 12px;

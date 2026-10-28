@@ -528,6 +528,14 @@ async function main () {
   await page.getByText('刷新会放弃未保存的昵称、小家名称和待上传头像。').waitFor()
   await page.getByRole('button', { name: '继续编辑' }).click()
   assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '尚未保存的小家')
+  await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copiedInvite = text } } }))
+  await page.getByRole('button', { name: '复制邀请链接' }).click()
+  const copiedInvite = new URL(await page.evaluate(() => window.__copiedInvite))
+  assert.equal(copiedInvite.origin, new URL(base).origin)
+  assert.equal(copiedInvite.pathname, '/apply-account')
+  assert.equal(copiedInvite.search, '')
+  assert.equal(new URLSearchParams(copiedInvite.hash.slice(1)).get('invite'), 'ABC123')
+  assert.equal(await page.evaluate(async () => JSON.stringify((await import('/src/services/api.js')).apiLogs.history).includes('ABC123')), false, 'invitation codes must not appear in API debug history')
   await page.locator('input[type=file]').setInputFiles({ name: 'wrong.txt', mimeType: 'text/plain', buffer: Buffer.from('no') })
   await page.getByText('请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片').waitFor()
   assert.equal(await page.getByRole('button', { name: '上传头像' }).isDisabled(), true)
@@ -673,6 +681,64 @@ async function main () {
   await loginPage.waitForURL('**/dashboard')
   assert.equal(new URL(loginPage.url()).origin, new URL(base).origin)
   await loginContext.close()
+  const registerContext = await browser.newContext({ viewport: { width: 390, height: 844 } })
+  const registerPage = await registerContext.newPage()
+  await registerPage.addInitScript(() => {
+    window.__debugLogs = []
+    for (const level of ['log', 'error']) {
+      const original = console[level].bind(console)
+      console[level] = (...args) => { try { window.__debugLogs.push(JSON.stringify(args)) } catch (_) {}; original(...args) }
+    }
+  })
+  const registrations = []
+  let releaseRegister
+  let holdRegistration = true
+  let failRegistration = false
+  await registerPage.route('**/api/**', async route => {
+    if (new URL(route.request().url()).pathname === '/api/auth/register') {
+      registrations.push(route.request().postDataJSON())
+      if (holdRegistration) await new Promise(resolve => { releaseRegister = resolve })
+      if (failRegistration) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试注册结果不确定' }) })
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ user: { id: 'new-user' } }) })
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
+  })
+  await registerPage.goto(`${base}/apply-account#invite=abc123`)
+  await registerPage.getByPlaceholder('请输入家人的邀请码').waitFor()
+  assert.equal(await registerPage.getByPlaceholder('请输入家人的邀请码').inputValue(), 'abc123')
+  await registerPage.waitForURL('**/apply-account')
+  assert.equal(await registerPage.getByPlaceholder('小家名称，可选').count(), 0)
+  assert.equal(await registerPage.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile registration should not overflow horizontally')
+  await registerPage.getByPlaceholder('请输入用户名').fill(' join-user ')
+  await registerPage.getByPlaceholder('请输入密码', { exact: true }).fill('e2e-only-password')
+  await registerPage.getByPlaceholder('请再次输入密码').fill('e2e-only-password')
+  await Promise.all([
+    registerPage.waitForRequest(request => new URL(request.url()).pathname === '/api/auth/register'),
+    registerPage.getByPlaceholder('请再次输入密码').press('Enter')
+  ])
+  await registerPage.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  assert.equal(registrations.length, 1)
+  assert.equal(registrations[0].username, 'join-user')
+  assert.equal(registrations[0].inviteCode, 'ABC123')
+  assert.equal(registrations[0].householdName, '')
+  releaseRegister()
+  await registerPage.waitForURL('**/login?username=join-user')
+  holdRegistration = false
+  failRegistration = true
+  await registerPage.goto(`${base}/apply-account`)
+  await registerPage.getByPlaceholder('小家名称，可选').fill('我的新小家')
+  await registerPage.getByPlaceholder('请输入用户名').fill('create-user')
+  await registerPage.getByPlaceholder('请输入密码', { exact: true }).fill('e2e-only-password')
+  await registerPage.getByPlaceholder('请再次输入密码').fill('e2e-only-password')
+  await registerPage.getByRole('button', { name: '创建账号' }).click()
+  await registerPage.getByText('注册结果未确认').waitFor()
+  assert.equal(registrations[1].householdName, '我的新小家')
+  assert.equal(registrations[1].inviteCode, '')
+  assert.equal(await registerPage.getByRole('button', { name: '创建账号' }).isDisabled(), true)
+  assert.equal(await registerPage.evaluate(() => window.__debugLogs.some(line => line.includes('e2e-only-password'))), false, 'registration password must not appear in debug logs')
+  await registerPage.getByRole('button', { name: '前往登录' }).click()
+  await registerPage.waitForURL('**/login?username=create-user')
+  await registerContext.close()
   console.log('Web workflows passed: dashboard, safe selection, wishlist, weekly plan, shopping and mobile navigation')
   await browser.close()
 }

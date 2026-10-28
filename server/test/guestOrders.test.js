@@ -101,6 +101,9 @@ test('share URL prefers configured public base and otherwise uses forwarding hea
 });
 
 test('request logging redacts capability tokens and private guest fields', () => {
+  assert.deepEqual(safeRequestBody({ originalUrl: '/auth/register', body: { username: 'guest', password: 'private', inviteCode: 'family-secret' } }), {
+    username: 'guest', password: '[redacted]', inviteCode: '[redacted]'
+  });
   assert.equal(
     safeRequestUrl('/guest-orders/public/share-secret/orders/order-secret'),
     '/guest-orders/public/[share-token]/orders/[order-token]'

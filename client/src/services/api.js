@@ -40,9 +40,21 @@ export const apiLogs = {
 	}
 };
 
+function redactLogData(value) {
+	if (value instanceof FormData) return '[表单数据已隐藏]';
+	if (Array.isArray(value)) return value.map(redactLogData);
+	if (!value || typeof value !== 'object') return value;
+	return Object.fromEntries(Object.entries(value).map(([key, item]) => [
+		key, /(password|token|secret|authorization|invite[_-]?code)/i.test(key) ? '[已隐藏]' : redactLogData(item)
+	]));
+}
+
 // 日志打印函数
 const logAPI = (type, url, data, status) => {
 	if (!ENABLE_API_LOGS) return;
+	// Login and registration payloads can contain passwords and access tokens.
+	const authSensitive = /\/auth\/(?:login|register)(?:\?|$)/i.test(String(url));
+	data = authSensitive ? '[认证数据已隐藏]' : redactLogData(data);
 
 	const timestamp = new Date();
 	const timeString = timestamp.toLocaleTimeString();
@@ -129,12 +141,17 @@ api.interceptors.response.use(
 			
 			// Log detailed API errors only in debug mode
 			if (ENABLE_API_LOGS) {
+				let requestData = '非JSON或无数据';
+				if (/\/auth\/(?:login|register)(?:\?|$)/i.test(error.config?.url || '')) requestData = '[认证数据已隐藏]';
+				else if (error.config?.data && typeof error.config.data === 'string') {
+					try { requestData = redactLogData(JSON.parse(error.config.data)); } catch (_) { requestData = '非JSON或无数据'; }
+				}
 				console.error('API错误详情:', {
 					url: error.config?.url,
 					method: error.config?.method,
 					status: response.status,
-					data: response.data,
-					requestData: (error.config?.data && typeof error.config.data === 'string') ? JSON.parse(error.config.data) : '非JSON或无数据'
+					data: redactLogData(response.data),
+					requestData
 				});
 			}
 			

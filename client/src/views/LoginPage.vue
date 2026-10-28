@@ -69,7 +69,7 @@
 
       <!-- 底部提示 -->
       <div class="footer-tips">
-        <p>还没有账号？<RouterLink to="/apply-account">申请账号</RouterLink></p>
+        <p>还没有账号？<RouterLink to="/apply-account">创建账号</RouterLink></p>
       </div>
     </div>
 

@@ -10,7 +10,7 @@ function redactSensitivePayload(value) {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key,
-    /(password|token|secret|authorization)/i.test(key)
+    /(password|token|secret|authorization|invite[_-]?code)/i.test(key)
       ? '[redacted]'
       : redactSensitivePayload(item)
   ]));

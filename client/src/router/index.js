@@ -13,7 +13,7 @@ const router = createRouter({
       path: '/apply-account',
       name: 'accountApply',
       component: () => import('../views/AccountApply.vue'),
-      meta: { title: '申请账号' }
+      meta: { title: '创建账号' }
     },
     {
       path: '/',
@@ -105,4 +105,4 @@ router.beforeEach((to, from, next) => {
   next()
 })
 
-export default router 
+export default router
