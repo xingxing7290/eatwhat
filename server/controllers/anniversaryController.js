@@ -1,6 +1,11 @@
 const AnniversaryMenu = require('../models/anniversaryMenuModel');
 const Meal = require('../models/mealModel');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const logger = require('../utils/logger');
 const { ensureUserHousehold } = require('../utils/household');
+const { dateKey, parseDateKey } = require('../utils/week');
 
 function buildImageUrl(req, filename) {
   const publicBase = process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.trim();
@@ -9,82 +14,110 @@ function buildImageUrl(req, filename) {
 function parseJson(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;
   if (typeof value !== 'string') return value;
-  try { return JSON.parse(value); } catch (_) { return fallback; }
+  try { return JSON.parse(value); } catch (_) { const error = new Error('列表数据格式无效'); error.status = 400; throw error; }
 }
 function photoUrls(req) {
   return (req.files || []).map(file => buildImageUrl(req, file.filename));
 }
 function normalizeMeals(value) {
   const input = parseJson(value, {});
+  if (!input || typeof input !== 'object' || Array.isArray(input)) { const error = new Error('菜品列表格式无效'); error.status = 400; throw error; }
   const out = { breakfast: [], lunch: [], dinner: [] };
-  for (const key of Object.keys(out)) out[key] = Array.isArray(input?.[key]) ? input[key].filter(Boolean) : [];
+  for (const key of Object.keys(out)) {
+    if (input[key] !== undefined && (!Array.isArray(input[key]) || input[key].some(id => typeof id !== 'string'))) { const error = new Error('菜品列表格式无效'); error.status = 400; throw error; }
+    out[key] = (input[key] || []).filter(Boolean);
+  }
   return out;
+}
+function normalizePhotos(value) {
+  const photos = parseJson(value, []);
+  if (!Array.isArray(photos) || photos.some(photo => typeof photo !== 'string')) { const error = new Error('照片列表格式无效'); error.status = 400; throw error; }
+  return photos.filter(Boolean);
 }
 function allMealIds(meals) {
   return ['breakfast', 'lunch', 'dinner'].flatMap(key => meals[key] || []);
 }
-function populateQuery(q) {
-  return q.populate('meals.breakfast').populate('meals.lunch').populate('meals.dinner').populate('createdBy', 'username displayName avatarUrl');
+function populateQuery(q, householdId) {
+  for (const type of ['breakfast', 'lunch', 'dinner']) q = q.populate({ path: `meals.${type}`, match: { householdId } });
+  return q.populate('createdBy', 'username displayName avatarUrl');
 }
 async function assertMealsInHousehold(meals, householdId) {
   const ids = [...new Set(allMealIds(meals).map(String))];
+  if (ids.some(id => !mongoose.isValidObjectId(id))) return false;
   if (!ids.length) return true;
   const count = await Meal.countDocuments({ _id: { $in: ids }, householdId });
   return count === ids.length;
+}
+function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
+async function discardNewUploads(req) {
+  const root = path.resolve(__dirname, '..', 'uploads');
+  await Promise.all((Array.isArray(req.files) ? req.files : []).map(async file => {
+    if (!file?.path || !file?.filename) return;
+    const target = path.resolve(file.path);
+    if (path.dirname(target) !== root || path.basename(target) !== file.filename) return;
+    try { await fs.promises.unlink(target); } catch (error) { if (error.code !== 'ENOENT') logger.warn(`无法清理未使用的纪念日照片: ${error.message}`); }
+  }));
 }
 
 exports.list = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const items = await populateQuery(AnniversaryMenu.find({ householdId: household._id }).sort({ date: 1, createdAt: -1 }));
+    const items = await populateQuery(AnniversaryMenu.find({ householdId: household._id }).sort({ date: 1, createdAt: -1 }), household._id);
     res.json(items);
   } catch (err) { next(err); }
 };
 
 exports.create = async (req, res, next) => {
+  let writeStarted = false;
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const title = String(req.body.title || '').trim();
-    const date = String(req.body.date || '').trim();
-    if (!title || !date) return res.status(400).json({ error: '标题和日期必填' });
-    const meals = normalizeMeals(req.body.meals);
-    if (!(await assertMealsInHousehold(meals, household._id))) return res.status(400).json({ error: '包含无效菜品' });
+    const body = req.body || {};
+    const title = String(body.title || '').trim();
+    const date = String(body.date || '').trim();
+    if (!title || title.length > 100 || !validDate(date)) { await discardNewUploads(req); return res.status(400).json({ error: '请填写有效标题和日期' }); }
+    const meals = normalizeMeals(body.meals);
+    if (!(await assertMealsInHousehold(meals, household._id))) { await discardNewUploads(req); return res.status(400).json({ error: '包含无效菜品' }); }
+    writeStarted = true;
     const item = await AnniversaryMenu.create({
       householdId: household._id,
       title,
       date,
-      description: String(req.body.description || '').trim(),
-      theme: String(req.body.theme || '').trim(),
+      description: String(body.description || '').trim(),
+      theme: String(body.theme || '').trim(),
       photos: photoUrls(req),
       meals,
       createdBy: req.user.uid
     });
-    res.status(201).json(await populateQuery(AnniversaryMenu.findById(item._id)));
-  } catch (err) { next(err); }
+    res.status(201).json(await populateQuery(AnniversaryMenu.findById(item._id), household._id));
+  } catch (err) { if (!writeStarted) await discardNewUploads(req); next(err); }
 };
 
 exports.update = async (req, res, next) => {
+  let writeStarted = false;
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const existing = await AnniversaryMenu.findOne({ _id: req.params.id, householdId: household._id });
-    if (!existing) return res.status(404).json({ error: '未找到纪念日菜单' });
-    const meals = normalizeMeals(req.body.meals);
-    if (!(await assertMealsInHousehold(meals, household._id))) return res.status(400).json({ error: '包含无效菜品' });
-    const existingPhotos = parseJson(req.body.existingPhotos, []);
+    if (!existing) { await discardNewUploads(req); return res.status(404).json({ error: '未找到纪念日菜单' }); }
+    const body = req.body || {};
+    const has = key => Object.prototype.hasOwnProperty.call(body, key);
+    const mealInput = has('meals') ? parseJson(body.meals, {}) : null;
+    const meals = has('meals') ? normalizeMeals(mealInput) : null;
+    if (meals && !(await assertMealsInHousehold(meals, household._id))) { await discardNewUploads(req); return res.status(400).json({ error: '包含无效菜品' }); }
+    if (has('title') && (!String(body.title || '').trim() || String(body.title).trim().length > 100)) { await discardNewUploads(req); return res.status(400).json({ error: '标题无效' }); }
+    if (has('date') && !validDate(String(body.date || '').trim())) { await discardNewUploads(req); return res.status(400).json({ error: '日期无效' }); }
+    const update = {};
+    for (const field of ['title', 'date', 'description', 'theme']) if (has(field)) update[field] = String(body[field] || '').trim();
+    if (meals) for (const type of ['breakfast', 'lunch', 'dinner']) if (Object.prototype.hasOwnProperty.call(mealInput, type)) update[`meals.${type}`] = meals[type];
+    if (has('existingPhotos') || photoUrls(req).length) update.photos = [...(has('existingPhotos') ? normalizePhotos(body.existingPhotos) : existing.photos), ...photoUrls(req)];
+    writeStarted = true;
     const item = await populateQuery(AnniversaryMenu.findOneAndUpdate(
       { _id: req.params.id, householdId: household._id },
-      {
-        title: String(req.body.title || '').trim(),
-        date: String(req.body.date || '').trim(),
-        description: String(req.body.description || '').trim(),
-        theme: String(req.body.theme || '').trim(),
-        photos: [...(Array.isArray(existingPhotos) ? existingPhotos : []), ...photoUrls(req)],
-        meals
-      },
-      { new: true }
-    ));
+      update,
+      { new: true, runValidators: true }
+    ), household._id);
+    if (!item) return res.status(404).json({ error: '未找到纪念日菜单' });
     res.json(item);
-  } catch (err) { next(err); }
+  } catch (err) { if (!writeStarted) await discardNewUploads(req); next(err); }
 };
 
 exports.remove = async (req, res, next) => {
