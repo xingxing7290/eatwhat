@@ -3,12 +3,22 @@ const Meal = require('../models/mealModel');
 const WishlistItem = require('../models/wishlistModel');
 const MealMemory = require('../models/memoryModel');
 const { ensureUserHousehold } = require('../utils/household');
-const { startOfWeek, weekDates, dateKey } = require('../utils/week');
+const { startOfWeek, weekDates, dateKey, parseDateKey } = require('../utils/week');
 const mongoose = require('mongoose');
 const { retainedMealAssignments, scheduleUpdatePipeline } = require('../utils/scheduleAssignments');
 
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
 const mealTypeLabels = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
+
+function validDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = parseDateKey(value);
+  return !!parsed && dateKey(parsed) === value;
+}
+function requestedWeek(value) {
+  if (value === undefined || value === null || value === '') return startOfWeek();
+  return validDate(value) ? startOfWeek(value) : null;
+}
 
 function mealDoc(item) {
   if (!item) return null;
@@ -44,9 +54,9 @@ async function weekSchedules(householdId, weekStart) {
 }
 function normalizePlan(days) {
   return (Array.isArray(days) ? days : []).map(day => ({
-    date: String(day.date || '').trim(),
-    meals: Object.fromEntries(mealTypes.map(type => [type, Array.isArray(day.meals?.[type]) ? day.meals[type].filter(Boolean).map(String) : []]))
-  })).filter(day => /^\d{4}-\d{2}-\d{2}$/.test(day.date));
+    date: String(day?.date || '').trim(),
+    meals: Object.fromEntries(mealTypes.map(type => [type, Array.isArray(day?.meals?.[type]) ? day.meals[type].filter(Boolean).map(String) : []]))
+  })).filter(day => validDate(day.date));
 }
 function pickMeal(pool, used, predicate = () => true) {
   const found = pool.find(meal => !used.has(mealIdOf(meal)) && predicate(meal));
@@ -93,7 +103,8 @@ async function buildGeneratedPlan(householdId) {
 exports.list = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.query.weekStart);
+    const weekStart = requestedWeek(req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '周计划日期无效' });
     const days = await weekSchedules(household._id, weekStart);
     res.json({ weekStart, supportsConditionalApply: true, days: days.map(day => ({
       date: day.date, meals: day.meals, hints: balanceHintsForDay(day),
@@ -106,7 +117,8 @@ exports.list = async (req, res, next) => {
 exports.generate = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const weekStart = startOfWeek(req.body?.weekStart || req.query.weekStart);
+    const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
+    if (!weekStart) return res.status(400).json({ error: '周计划日期无效' });
     const planDays = await buildGeneratedPlan(household._id);
     const meals = await Meal.find({ householdId: household._id, _id: { $in: planDays.flatMap(day => mealTypes.flatMap(type => day.meals[type])) } });
     const mealMap = new Map(meals.map(meal => [mealIdOf(meal), meal]));
@@ -124,6 +136,7 @@ exports.apply = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const days = normalizePlan(req.body.days);
+    if (!Array.isArray(req.body.days) || !days.length || days.length !== req.body.days.length) return res.status(400).json({ error: '周计划日期无效或不完整' });
     const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedVersions');
     const versions = req.body.expectedVersions;
     if (conditional) {

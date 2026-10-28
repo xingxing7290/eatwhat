@@ -112,6 +112,7 @@ async function main() {
     app.get('/schedules/day/:date', scheduleController.validateScheduleDate, scheduleController.getScheduleByDate);
     app.put('/schedules/:date/:mealType', scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
     app.get('/weekly-plans', weeklyPlanController.list);
+    app.post('/weekly-plans/generate', weeklyPlanController.generate);
     app.post('/weekly-plans/apply', weeklyPlanController.apply);
     app.get('/shopping-list', shoppingController.get);
     app.post('/shopping-list/generate', shoppingController.generate);
@@ -140,6 +141,15 @@ async function main() {
       return result.data.token;
     }
     const [tokenA, tokenPartner, tokenB] = await Promise.all(['test-local-a', 'test-local-partner', 'test-local-b'].map(login));
+    assert.equal((await request('/weekly-plans?weekStart=2026-02-31', { token: tokenA })).status, 400);
+    assert.equal((await request('/weekly-plans/generate', { method: 'POST', token: tokenA, body: { weekStart: 'not-a-date' } })).status, 400);
+    const futureDraft = await request('/weekly-plans/generate', { method: 'POST', token: tokenA, body: { weekStart: '2026-11-19' } });
+    assert.equal(futureDraft.status, 200);
+    assert.equal(futureDraft.data.weekStart, '2026-11-16');
+    assert.deepEqual(futureDraft.data.days.map(day => day.date), ['2026-11-16', '2026-11-17', '2026-11-18', '2026-11-19', '2026-11-20', '2026-11-21', '2026-11-22']);
+    for (let index = 0; index < 7; index++) for (const type of ['breakfast', 'lunch', 'dinner']) {
+      assert.deepEqual(futureDraft.data.preview[index].meals[type].map(meal => String(meal._id)), futureDraft.data.days[index].meals[type]);
+    }
     const shoppingWeek = '2026-11-09';
     await ShoppingList.collection.dropIndex('householdId_1_weekStart_1');
     const unsafeShopping = await request(`/shopping-list?weekStart=${shoppingWeek}`, { token: tokenA });
@@ -436,6 +446,14 @@ async function main() {
       await pages[1].getByRole('button', { name: '删除浏览器鸡蛋' }).click();
       await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor({ state: 'hidden' });
       assert.equal((await request('/shopping-list?weekStart=2026-10-26', { token: tokenA })).data.items.length, 0);
+      await pages[0].goto(`${webBase}/weekly-plan`);
+      await pages[0].getByRole('button', { name: '生成草稿' }).click();
+      await pages[0].getByText('规则生成草稿').waitFor();
+      await pages[0].getByRole('button', { name: '应用到日历' }).click();
+      await pages[0].getByRole('button', { name: '确认替换' }).click();
+      await pages[0].getByText('已应用到日历').waitFor();
+      assert.equal(await pages[0].getByText('规则生成草稿').count(), 0);
+      assert.equal(await Schedule.countDocuments({ householdId: homeA._id, date: { $in: ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01'] } }), 7);
       assert.deepEqual(browserErrors, []);
       await pages[1].screenshot({ path: path.join(root, 'mobile-catalog.png'), fullPage: true });
       console.log('Real browser integration passed: partner reminders, catalog, atomic meal wishes, scheduling and collaborative shopping.');

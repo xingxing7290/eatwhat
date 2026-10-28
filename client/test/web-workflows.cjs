@@ -174,7 +174,7 @@ async function main () {
     }
     else if (method === 'GET' && path === '/weekly-plans' && failWeekly) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '周计划测试读取失败' }) })
     else if (method === 'GET' && path === '/weekly-plans') data = { weekStart: weekDates[0], supportsConditionalApply: supportsWeeklyVersions, days: weekDays }
-    else if (method === 'POST' && path === '/weekly-plans/generate') data = { days: draftDays, preview: draftDays.map(day => ({ ...day, meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, hints: [] })) }
+    else if (method === 'POST' && path === '/weekly-plans/generate') data = { weekStart: weekDates[0], days: draftDays, preview: draftDays.map(day => ({ ...day, meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, hints: [] })) }
     else if (method === 'POST' && path === '/weekly-plans/apply') {
       writes.push({ path, body: request.postDataJSON() })
       if (weeklyApplyMode === 'conflict') return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'WEEKLY_PLAN_CONFLICT', error: '安排已变化', conflictDate: weekDates[2], appliedDates: weekDates.slice(0, 2) }) })
@@ -554,6 +554,7 @@ async function main () {
   assert.equal(firstApply.body.expectedVersions[weekDates[0]], null)
   assert.match(await page.locator('.el-alert').innerText(), /已写入：2026-10-26、2026-10-27/)
   assert.equal(await page.getByText('规则生成草稿').count(), 0)
+  await page.getByRole('button', { name: '已核对，继续' }).click()
   weeklyApplyMode = 'incomplete'
   await page.getByRole('button', { name: '生成草稿' }).click()
   await page.getByRole('button', { name: '应用到日历' }).click()

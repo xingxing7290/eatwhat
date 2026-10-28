@@ -17,6 +17,20 @@ async function apply(body) {
   return res;
 }
 
+test('rejects malformed calendar dates instead of silently targeting another week', async () => {
+  let reads = 0;
+  Schedule.find = () => { reads++; return findResult([]); };
+  const listResponse = response();
+  await controller.list({ user: { uid: 'user-a' }, query: { weekStart: '2026-02-31' } }, listResponse, error => { throw error; });
+  assert.equal(listResponse.statusCode, 400);
+  assert.equal(reads, 0);
+  const generateResponse = response();
+  await controller.generate({ user: { uid: 'user-a' }, body: { weekStart: 'not-a-date' }, query: {} }, generateResponse, error => { throw error; });
+  assert.equal(generateResponse.statusCode, 400);
+  assert.equal((await apply({ days: [{ date: '2026-02-31', meals: { breakfast: [], lunch: [], dinner: [] } }] })).statusCode, 400);
+  assert.equal((await apply({ days: [null] })).statusCode, 400);
+});
+
 test('rejects incomplete conditional plans before writing', async () => {
   let wrote = false;
   Schedule.create = async () => { wrote = true; };
