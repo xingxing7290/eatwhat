@@ -9,6 +9,9 @@ const net = require('node:net');
 const http = require('node:http');
 const { spawn } = require('node:child_process');
 const mongoose = require('mongoose');
+// Mongoose must not create collections before the empty-database safety check.
+mongoose.set('autoCreate', false);
+mongoose.set('autoIndex', false);
 const express = require('express');
 const bcrypt = require('bcryptjs');
 process.env.JWT_SECRET = 'isolated-local-test-secret-never-use-in-production';
@@ -18,6 +21,7 @@ const Meal = require('../models/mealModel');
 const WishlistItem = require('../models/wishlistModel');
 const wishlist = require('../controllers/wishlistController');
 const mealController = require('../controllers/mealController');
+const dashboardController = require('../controllers/dashboardController');
 const authController = require('../controllers/authController');
 const requireAuth = require('../middleware/auth');
 const { auditAndApply } = require('../scripts/meal-wish-index');
@@ -50,7 +54,7 @@ async function main() {
     const uri = `mongodb://127.0.0.1:${port}/isolated_meal_wish`;
     for (let attempt = 0; attempt < 40 && !connected; attempt++) {
       if (spawnError || child.exitCode !== null) throw spawnError || new Error(`mongod exited early; inspect ${path.join(root, 'mongod.log')}`);
-      try { await mongoose.connect(uri, { serverSelectionTimeoutMS: 700, directConnection: true }); connected = true; }
+      try { await mongoose.connect(uri, { serverSelectionTimeoutMS: 700, directConnection: true, autoCreate: false, autoIndex: false }); connected = true; }
       catch (_) { await new Promise(resolve => setTimeout(resolve, 250)); }
     }
     if (!connected) throw new Error(`isolated MongoDB did not start; inspect ${path.join(root, 'mongod.log')}`);
@@ -95,6 +99,7 @@ async function main() {
     app.get('/meals', mealController.getAllMeals);
     app.get('/meals/categories', mealController.getMealCategories);
     app.get('/meals/tags', mealController.getMealTags);
+    app.get('/dashboard/summary', dashboardController.summary);
     app.get('/wishlist', wishlist.list);
     let legacyCalls = 0;
     let atomicCalls = 0;
@@ -149,6 +154,29 @@ async function main() {
     const familyB = await request('/wishlist?status=open&includeCapabilities=true', { token: tokenB });
     assert.equal(familyB.data.items.length, 1);
     assert.equal(String(familyB.data.items[0].mealId._id), String(otherMeal._id));
+    await WishlistItem.create([
+      { householdId: homeA._id, title: 'self only', status: 'open', priority: 'high', votes: [userA._id], createdBy: userA._id },
+      { householdId: homeA._id, title: 'partner high', status: 'open', priority: 'high', votes: [partnerA._id], createdBy: partnerA._id },
+      { householdId: homeA._id, title: 'partner vote on mine', status: 'open', priority: 'high', votes: [userA._id, partnerA._id], createdBy: userA._id },
+      { householdId: homeA._id, title: 'partner normal', status: 'open', priority: 'normal', votes: [partnerA._id], createdBy: partnerA._id },
+      { householdId: homeA._id, title: 'partner low newest', status: 'open', priority: 'low', votes: [partnerA._id], createdBy: partnerA._id }
+    ]);
+    await collection.insertOne({ householdId: homeA._id, title: 'null votes only', status: 'open', priority: 'high', votes: [userA._id, null], createdBy: userA._id, createdAt: new Date() });
+    await collection.insertOne({ householdId: homeA._id, title: 'missing creator only', status: 'open', priority: 'high', votes: [userA._id], createdBy: null, createdAt: new Date() });
+    await collection.insertOne({ householdId: homeA._id, title: 'foreign vote only', status: 'open', priority: 'high', votes: [userA._id, userB._id], createdBy: userA._id, createdAt: new Date() });
+    await collection.insertOne({ householdId: homeA._id, title: 'former member creator', status: 'open', priority: 'high', votes: [userB._id], createdBy: userB._id, createdAt: new Date() });
+    const dashboard = await request('/dashboard/summary', { token: tokenA });
+    assert.equal(dashboard.status, 200);
+    const reminders = dashboard.data.partnerWishlist.map(item => item.title);
+    assert.equal(reminders.includes('self only'), false, 'own vote must not appear as a partner signal');
+    assert.equal(reminders.includes('null votes only'), false, 'null votes are not partner signals');
+    assert.equal(reminders.includes('missing creator only'), false, 'a missing creator is not a partner');
+    assert.equal(reminders.includes('foreign vote only'), false, 'a different household member is not a partner');
+    assert.equal(reminders.includes('former member creator'), false, 'a former member is not a current household member');
+    assert.ok(reminders.includes('partner high') && reminders.includes('partner vote on mine') && reminders.includes('partner normal') && reminders.includes('partner low newest'));
+    assert.ok(reminders.indexOf('partner high') < reminders.indexOf('partner normal'));
+    assert.ok(reminders.indexOf('partner normal') < reminders.indexOf('partner low newest'), 'priority must not be sorted alphabetically');
+    assert.equal(reminders.includes('Test A meal'), false, 'another household must remain isolated');
     if (process.env.EATWHAT_TEST_BROWSER === '1') {
       const dist = path.resolve(__dirname, '../../client/dist');
       assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'build client/dist before browser integration');
@@ -181,6 +209,10 @@ async function main() {
       }));
       const browserErrors = [];
       for (const page of pages) page.on('pageerror', error => browserErrors.push(error.message));
+      await Promise.all(pages.map(page => page.goto(`${webBase}/dashboard`)));
+      await Promise.all([pages[0].getByText('partner high', { exact: true }).waitFor(), pages[1].getByText('self only', { exact: true }).waitFor()]);
+      assert.equal(await pages[0].getByText('self only', { exact: true }).count(), 0, 'dashboard must not show own wish as a partner reminder');
+      assert.equal(await pages[1].getByText('partner high', { exact: true }).count(), 0, 'the partner must not see their own wish as another member’s');
       await Promise.all(pages.map(page => page.goto(`${webBase}/meals`)));
       await Promise.all([
         pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/meals' && new URL(response.url()).searchParams.get('search') === '浏览器并发菜'),
@@ -204,9 +236,13 @@ async function main() {
       assert.equal(await WishlistItem.countDocuments({ householdId: homeA._id, mealId: uiMeal._id, status: 'open' }), 1);
       assert.deepEqual(browserErrors, []);
       await pages[1].screenshot({ path: path.join(root, 'mobile-catalog.png'), fullPage: true });
-      console.log('Real browser integration passed: desktop and mobile share one atomic meal wish.');
+      console.log('Real browser integration passed: partner reminders, search, category filtering and desktop/mobile atomic meal wishes.');
     }
-    console.log('Isolated MongoDB integration passed: migration audit, 16 concurrent requests, household isolation, legacy conflicts, and re-add after completion.');
+    await WishlistItem.create(Array.from({ length: 8 }, (_, index) => ({ householdId: homeA._id, title: `priority-burst-${index}`, status: 'open', priority: 'high', votes: [partnerA._id], createdBy: partnerA._id })));
+    const limitedDashboard = await request('/dashboard/summary', { token: tokenA });
+    assert.equal(limitedDashboard.data.partnerWishlist.length, 6);
+    assert.ok(limitedDashboard.data.partnerWishlist.every(item => item.title.startsWith('priority-burst-')), 'the six newest high-priority partner wishes must win over lower-priority items');
+    console.log('Isolated MongoDB integration passed: migration audit, 16 concurrent requests, household isolation, partner reminders, priority ordering, legacy conflicts, and re-add after completion.');
     console.log(`Synthetic database directory retained for inspection: ${root}`);
   } finally {
     if (browser) await browser.close();

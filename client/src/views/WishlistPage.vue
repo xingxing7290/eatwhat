@@ -32,7 +32,12 @@ const busy = computed(() => saving.value || !!convertingId.value || reviewing.va
 useDraftGuard({ dirty, busy, uncertain: saveUncertain, label: '想吃记录' });
 const statusText = { open: '想吃', planned: '已安排', done: '已完成' };
 const priorityText = { low: '随缘', normal: '普通', high: '超想吃' };
-const grouped = computed(() => ['open', 'planned', 'done'].map(status => ({ status, items: items.value.filter(item => item.status === status) })));
+const priorityRank = { low: 0, normal: 1, high: 2 };
+const rankOf = item => Object.prototype.hasOwnProperty.call(priorityRank, item.priority) ? priorityRank[item.priority] : priorityRank.normal;
+const grouped = computed(() => ['open', 'planned', 'done'].map(status => ({
+  status,
+  items: items.value.filter(item => item.status === status).sort((a, b) => rankOf(b) - rankOf(a) || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
+})));
 
 const load = async () => {
   loading.value = true;

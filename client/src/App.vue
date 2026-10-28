@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed, onBeforeUnmount, defineAsyncComponent } from 'vue';
+import { ref, watch, computed, onBeforeUnmount, defineAsyncComponent, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs';
 import { RouterLink, RouterView } from 'vue-router'
@@ -22,6 +22,8 @@ const ApiLogger = import.meta.env.DEV ? defineAsyncComponent(() => import('./com
 
 // 移动端导航菜单
 const showMobileMenu = ref(false);
+const mobileMenuButton = ref(null);
+const mobileMenuCloseButton = ref(null);
 const viewportWidth = ref(window.innerWidth);
 const authToken = ref(localStorage.getItem('token') || '');
 const authUser = ref(null);
@@ -50,11 +52,13 @@ const toggleDarkMode = () => {
 // 切换移动端菜单
 const toggleMobileMenu = () => {
   showMobileMenu.value = !showMobileMenu.value;
+  nextTick(() => (showMobileMenu.value ? mobileMenuCloseButton.value : mobileMenuButton.value)?.$el?.focus());
 };
 
 // 关闭移动端菜单
-const closeMobileMenu = () => {
+const closeMobileMenu = (restoreFocus = false) => {
   showMobileMenu.value = false;
+  if (restoreFocus === true) nextTick(() => mobileMenuButton.value?.$el?.focus());
 };
 
 // 监听暗黑模式变化
@@ -141,6 +145,11 @@ onMounted(async () => {
 
 // 键盘快捷键处理
 const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && showMobileMenu.value) {
+    e.preventDefault();
+    closeMobileMenu(true);
+    return;
+  }
   if (!showDevTools) return;
 
   // Alt+L opens the API log viewer in development
@@ -171,7 +180,7 @@ onBeforeUnmount(() => {
       <div 
         v-if="showMobileMenu" 
         class="mobile-overlay"
-        @click="closeMobileMenu"
+        @click="closeMobileMenu(true)"
       ></div>
       
       <header v-if="isLoggedIn" class="app-header">
@@ -206,10 +215,12 @@ onBeforeUnmount(() => {
           <!-- 移动端菜单按钮 -->
           <el-button 
             v-if="isMobile"
+            ref="mobileMenuButton"
             type="text" 
             class="mobile-menu-btn"
-            aria-label="打开导航菜单"
+            :aria-label="showMobileMenu ? '关闭导航菜单' : '打开导航菜单'"
             :aria-expanded="showMobileMenu"
+            aria-controls="mobile-navigation"
             @click="toggleMobileMenu"
           >
             <el-icon v-if="!showMobileMenu"><Menu /></el-icon>
@@ -281,10 +292,10 @@ onBeforeUnmount(() => {
       </header>
       
       <!-- 移动端导航菜单 -->
-      <div v-if="isLoggedIn" class="mobile-nav" :class="{ 'show': showMobileMenu }" :inert="!showMobileMenu ? '' : null" :aria-hidden="!showMobileMenu">
+      <div v-if="isLoggedIn" id="mobile-navigation" class="mobile-nav" :class="{ 'show': showMobileMenu }" :inert="!showMobileMenu ? '' : null" :aria-hidden="!showMobileMenu">
         <div class="mobile-nav-header">
           <h3>菜单</h3>
-          <el-button type="text" @click="closeMobileMenu">
+          <el-button ref="mobileMenuCloseButton" type="text" aria-label="关闭导航菜单" @click="closeMobileMenu(true)">
             <el-icon><Close /></el-icon>
           </el-button>
         </div>
@@ -510,7 +521,7 @@ body {
   width: 100%;
   height: 100%;
   background: rgba(61, 48, 40, 0.38);
-  z-index: 998;
+  z-index: 1001;
   backdrop-filter: blur(4px);
 }
 
@@ -648,7 +659,7 @@ body {
   height: 100vh;
   background: var(--bg-primary);
   box-shadow: -5px 0 18px rgba(121, 76, 47, 0.16);
-  z-index: 999;
+  z-index: 1002;
   transition: right 0.3s ease;
   display: flex;
   flex-direction: column;
@@ -665,7 +676,9 @@ body {
     padding: 20px;
     border-bottom: 1px solid var(--border-color);
     background: var(--gradient-primary);
-    color: white;
+    color: #4a2b20;
+
+    .el-button { color: #4a2b20; }
     
     h3 {
       margin: 0;

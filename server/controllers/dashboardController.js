@@ -3,6 +3,8 @@ const Meal = require('../models/mealModel');
 const WishlistItem = require('../models/wishlistModel');
 const MealMemory = require('../models/memoryModel');
 const MealImageIssue = require('../models/mealImageIssueModel');
+const User = require('../models/userModel');
+const mongoose = require('mongoose');
 const { ensureUserHousehold } = require('../utils/household');
 const { dateKey, startOfWeek, weekDates } = require('../utils/week');
 const { _statusFor } = require('./defaultMealController');
@@ -14,8 +16,31 @@ function mealCount(schedule) {
 function photosFromMemory(memory) {
   return (memory.photos || []).map(photo => ({ photo, memoryId: memory._id, date: memory.date, title: memory.title, mood: memory.mood, meals: memory.mealIds || [] }));
 }
-function partnerWishlistQuery(uid) {
-  return { $or: [{ createdBy: { $ne: uid } }, { votes: uid }] };
+function partnerWishlistQuery(memberIds) {
+  return { $or: [
+    { createdBy: { $in: memberIds } },
+    { votes: { $in: memberIds } }
+  ] };
+}
+async function partnerWishlistFor(householdId, uid) {
+  const currentUser = new mongoose.Types.ObjectId(String(uid));
+  const memberIds = await User.distinct('_id', { householdId, _id: { $ne: currentUser } });
+  if (!memberIds.length) return [];
+  const items = await WishlistItem.aggregate([
+    { $match: { householdId, status: 'open', ...partnerWishlistQuery(memberIds) } },
+    { $addFields: { _priorityRank: { $switch: { branches: [
+      { case: { $eq: ['$priority', 'high'] }, then: 2 },
+      { case: { $eq: ['$priority', 'low'] }, then: 0 }
+    ], default: 1 } } } },
+    { $sort: { _priorityRank: -1, createdAt: -1, _id: -1 } },
+    { $limit: 6 },
+    { $project: { _priorityRank: 0 } }
+  ]);
+  return WishlistItem.populate(items, [
+    { path: 'mealId' },
+    { path: 'createdBy', select: 'username displayName avatarUrl' },
+    { path: 'votes', select: 'username displayName avatarUrl' }
+  ]);
 }
 
 exports.summary = async (req, res, next) => {
@@ -31,7 +56,7 @@ exports.summary = async (req, res, next) => {
       { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
     ]);
     const [wishlist, recentMemories, defaultStatus, openImageIssues, mealStats] = await Promise.all([
-      WishlistItem.find({ householdId: household._id, status: 'open', ...partnerWishlistQuery(req.user.uid) }).populate('mealId').populate('createdBy', 'username displayName avatarUrl').populate('votes', 'username displayName avatarUrl').sort({ priority: -1, createdAt: -1 }).limit(6),
+      partnerWishlistFor(household._id, req.user.uid),
       MealMemory.find({ householdId: household._id, photos: { $exists: true, $ne: [] } }).populate('mealIds').sort({ date: -1, createdAt: -1 }).limit(6),
       _statusFor(household._id),
       MealImageIssue.countDocuments({ householdId: household._id, status: 'open' }),
