@@ -125,6 +125,66 @@ async function main () {
     await blockedStorage.waitForFunction(() => document.querySelector('#submitOrder').textContent === '保存修改' && !document.querySelector('#submitOrder').disabled)
     assert.deepEqual(methods.filter(method => method !== 'GET'), ['POST', 'PUT'], 'blocked local storage must not cause a duplicate create')
     await blockedStorage.close()
+    const safePage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    const safeMeal = { _id: '123456789012345678901234', name: '安全提交测试菜', category: '家常菜' }
+    let safeRequests = 0; let logicalOrders = 0; let firstBody; let sessionOpen = true
+    await safePage.route('**/guest-orders/public/**', async route => {
+      const req = route.request()
+      if (req.method() === 'GET') return route.fulfill({ json: { session: { ...session, status: sessionOpen ? 'open' : 'locked', canOrder: sessionOpen, supportsIdempotentCreate: true }, meals: [safeMeal] } })
+      assert.ok(new URL(req.url()).pathname.endsWith('/orders/idempotent'), 'must never fall back to the legacy create endpoint')
+      const body = req.postDataJSON(); safeRequests++
+      assert.match(body.creationKey, /^[A-Za-z0-9_-]{43}$/)
+      if (!firstBody) { firstBody = body; logicalOrders++; return route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
+      assert.deepEqual(body, firstBody, 'retry must use the exact original key and payload')
+      if (safeRequests === 2) return route.fulfill({ status: 404, json: { error: '安全接口暂不可用' } })
+      return route.fulfill({ json: { replayed: true, accessToken: 'safe-access', order: { revision: 1, guestName: body.guestName, note: body.note, items: body.items } } })
+    })
+    await safePage.goto(`http://127.0.0.1:${server.address().port}/guest-order/safe-test`)
+    await safePage.locator('.meal').getByRole('button', { name: '＋ 想吃' }).click()
+    await safePage.getByRole('button', { name: '查看菜单' }).click()
+    await safePage.locator('#guestName').fill('安全访客')
+    await safePage.locator('#orderNote').fill('重试仍保留')
+    await safePage.getByRole('button', { name: '提交给主人' }).click()
+    await safePage.getByText('这份点菜单需要核对或保存凭证', { exact: false }).waitFor()
+    if (process.env.EATWHAT_SAFE_ORDER_SHOT) await safePage.screenshot({ path: process.env.EATWHAT_SAFE_ORDER_SHOT })
+    assert.equal(await safePage.locator('#orderNote').isDisabled(), true)
+    assert.equal(safeRequests, 1)
+    sessionOpen = false
+    await safePage.reload()
+    await safePage.getByRole('button', { name: '查看 / 核对' }).click()
+    assert.equal(await safePage.locator('#orderNote').inputValue(), '重试仍保留')
+    assert.equal(safeRequests, 1, 'reload must not silently submit')
+    await safePage.getByRole('button', { name: '安全重试原提交' }).click()
+    await safePage.getByText('安全接口暂不可用', { exact: true }).waitFor()
+    assert.equal(await safePage.getByRole('button', { name: '安全重试原提交' }).isEnabled(), true)
+    await safePage.getByRole('button', { name: '安全重试原提交' }).click()
+    await safePage.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor()
+    assert.equal(safeRequests, 3)
+    assert.equal(logicalOrders, 1)
+    assert.equal(await safePage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.safe-test.pendingCreate')), null)
+    assert.equal(await safePage.evaluate(() => localStorage.getItem('eatwhat.guestOrder.safe-test')), 'safe-access')
+    await safePage.close()
+    const noSessionStorage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await noSessionStorage.addInitScript(() => {
+      const original = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (this === sessionStorage && key.endsWith('.pendingCreate')) throw new DOMException('blocked', 'SecurityError')
+        return original.call(this, key, value)
+      }
+    })
+    let unsafeWrites = 0
+    await noSessionStorage.route('**/guest-orders/public/**', async route => {
+      if (route.request().method() !== 'GET') { unsafeWrites++; return route.fulfill({ status: 500 }) }
+      return route.fulfill({ json: { session: { ...session, supportsIdempotentCreate: true }, meals: [safeMeal] } })
+    })
+    await noSessionStorage.goto(`http://127.0.0.1:${server.address().port}/guest-order/storage-unavailable`)
+    await noSessionStorage.locator('.meal').getByRole('button', { name: '＋ 想吃' }).click()
+    await noSessionStorage.getByRole('button', { name: '查看菜单' }).click()
+    await noSessionStorage.locator('#guestName').fill('安全访客')
+    await noSessionStorage.getByRole('button', { name: '提交给主人' }).click()
+    await noSessionStorage.getByText('无法保存安全提交凭证', { exact: false }).waitFor()
+    assert.equal(unsafeWrites, 0, 'cannot safely create before persisting the retry token')
+    await noSessionStorage.close()
     console.log('Guest ordering workflows passed: unavailable dishes, draft-safe conflicts and uncertain submissions')
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }
 }

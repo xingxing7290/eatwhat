@@ -4,7 +4,9 @@ const controller = require('../controllers/guestOrderController');
 
 const router = express.Router();
 
+router.use('/public', (_req, res, next) => { res.set('Cache-Control', 'private, no-store'); next(); });
 router.get('/public/:shareToken', controller.publicDetail);
+router.post('/public/:shareToken/orders/idempotent', controller.createPublicOrderIdempotent);
 router.post('/public/:shareToken/orders', controller.createPublicOrder);
 router.get('/public/:shareToken/orders/:accessToken', controller.publicOrder);
 router.put('/public/:shareToken/orders/:accessToken', controller.updatePublicOrder);

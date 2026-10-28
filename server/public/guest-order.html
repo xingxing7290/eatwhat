@@ -263,6 +263,7 @@
       <div class="order-warning" id="unavailableWarning" role="status" hidden><p>部分菜品已下架或不可用。你的选择和备注仍保留，请核对并移除不可用菜品，或稍后重试。</p></div>
       <div class="order-warning" id="conflictWarning" role="alert" hidden><p id="conflictMessage"></p><button type="button" id="loadLatestOrder">载入最新订单</button></div>
       <div class="order-warning" id="uncertainWarning" role="alert" hidden><p>提交结果尚未确认，先前请求仍可能完成。请先联系主人核对，避免重复提交；本页已有的选择和备注不会被自动清除。</p><button type="button" id="acknowledgeUncertain">已核对，继续</button></div>
+      <div class="order-warning" id="pendingWarning" role="alert" hidden><p id="pendingMessage"></p><button type="button" id="retryPending">安全重试原提交</button> <button type="button" id="abandonPending">放弃安全重试</button></div>
       <div class="order-warning" id="storageWarning" role="status" hidden>本浏览器无法保存订单凭证；刷新或关闭页面后，你可能无法继续修改这份订单，请联系主人。</div>
       <div class="cart-list" id="cartList"></div>
       <label for="guestName">你的称呼</label>
@@ -280,10 +281,13 @@
       const apiRoot = `/guest-orders/public/${encodeURIComponent(token)}`;
       const storageKey = `eatwhat.guestOrder.${token}`;
       const uncertaintyKey = `${storageKey}.uncertain`;
+      const pendingKey = `${storageKey}.pendingCreate`;
       function storedAccessToken() { try { return localStorage.getItem(storageKey) || ''; } catch (_) { return ''; } }
       function storedUncertainty() { try { return sessionStorage.getItem(uncertaintyKey) === '1'; } catch (_) { return false; } }
       function setUncertainty(value) { state.uncertain = value; try { if (value) sessionStorage.setItem(uncertaintyKey, '1'); else sessionStorage.removeItem(uncertaintyKey); } catch (_) { /* Warning remains active in this page. */ } }
-      const state = { session: null, meals: [], category: '全部', search: '', cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), storageFailed: false, unavailable: new Set() };
+      function validPending(value) { return !!value && /^[A-Za-z0-9_-]{43}$/.test(value.creationKey || '') && typeof value.guestName === 'string' && typeof value.note === 'string' && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= 50 && value.items.every(item => item && /^[a-f0-9]{24}$/.test(item.mealId || '') && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20 && typeof item.note === 'string' && typeof item.name === 'string'); }
+      function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return null; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
+      const state = { session: null, meals: [], category: '全部', search: '', cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), pending: storedPending(), storageFailed: false, unavailable: new Set() };
       const $ = id => document.getElementById(id);
       let toastTimer;
 
@@ -375,7 +379,7 @@
       }
 
       function setQuantity(meal, next) {
-        if (state.busy) return;
+        if (state.busy || state.pending) return;
         if (!canOrder()) return toast('主人已经锁单，暂时不能修改');
         if (next <= 0) { state.cart.delete(String(meal._id)); state.unavailable.delete(String(meal._id)); }
         else state.cart.set(String(meal._id), { meal, quantity: Math.min(20, next), note: state.cart.get(String(meal._id))?.note || '' });
@@ -405,11 +409,11 @@
         const body = document.createElement('div'); body.className = 'meal-body';
         const title = document.createElement('h3'); title.textContent = meal.name || '未命名菜品';
         const meta = document.createElement('div'); meta.className = 'meal-meta'; meta.textContent = mealMeta(meal);
-        const add = document.createElement('button'); add.className = 'add'; add.textContent = canOrder() ? '＋ 想吃' : '已停止点菜'; add.disabled = state.busy || !canOrder(); add.addEventListener('click', () => setQuantity(meal, 1));
+        const add = document.createElement('button'); add.className = 'add'; add.textContent = canOrder() ? '＋ 想吃' : '已停止点菜'; add.disabled = state.busy || !!state.pending || !canOrder(); add.addEventListener('click', () => setQuantity(meal, 1));
         const stepper = document.createElement('div'); stepper.className = 'stepper';
-        const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !canOrder(); minus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 1) - 1));
+        const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !!state.pending || !canOrder(); minus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 1) - 1));
         const quantity = document.createElement('strong'); quantity.textContent = item?.quantity || 0;
-        const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !canOrder(); plus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 0) + 1));
+        const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !!state.pending || !canOrder(); plus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 0) + 1));
         stepper.append(minus, quantity, plus); body.append(title, meta, add, stepper); card.append(photo, body); return card;
       }
 
@@ -436,8 +440,8 @@
         $('cartBadge').textContent = total.quantity;
         $('cartTitle').textContent = total.dishes ? `已选 ${total.dishes} 道菜` : '还没选菜';
         $('cartHint').textContent = total.dishes ? `合计 ${total.quantity} 份${state.order ? ' · 已提交，可继续修改' : ''}` : '看到喜欢的就点“想吃”';
-        $('openCart').disabled = !total.dishes && !state.order && !state.uncertain && !state.conflict;
-        $('openCart').textContent = state.uncertain || state.conflict ? '查看 / 核对' : state.order ? '查看 / 修改' : '查看菜单';
+        $('openCart').disabled = !total.dishes && !state.order && !state.uncertain && !state.conflict && !state.pending;
+        $('openCart').textContent = state.uncertain || state.conflict || state.pending ? '查看 / 核对' : state.order ? '查看 / 修改' : '查看菜单';
       }
 
       function renderCartList() {
@@ -449,13 +453,13 @@
           const note = document.createElement('small'); note.textContent = unavailable ? '已下架或不可用，请移除或稍后重试' : item.note || '可在提交前填写整单备注';
           copy.append(name, note);
           const stepper = document.createElement('div'); stepper.className = 'stepper';
-          const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy; minus.setAttribute('aria-label', `减少${item.meal.name}`); minus.addEventListener('click', () => setQuantity(item.meal, item.quantity - 1));
+          const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !!state.pending; minus.setAttribute('aria-label', `减少${item.meal.name}`); minus.addEventListener('click', () => setQuantity(item.meal, item.quantity - 1));
           const quantity = document.createElement('strong'); quantity.textContent = item.quantity;
-          const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || unavailable; plus.setAttribute('aria-label', `增加${item.meal.name}`); plus.addEventListener('click', () => setQuantity(item.meal, item.quantity + 1));
-          const itemNote = document.createElement('input'); itemNote.className = 'item-note'; itemNote.maxLength = 120; itemNote.placeholder = '这道菜备注：例如少辣、不要葱'; itemNote.value = item.note || ''; itemNote.disabled = state.busy;
+          const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !!state.pending || unavailable; plus.setAttribute('aria-label', `增加${item.meal.name}`); plus.addEventListener('click', () => setQuantity(item.meal, item.quantity + 1));
+          const itemNote = document.createElement('input'); itemNote.className = 'item-note'; itemNote.maxLength = 120; itemNote.placeholder = '这道菜备注：例如少辣、不要葱'; itemNote.value = item.note || ''; itemNote.disabled = state.busy || !!state.pending;
           itemNote.addEventListener('input', event => { item.note = event.target.value; });
           stepper.append(minus, quantity, plus); row.append(copy, stepper, itemNote);
-          if (unavailable) { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-unavailable'; remove.textContent = `移除${item.meal.name}`; remove.disabled = state.busy; remove.addEventListener('click', () => setQuantity(item.meal, 0)); row.append(remove); }
+          if (unavailable) { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-unavailable'; remove.textContent = `移除${item.meal.name}`; remove.disabled = state.busy || !!state.pending; remove.addEventListener('click', () => setQuantity(item.meal, 0)); row.append(remove); }
           return row;
         });
         if (!rows.length) {
@@ -467,11 +471,15 @@
         $('conflictWarning').hidden = !state.conflict;
         $('conflictMessage').textContent = state.conflict === 'load' ? '暂时无法读取之前提交的订单，本页选择仍保留。请先载入最新订单；载入会替换本页未保存的修改。' : '订单已在其他设备更新，本页修改仍保留。请先核对；载入最新订单会替换本页未保存的修改。';
         $('uncertainWarning').hidden = !state.uncertain;
+        $('pendingWarning').hidden = !state.pending;
+        $('pendingMessage').textContent = state.pending?.invalid ? '无法读取之前的安全提交凭证，暂时不能重试。请先联系主人核对，再决定是否放弃。' : '这份点菜单需要核对或保存凭证。可以安全重试原内容，不会因重复重试生成第二份订单；放弃重试前请联系主人确认。';
+        $('retryPending').disabled = state.busy || !validPending(state.pending);
+        $('abandonPending').disabled = state.busy;
         $('storageWarning').hidden = !state.storageFailed;
         $('loadLatestOrder').disabled = state.busy;
         $('acknowledgeUncertain').disabled = state.busy;
-        $('guestName').disabled = state.busy; $('orderNote').disabled = state.busy;
-        $('submitOrder').disabled = state.busy || !!state.conflict || state.uncertain || !canOrder() || !state.cart.size;
+        $('guestName').disabled = state.busy || !!state.pending; $('orderNote').disabled = state.busy || !!state.pending;
+        $('submitOrder').disabled = state.busy || !!state.pending || !!state.conflict || state.uncertain || !canOrder() || !state.cart.size;
         $('submitOrder').textContent = state.busy ? '正在提交…' : state.order ? '保存修改' : '提交给主人';
       }
 
@@ -482,8 +490,12 @@
         state.order = order;
         $('guestName').value = order.guestName || '';
         $('orderNote').value = order.note || '';
+        restoreCart(order.items || []);
+      }
+
+      function restoreCart(items) {
         state.cart.clear();
-        (order.items || []).forEach(item => {
+        items.forEach(item => {
           const itemMealId = String(item.mealId?._id || item.mealId || '');
           const meal = state.meals.find(candidate => String(candidate._id) === itemMealId) || {
             _id: itemMealId,
@@ -494,6 +506,29 @@
           };
           if (meal._id) state.cart.set(String(meal._id), { meal, quantity: Number(item.quantity || 1), note: item.note || '' });
         });
+      }
+
+      function restorePendingDraft() {
+        if (!validPending(state.pending)) return;
+        $('guestName').value = state.pending.guestName; $('orderNote').value = state.pending.note;
+        restoreCart(state.pending.items);
+      }
+
+      function createPending(body) {
+        const bytes = crypto.getRandomValues(new Uint8Array(32));
+        const creationKey = btoa(String.fromCharCode(...bytes)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        const pending = { ...body, creationKey, items: body.items.map(item => ({ ...item, name: String(state.cart.get(String(item.mealId))?.meal?.name || '已选菜品').slice(0, 100) })) };
+        if (!validPending(pending)) throw new Error('点菜单数据不完整，请刷新后核对');
+        const text = JSON.stringify(pending);
+        sessionStorage.setItem(pendingKey, text);
+        if (sessionStorage.getItem(pendingKey) !== text) throw new Error('无法保存安全提交凭证');
+        state.pending = pending;
+      }
+
+      function clearPending() {
+        sessionStorage.removeItem(pendingKey);
+        if (sessionStorage.getItem(pendingKey) !== null) throw new Error('无法清除安全提交凭证');
+        state.pending = null;
       }
 
       function validOrder(order) {
@@ -534,7 +569,8 @@
           const data = await jsonRequest(first ? apiRoot : `${apiRoot}?statusOnly=1`);
           state.session = data.session || {};
           if (Array.isArray(data.meals) && (data.meals.length || first)) state.meals = data.meals;
-          if (first && state.accessToken) { try { await loadOwnOrder(true); } catch (_) { state.conflict = 'load'; toast('暂时无法读取已提交的订单，请先核对'); } }
+          if (first && state.pending) restorePendingDraft();
+          else if (first && state.accessToken) { try { await loadOwnOrder(true); } catch (_) { state.conflict = 'load'; toast('暂时无法读取已提交的订单，请先核对'); } }
           renderHeader();
           if (first) {
             renderFilters(); renderMeals(); renderCartBar(); renderCartList();
@@ -547,27 +583,44 @@
             $('subtitle').textContent = error.message;
             const box = document.createElement('div'); box.className = 'error'; box.textContent = `${error.message}。请让主人重新分享链接。`; $('mealGrid').replaceChildren(box);
             $('count').textContent = '加载失败';
+            if (state.pending) { restorePendingDraft(); renderCartBar(); renderCartList(); }
           }
         }
       }
 
       async function submitOrder() {
-        if (state.busy || state.conflict || state.uncertain || !state.cart.size) return;
+        if (state.busy || state.pending || state.conflict || state.uncertain || !state.cart.size) return;
         const guestName = $('guestName').value.trim();
         if (!guestName) { $('guestName').focus(); return toast('请先填写你的称呼'); }
-        state.busy = true; renderMeals(); renderCartList();
         const body = {
           guestName,
           note: $('orderNote').value.trim(),
           items: [...state.cart.values()].map(item => ({ mealId: item.meal._id, quantity: item.quantity, note: item.note || '' })),
           ...(state.order ? { revision: state.order.revision } : {})
         };
+        const updating = Boolean(state.accessToken && state.order);
+        if (!updating && state.session?.supportsIdempotentCreate === true) {
+          try { createPending(body); } catch (_) { return toast('无法保存安全提交凭证，请允许会话存储后重试'); }
+          return submitPending();
+        }
+        return sendOrder(body, updating, false);
+      }
+
+      async function submitPending() {
+        if (state.busy || !validPending(state.pending)) return;
+        return sendOrder(state.pending, false, true);
+      }
+
+      async function sendOrder(body, updating, safeCreate) {
+        state.busy = true; renderMeals(); renderCartBar(); renderCartList();
         try {
-          const updating = Boolean(state.accessToken && state.order);
-          const data = await jsonRequest(updating ? `${apiRoot}/orders/${encodeURIComponent(state.accessToken)}` : `${apiRoot}/orders`, { method: updating ? 'PUT' : 'POST', body: JSON.stringify(body) });
+          const url = updating ? `${apiRoot}/orders/${encodeURIComponent(state.accessToken)}` : safeCreate ? `${apiRoot}/orders/idempotent` : `${apiRoot}/orders`;
+          const data = await jsonRequest(url, { method: updating ? 'PUT' : 'POST', body: JSON.stringify(body) });
           if (!validOrder(data.order) || (!updating && (typeof data.accessToken !== 'string' || !data.accessToken))) throw new Error('提交响应不完整，请联系主人核对');
-          state.order = data.order;
-          if (data.accessToken) { state.accessToken = data.accessToken; try { localStorage.setItem(storageKey, state.accessToken); } catch (_) { state.storageFailed = true; } }
+          if (safeCreate) restoreOrder(data.order); else state.order = data.order;
+          let tokenSaved = !data.accessToken;
+          if (data.accessToken) { state.accessToken = data.accessToken; try { localStorage.setItem(storageKey, state.accessToken); tokenSaved = localStorage.getItem(storageKey) === state.accessToken; state.storageFailed = !tokenSaved; } catch (_) { state.storageFailed = true; } }
+          if (safeCreate && tokenSaved) { try { clearPending(); } catch (_) { state.storageFailed = true; } }
           state.unavailable.clear();
           toast(updating ? '修改已保存，主人能看到最新菜单' : '点菜单已提交给主人');
           renderCartBar(); renderCartList();
@@ -576,9 +629,9 @@
             state.unavailable = new Set((Array.isArray(error.unavailableIds) ? error.unavailableIds : []).map(String).filter(id => state.cart.has(id)));
             try { await refreshMenu(); } catch (_) { /* Keep the draft and the last known menu. */ }
           } else if (/其他设备更新/.test(error.message)) state.conflict = 'changed';
-          else if (!error.status || error.status === 408 || error.status >= 500) setUncertainty(true);
+          else if (!safeCreate && (!error.status || error.status === 408 || error.status >= 500)) setUncertainty(true);
           toast(error.message);
-        } finally { state.busy = false; renderMeals(); renderCartList(); }
+        } finally { state.busy = false; renderMeals(); renderCartBar(); renderCartList(); }
       }
 
       $('search').addEventListener('input', event => { state.search = event.target.value; renderMeals(); });
@@ -587,6 +640,12 @@
       $('continue').addEventListener('click', closeCart);
       $('submitOrder').addEventListener('click', submitOrder);
       $('loadLatestOrder').addEventListener('click', loadLatestOrder);
+      $('retryPending').addEventListener('click', submitPending);
+      $('abandonPending').addEventListener('click', () => {
+        if (state.busy || !state.pending || !confirm('先前请求仍可能完成。放弃后若重新提交可能重复，请先联系主人核对。确定放弃安全重试吗？')) return;
+        try { clearPending(); setUncertainty(true); renderMeals(); renderCartBar(); renderCartList(); }
+        catch (_) { toast('无法清除安全提交凭证，请检查浏览器存储'); }
+      });
       $('acknowledgeUncertain').addEventListener('click', () => { if (!state.busy && confirm('请确认已经联系主人核对；先前请求仍可能稍后完成。确定继续吗？')) { setUncertainty(false); renderCartList(); } });
       $('overlay').addEventListener('click', event => { if (event.target === $('overlay')) closeCart(); });
       addEventListener('keydown', event => { if (event.key === 'Escape') closeCart(); });

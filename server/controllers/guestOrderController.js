@@ -1,4 +1,5 @@
 const path = require('path');
+const crypto = require('crypto');
 const mongoose = require('mongoose');
 const GuestOrderSession = require('../models/guestOrderSessionModel');
 const GuestOrder = require('../models/guestOrderModel');
@@ -131,7 +132,36 @@ function handlePublicOrderError(error, res, next) {
   return next(error);
 }
 
+function creationIdentity(session, body) {
+  const key = body?.creationKey;
+  if (typeof key !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(key)) throw httpError('安全提交凭证无效', 400);
+  const raw = body?.items;
+  if (!Array.isArray(raw) || !raw.length || raw.length > 50) throw httpError('每次需选择 1 至 50 道菜', 400);
+  const fakeMeals = new Map();
+  for (const item of raw) {
+    const id = cleanText(item?.mealId || item?._id || item?.id, 64);
+    if (!/^[a-f0-9]{24}$/.test(id)) throw httpError('订单中包含无效菜品', 400);
+    fakeMeals.set(id, { _id: id, name: 'item' });
+  }
+  const items = normalizeOrderItems(raw, fakeMeals).map(item => ({ mealId: item.mealId, quantity: item.quantity, note: item.note }));
+  const payload = JSON.stringify({ guestName: normalizeGuestName(body.guestName), note: cleanText(body.note, 300), items });
+  const orderId = new mongoose.Types.ObjectId(crypto.createHash('sha256').update('eatwhat-guest-order-v1\0').update(String(session._id)).update('\0').update(key).digest('hex').slice(0, 24));
+  const fingerprint = crypto.createHmac('sha256', key).update(payload).digest('hex');
+  return { orderId, fingerprint };
+}
+
+async function replayCreatedOrder(session, identity) {
+  const order = await GuestOrder.findById(identity.orderId).select('+accessToken +creationFingerprint').lean();
+  if (!order) return null;
+  if (String(order.sessionId) !== String(session._id) || order.creationFingerprint !== identity.fingerprint || !order.accessToken) {
+    throw httpError('安全提交凭证已用于其他内容，请联系主人核对', 409);
+  }
+  return order;
+}
+
 exports.page = (req, res) => {
+  res.set('Cache-Control', 'private, no-store');
+  res.set('Referrer-Policy', 'no-referrer');
   res.sendFile(path.join(__dirname, '..', 'public', 'guest-order.html'));
 };
 
@@ -284,13 +314,45 @@ exports.publicDetail = async (req, res, next) => {
         eventAt: session.eventAt,
         status,
         canOrder: status === 'open',
-        expiresAt: session.expiresAt
+        expiresAt: session.expiresAt,
+        supportsIdempotentCreate: true
       },
       ...(statusOnly ? {} : { meals })
     });
   } catch (error) {
     next(error);
   }
+};
+
+// A dedicated endpoint cannot silently fall back to the legacy create path on
+// an older server. The deterministic _id uses MongoDB's existing unique index;
+// no migration or new production index is needed.
+exports.createPublicOrderIdempotent = async (req, res, next) => {
+  try {
+    const session = await publicSessionByToken(req.params.shareToken);
+    const identity = creationIdentity(session, req.body);
+    let existing = await replayCreatedOrder(session, identity);
+    if (existing) return res.status(200).json({ accessToken: existing.accessToken, order: orderPayload(existing), replayed: true });
+    if (!isSessionOpen(session)) throw httpError('本次点菜已经锁单或结束', 409);
+    if (await GuestOrder.countDocuments({ sessionId: session._id }) >= 100) throw httpError('本次点菜人数已达上限，请联系主人', 429);
+    const mealsById = await mealMapForItems(session, req.body.items);
+    try {
+      await GuestOrder.create({
+        _id: identity.orderId, sessionId: session._id, householdId: session.householdId,
+        guestName: normalizeGuestName(req.body.guestName), accessToken: createCapabilityToken(),
+        creationFingerprint: identity.fingerprint, items: normalizeOrderItems(req.body.items, mealsById),
+        note: cleanText(req.body.note, 300), revision: 1, submittedAt: new Date()
+      });
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      existing = await replayCreatedOrder(session, identity);
+      if (!existing) throw error;
+      return res.status(200).json({ accessToken: existing.accessToken, order: orderPayload(existing), replayed: true });
+    }
+    existing = await replayCreatedOrder(session, identity);
+    if (!existing) throw new Error('无法确认新建的点菜单');
+    return res.status(201).json({ accessToken: existing.accessToken, order: orderPayload(existing), replayed: false });
+  } catch (error) { handlePublicOrderError(error, res, next); }
 };
 
 exports.createPublicOrder = async (req, res, next) => {

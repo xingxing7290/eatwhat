@@ -117,6 +117,7 @@ test('request logging redacts capability tokens and private guest fields', () =>
     body: {
       guestName: 'Guest',
       note: 'Private note',
+      creationKey: 'private-idempotency-capability',
       items: [{ mealId: '1', quantity: 2, note: 'No spice' }],
       revision: 3
     }

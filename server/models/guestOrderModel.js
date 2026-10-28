@@ -63,6 +63,7 @@ const guestOrderSchema = new mongoose.Schema({
     index: true,
     select: false
   },
+  creationFingerprint: { type: String, default: null, select: false },
   items: {
     type: [guestOrderItemSchema],
     validate: {

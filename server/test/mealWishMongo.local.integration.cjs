@@ -198,6 +198,23 @@ async function main() {
     const guestCreated = await request('/guest-public/local-test-guest-token/orders', { method: 'POST', body: guestPayload });
     assert.equal(guestCreated.status, 201);
     const guestOrderUrl = `/guest-public/local-test-guest-token/orders/${guestCreated.data.accessToken}`;
+    const creationKey = Buffer.alloc(32, 7).toString('base64url');
+    const idempotentUrl = '/guest-orders/public/local-test-guest-token/orders/idempotent';
+    const safePayload = { ...guestPayload, creationKey };
+    const safeCreates = await Promise.all(Array.from({ length: 16 }, () => request(idempotentUrl, { method: 'POST', body: safePayload })));
+    assert.equal(safeCreates.filter(result => result.status === 201).length, 1);
+    assert.equal(safeCreates.filter(result => result.status === 200).length, 15);
+    assert.equal(new Set(safeCreates.map(result => result.data.accessToken)).size, 1);
+    assert.equal(new Set(safeCreates.map(result => result.data.order.id)).size, 1);
+    assert.equal(await GuestOrder.countDocuments({ sessionId: guestSession._id }), 2, 'parallel safe creates must produce only one new order');
+    assert.equal((await request(idempotentUrl, { method: 'POST', body: { ...safePayload, note: '内容不同' } })).status, 409);
+    assert.equal((await request(idempotentUrl, { method: 'POST', body: { ...safePayload, creationKey: 'short' } })).status, 400);
+    assert.equal((await fetch(`${base}/guest-orders/public/local-test-guest-token`)).headers.get('cache-control'), 'private, no-store');
+    const guestSessionB = await GuestOrderSession.create({ householdId: homeB._id, createdBy: userB._id, shareToken: 'local-test-guest-b', expiresAt: new Date(Date.now() + 3600000) });
+    const safeOther = await request('/guest-orders/public/local-test-guest-b/orders/idempotent', { method: 'POST', body: { ...safePayload, items: [{ mealId: String(otherMeal._id), quantity: 1 }] } });
+    assert.equal(safeOther.status, 201);
+    assert.notEqual(safeOther.data.order.id, safeCreates[0].data.order.id, 'the same creation key is isolated by session');
+    assert.equal(await GuestOrder.countDocuments({ sessionId: guestSessionB._id }), 1);
     const archiveSchedule = await request('/schedules/2027-01-06/dinner', { method: 'PUT', token: tokenA, body: { mealIds: [String(archiveFixture._id)] } });
     assert.equal(archiveSchedule.status, 200);
     const archiveMemory = await MealMemory.create({ householdId: homeA._id, createdBy: userA._id, title: '归档菜历史', date: '2027-01-06', mealIds: [archiveFixture._id] });
@@ -208,6 +225,12 @@ async function main() {
     const archivedResult = await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: true, expectedEditVersion: archiveBefore.archiveVersion } });
     assert.equal(archivedResult.status, 200);
     assert.equal(archivedResult.data.archived, true);
+    const safeReplayAfterArchive = await request(idempotentUrl, { method: 'POST', body: safePayload });
+    assert.equal(safeReplayAfterArchive.status, 200, 'replaying a confirmed request must work after its meal is archived');
+    assert.equal(safeReplayAfterArchive.data.accessToken, safeCreates[0].data.accessToken);
+    await GuestOrderSession.updateOne({ _id: guestSession._id }, { status: 'locked' });
+    assert.equal((await request(idempotentUrl, { method: 'POST', body: safePayload })).status, 200, 'a completed request remains recoverable after the session is locked');
+    await GuestOrderSession.updateOne({ _id: guestSession._id }, { status: 'open' });
     assert.equal((await request('/guest-public/local-test-guest-token')).data.meals.some(meal => String(meal._id) === String(archiveFixture._id)), false, 'fresh guest menus must exclude archived meals');
     const unavailableCreate = await request('/guest-public/local-test-guest-token/orders', { method: 'POST', body: guestPayload });
     assert.equal(unavailableCreate.status, 409);
@@ -219,7 +242,7 @@ async function main() {
     const preservedOrder = (await request(guestOrderUrl)).data.order;
     assert.equal(preservedOrder.revision, 1);
     assert.equal(preservedOrder.items[0].note, '少盐');
-    assert.equal(await GuestOrder.countDocuments({ sessionId: guestSession._id }), 1, 'rejected stale submissions must not create another order');
+    assert.equal(await GuestOrder.countDocuments({ sessionId: guestSession._id }), 2, 'rejected stale submissions must not create another order');
     assert.equal((await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: false, expectedEditVersion: archiveBefore.archiveVersion } })).status, 409);
     assert.equal((await request('/meals?search=保留历史的归档菜', { token: tokenA })).data.length, 0);
     const archivedList = await request('/meals?archived=true&search=保留历史的归档菜&page=1&limit=24', { token: tokenA });
@@ -236,6 +259,11 @@ async function main() {
     const restoredResult = await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: false, expectedEditVersion: archivedResult.data.archiveVersion } });
     assert.equal(restoredResult.status, 200);
     assert.equal((await request('/guest-public/local-test-guest-token')).data.meals.some(meal => String(meal._id) === String(archiveFixture._id)), true);
+    const safeOrderUrl = `/guest-orders/public/local-test-guest-token/orders/${safeCreates[0].data.accessToken}`;
+    assert.equal((await request(safeOrderUrl, { method: 'PUT', body: { ...guestPayload, revision: 1, note: '已经修改' } })).status, 200);
+    const replayCurrent = await request(idempotentUrl, { method: 'POST', body: safePayload });
+    assert.equal(replayCurrent.status, 200);
+    assert.equal(replayCurrent.data.order.note, '已经修改', 'replay must not overwrite a later edit');
     assert.equal((await request(guestOrderUrl, { method: 'PUT', body: { ...guestPayload, revision: 1, note: '恢复后更新' } })).status, 200);
     assert.equal((await request(guestOrderUrl, { method: 'PUT', body: { ...guestPayload, revision: 1 } })).status, 409);
     assert.equal((await request(guestOrderUrl)).data.order.note, '恢复后更新');
@@ -682,6 +710,12 @@ async function main() {
       const guestBrowserSession = await GuestOrderSession.create({ householdId: homeA._id, createdBy: userA._id, shareToken: 'browser-local-guest-token', expiresAt: new Date(Date.now() + 3600000) });
       const guestContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       const guestPage = await guestContext.newPage();
+      let guestResponseLost = false;
+      await guestPage.route('**/orders/idempotent', async route => {
+        const response = await route.fetch();
+        if (!guestResponseLost && response.status() === 201) { guestResponseLost = true; return route.fulfill({ status: 503, json: { error: '模拟提交响应丢失' } }); }
+        return route.fulfill({ response });
+      });
       await guestPage.goto(`${base}/guest-order/browser-local-guest-token`);
       await guestPage.locator('.meal').filter({ hasText: '访客浏览器测试菜' }).getByRole('button', { name: '＋ 想吃' }).click();
       await guestPage.getByRole('button', { name: '查看菜单' }).click();
@@ -695,7 +729,13 @@ async function main() {
       assert.equal(await guestPage.locator('#orderNote').inputValue(), '请保留此备注');
       assert.equal(await GuestOrder.countDocuments({ sessionId: guestBrowserSession._id }), 0);
       assert.equal((await request(`/meals/${guestBrowserMeal._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: false, expectedEditVersion: guestArchived.data.archiveVersion } })).status, 200);
-      await guestPage.getByRole('button', { name: '提交给主人' }).click();
+      await guestPage.getByRole('button', { name: '安全重试原提交' }).click();
+      await guestPage.getByText('模拟提交响应丢失', { exact: true }).waitFor();
+      assert.equal(await GuestOrder.countDocuments({ sessionId: guestBrowserSession._id }), 1);
+      await guestPage.reload();
+      await guestPage.getByRole('button', { name: '查看 / 核对' }).click();
+      assert.equal(await guestPage.locator('#orderNote').inputValue(), '请保留此备注');
+      await guestPage.getByRole('button', { name: '安全重试原提交' }).click();
       await guestPage.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor();
       assert.equal(await GuestOrder.countDocuments({ sessionId: guestBrowserSession._id }), 1);
       const guestAccess = await guestPage.evaluate(() => localStorage.getItem('eatwhat.guestOrder.browser-local-guest-token'));
