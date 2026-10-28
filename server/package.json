@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "test": "node --test test/guestOrders.test.js test/guestOrderPage.test.js test/scheduleConcurrency.test.js test/weeklyPlanConcurrency.test.js",
     "test:guest-orders": "node --test test/guestOrders.test.js",
+    "test:integration:mongo": "node test/weeklyPlanMongo.integration.cjs",
     "smoke:guest-orders": "node scripts/smoke-guest-orders.js"
   },
   "keywords": [
