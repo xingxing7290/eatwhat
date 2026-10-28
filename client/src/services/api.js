@@ -417,6 +417,7 @@ export const wishlistApi = {
 	create: (payload) => api.post('/wishlist', payload, { headers: { 'Content-Type': 'application/json' } }),
 	createMealWish: (mealId) => api.post('/wishlist/meal', { mealId }, { headers: { 'Content-Type': 'application/json' } }),
 	vote: (id) => api.post(`/wishlist/${id}/vote`),
+	setVote: (id, voted) => api.put(`/wishlist/${id}/vote`, { voted }, { headers: { 'Content-Type': 'application/json' } }),
 	updateStatus: (id, status) => api.patch(`/wishlist/${id}/status`, { status }, { headers: { 'Content-Type': 'application/json' } }),
 	attachMeal: (id, mealId, options = {}) => api.patch(`/wishlist/${id}/meal`, { mealId, ...options }, { headers: { 'Content-Type': 'application/json' } }),
 	delete: (id) => api.delete(`/wishlist/${id}`)

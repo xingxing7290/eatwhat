@@ -152,6 +152,8 @@ async function main() {
     let atomicCalls = 0;
     app.post('/wishlist', (req, res, next) => { legacyCalls++; next(); }, wishlist.create);
     app.post('/wishlist/meal', (req, res, next) => { atomicCalls++; next(); }, wishlist.createMealWish);
+    app.post('/wishlist/:id/vote', wishlist.vote);
+    app.put('/wishlist/:id/vote', wishlist.setVote);
     app.patch('/wishlist/:id/status', wishlist.updateStatus);
     app.patch('/wishlist/:id/meal', wishlist.attachMeal);
     app.use((error, req, res, next) => res.status(error.status || 500).json({ error: error.message }));
@@ -360,6 +362,28 @@ async function main() {
     assert.equal(reminders.includes('foreign vote only'), false, 'a different household member is not a partner');
     assert.equal(reminders.includes('former member creator'), false, 'a former member is not a current household member');
     assert.ok(reminders.includes('partner high') && reminders.includes('partner vote on mine') && reminders.includes('partner normal') && reminders.includes('partner low newest'));
+    const voteWish = await WishlistItem.create({ householdId: homeA._id, title: '并发投票测试', status: 'done', votes: [], createdBy: userA._id });
+    const voteResults = await Promise.all(Array.from({ length: 20 }, (_, index) => request(`/wishlist/${voteWish._id}/vote`, { method: 'PUT', token: index % 2 ? tokenA : tokenPartner, body: { voted: true } })));
+    assert.ok(voteResults.every(result => result.status === 200));
+    let storedVotes = (await WishlistItem.findById(voteWish._id)).votes.map(String).sort();
+    assert.deepEqual(storedVotes, [String(userA._id), String(partnerA._id)].sort(), 'idempotent votes from different users must not overwrite each other');
+    assert.equal((await request(`/wishlist/${voteWish._id}/vote`, { method: 'PUT', token: tokenA, body: { voted: false } })).status, 200);
+    assert.equal((await request(`/wishlist/${voteWish._id}/vote`, { method: 'PUT', token: tokenA, body: { voted: false } })).status, 200);
+    const legacyToggles = await Promise.all([request(`/wishlist/${voteWish._id}/vote`, { method: 'POST', token: tokenA, body: {} }), request(`/wishlist/${voteWish._id}/vote`, { method: 'POST', token: tokenPartner, body: {} })]);
+    assert.ok(legacyToggles.every(result => result.status === 200));
+    storedVotes = (await WishlistItem.findById(voteWish._id)).votes.map(String);
+    assert.deepEqual(storedVotes, [String(userA._id)], 'legacy toggles must preserve concurrent members\u2019 votes');
+    assert.equal((await request(`/wishlist/${voteWish._id}/vote`, { method: 'PUT', token: tokenA, body: { voted: 'true' } })).status, 400);
+    assert.equal((await request(`/wishlist/${voteWish._id}/vote`, { method: 'PUT', token: tokenB, body: { voted: true } })).status, 404);
+    const foreignWish = await WishlistItem.create({ householdId: homeA._id, title: '跨家庭引用测试', status: 'done', mealId: otherMeal._id, votes: [userA._id, userB._id], createdBy: userB._id });
+    const safeWishlist = await request('/wishlist', { token: tokenA });
+    const safeVoteWish = safeWishlist.data.find(item => item._id === String(voteWish._id));
+    const safeForeignWish = safeWishlist.data.find(item => item._id === String(foreignWish._id));
+    assert.equal(safeVoteWish.supportsSetVote, true);
+    assert.equal(safeVoteWish.votedByMe, true);
+    assert.equal(safeForeignWish.mealId, null);
+    assert.equal(safeForeignWish.createdBy, null);
+    assert.deepEqual(safeForeignWish.votes.map(user => user._id), [String(userA._id)]);
     assert.ok(reminders.indexOf('partner high') < reminders.indexOf('partner normal'));
     assert.ok(reminders.indexOf('partner normal') < reminders.indexOf('partner low newest'), 'priority must not be sorted alphabetically');
     assert.equal(reminders.includes('Test A meal'), false, 'another household must remain isolated');
@@ -497,6 +521,11 @@ async function main() {
       await Promise.all([pages[0].getByText('partner high', { exact: true }).waitFor(), pages[1].getByText('self only', { exact: true }).waitFor()]);
       assert.equal(await pages[0].getByText('self only', { exact: true }).count(), 0, 'dashboard must not show own wish as a partner reminder');
       assert.equal(await pages[1].getByText('partner high', { exact: true }).count(), 0, 'the partner must not see their own wish as another member’s');
+      const browserVote = await WishlistItem.create({ householdId: homeA._id, title: '浏览器协作投票', status: 'open', votes: [], createdBy: userA._id });
+      await Promise.all(pages.map(page => page.goto(`${webBase}/wishlist`)));
+      await Promise.all(pages.map(page => page.getByRole('button', { name: '我想吃浏览器协作投票' }).click()));
+      await Promise.all(pages.map(page => page.getByRole('button', { name: '取消想吃浏览器协作投票' }).waitFor()));
+      assert.deepEqual((await WishlistItem.findById(browserVote._id)).votes.map(String).sort(), [String(userA._id), String(partnerA._id)].sort());
       await Promise.all(pages.map(page => page.goto(`${webBase}/meals`)));
       await Promise.all([
         pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/meals' && new URL(response.url()).searchParams.get('search') === '浏览器并发菜'),

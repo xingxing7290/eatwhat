@@ -8,6 +8,7 @@ router.get('/', controller.list);
 router.post('/', controller.create);
 router.post('/meal', controller.createMealWish);
 router.post('/:id/vote', controller.vote);
+router.put('/:id/vote', controller.setVote);
 router.patch('/:id/status', controller.updateStatus);
 router.patch('/:id/meal', controller.attachMeal);
 router.delete('/:id', controller.remove);
