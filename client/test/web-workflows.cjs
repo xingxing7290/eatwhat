@@ -73,7 +73,7 @@ async function main () {
   let conflictMealEdit = false
   let supportsMealEdit = true
   const mealEditVersion = { revision: 'fixture-revision', updatedAt: '2026-10-28T08:00:00.000Z' }
-  const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [] }]
+  const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: 'ann-v1', updatedAt: '2026-10-28T12:00:00.000Z' } }]
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => {
     if (message.type() === 'error') console.error('Browser:', message.text())

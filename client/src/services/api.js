@@ -408,7 +408,7 @@ export const memoryApi = {
 	get: (id) => api.get(`/memories/${id}`),
 	create: (payload) => api.post('/memories', payload),
 	update: (id, payload) => api.put(`/memories/${id}`, payload),
-	delete: (id) => api.delete(`/memories/${id}`)
+	delete: (id, expectedEditVersion) => api.delete(`/memories/${id}`, { params: expectedEditVersion === undefined ? {} : { expectedEditVersion: JSON.stringify(expectedEditVersion) } })
 };
 
 // 想吃清单API
@@ -430,7 +430,7 @@ export const anniversaryApi = {
 	list: () => api.get('/anniversaries'),
 	create: (payload) => api.post('/anniversaries', payload),
 	update: (id, payload) => api.put(`/anniversaries/${id}`, payload),
-	delete: (id) => api.delete(`/anniversaries/${id}`)
+	delete: (id, expectedEditVersion) => api.delete(`/anniversaries/${id}`, { params: expectedEditVersion === undefined ? {} : { expectedEditVersion: JSON.stringify(expectedEditVersion) } })
 };
 
 export default {

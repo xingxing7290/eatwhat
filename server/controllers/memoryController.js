@@ -27,7 +27,7 @@ function populateQuery(q, householdId) {
 }
 function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
 function present(item) {
-  return { ...item.toObject(), supportsConditionalEdit: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
+  return { ...item.toObject(), supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
 }
 function parseEditVersion(value) {
   let version = value;
@@ -147,8 +147,13 @@ exports.update = async (req, res, next) => {
 exports.remove = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const deleted = await MealMemory.findOneAndDelete({ _id: req.params.id, householdId: household._id });
-    if (!deleted) return res.status(404).json({ error: '未找到回忆记录' });
+    const conditional = Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedEditVersion');
+    const version = conditional ? parseEditVersion(req.query.expectedEditVersion) : null;
+    if (conditional && !version) return res.status(400).json({ error: '回忆版本无效，请重新加载' });
+    const filter = { _id: req.params.id, householdId: household._id };
+    if (conditional) { filter.editRevision = version.revision; filter.updatedAt = version.updatedAt === null ? null : new Date(version.updatedAt); }
+    const deleted = await MealMemory.findOneAndDelete(filter);
+    if (!deleted) return conditional ? res.status(409).json({ code: 'MEMORY_CONFLICT', error: '回忆已更新或删除，请核对最新内容' }) : res.status(404).json({ error: '未找到回忆记录' });
     res.status(204).send();
   } catch (err) { next(err); }
 };

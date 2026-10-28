@@ -496,6 +496,27 @@ async function main() {
     const legacyMemoryDetail = await request(`/memories/${legacyMemory.insertedId}`, { token: tokenA });
     assert.deepEqual(legacyMemoryDetail.data.editVersion, { revision: null, updatedAt: null });
     assert.equal((await request(`/memories/${legacyMemory.insertedId}`, { method: 'PUT', token: tokenA, body: { title: '旧回忆已编辑', expectedEditVersion: legacyMemoryDetail.data.editVersion } })).status, 200);
+    const deleteMemory = await MealMemory.create({ householdId: homeA._id, createdBy: userA._id, title: '待核对回忆', date: '2026-11-15', mealType: 'dinner', photos: [imageData] });
+    const beforeMemoryDelete = (await request(`/memories/${deleteMemory._id}`, { token: tokenA })).data;
+    assert.equal(beforeMemoryDelete.supportsConditionalDelete, true);
+    assert.equal((await request(`/memories/${deleteMemory._id}`, { method: 'PUT', token: tokenPartner, body: { title: '家人已更新' } })).status, 200);
+    const staleMemoryDelete = await request(`/memories/${deleteMemory._id}?expectedEditVersion=${encodeURIComponent(JSON.stringify(beforeMemoryDelete.editVersion))}`, { method: 'DELETE', token: tokenA });
+    assert.equal(staleMemoryDelete.data.code, 'MEMORY_CONFLICT');
+    assert.equal((await MealMemory.findById(deleteMemory._id)).photos.length, 1);
+    assert.equal((await request(`/memories/${deleteMemory._id}?expectedEditVersion=bad-json`, { method: 'DELETE', token: tokenA })).status, 400);
+    const freshMemoryVersion = (await request(`/memories/${deleteMemory._id}`, { token: tokenA })).data.editVersion;
+    assert.equal((await request(`/memories/${deleteMemory._id}?expectedEditVersion=${encodeURIComponent(JSON.stringify(freshMemoryVersion))}`, { method: 'DELETE', token: tokenB })).status, 409);
+    const memoryRace = await Promise.all([
+      request(`/memories/${deleteMemory._id}`, { method: 'PUT', token: tokenA, body: { title: '并发更新', expectedEditVersion: freshMemoryVersion } }),
+      request(`/memories/${deleteMemory._id}?expectedEditVersion=${encodeURIComponent(JSON.stringify(freshMemoryVersion))}`, { method: 'DELETE', token: tokenPartner })
+    ]);
+    assert.ok(memoryRace.some(result => result.status === 409 || result.status === 404) && memoryRace.some(result => result.status === 200 || result.status === 204), 'only the update or delete may succeed for a shared version');
+    const legacyDeleteMemory = await MealMemory.create({ householdId: homeA._id, createdBy: userA._id, date: '2026-11-15', title: '旧客户端删除回忆' });
+    assert.equal((await request(`/memories/${legacyDeleteMemory._id}`, { method: 'DELETE', token: tokenA })).status, 204);
+    const missingVersionMemory = await MealMemory.collection.insertOne({ householdId: homeA._id, createdBy: userA._id, date: '2026-11-15', mealType: 'dinner', title: '缺版本回忆', photos: [], mealIds: [], participants: [] });
+    const missingMemoryVersion = (await request(`/memories/${missingVersionMemory.insertedId}`, { token: tokenA })).data.editVersion;
+    assert.deepEqual(missingMemoryVersion, { revision: null, updatedAt: null });
+    assert.equal((await request(`/memories/${missingVersionMemory.insertedId}?expectedEditVersion=${encodeURIComponent(JSON.stringify(missingMemoryVersion))}`, { method: 'DELETE', token: tokenA })).status, 204);
     const anniversary = await AnniversaryMenu.create({ householdId: homeA._id, createdBy: userA._id, title: '测试纪念日', date: '2026-11-11', photos: [imageData], meals: { breakfast: [mealA._id], lunch: [otherMeal._id], dinner: [mealA._id, otherMeal._id] } });
     const anniversaryList = await request('/anniversaries', { token: tokenA });
     assert.equal(anniversaryList.status, 200);
@@ -535,6 +556,27 @@ async function main() {
     const legacyItem = legacyList.data.find(item => item._id === String(legacyMenu.insertedId));
     assert.deepEqual(legacyItem.editVersion, { revision: null, updatedAt: null });
     assert.equal((await request(`/anniversaries/${legacyMenu.insertedId}`, { method: 'PUT', token: tokenA, body: { title: '旧数据已编辑', expectedEditVersion: legacyItem.editVersion } })).status, 200);
+    const deleteMenu = await AnniversaryMenu.create({ householdId: homeA._id, createdBy: userA._id, title: '待核对菜单', date: '2026-11-15', photos: [imageData] });
+    const beforeMenuDelete = (await request('/anniversaries', { token: tokenA })).data.find(item => item._id === String(deleteMenu._id));
+    assert.equal(beforeMenuDelete.supportsConditionalDelete, true);
+    assert.equal((await request(`/anniversaries/${deleteMenu._id}`, { method: 'PUT', token: tokenPartner, body: { title: '家人已更新菜单' } })).status, 200);
+    const staleMenuDelete = await request(`/anniversaries/${deleteMenu._id}?expectedEditVersion=${encodeURIComponent(JSON.stringify(beforeMenuDelete.editVersion))}`, { method: 'DELETE', token: tokenA });
+    assert.equal(staleMenuDelete.data.code, 'ANNIVERSARY_CONFLICT');
+    assert.equal((await AnniversaryMenu.findById(deleteMenu._id)).photos.length, 1);
+    assert.equal((await request(`/anniversaries/${deleteMenu._id}?expectedEditVersion=bad-json`, { method: 'DELETE', token: tokenA })).status, 400);
+    const freshMenuVersion = (await request('/anniversaries', { token: tokenA })).data.find(item => item._id === String(deleteMenu._id)).editVersion;
+    assert.equal((await request(`/anniversaries/${deleteMenu._id}?expectedEditVersion=${encodeURIComponent(JSON.stringify(freshMenuVersion))}`, { method: 'DELETE', token: tokenB })).status, 409);
+    const menuRace = await Promise.all([
+      request(`/anniversaries/${deleteMenu._id}`, { method: 'PUT', token: tokenA, body: { title: '并发修改菜单', expectedEditVersion: freshMenuVersion } }),
+      request(`/anniversaries/${deleteMenu._id}?expectedEditVersion=${encodeURIComponent(JSON.stringify(freshMenuVersion))}`, { method: 'DELETE', token: tokenPartner })
+    ]);
+    assert.ok(menuRace.some(result => result.status === 409 || result.status === 404) && menuRace.some(result => result.status === 200 || result.status === 204), 'only the menu update or delete may succeed for a shared version');
+    const legacyDeleteMenu = await AnniversaryMenu.create({ householdId: homeA._id, createdBy: userA._id, date: '2026-11-15', title: '旧客户端删除菜单' });
+    assert.equal((await request(`/anniversaries/${legacyDeleteMenu._id}`, { method: 'DELETE', token: tokenA })).status, 204);
+    const missingVersionMenu = await AnniversaryMenu.collection.insertOne({ householdId: homeA._id, createdBy: userA._id, date: '2026-11-15', title: '缺版本菜单', photos: [], meals: { breakfast: [], lunch: [], dinner: [] } });
+    const missingMenuVersion = (await request('/anniversaries', { token: tokenA })).data.find(item => item._id === String(missingVersionMenu.insertedId)).editVersion;
+    assert.deepEqual(missingMenuVersion, { revision: null, updatedAt: null });
+    assert.equal((await request(`/anniversaries/${missingVersionMenu.insertedId}?expectedEditVersion=${encodeURIComponent(JSON.stringify(missingMenuVersion))}`, { method: 'DELETE', token: tokenA })).status, 204);
     if (process.env.EATWHAT_TEST_BROWSER === '1') {
       const dist = path.resolve(__dirname, '../../client/dist');
       assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'build client/dist before browser integration');
@@ -785,6 +827,12 @@ async function main() {
       const linkedMemory = pages[0].getByRole('dialog', { name: '编辑饭后回忆' });
       assert.equal(await linkedMemory.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '甲家庭相册');
       await linkedMemory.getByRole('button', { name: '取消', exact: true }).click();
+      assert.equal((await request(`/memories/${memoryId}`, { method: 'PUT', token: tokenPartner, body: { note: '家人更新后的回忆备注' } })).status, 200);
+      await pages[0].getByRole('button', { name: '删除旧客户端回忆修改' }).click();
+      await pages[0].getByRole('button', { name: '确定', exact: true }).click();
+      await pages[0].getByText('回忆已被修改或删除，本次未删除', { exact: false }).waitFor();
+      assert.ok(await MealMemory.exists({ _id: memoryId }));
+      await pages[0].getByRole('button', { name: '重新加载并核对' }).click();
       await pages[0].getByRole('button', { name: '编辑旧客户端回忆修改' }).click();
       const editMemory = pages[0].getByRole('dialog', { name: '编辑饭后回忆' });
       const memoryTitle = editMemory.getByPlaceholder('比如：周五晚上的番茄牛腩');
@@ -809,6 +857,12 @@ async function main() {
       assert.deepEqual(editedMemory.participants.map(String), [String(userA._id)]);
       await pages[0].goto(`${webBase}/anniversaries`);
       await pages[0].getByText('旧客户端编辑', { exact: true }).waitFor();
+      assert.equal((await request(`/anniversaries/${anniversary._id}`, { method: 'PUT', token: tokenPartner, body: { description: '家人更新后的菜单备注' } })).status, 200);
+      await pages[0].getByRole('button', { name: '删除旧客户端编辑' }).click();
+      await pages[0].getByRole('button', { name: '删除', exact: true }).click();
+      await pages[0].getByText('菜单已被修改或删除，本次未删除', { exact: false }).waitFor();
+      assert.ok(await AnniversaryMenu.exists({ _id: anniversary._id }));
+      await pages[0].getByRole('button', { name: '重新加载并核对' }).click();
       await pages[0].getByRole('button', { name: '新增菜单' }).click();
       const anniversaryDialog = pages[0].getByRole('dialog', { name: '新增纪念日菜单' });
       await anniversaryDialog.getByPlaceholder('比如：三周年晚餐').fill('浏览器纪念日');

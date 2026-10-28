@@ -11,16 +11,20 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test' })) })
-    const errors = []; const reads = []; let saved = ''; let deleted = false
+    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/broken-memory.png', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
       let data = {}
       if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
-      else if (req.method() === 'GET' && path === '/memories') data = deleted ? [] : [{ _id: 'memory-a', date: '2026-10-28', mealType: 'dinner', title: '回忆一', photos: [image, '/broken-memory.png'], mealIds: [] }]
+      else if (req.method() === 'GET' && path === '/memories') data = deleted ? [] : [{ _id: 'memory-a', date: '2026-10-28', mealType: 'dinner', title: '回忆一', photos: [image, '/broken-memory.png'], mealIds: [], supportsConditionalEdit: true, supportsConditionalDelete: deleteSupported, editVersion: { revision, updatedAt: '2026-10-28T12:00:00.000Z' } }]
       else if (req.method() === 'POST' && path === '/memories') { saved = req.postData(); data = { _id: 'created' } }
-      else if (req.method() === 'DELETE' && path === '/memories/memory-a') { deleted = true; return route.fulfill({ status: 503, json: { error: '无法确认' } }) }
+      else if (req.method() === 'DELETE' && path === '/memories/memory-a') {
+        assert.equal(JSON.parse(url.searchParams.get('expectedEditVersion')).revision, revision)
+        if (deleteMode === 'conflict') { revision = 'v2'; return route.fulfill({ status: 409, json: { code: 'MEMORY_CONFLICT', error: '回忆已变化' } }) }
+        deleted = true; return route.fulfill({ status: 503, json: { error: '无法确认' } })
+      }
       else if (req.method() === 'GET' && path === '/meals') {
         reads.push(Object.fromEntries(url.searchParams)); const query = url.searchParams.get('search') || ''; const found = meals.filter(meal => meal.name.includes(query))
         data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
@@ -30,6 +34,12 @@ async function main () {
     await page.goto(`${base}/memories`)
     await page.getByText('回忆一', { exact: true }).waitFor()
     assert.equal(reads.length, 0, 'Timeline should not load the whole meal catalog')
+    deleteSupported = false
+    await page.reload()
+    await page.getByText('服务器未提供安全删除能力', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '删除回忆一' }).isDisabled(), true)
+    deleteSupported = true
+    await page.reload()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.getByRole('button', { name: '查看回忆一的第 1 张照片' }).click()
     const viewer = page.getByRole('dialog', { name: '饭后照片' })
@@ -54,6 +64,12 @@ async function main () {
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     assert.match(saved, /meal-01/); assert.match(saved, /meal-75/)
+    await page.getByRole('button', { name: '删除回忆一' }).click()
+    await page.getByRole('button', { name: '确定', exact: true }).click()
+    await page.getByText('回忆已被修改或删除，本次未删除', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '记录一餐' }).isDisabled(), true)
+    await page.getByRole('button', { name: '重新加载并核对' }).click()
+    deleteMode = 'unknown'
     await page.getByRole('button', { name: '删除回忆一' }).click()
     await page.getByRole('button', { name: '确定', exact: true }).click()
     await page.getByText('删除结果未确认', { exact: false }).waitFor()

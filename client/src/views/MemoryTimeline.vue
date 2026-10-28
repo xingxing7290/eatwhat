@@ -113,6 +113,9 @@ const mealId = meal => String(meal?._id || meal?.id || '');
 const validVersion = item => item?.supportsConditionalEdit === true && item.editVersion &&
   (item.editVersion.revision === null || (typeof item.editVersion.revision === 'string' && !!item.editVersion.revision && item.editVersion.revision.length <= 128)) &&
   (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
+const canDelete = item => item?.supportsConditionalDelete === true && validVersion(item);
+const deleteBlocked = computed(() => saveUncertain.value || !!editIssue.value || (!!editing.value && dirty.value));
+const legacyDeleteWarning = computed(() => memories.value.some(item => !canDelete(item)));
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealOptions = computed(() => {
   const seen = new Set();
@@ -314,14 +317,16 @@ const save = async () => {
   finally { saving.value = false; }
 };
 const remove = async (item) => {
-  if (deletingId.value || saving.value || deleteIssue.value || loading.value || loadError.value || dirty.value || uncertain.value) return;
+  if (deletingId.value || saving.value || deleteIssue.value || loading.value || loadError.value || deleteBlocked.value) return;
+  if (!canDelete(item)) return ElMessage.warning('服务器未提供安全删除能力，请稍后重试');
   deletingId.value = item._id;
   try {
     await ElMessageBox.confirm('确定删除这条饭后回忆吗？', '删除确认');
-    await api.memory.delete(item._id);
+    await api.memory.delete(item._id, item.editVersion);
+    if (editing.value?.id === String(item._id)) resetForm();
     ElMessage.success('已删除');
     await load();
-  } catch (e) { if (e !== 'cancel' && e !== 'close') deleteIssue.value = '删除结果未确认，请重新加载并核对后再操作。'; }
+  } catch (e) { if (e !== 'cancel' && e !== 'close') deleteIssue.value = e?.code === 'MEMORY_CONFLICT' ? '回忆已被修改或删除，本次未删除；请重新加载并核对。' : '删除结果未确认，请重新加载并核对后再操作。'; }
   finally { deletingId.value = ''; }
 };
 onMounted(() => { window.addEventListener('keydown', onPhotoKey); load(); });
@@ -339,6 +344,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
     <el-alert v-if="linkedError" type="warning" :closable="false" show-icon :title="`无法打开相册关联的回忆：${linkedError}`"><el-button link type="primary" :loading="linkedLoading" @click="openLinkedMemory(linkedId)">重新打开</el-button><el-button link @click="linkedError = ''; linkedId = ''">关闭提示</el-button></el-alert>
     <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button></el-alert>
     <el-alert v-if="deleteIssue" type="warning" :closable="false" show-icon :title="deleteIssue"><el-button link type="primary" :loading="loading" @click="load">重新加载并核对</el-button></el-alert>
+    <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分回忆。" />
 
     <div v-loading="loading" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
@@ -348,7 +354,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         <h2>{{ date }}</h2>
         <div class="memory-grid">
           <el-card v-for="item in items" :key="item._id" class="memory-card">
-            <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><div class="card-actions"><el-button type="primary" link :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title || '这条回忆'}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || dirty || uncertain" :aria-label="`删除${item.title || '这条回忆'}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
+            <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><div class="card-actions"><el-button type="primary" link :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title || '这条回忆'}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title || '这条回忆'}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
             <h3>{{ item.title || '温馨一餐' }}</h3>
             <p>{{ item.note || '没有文字，也是一段回忆。' }}</p>
             <div class="meta"><span>{{ item.mood || '日常' }}</span><el-rate :model-value="item.rating || 0" disabled size="small" /></div>

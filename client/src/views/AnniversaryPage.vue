@@ -50,6 +50,9 @@ const mealId = meal => String(meal?._id || meal?.id || '');
 const validVersion = item => item?.supportsConditionalEdit === true && item.editVersion &&
   (item.editVersion.revision === null || (typeof item.editVersion.revision === 'string' && !!item.editVersion.revision && item.editVersion.revision.length <= 128)) &&
   (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
+const canDelete = item => item?.supportsConditionalDelete === true && validVersion(item);
+const deleteBlocked = computed(() => saveUncertain.value || !!editIssue.value || (!!editing.value && dirty.value));
+const legacyDeleteWarning = computed(() => menus.value.some(item => !canDelete(item)));
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealOptions = computed(() => {
   const seen = new Set();
@@ -243,10 +246,11 @@ const save = async () => {
   finally { saving.value = false; }
 };
 const remove = async (item) => {
-  if (deletingId.value || saving.value || deleteIssue.value || loading.value || loadError.value || dirty.value || uncertain.value) return;
+  if (deletingId.value || saving.value || deleteIssue.value || loading.value || loadError.value || deleteBlocked.value) return;
+  if (!canDelete(item)) return ElMessage.warning('服务器未提供安全删除能力，请稍后重试');
   deletingId.value = item._id;
-  try { await ElMessageBox.confirm('确定删除这个纪念日菜单吗？', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }); await api.anniversary.delete(item._id); await load(); }
-  catch (e) { if (e !== 'cancel' && e !== 'close') deleteIssue.value = '删除结果未确认，请重新加载并核对后再操作。'; }
+  try { await ElMessageBox.confirm('确定删除这个纪念日菜单吗？', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }); await api.anniversary.delete(item._id, item.editVersion); if (editing.value?.id === String(item._id)) reset(); await load(); }
+  catch (e) { if (e !== 'cancel' && e !== 'close') deleteIssue.value = e?.code === 'ANNIVERSARY_CONFLICT' ? '菜单已被修改或删除，本次未删除；请重新加载并核对。' : '删除结果未确认，请重新加载并核对后再操作。'; }
   finally { deletingId.value = ''; }
 };
 onMounted(() => { window.addEventListener('keydown', onPhotoKey); load(); loadTemplates(); });
@@ -264,11 +268,12 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
     <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button></el-alert>
 
     <el-alert v-if="deleteIssue" type="warning" :closable="false" show-icon :title="deleteIssue"><el-button link type="primary" :loading="loading" @click="load">重新加载并核对</el-button></el-alert>
+    <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分纪念日菜单。" />
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载纪念日菜单：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <div v-else v-loading="loading" class="menu-grid">
       <el-empty v-if="!loading && !menus.length" description="还没有纪念日菜单" />
       <el-card v-for="item in menus" :key="item._id" class="menu-card">
-        <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || dirty || uncertain" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
+        <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
         <p class="desc">{{ item.description || '没有备注，也可以是一份默契。' }}</p>
         <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="photo-button" :aria-label="`查看${item.title || '纪念日'}的第 ${index + 1} 张照片`" @click="openPhoto(item, index)"><img :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
         <div class="meal-blocks">
