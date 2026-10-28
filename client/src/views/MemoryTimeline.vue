@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture } from '@element-plus/icons-vue';
 import api from '@/services/api';
+import { useDraftGuard } from '@/composables/useDraftGuard';
 
 const memories = ref([]);
 const route = useRoute();
@@ -17,6 +18,9 @@ const saving = ref(false);
 const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', mealIds: [] });
+const initialForm = ref(JSON.stringify(form));
+const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
+useDraftGuard({ dirty, busy: saving, label: '饭后回忆' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
 const supportedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const supportedPhotoExts = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
@@ -80,6 +84,7 @@ const grouped = computed(() => memories.value.reduce((acc, item) => {
 const resetForm = () => {
   Object.assign(form, { date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', mealIds: [] });
   photoFiles.value = [];
+  initialForm.value = JSON.stringify(form);
 };
 const load = async () => {
   loading.value = true;
@@ -165,7 +170,7 @@ onMounted(load);
     </div>
 
     <el-dialog v-model="dialogVisible" title="记录饭后回忆" width="min(560px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
-      <el-form label-position="top">
+      <el-form label-position="top" :disabled="saving">
         <el-form-item label="日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" type="date" /></el-form-item>
         <el-form-item label="餐次"><el-select v-model="form.mealType"><el-option v-for="(label, key) in mealTypeText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item label="相关菜品"><el-select v-model="form.mealIds" multiple filterable><el-option v-for="meal in meals" :key="meal._id || meal.id" :label="meal.name" :value="meal._id || meal.id" /></el-select></el-form-item>
@@ -173,14 +178,15 @@ onMounted(load);
         <el-form-item label="心情"><el-input v-model="form.mood" placeholder="开心、满足、想再吃一次..." /></el-form-item>
         <el-form-item label="评分"><el-rate v-model="form.rating" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
-        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
+        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :disabled="saving" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
       </el-form>
-      <template #footer><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .memory-page { display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 h1, h2, h3 { margin: 0; color: var(--text-primary); }

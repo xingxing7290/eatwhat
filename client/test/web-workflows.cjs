@@ -44,6 +44,10 @@ async function main () {
   let failAlbum = false
   let failMealCreate = false
   let failMemories = false
+  let blockMemorySave = false
+  let releaseMemorySave
+  let blockWishSave = false
+  let releaseWishSave
   let failAnniversaries = false
   let failAnniversarySave = false
   let failMonth = false
@@ -103,6 +107,11 @@ async function main () {
     else if (method === 'GET' && path === '/meals/meal-a') data = { ...meals[0], supportsConditionalEdit: supportsMealEdit, editVersion: mealEditVersion }
     else if (method === 'GET' && path === '/memories' && failMemories) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '回忆测试读取失败' }) })
     else if (method === 'GET' && path === '/memories') data = []
+    else if (method === 'POST' && path === '/memories') {
+      writes.push({ path })
+      if (blockMemorySave) await new Promise(resolve => { releaseMemorySave = resolve })
+      data = { _id: 'memory-new' }
+    }
     else if (method === 'GET' && path === `/schedules/day/${today}` && failSchedule) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) })
     else if (method === 'GET' && path === `/schedules/day/${today}`) data = dailySchedule
     else if (method === 'GET' && path === '/wishlist') data = wishlist
@@ -112,7 +121,11 @@ async function main () {
       data = request.postDataJSON().mealIds.length === 0 ? { ...schedule, updatedAt: '2026-10-28T09:00:00.000Z', meals: { ...schedule.meals, dinner: [] } } : schedule
     }
     else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
-    else if (method === 'POST' && path === '/wishlist') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'new-wish' } }
+    else if (method === 'POST' && path === '/wishlist') {
+      writes.push({ path, body: request.postDataJSON() })
+      if (blockWishSave) await new Promise(resolve => { releaseWishSave = resolve })
+      data = { _id: 'new-wish' }
+    }
     else if (method === 'POST' && path === '/meals') {
       if ((request.headers()['content-type'] || '').includes('multipart/form-data')) {
         writes.push({ path, editor: true, body: request.postData() })
@@ -280,6 +293,34 @@ async function main () {
   failAttach = true
   await page.goto(`${base}/wishlist`)
   await page.getByText('想吃的新菜').waitFor()
+  await page.getByRole('button', { name: '添加想吃' }).click()
+  await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').fill('未保存的想吃')
+  await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '取消' }).click()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByText('当前想吃记录尚未保存').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  await page.getByRole('button', { name: '添加想吃' }).click()
+  assert.equal(await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').inputValue(), '未保存的想吃')
+  await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '取消' }).click()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByRole('button', { name: '放弃并离开' }).click()
+  await page.waitForURL('**/dashboard')
+  await page.goto(`${base}/wishlist`)
+  await page.getByText('想吃的新菜').waitFor()
+  await page.getByRole('button', { name: '添加想吃' }).click()
+  await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').fill('正在保存的想吃')
+  blockWishSave = true
+  await Promise.all([
+    page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/wishlist'),
+    page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '保存' }).click()
+  ])
+  assert.equal(await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '取消' }).isDisabled(), true)
+  assert.equal(await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').isDisabled(), true)
+  await page.evaluate(async () => { await document.querySelector('#app').__vue_app__.config.globalProperties.$router.push('/dashboard') })
+  assert.match(page.url(), /\/wishlist$/)
+  releaseWishSave()
+  blockWishSave = false
+  await page.getByRole('dialog', { name: '添加想吃' }).waitFor({ state: 'hidden' })
   await page.getByRole('button', { name: '转菜品' }).click()
   await page.getByText('关联尚未确认').waitFor()
   assert.equal(writes.filter(item => item.path === '/meals').length, 1)
@@ -408,6 +449,33 @@ async function main () {
   await page.waitForFunction(() => document.querySelectorAll('.el-upload-list__item').length === 1)
   assert.equal(await page.locator('.el-upload-list__item img').evaluate(img => window.__testObjectUrlNames[img.src]), 'valid.png')
   assert.equal(writes.some(item => item.path === '/memories'), false)
+  assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '取消' }).click()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByText('当前饭后回忆尚未保存').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  await page.getByRole('button', { name: '记录一餐' }).click()
+  assert.equal(await page.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '做过一次：番茄炒蛋')
+  assert.equal(await page.locator('.el-upload-list__item').count(), 1)
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '取消' }).click()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByRole('button', { name: '放弃并离开' }).click()
+  await page.waitForURL('**/dashboard')
+  await page.goto(`${base}/memories`)
+  await page.getByRole('button', { name: '记录一餐' }).click()
+  await page.getByPlaceholder('比如：周五晚上的番茄牛腩').fill('正在保存的回忆')
+  blockMemorySave = true
+  await Promise.all([
+    page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/api/memories'),
+    page.getByRole('dialog', { name: '记录饭后回忆' }).getByRole('button', { name: '保存' }).click()
+  ])
+  assert.equal(await page.getByPlaceholder('比如：周五晚上的番茄牛腩').isDisabled(), true)
+  assert.equal(await page.getByRole('dialog', { name: '记录饭后回忆' }).locator('input[type=file]').isDisabled(), true)
+  await page.evaluate(async () => { await document.querySelector('#app').__vue_app__.config.globalProperties.$router.push('/dashboard') })
+  assert.match(page.url(), /\/memories$/)
+  releaseMemorySave()
+  blockMemorySave = false
+  await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor({ state: 'hidden' })
 
   failAnniversaries = true
   await page.goto(`${base}/anniversaries`)
@@ -437,6 +505,15 @@ async function main () {
   failAnniversarySave = false
   await page.getByRole('button', { name: '返回并核对' }).click()
   await page.getByText('周年晚餐').waitFor()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByText('当前纪念日菜单尚未保存').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  await page.getByRole('button', { name: '新增菜单' }).click()
+  assert.equal(await page.getByPlaceholder('比如：三周年晚餐').inputValue(), '自己的标题')
+  await page.getByRole('dialog', { name: '新增纪念日菜单' }).getByRole('button', { name: '取消' }).click()
+  await page.locator('.nav-link').getByText('首页').click()
+  await page.getByRole('button', { name: '放弃并离开' }).click()
+  await page.waitForURL('**/dashboard')
 
   await page.goto(`${base}/meals/editor`)
   await page.getByPlaceholder('给这道菜起个名字').fill('测试菜谱')

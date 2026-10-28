@@ -1,8 +1,9 @@
 <script setup>
-import { nextTick, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture } from '@element-plus/icons-vue';
 import api from '@/services/api';
+import { useDraftGuard } from '@/composables/useDraftGuard';
 
 const menus = ref([]);
 const meals = ref([]);
@@ -16,6 +17,9 @@ const saveUncertain = ref(false);
 const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
+const initialForm = ref(JSON.stringify(form));
+const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
+useDraftGuard({ dirty, busy: saving, label: '纪念日菜单' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const allowedPhotoTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream']);
 const allowedPhotoExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
@@ -49,6 +53,7 @@ const applyTemplate = async (tpl) => {
 const reset = () => {
   Object.assign(form, { title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
   photoFiles.value = [];
+  initialForm.value = JSON.stringify(form);
 };
 const load = async () => {
   loading.value = true;
@@ -134,14 +139,15 @@ onMounted(load);
         <el-form-item v-for="(label, key) in mealTypeText" :key="key" :label="label">
           <el-select v-model="form.meals[key]" multiple filterable style="width: 100%;"><el-option v-for="meal in meals" :key="meal._id || meal.id" :label="meal.name" :value="meal._id || meal.id" /></el-select>
         </el-form-item>
-        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。</small></el-form-item>
+        <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。</small></el-form-item>
       </el-form>
-      <template #footer><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .anniversary-page { display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 h1, h2 { margin: 0; color: var(--text-primary); }

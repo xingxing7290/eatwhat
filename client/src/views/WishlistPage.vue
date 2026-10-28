@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { Plus, Delete, Check, Star, Calendar } from '@element-plus/icons-vue';
 import api from '@/services/api';
+import { useDraftGuard } from '@/composables/useDraftGuard';
 
 const items = ref([]);
 const router = useRouter();
@@ -21,6 +22,10 @@ const selectedMealId = ref('');
 const linkLoading = ref(false);
 const linkError = ref('');
 const form = reactive({ title: '', note: '', category: '', priority: 'normal' });
+const initialForm = ref(JSON.stringify(form));
+const dirty = computed(() => JSON.stringify(form) !== initialForm.value);
+const busy = computed(() => saving.value || !!convertingId.value);
+useDraftGuard({ dirty, busy, label: '想吃记录' });
 const statusText = { open: '想吃', planned: '已安排', done: '已完成' };
 const priorityText = { low: '随缘', normal: '普通', high: '超想吃' };
 const grouped = computed(() => ['open', 'planned', 'done'].map(status => ({ status, items: items.value.filter(item => item.status === status) })));
@@ -35,7 +40,7 @@ const load = async () => {
   catch (e) { loadError.value = e?.error || '加载想吃清单失败'; }
   finally { loading.value = false; }
 };
-const reset = () => Object.assign(form, { title: '', note: '', category: '', priority: 'normal' });
+const reset = () => { Object.assign(form, { title: '', note: '', category: '', priority: 'normal' }); initialForm.value = JSON.stringify(form); };
 const save = async () => {
   if (!form.title.trim()) return ElMessage.warning('请填写想吃什么');
   if (saving.value) return;
@@ -148,14 +153,14 @@ onMounted(load);
       </section>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="添加想吃" width="min(520px, 92vw)">
-      <el-form label-position="top">
+    <el-dialog v-model="dialogVisible" title="添加想吃" width="min(520px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+      <el-form label-position="top" :disabled="saving">
         <el-form-item label="想吃什么"><el-input v-model="form.title" placeholder="比如：冬阴功火锅、楼下那家牛肉面" /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="3" /></el-form-item>
         <el-form-item label="分类"><el-input v-model="form.category" placeholder="外食、家常、甜品、周末计划..." /></el-form-item>
         <el-form-item label="优先级"><el-select v-model="form.priority"><el-option label="随缘" value="low" /><el-option label="普通" value="normal" /><el-option label="超想吃" value="high" /></el-select></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
     <el-dialog v-model="linkDialog" title="关联已有菜谱" width="min(520px, 92vw)">
       <p>为「{{ linkItem?.title }}」选择已有菜谱，不会创建新菜品。</p>
@@ -167,6 +172,7 @@ onMounted(load);
 </template>
 
 <style scoped>
+.draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .wishlist-page { display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 h1, h2 { margin: 0; color: var(--text-primary); }
