@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
-import defaultImageSrc from '../assets/meal-placeholder.png';
+import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
 
@@ -21,6 +21,10 @@ const favoriteOnly = ref(false);
 const currentPage = ref(1);
 const pageSize = ref(8);
 const loading = ref(false);
+const loadError = ref('');
+const displayedMeals = ref([]);
+const totalMeals = ref(0);
+let fetchSequence = 0;
 
 // 状态 - 显示方式
 const currentView = ref('grid'); // 'grid', 'list', 'table'
@@ -51,7 +55,7 @@ const categoryOptions = computed(() => {
   const set = new Set();
   const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
     ? mealStore.categories
-    : mealStore.meals.map(m => ({ category: m.category || '' }));
+    : displayedMeals.value.map(m => ({ category: m.category || '' }));
   rows.forEach(r => {
     if (r.category) set.add(r.category);
   });
@@ -63,7 +67,7 @@ const subcategoryOptions = computed(() => {
   const set = new Set();
   const rows = Array.isArray(mealStore.categories) && mealStore.categories.length > 0
     ? mealStore.categories
-    : mealStore.meals.map(m => ({ category: m.category || '', subcategory: m.subcategory || '' }));
+    : displayedMeals.value.map(m => ({ category: m.category || '', subcategory: m.subcategory || '' }));
   rows.forEach(r => {
     if (r.category === selectedCategory.value && r.subcategory) set.add(r.subcategory);
   });
@@ -72,7 +76,7 @@ const subcategoryOptions = computed(() => {
 
 const groupedMeals = computed(() => {
   const groups = new Map();
-  for (const meal of mealStore.meals) {
+  for (const meal of displayedMeals.value) {
     const c = meal.category || '未分类';
     const s = meal.subcategory || '其它';
     if (!groups.has(c)) groups.set(c, new Map());
@@ -101,7 +105,7 @@ const allTags = computed(() => {
 
   const tagsSet = new Set();
 
-  mealStore.meals.forEach(meal => {
+  displayedMeals.value.forEach(meal => {
     if (meal.tags && Array.isArray(meal.tags)) {
       meal.tags.forEach(tag => tagsSet.add(tag));
     }
@@ -155,7 +159,9 @@ const handleImageError = (e) => {
 
 // 加载所有菜品
 const fetchMeals = async () => {
+  const sequence = ++fetchSequence;
   loading.value = true;
+  loadError.value = '';
 
   try {
     const params = {};
@@ -172,11 +178,19 @@ const fetchMeals = async () => {
       params.limit = pageSize.value;
     }
 
-    await mealStore.fetchAllMeals(params);
+    const result = await api.meal.getAllMeals(params);
+    if (sequence !== fetchSequence) return;
+    const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
+    if (currentView.value !== 'grouped' && currentPage.value > lastPage) {
+      currentPage.value = lastPage;
+      return fetchMeals();
+    }
+    displayedMeals.value = result.data;
+    totalMeals.value = result.total;
   } catch (error) {
-    ElMessage.error('获取菜品列表失败');
+    if (sequence === fetchSequence) loadError.value = error?.error || error?.message || '获取菜品列表失败';
   } finally {
-    loading.value = false;
+    if (sequence === fetchSequence) loading.value = false;
   }
 };
 
@@ -225,7 +239,8 @@ const handleImageIssue = async (meal) => {
 };
 
 const feedInspiration = () => {
-  const meal = mealStore.meals[0];
+  if (loading.value || loadError.value) return;
+  const meal = displayedMeals.value[0];
   if (meal) {
     handleShareMeal(meal);
     return;
@@ -324,6 +339,9 @@ const handlePageChange = (page) => {
 
 let fetchTimer = null;
 const scheduleFetch = (delay = 160) => {
+  fetchSequence++;
+  loading.value = true;
+  loadError.value = '';
   if (fetchTimer) clearTimeout(fetchTimer);
   fetchTimer = setTimeout(() => {
     fetchMeals();
@@ -353,6 +371,7 @@ onMounted(async () => {
   } catch (_) {}
 });
 onBeforeUnmount(() => {
+  fetchSequence++;
   if (fetchTimer) clearTimeout(fetchTimer);
   if (newMealImagePreviewUrl.value) URL.revokeObjectURL(newMealImagePreviewUrl.value);
 });
@@ -389,7 +408,7 @@ onBeforeUnmount(() => {
         <strong>把好味道留给家人</strong>
         <p>挑一道菜加入想吃清单，家人可以一起查看和安排。</p>
       </div>
-      <el-button type="primary" class="feed-inspiration-btn" @click="feedInspiration">
+      <el-button type="primary" class="feed-inspiration-btn" :disabled="loading || !!loadError" @click="feedInspiration">
         <el-icon><Present /></el-icon>
         投喂灵感
       </el-button>
@@ -501,16 +520,17 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </el-collapse-transition>
-      <div class="results-summary">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ mealStore.totalMeals }} 道</div>
+      <div v-if="!loading && !loadError" class="results-summary">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道</div>
         </div>
 
     <!-- 加载状态 -->
-    <div v-if="loading" class="loading-container">
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="fetchMeals">重新加载</el-button></el-alert>
+    <div v-else-if="loading" class="loading-container">
       <el-skeleton :rows="3" animated />
     </div>
 
     <!-- 菜品列表 -->
-    <div v-else-if="mealStore.meals.length > 0" class="meals-container">
+    <div v-else-if="displayedMeals.length > 0" class="meals-container">
       <div v-if="currentView === 'grouped'" class="meals-grouped">
         <el-collapse accordion>
           <el-collapse-item
@@ -545,7 +565,7 @@ onBeforeUnmount(() => {
       <!-- 网格布局 -->
       <div v-else-if="currentView === 'grid'" class="meals-grid">
         <MealCard
-          v-for="meal in mealStore.meals"
+          v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
           :meal="meal"
           @view="handleViewMeal"
@@ -559,7 +579,7 @@ onBeforeUnmount(() => {
       <!-- 列表布局 -->
       <div v-else-if="currentView === 'list'" class="meals-list">
         <div
-          v-for="meal in mealStore.meals"
+          v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
           class="meal-list-item"
           @click="handleViewMeal(meal)"
@@ -645,7 +665,7 @@ onBeforeUnmount(() => {
       <!-- 表格布局 -->
       <div v-else-if="currentView === 'table'" class="meals-table">
         <el-table
-          :data="mealStore.meals"
+          :data="displayedMeals"
           style="width: 100%"
           class="meals-table-content"
         >
@@ -736,24 +756,31 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- 分页器 (仅桌面端) -->
-      <div v-if="currentView !== 'grouped' && Math.ceil(mealStore.totalMeals / pageSize) > 1" class="pagination-container desktop-only">
+      <div v-if="currentView !== 'grouped' && Math.ceil(totalMeals / pageSize) > 1" class="pagination-container desktop-only">
             <el-pagination
               v-model:current-page="currentPage"
           :page-size="pageSize"
-          :total="mealStore.totalMeals"
+          :total="totalMeals"
           layout="prev, pager, next, jumper"
               @current-change="handlePageChange"
             />
           </div>
+      <div v-if="currentView !== 'grouped' && Math.ceil(totalMeals / pageSize) > 1" class="mobile-pagination mobile-only" aria-label="菜品分页">
+        <el-button :disabled="currentPage <= 1" @click="handlePageChange(currentPage - 1)">上一页</el-button>
+        <span>第 {{ currentPage }} / {{ Math.ceil(totalMeals / pageSize) }} 页</span>
+        <el-button :disabled="currentPage >= Math.ceil(totalMeals / pageSize)" @click="handlePageChange(currentPage + 1)">下一页</el-button>
+      </div>
     </div>
 
     <!-- 空状态 -->
     <div v-else class="empty-state">
       <div class="empty-content">
         <el-icon class="empty-icon"><Food /></el-icon>
-        <h3>暂无菜品</h3>
-        <p>开始添加你的第一个菜品吧！</p>
+        <h3>{{ hasActiveFilters ? '没有找到匹配的菜品' : '暂无菜品' }}</h3>
+        <p>{{ hasActiveFilters ? '试试调整关键词或清除筛选。' : '开始添加你的第一个菜品吧！' }}</p>
+        <el-button v-if="hasActiveFilters" @click="clearFilters">清除筛选</el-button>
         <el-button
+          v-else
           type="primary"
           @click="router.push({ name: 'MealEditor' })"
           class="empty-action-btn"
@@ -859,6 +886,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.mobile-pagination { display:none; align-items:center; justify-content:center; gap:12px; margin-top:18px; color:var(--text-secondary); }
+@media (max-width:768px) { .mobile-pagination { display:flex; } }
 .meal-page {
   min-height: 100vh;
   background: var(--bg-secondary);

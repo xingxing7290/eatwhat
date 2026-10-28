@@ -1,16 +1,20 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { ArrowLeft, Edit, Star, Clock, Bowl, Picture, Check, Warning } from '@element-plus/icons-vue';
 import api from '@/services/api';
-import defaultImage from '@/assets/meal-placeholder.png';
+import defaultImage from '@/assets/meal-placeholder.svg';
 
 const route = useRoute();
 const router = useRouter();
 const meal = ref(null);
 const memories = ref([]);
 const loading = ref(false);
+const mealError = ref('');
+const memoryError = ref('');
+const reporting = ref(false);
+let loadSequence = 0;
 
 const totalTime = computed(() => Number(meal.value?.prepTime || 0) + Number(meal.value?.cookTime || 0));
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
@@ -20,26 +24,35 @@ const doneOnce = () => {
   router.push({ name: 'memories', query: { new: '1', mealId: meal.value._id || meal.value.id } });
 };
 const reportImageIssue = async () => {
-  if (!meal.value) return;
+  if (!meal.value || reporting.value) return;
+  reporting.value = true;
   try {
     await api.mealImageIssue.create({ mealId: meal.value._id || meal.value.id, issueType: 'wrong_image', note: '这张图片和菜名不匹配' });
     ElMessage.success('已加入待修正图片列表');
   } catch (e) { ElMessage.error(e?.error || '提交失败'); }
+  finally { reporting.value = false; }
 };
 
 const load = async () => {
-  try {
-    loading.value = true;
-    meal.value = await api.meal.getMealById(route.params.id);
-    memories.value = await api.memory.list({ mealId: route.params.id });
-  } catch (e) {
-    ElMessage.error(e?.error || '加载菜品详情失败');
-  } finally {
-    loading.value = false;
-  }
+  const id = route.params.id;
+  const sequence = ++loadSequence;
+  if (typeof id !== 'string' || !id) return;
+  loading.value = true;
+  mealError.value = '';
+  memoryError.value = '';
+  meal.value = null;
+  memories.value = [];
+  const [mealResult, memoryResult] = await Promise.allSettled([api.meal.getMealById(id), api.memory.list({ mealId: id })]);
+  if (sequence !== loadSequence) return;
+  if (mealResult.status === 'fulfilled') meal.value = mealResult.value;
+  else mealError.value = mealResult.reason?.error || mealResult.reason?.message || '加载菜品详情失败';
+  if (memoryResult.status === 'fulfilled') memories.value = memoryResult.value || [];
+  else memoryError.value = memoryResult.reason?.error || memoryResult.reason?.message || '加载相关回忆失败';
+  loading.value = false;
 };
-
-onMounted(load);
+const fallbackCover = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = defaultImage; } };
+watch(() => route.params.id, load, { immediate: true });
+onBeforeUnmount(() => { loadSequence++; });
 </script>
 
 <template>
@@ -47,17 +60,18 @@ onMounted(load);
     <div class="detail-toolbar">
       <el-button @click="router.push('/meals')"><el-icon><ArrowLeft /></el-icon>返回</el-button>
       <div class="toolbar-actions">
-        <el-button type="success" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
-        <el-button type="warning" @click="reportImageIssue"><el-icon><Warning /></el-icon>图片不对</el-button>
-        <el-button type="primary" @click="router.push({ name: 'MealEditor', params: { id: route.params.id } })">
+        <el-button type="success" :disabled="!meal || loading" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
+        <el-button type="warning" :disabled="!meal || loading" :loading="reporting" @click="reportImageIssue"><el-icon><Warning /></el-icon>图片不对</el-button>
+        <el-button type="primary" :disabled="!meal || loading" @click="router.push({ name: 'MealEditor', params: { id: route.params.id } })">
           <el-icon><Edit /></el-icon>编辑菜品
         </el-button>
       </div>
     </div>
 
-    <template v-if="meal">
+    <el-alert v-if="mealError" type="error" :closable="false" show-icon :title="`无法加载菜品：${mealError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
+    <template v-if="meal && !mealError">
       <section class="hero">
-        <img :src="coverImage" :alt="meal.name" />
+        <img :src="coverImage" :alt="meal.name" @error="fallbackCover" />
         <div class="hero-info">
           <div class="title-row">
             <h1>{{ meal.name }}</h1>
@@ -93,7 +107,7 @@ onMounted(load);
           <template #header>做法步骤</template>
           <el-empty v-if="!meal.steps?.length" description="暂无做法" />
           <div v-else class="steps-list">
-            <div v-for="(step, index) in meal.steps" :key="index" class="step-item">
+            <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
               <img v-if="step.imageUrl" :src="step.imageUrl" alt="步骤图" />
               <p>{{ step.description }}</p>
@@ -113,7 +127,8 @@ onMounted(load);
 
         <el-card>
           <template #header>饭后回忆</template>
-          <el-empty v-if="!memories.length" description="还没有相关回忆" />
+          <el-alert v-if="memoryError" type="error" :closable="false" show-icon :title="`无法加载相关回忆：${memoryError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
+          <el-empty v-else-if="!memories.length" description="还没有相关回忆" />
           <div v-else class="memory-list">
             <div v-for="item in memories" :key="item._id" class="memory-item">
               <div class="memory-date">{{ item.date }} · {{ item.mood || '日常一餐' }}</div>
@@ -150,11 +165,12 @@ h1 { margin: 0; color: var(--text-primary); }
 .ingredient-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
 .steps-list, .memory-list { display: flex; flex-direction: column; gap: 12px; }
 .step-item { display: grid; grid-template-columns: 34px 96px 1fr; gap: 12px; align-items: start; }
+.step-item.no-image { grid-template-columns: 34px 1fr; }
 .step-index { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .step-item img, .photo-grid img { width: 100%; height: 82px; object-fit: cover; border-radius: 8px; }
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
 .memory-item { padding: 12px; background: var(--bg-secondary); border-radius: 8px; }
 .memory-date, .memory-extra { color: var(--text-muted); font-size: 13px; }
 .tips-card p { white-space: pre-wrap; }
-@media (max-width: 768px) { .hero, .content-grid { grid-template-columns: 1fr; } .meta-grid { grid-template-columns: repeat(2, 1fr); } .step-item { grid-template-columns: 28px 1fr; } .step-item img { grid-column: 2; } }
+@media (max-width: 768px) { .hero, .content-grid { grid-template-columns: 1fr; } .meta-grid { grid-template-columns: repeat(2, 1fr); } .step-item, .step-item.no-image { grid-template-columns: 28px 1fr; } .step-item img { grid-column: 2; } }
 </style>

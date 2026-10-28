@@ -5,8 +5,8 @@ const os = require('node:os')
 
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 const meals = [
-  { _id: 'meal-a', name: '番茄炒蛋', category: '家常菜', description: '家常味道', tags: [] },
-  { _id: 'meal-b', name: '麻婆豆腐', category: '川菜', description: '麻辣鲜香', tags: [] },
+  { _id: 'meal-a', name: '番茄炒蛋', category: '家常菜', description: '家常味道', tags: [], steps: [{ description: '慢慢翻炒', imageUrl: '' }] },
+  { _id: 'meal-b', name: '麻婆豆腐', category: '川菜', description: '麻辣鲜香', healthTags: ['高蛋白'] },
   { _id: 'meal-c', name: '清炒青菜', category: '家常菜', description: '清爽', tags: [] },
   { _id: 'created-meal', name: '想吃的新菜', category: '家常菜', description: '', tags: [] }
 ]
@@ -46,6 +46,10 @@ async function main () {
   let failAnniversaries = false
   let failAnniversarySave = false
   let failMonth = false
+  let failMealList = false
+  let simulateMealPagination = false
+  let shrinkMealList = false
+  let releaseSlowSearch
   let failEditorSave = false
   let blockEditorSave = false
   let releaseEditorSave
@@ -70,7 +74,17 @@ async function main () {
     if (method === 'GET') reads.push(`${path}${url.search}`)
     let data
     if (method === 'GET' && path === '/dashboard/summary') data = summary
-    else if (method === 'GET' && path === '/meals') data = url.searchParams.has('page') ? { data: meals, total: meals.length } : meals
+    else if (method === 'GET' && path === '/meals') {
+      if (failMealList) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '菜品测试读取失败' }) })
+      if (url.searchParams.get('search') === 'slow') {
+        await new Promise(resolve => { releaseSlowSearch = resolve })
+        data = { data: [meals[0]], total: 1 }
+      } else if (url.searchParams.get('search') === 'fast') data = { data: [meals[1]], total: 1 }
+      else if (simulateMealPagination && url.searchParams.has('page')) {
+        const pageNumber = Number(url.searchParams.get('page'))
+        data = { data: [pageNumber === 2 && !shrinkMealList ? meals[1] : meals[0]], total: shrinkMealList ? 1 : 9 }
+      } else data = url.searchParams.has('page') ? { data: meals, total: meals.length } : meals
+    }
     else if (method === 'GET' && path === '/meals/categories') data = [{ category: '家常菜' }, { category: '川菜' }]
     else if (method === 'GET' && path === '/meals/tags') data = []
     else if (method === 'GET' && path === '/meals/meal-a') data = { ...meals[0], supportsConditionalEdit: supportsMealEdit, editVersion: mealEditVersion }
@@ -215,6 +229,25 @@ async function main () {
   await page.waitForFunction(() => document.body.innerText.includes('已加入小家的想吃清单'))
   assert.equal(writes.find(item => item.path === '/wishlist')?.body.mealId, 'meal-a')
 
+  const search = page.getByPlaceholder('搜索菜名、描述、食材或做法...')
+  await Promise.all([
+    page.waitForRequest(request => new URL(request.url()).searchParams.get('search') === 'slow'),
+    search.fill('slow')
+  ])
+  await search.fill('fast')
+  await page.locator('.meals-container').getByText('麻婆豆腐').first().waitFor()
+  releaseSlowSearch()
+  await page.waitForTimeout(300)
+  assert.equal(await page.locator('.meals-container').getByText('番茄炒蛋').count(), 0)
+  assert.equal(await page.locator('.meals-container').getByText('麻婆豆腐').count() > 0, true)
+  failMealList = true
+  await page.goto(`${base}/meals`)
+  await page.getByText('无法加载菜品').waitFor()
+  assert.equal(await page.getByText('暂无菜品').count(), 0)
+  failMealList = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.locator('.meals-container').getByText('番茄炒蛋').first().waitFor()
+
   wishlist = [{ _id: 'convert-wish', title: '想吃的新菜', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
   failAttach = true
   await page.goto(`${base}/wishlist`)
@@ -323,7 +356,14 @@ async function main () {
   assert.equal(await page.getByRole('button', { name: '应用到日历' }).isDisabled(), true)
   supportsWeeklyVersions = true
 
+  failMemories = true
   await page.goto(`${base}/meals/detail/meal-a`)
+  await page.getByText('无法加载相关回忆').waitFor()
+  assert.equal(await page.getByRole('heading', { name: '番茄炒蛋' }).count(), 1)
+  assert.equal(await page.getByText('还没有相关回忆').count(), 0)
+  failMemories = false
+  await page.getByRole('button', { name: '重新加载' }).click()
+  await page.getByText('还没有相关回忆').waitFor()
   failMemories = true
   await page.getByRole('button', { name: '记录做过' }).click()
   await page.getByText('无法加载回忆').waitFor()
@@ -533,6 +573,27 @@ async function main () {
   assert.equal(await page.locator('.mobile-date-list').getByRole('button', { name: `安排${today}早餐` }).count(), 1)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile calendar should not overflow horizontally')
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-calendar-mobile.png') })
+  simulateMealPagination = true
+  await page.goto(`${base}/meals`)
+  await page.locator('.mobile-pagination').getByText('第 1 / 2 页').waitFor()
+  await page.locator('.mobile-pagination').getByRole('button', { name: '下一页' }).click()
+  await page.locator('.mobile-pagination').getByText('第 2 / 2 页').waitFor()
+  assert.equal(await page.locator('.meals-container').getByText('麻婆豆腐').count() > 0, true)
+  await page.waitForTimeout(500)
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-meals-pagination-mobile.png'), fullPage: true })
+  await page.locator('.mobile-pagination').getByRole('button', { name: '上一页' }).click()
+  await page.locator('.mobile-pagination').getByText('第 1 / 2 页').waitFor()
+  shrinkMealList = true
+  await page.locator('.mobile-pagination').getByRole('button', { name: '下一页' }).click()
+  await page.locator('.meals-container').getByText('番茄炒蛋').first().waitFor()
+  assert.equal(await page.locator('.mobile-pagination').count(), 0)
+  simulateMealPagination = false
+  shrinkMealList = false
+  await page.goto(`${base}/meals/detail/meal-a`)
+  await page.getByText('慢慢翻炒').waitFor()
+  assert.equal(await page.locator('.step-item.no-image').count(), 1)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile meal detail should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-meal-detail-mobile.png') })
   await page.goto(`${base}/meals/editor`)
   await page.getByPlaceholder('给这道菜起个名字').waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile meal editor should not overflow horizontally')

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import defaultImageSrc from '../assets/meal-placeholder.png';
+import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { Check, Edit, Delete, View, Present, Warning } from '@element-plus/icons-vue';
 
 const props = defineProps({
@@ -42,7 +42,10 @@ const handleImageError = (e) => {
     }
   } catch (_) {}
   // 最终回退到占位图
-  img.src = defaultImage.value;
+  if (img.dataset.placeholder !== '1') {
+    img.dataset.placeholder = '1';
+    img.src = defaultImage.value;
+  }
 };
 
 // handle card click
@@ -214,7 +217,7 @@ const imageUrl = computed(() => {
 
         <div v-if="(meal.tags && meal.tags.length > 0) || (meal.healthTags && meal.healthTags.length > 0)" class="meal-tags">
           <el-tag
-            v-for="tag in meal.tags.slice(0, 3)"
+            v-for="tag in (meal.tags || []).slice(0, 3)"
             :key="tag"
             size="small"
             effect="light"
