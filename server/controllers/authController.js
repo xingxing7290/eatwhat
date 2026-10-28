@@ -4,31 +4,10 @@ const User = require('../models/userModel');
 const Household = require('../models/householdModel');
 const { createHousehold, ensureUserHousehold, householdPayload } = require('../utils/household');
 const { cleanDisplayName, cleanHouseholdName, looksBrokenText } = require('../utils/text');
+const { buildUploadUrl } = require('../utils/uploadUrl');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
 const TOKEN_EXPIRES_IN = '7d';
-
-function buildAvatarUrl(req, filename) {
-	const publicBase = process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.trim();
-	if (publicBase) return `${publicBase.replace(/\/$/, '')}/uploads/${filename}`;
-	try {
-		const xfProto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString();
-		const xfHostRaw = (req.headers['x-forwarded-host'] || req.headers['host'] || '').toString();
-		const xfPort = (req.headers['x-forwarded-port'] || '').toString();
-		let host = xfHostRaw;
-		let portFromHost = '';
-		if (host.includes(':')) {
-			const [h, p] = host.split(':');
-			host = h;
-			portFromHost = p;
-		}
-		const port = xfPort || portFromHost;
-		const isStandardPort = (xfProto === 'https' && port === '443') || (xfProto === 'http' && port === '80');
-		const portSuffix = port && !isStandardPort ? `:${port}` : '';
-		if (host) return `${xfProto}://${host}${portSuffix}/uploads/${filename}`;
-	} catch (_) {}
-	return `/api/uploads/${filename}`;
-}
 
 function toSafeUser(userDoc, household = null) {
 	if (!userDoc) return null;
@@ -136,7 +115,7 @@ exports.uploadAvatar = async (req, res, next) => {
 		const uid = req.user && req.user.uid;
 		if (!uid) return res.status(401).json({ error: '未认证' });
 		if (!req.file) return res.status(400).json({ error: '请上传头像图片' });
-		const avatarUrl = buildAvatarUrl(req, req.file.filename);
+		const avatarUrl = buildUploadUrl(req, req.file.filename);
 		const user = await User.findByIdAndUpdate(uid, { $set: { avatarUrl } }, { new: true });
 		if (!user) return res.status(404).json({ error: '用户不存在' });
 		const { household } = await ensureUserHousehold(uid);

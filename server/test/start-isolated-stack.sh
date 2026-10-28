@@ -55,7 +55,7 @@ for i in $(seq 1 30); do
 done
 if [ "$ready" != 1 ]; then echo 'E2E backend did not become ready' >&2; exit 1; fi
 docker exec "$backend" node /tmp/eatwhat-e2e-src/test/fullStackSeed.cjs
-docker run -d --name "$frontend" --label org.codex.task=eatwhat-e2e --network "$network" \
+docker run -d --name "$frontend" --label org.codex.task=eatwhat-e2e --network "$network" --network-alias frontend \
   -v "$clientdir/dist:/usr/share/nginx/html:ro" -v "$clientdir/nginx.conf:/etc/nginx/source.conf:ro" \
   --entrypoint sh "$nginx_image" -c '
     sed "s/server_name localhost;/server_name localhost; add_header X-Eatwhat-Isolated codex-e2e-only always;/" /etc/nginx/source.conf > /tmp/nginx.conf

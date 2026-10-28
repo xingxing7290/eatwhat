@@ -7,28 +7,7 @@ const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { ensureUserHousehold } = require('../utils/household');
 const { ensureMealImage } = require('../utils/defaultMeals');
-
-function buildImageUrl(req, filename) {
-  const publicBase = process.env.PUBLIC_BASE_URL && process.env.PUBLIC_BASE_URL.trim();
-  if (publicBase) return `${publicBase.replace(/\/$/, '')}/uploads/${filename}`;
-  try {
-    const xfProto = (req.headers['x-forwarded-proto'] || req.protocol || 'http').toString();
-    const xfHostRaw = (req.headers['x-forwarded-host'] || req.headers['host'] || '').toString();
-    const xfPort = (req.headers['x-forwarded-port'] || '').toString();
-    let host = xfHostRaw;
-    let portFromHost = '';
-    if (host.includes(':')) {
-      const [h, p] = host.split(':');
-      host = h;
-      portFromHost = p;
-    }
-    const port = xfPort || portFromHost;
-    const isStandardPort = (xfProto === 'https' && port === '443') || (xfProto === 'http' && port === '80');
-    const portSuffix = port && !isStandardPort ? `:${port}` : '';
-    if (host) return `${xfProto}://${host}${portSuffix}/uploads/${filename}`;
-  } catch (_) {}
-  return `/api/uploads/${filename}`;
-}
+const { buildUploadUrl: buildImageUrl } = require('../utils/uploadUrl');
 
 function parseMaybeJson(value, fallback) {
   if (value === undefined || value === null || value === '') return fallback;

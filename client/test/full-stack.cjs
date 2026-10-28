@@ -57,6 +57,7 @@ async function main () {
     assert.equal(updatedProfile.user.displayName, '联调昵称')
     assert.equal(updatedProfile.household.members[0].displayName, '联调昵称')
     assert.ok(updatedProfile.household.members[0].avatarUrl.includes('/uploads/'))
+    assert.equal(new URL(updatedProfile.user.avatarUrl).origin, base, 'server must retain the public port in new avatar URLs')
     await page.reload()
     await page.waitForFunction(() => { const image = document.querySelector('.avatar-preview img'); return image?.complete && image.naturalWidth > 0 })
     await page.waitForFunction(() => { const image = document.querySelector('.member-avatar img'); return image?.complete && image.naturalWidth > 0 })
@@ -83,6 +84,7 @@ async function main () {
 
     await page.goto(`${base}/meals/editor`)
     await page.getByPlaceholder('给这道菜起个名字').fill('联调新菜')
+    await page.locator('.cover-box').locator('..').locator('input[type=file]').setInputFiles({ name: 'meal.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
     await page.getByPlaceholder('食材', { exact: true }).fill('联调鸡蛋')
     await page.getByPlaceholder('用量').fill('2个')
     await page.getByRole('button', { name: '添加食材' }).click()
@@ -93,6 +95,7 @@ async function main () {
     const created = await apiGet('/meals?search=%E8%81%94%E8%B0%83%E6%96%B0%E8%8F%9C&page=1&limit=8')
     assert.equal(created.data.length, 1)
     assert.equal(created.data[0].ingredients[0].name, '联调鸡蛋')
+    assert.equal(new URL(created.data[0].imageUrl).origin, base, 'server must retain the public port in new recipe image URLs')
     const today = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
     await page.goto(`${base}/selection?date=${today}&mealType=dinner&suggestedMealId=${created.data[0]._id}`)
     await page.locator('.selection-info').getByText('联调新菜').waitFor()
