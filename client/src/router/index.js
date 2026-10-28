@@ -2,6 +2,11 @@ import { createRouter, createWebHistory } from 'vue-router'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior(to, from, savedPosition) {
+    if (savedPosition) return savedPosition
+    if (to.path === from.path) return false
+    return { left: 0, top: 0 }
+  },
   routes: [
     {
       path: '/login',
@@ -52,19 +57,22 @@ const router = createRouter({
     {
       path: '/meals',
       name: 'meals',
-      component: () => import('../views/MealPage.vue')
+      component: () => import('../views/MealPage.vue'),
+      meta: { title: '菜谱' }
     },
     {
       path: '/meals/detail/:id',
       name: 'MealDetail',
       component: () => import('../views/MealDetail.vue'),
-      props: true
+      props: true,
+      meta: { title: '菜谱详情' }
     },
     {
       path: '/meals/editor/:id?',
       name: 'MealEditor',
       component: () => import('../views/MealEditor.vue'),
-      props: true
+      props: true,
+      meta: { title: '编辑菜谱' }
     },
     {
       path: '/selection',
@@ -73,12 +81,14 @@ const router = createRouter({
       props: route => ({
         date: route.query.date,
         mealType: route.query.mealType
-      })
+      }),
+      meta: { title: '选择菜品' }
     },
     {
       path: '/memories',
       name: 'memories',
-      component: () => import('../views/MemoryTimeline.vue')
+      component: () => import('../views/MemoryTimeline.vue'),
+      meta: { title: '饭后回忆' }
     },
     {
       path: '/photo-album',
@@ -95,17 +105,26 @@ const router = createRouter({
     {
       path: '/wishlist',
       name: 'wishlist',
-      component: () => import('../views/WishlistPage.vue')
+      component: () => import('../views/WishlistPage.vue'),
+      meta: { title: '想吃清单' }
     },
     {
       path: '/anniversaries',
       name: 'anniversaries',
-      component: () => import('../views/AnniversaryPage.vue')
+      component: () => import('../views/AnniversaryPage.vue'),
+      meta: { title: '纪念日' }
     },
     {
       path: '/settings',
       name: 'settings',
-      component: () => import('../views/UserSettings.vue')
+      component: () => import('../views/UserSettings.vue'),
+      meta: { title: '设置' }
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'notFound',
+      component: () => import('../views/NotFoundPage.vue'),
+      meta: { title: '页面未找到' }
     }
   ]
 })
@@ -115,6 +134,10 @@ router.beforeEach((to, from, next) => {
   const token = localStorage.getItem('token')
   if (!token) return next({ name: 'login', query: { redirect: to.fullPath } })
   next()
+})
+
+router.afterEach((to, from, failure) => {
+  if (!failure) document.title = `${to.meta.title || '安排吃啥'} · 安排吃啥`
 })
 
 export default router

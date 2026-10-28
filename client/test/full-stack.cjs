@@ -16,6 +16,18 @@ async function main () {
     assert.equal(marker.headers()['x-eatwhat-isolated'], 'codex-e2e-only')
     assert.equal(await marker.text(), 'healthy')
 
+    const guestPage = await context.request.get(`${base}/guest-order/e2e-only-guest-token`)
+    assert.equal(guestPage.status(), 200)
+    assert.match(guestPage.headers()['content-type'], /text\/html/)
+    assert.match(guestPage.headers()['cache-control'], /no-store/)
+    assert.equal(guestPage.headers()['referrer-policy'], 'no-referrer')
+    assert.match(await guestPage.text(), /我的点菜单/)
+    const guestApi = await context.request.get(`${base}/guest-orders/public/e2e-only-guest-token`)
+    assert.equal(guestApi.status(), 200)
+    assert.match(guestApi.headers()['cache-control'], /no-store/)
+    const guestData = await guestApi.json()
+    assert.equal(guestData.session.title, '隔离联调宴请')
+
     async function login (username) {
       await page.goto(`${base}/login`)
       await page.getByPlaceholder('请输入用户名').fill(username)

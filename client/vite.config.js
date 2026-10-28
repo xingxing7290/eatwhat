@@ -43,7 +43,15 @@ export default defineConfig({
       '/uploads': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+      },
+      '/guest-order/': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+      },
+      '/guest-orders/': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
       }
     }
   }
-}) 
+})

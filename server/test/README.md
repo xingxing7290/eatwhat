@@ -10,6 +10,8 @@ To additionally exercise the built dashboard, recipe page, archive/restore and d
 
 The browser/database check also opens monthly and yearly reviews with a real authenticated household, verifies the archived recipe link and filters a deliberately foreign recipe reference. `npm run test:review` and `npm run test:review-theme` from `client` cover review loading, stale responses, failure states, keyboard focus, theme contrast and mobile layout against a local mock server.
 
+`node --test test/proxyConfig.test.js` statically checks the repository proxy templates for guest path routing, disabled access logging and production API cache protection. It does not execute Nginx. `npm run test:vite-proxy` from `client` additionally checks the local development proxy with a test-only loopback backend on port 3000; it fails if that port is already in use. `npm run test:navigation` covers missing routes, login return paths, focus, titles and scroll behavior.
+
 ## Docker-based application integration
 
 Run `sh test/run-isolated-mongo.sh` from the server directory on a Linux host with Docker, `timeout`, MongoDB 7 and a locally available backend image containing dependencies at `/app/node_modules`. The default images are `mongo:7.0` and `eatwhat-backend-local:latest`; set `EATWHAT_TEST_MONGO_IMAGE` or `EATWHAT_TEST_BACKEND_IMAGE` to override them.

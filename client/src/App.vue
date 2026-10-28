@@ -76,6 +76,7 @@ watch(() => route.fullPath, () => {
 });
 
 const appName = "安排吃啥"
+const focusMain = () => document.getElementById('app-main')?.focus();
 
 const mealStore = useMealStore();
 const scheduleStore = useScheduleStore();
@@ -176,6 +177,7 @@ onBeforeUnmount(() => {
 <template>
   <el-config-provider :locale="locale">
     <div class="app-container" :class="{ 'dark-mode': isDarkMode }">
+      <a href="#app-main" class="skip-link" @click.prevent="focusMain">跳转到主要内容</a>
       <!-- 移动端遮罩层 -->
       <div 
         v-if="showMobileMenu" 
@@ -393,7 +395,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       
-      <main class="app-main">
+      <main id="app-main" class="app-main" tabindex="-1">
         <router-view />
       </main>
       
@@ -403,6 +405,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss">
+.skip-link { position: fixed; z-index: 3000; top: 8px; left: 8px; padding: 12px 16px; transform: translateY(-160%); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font-weight: 700; box-shadow: 0 3px 16px var(--shadow-color); }
+.skip-link:focus-visible { transform: translateY(0); outline: 3px solid var(--secondary-color); outline-offset: 2px; }
+.app-main:focus { outline: none; }
+.app-main:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: -2px; }
 :root {
   --primary-color: #d85f65;
   --secondary-color: #f09a73;

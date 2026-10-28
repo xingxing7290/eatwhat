@@ -1,0 +1,73 @@
+const assert = require('node:assert/strict')
+const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
+const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
+if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Navigation tests require a local server')
+
+async function main () {
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    const errors = []; page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/api/**', route => {
+      if (route.request().url().includes('/auth/login')) return route.fulfill({ json: { token: 'test-token', user: { id: 'u1', username: 'test' } } })
+      return route.fulfill({ json: {} })
+    })
+    await page.goto(`${base}/missing-page?source=test`)
+    await page.waitForURL(/\/login\?redirect=/)
+    assert.equal(await page.title(), '登录 · 安排吃啥')
+    await page.getByPlaceholder('请输入用户名').fill('test')
+    await page.getByPlaceholder('请输入密码').fill('test-only')
+    await page.getByRole('button', { name: '立即登录' }).click()
+    await page.waitForURL('**/missing-page?source=test')
+    await page.getByRole('heading', { name: '这条路，暂时没有通向饭桌' }).waitFor()
+    assert.equal(await page.title(), '页面未找到 · 安排吃啥')
+    assert.equal(await page.getByRole('link', { name: '回到首页' }).getAttribute('href'), '/dashboard')
+    assert.equal(await page.getByRole('link', { name: '浏览菜谱' }).getAttribute('href'), '/meals')
+    await page.reload()
+    await page.getByRole('heading', { name: '这条路，暂时没有通向饭桌' }).waitFor()
+    if (process.env.EATWHAT_NAV_SHOT) await page.screenshot({ path: process.env.EATWHAT_NAV_SHOT })
+    await page.keyboard.press('Tab')
+    assert.equal(await page.evaluate(() => document.activeElement.className), 'skip-link')
+    await page.keyboard.press('Enter')
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'app-main')
+    assert.equal(new URL(page.url()).hash, '', 'skip link must not change router history')
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const width of [390, 1280]) {
+        await page.setViewportSize({ width, height: 844 })
+        for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+          await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+          for (const bg of ['--bg-primary', '--bg-secondary']) {
+            await page.locator('.missing-card').evaluate((card, value) => { card.style.background = `var(${value})` }, bg)
+            for (const selector of ['.eyebrow', '.number', '.missing-card h1', '.missing-card p', '.secondary-action']) {
+              const result = await contrast(page, selector)
+              assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${width} ${bg} ${selector} ${result.ratio}`)
+            }
+          }
+          assert.ok((await contrast(page, '.primary-action')).ratio >= 4.5, 'primary action contrast')
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+        }
+        if (width === 390) for (const link of await page.locator('.actions a').all()) assert.ok((await link.boundingBox()).height >= 44)
+      }
+    }
+    await page.evaluate(() => { const pad = document.createElement('div'); pad.id = 'test-scroll-pad'; pad.style.height = '3000px'; document.body.appendChild(pad) })
+    await page.evaluate(() => window.scrollTo(0, 500))
+    await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/missing-page?source=other') })
+    await page.waitForTimeout(100)
+    assert.equal(await page.evaluate(() => Math.round(window.scrollY)), 500, 'query-only navigation should keep scroll')
+    await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/another-missing-page') })
+    await page.waitForFunction(() => window.scrollY === 0)
+    await page.goBack()
+    await page.waitForFunction(() => Math.round(window.scrollY) === 500)
+    await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); const remove = router.beforeEach(() => false); await router.push('/meals'); remove() })
+    assert.equal(await page.title(), '页面未找到 · 安排吃啥', 'cancelled navigation must not change title')
+    await page.locator('.primary-action').click()
+    await page.waitForURL('**/dashboard')
+    assert.equal(await page.title(), '小家仪表盘 · 安排吃啥')
+    assert.deepEqual(errors, [])
+    console.log('Navigation checks passed: login redirect, missing page, keyboard skip, titles, scroll and themes')
+  } finally { await browser.close() }
+}
+main().catch(error => { console.error(error); process.exitCode = 1 })
