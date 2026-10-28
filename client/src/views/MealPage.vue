@@ -531,20 +531,20 @@ onBeforeUnmount(() => {
 
       <div class="toolbar-row">
         <div class="view-toggle">
-          <el-radio-group v-model="currentView" size="small" class="view-switcher">
-            <el-radio-button value="grid">
+          <el-radio-group v-model="currentView" size="small" class="view-switcher" aria-label="菜品显示方式">
+            <el-radio-button value="grid" aria-label="网格视图" title="网格视图">
               <el-icon><Grid /></el-icon>
               <span class="view-label">网格</span>
             </el-radio-button>
-            <el-radio-button value="list">
+            <el-radio-button value="list" aria-label="列表视图" title="列表视图">
               <el-icon><List /></el-icon>
               <span class="view-label">列表</span>
             </el-radio-button>
-            <el-radio-button value="table">
+            <el-radio-button value="table" aria-label="表格视图" title="表格视图">
               <el-icon><Document /></el-icon>
               <span class="view-label">表格</span>
             </el-radio-button>
-            <el-radio-button value="grouped">
+            <el-radio-button value="grouped" aria-label="分组视图" title="分组视图">
               <el-icon><Menu /></el-icon>
               <span class="view-label">分组</span>
             </el-radio-button>
@@ -1364,7 +1364,10 @@ onBeforeUnmount(() => {
   padding: 2px 6px;
   height: auto;
   line-height: 1.2;
+  color: #8e4938;
     }
+
+.meal-list-tags .meal-tag { color: #8e4938; }
 
 .table-ingredients {
   color: var(--text-secondary);
@@ -1834,7 +1837,7 @@ onBeforeUnmount(() => {
 
 .page-subtitle {
   margin-top: 8px;
-  color: #8a746b;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
@@ -1843,14 +1846,17 @@ onBeforeUnmount(() => {
   min-height: 44px;
   border: 0;
   border-radius: 999px;
-  color: #fffaf3;
+  color: #4a2b20;
   background: linear-gradient(135deg, #ffb4a2, #e09f67);
   box-shadow: 0 14px 28px rgba(224, 159, 103, 0.24);
   transition: all 0.3s ease-in-out;
 }
 
 .add-meal-btn:hover,
-.feed-inspiration-btn:hover {
+.feed-inspiration-btn:hover,
+.add-meal-btn:focus-visible,
+.feed-inspiration-btn:focus-visible {
+  color: #4a2b20;
   transform: translateY(-2px);
   box-shadow: 0 18px 34px rgba(224, 159, 103, 0.3);
 }
@@ -1906,7 +1912,7 @@ onBeforeUnmount(() => {
 
 .presence-copy p {
   margin: 4px 0 0;
-  color: #8a746b;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 
@@ -2067,8 +2073,11 @@ onBeforeUnmount(() => {
   .category-sidebar { padding: 12px 5px; border-radius: 18px; }
   .category-heading { padding: 0 5px 9px; font-size: 11px; letter-spacing: 0; }
   .category-list button { padding: 10px 6px; font-size: 12px; border-radius: 10px; }
+  .category-list button { min-height: 44px; }
   .category-error { padding: 8px 4px 0; }
   .catalog-content .meals-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  :global(.meal-page .view-switcher .el-radio-button) { flex: 1; }
+  :global(.meal-page .view-switcher .el-radio-button__inner) { min-height: 44px; display: flex; align-items: center; justify-content: center; }
 }
 .results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
 .wish-recovery { margin-bottom: 12px; }
@@ -2076,4 +2085,64 @@ onBeforeUnmount(() => {
 .wish-recovery-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .wish-recovery-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .table-actions :deep(.el-button + .el-button), .meal-list-actions :deep(.el-button + .el-button) { margin-left: 0; }
+:global(.meal-page .view-switcher .el-radio-button__original-radio:focus-visible + .el-radio-button__inner) {
+  outline: 2px solid var(--secondary-color);
+  outline-offset: 2px;
+}
+
+/* Component styles are scoped, so the dark-mode ancestor must be global. */
+:global(html.dark .meal-page .page-header),
+:global(html.dark .meal-page .couple-presence-card),
+:global(html.dark .meal-page .filter-section),
+:global(html.dark .meal-page .loading-container),
+:global(html.dark .meal-page .pagination-container),
+:global(html.dark .meal-page .empty-state),
+:global(html.dark .meal-page .meals-table),
+:global(html.dark .meal-page .meal-list-item) {
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+  box-shadow: 0 14px 32px var(--shadow-color);
+}
+:global(html.dark .meal-page .page-title),
+:global(html.dark .meal-page .presence-copy strong),
+:global(html.dark .meal-page .meal-list-name),
+:global(html.dark .meal-page .table-name) { color: var(--text-primary); }
+:global(html.dark .meal-page .page-subtitle),
+:global(html.dark .meal-page .presence-copy p),
+:global(html.dark .meal-page .meal-list-description),
+:global(html.dark .meal-page .table-description) { color: var(--text-secondary); }
+:global(html.dark .meal-page .meal-list-tags .meal-tag),
+:global(html.dark .meal-page .table-tags .table-tag) {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+}
+:global(html.dark .meal-page .category-list button.active) {
+  color: var(--text-primary);
+  background: #604131;
+  box-shadow: inset 3px 0 0 var(--secondary-color);
+}
+:global(html.dark .meal-page .view-switcher) { background: var(--bg-secondary); }
+:global(html.dark .meal-page .view-switcher .el-radio-button__inner) {
+  background: transparent;
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+:global(html.dark .meal-page .view-switcher .el-radio-button.is-active .el-radio-button__inner) {
+  color: #fff3e8;
+  background: #76503d;
+}
+:global(html.dark .meal-page .meals-grouped .el-collapse-item__header),
+:global(html.dark .meal-page .meals-grouped .el-collapse-item__wrap) {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border-color: var(--border-color);
+}
+:global(html.dark .meal-page .meals-table .el-table) {
+  --el-table-bg-color: var(--bg-primary);
+  --el-table-tr-bg-color: var(--bg-primary);
+  --el-table-header-bg-color: var(--bg-secondary);
+  --el-table-text-color: var(--text-primary);
+  --el-table-border-color: var(--border-color);
+}
 </style>

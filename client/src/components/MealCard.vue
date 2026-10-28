@@ -772,7 +772,7 @@ const imageUrl = computed(() => {
 @media (max-width: 768px) {
   .mobile-actions { display: none; }
   .desktop-actions { display: flex; }
-  .meal-actions .el-button { min-width: 40px; min-height: 40px; }
+  .meal-actions .el-button { min-width: 44px; min-height: 44px; }
 }
 
 .meal-name {
@@ -800,7 +800,15 @@ const imageUrl = computed(() => {
 .feed-btn,
 .mobile-share-btn {
   color: #fffaf3;
-  background: #e09f67;
+  background: #a25232;
+}
+
+.feed-btn:hover,
+.feed-btn:focus-visible,
+.mobile-share-btn:hover,
+.mobile-share-btn:focus-visible {
+  color: #fffaf3;
+  background: #873e23;
 }
 
 .meal-meta span,
@@ -814,7 +822,7 @@ const imageUrl = computed(() => {
   border-radius: 999px;
   background: rgba(255, 180, 162, 0.16);
   border-color: rgba(255, 180, 162, 0.26);
-  color: #a95f4f;
+  color: #8e4938;
 }
 
 @media (max-width: 768px) {
@@ -831,6 +839,16 @@ const imageUrl = computed(() => {
     height: 190px;
     margin: 10px 10px 0;
   }
+}
+
+:global(html.dark .meal-card-wrapper .meal-name) { color: var(--text-primary); }
+:global(html.dark .meal-card-wrapper .meal-description) { color: var(--text-secondary); }
+:global(html.dark .meal-card-wrapper .meal-meta span),
+:global(html.dark .meal-card-wrapper .ingredient-item),
+:global(html.dark .meal-card-wrapper .meal-tag) {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
 }
 
 </style>

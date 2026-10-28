@@ -291,6 +291,30 @@ body::before {
   background: rgba(253, 251, 247, 0.86) !important;
 }
 
+html.dark .el-table tr {
+  background: var(--bg-primary) !important;
+}
+
+html.dark .el-table th.el-table__cell {
+  background: var(--bg-secondary) !important;
+  color: var(--text-primary);
+}
+
+html.dark .el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+  background: var(--bg-tertiary) !important;
+}
+
+html.dark .el-popper.is-dark {
+  color: var(--text-primary);
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-color);
+}
+
+html.dark .el-popper.is-dark .el-popper__arrow::before {
+  background: var(--bg-secondary) !important;
+  border-color: var(--border-color);
+}
+
 .el-overlay {
   backdrop-filter: blur(8px);
 }
