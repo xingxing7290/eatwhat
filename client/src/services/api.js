@@ -405,6 +405,7 @@ export const anniversaryTemplateApi = {
 // 饭后回忆API
 export const memoryApi = {
 	list: (params = {}) => api.get('/memories', { params }),
+	get: (id) => api.get(`/memories/${id}`),
 	create: (payload) => api.post('/memories', payload),
 	update: (id, payload) => api.put(`/memories/${id}`, payload),
 	delete: (id) => api.delete(`/memories/${id}`)

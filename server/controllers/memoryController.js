@@ -26,6 +26,18 @@ function populateQuery(q, householdId) {
   return q.populate({ path: 'mealIds', match: { householdId } }).populate('createdBy', 'username displayName avatarUrl').populate({ path: 'participants', match: { householdId }, select: 'username displayName avatarUrl' });
 }
 function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
+function present(item) {
+  return { ...item.toObject(), supportsConditionalEdit: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
+}
+function parseEditVersion(value) {
+  let version = value;
+  try { if (typeof value === 'string') version = JSON.parse(value); } catch (_) { return null; }
+  if (!version || typeof version !== 'object' || Array.isArray(version)) return null;
+  if (!Object.prototype.hasOwnProperty.call(version, 'revision') || !Object.prototype.hasOwnProperty.call(version, 'updatedAt')) return null;
+  if (version.revision !== null && (typeof version.revision !== 'string' || !version.revision || version.revision.length > 128)) return null;
+  if (version.updatedAt !== null && (typeof version.updatedAt !== 'string' || !Number.isFinite(Date.parse(version.updatedAt)))) return null;
+  return version;
+}
 async function referencesValid(mealIds, participants, householdId) {
   if ([...mealIds, ...participants].some(id => !mongoose.isValidObjectId(id))) return false;
   const [meals, users] = await Promise.all([
@@ -52,7 +64,17 @@ exports.list = async (req, res, next) => {
     if (req.query.month) { if (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month)) return res.status(400).json({ error: '月份无效' }); query.date = { $regex: `^${req.query.month}` }; }
     if (req.query.mealId) { if (typeof req.query.mealId !== 'string' || !mongoose.isValidObjectId(req.query.mealId)) return res.status(400).json({ error: '菜品无效' }); query.mealIds = req.query.mealId; }
     const memories = await populateQuery(MealMemory.find(query).sort({ date: -1, createdAt: -1 }).limit(200), household._id);
-    res.json(memories);
+    res.json(memories.map(present));
+  } catch (err) { next(err); }
+};
+
+exports.get = async (req, res, next) => {
+  try {
+    const { household } = await ensureUserHousehold(req.user.uid);
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '回忆编号无效' });
+    const memory = await populateQuery(MealMemory.findOne({ _id: req.params.id, householdId: household._id }), household._id);
+    if (!memory) return res.status(404).json({ code: 'MEMORY_NOT_FOUND', error: '未找到回忆记录' });
+    res.json(present(memory));
   } catch (err) { next(err); }
 };
 
@@ -84,7 +106,7 @@ exports.create = async (req, res, next) => {
       participants,
       createdBy: req.user.uid
     });
-    res.status(201).json(await populateQuery(MealMemory.findById(memory._id), household._id));
+    res.status(201).json(present(await populateQuery(MealMemory.findById(memory._id), household._id)));
   } catch (err) { if (!writeStarted) await discardNewUploads(req); next(err); }
 };
 
@@ -96,6 +118,9 @@ exports.update = async (req, res, next) => {
     if (!existing) { await discardNewUploads(req); return res.status(404).json({ error: '未找到回忆记录' }); }
     const body = req.body || {};
     const has = key => Object.prototype.hasOwnProperty.call(body, key);
+    const conditional = has('expectedEditVersion');
+    const version = conditional ? parseEditVersion(body.expectedEditVersion) : null;
+    if (conditional && !version) { await discardNewUploads(req); return res.status(400).json({ error: '回忆版本无效，请重新加载' }); }
     const mealIds = has('mealIds') ? stringArray(body.mealIds) : [];
     const participants = has('participants') ? stringArray(body.participants) : [];
     if (!await referencesValid(mealIds, participants, household._id)) { await discardNewUploads(req); return res.status(400).json({ error: '包含无效菜品或家庭成员' }); }
@@ -110,10 +135,12 @@ exports.update = async (req, res, next) => {
     if (has('mealIds')) update.mealIds = mealIds;
     if (has('participants')) update.participants = participants;
     if (has('existingPhotos') || photoUrls(req).length) update.photos = [...(has('existingPhotos') ? stringArray(body.existingPhotos) : existing.photos), ...photoUrls(req)];
+    const filter = { _id: req.params.id, householdId: household._id };
+    if (conditional) { filter.editRevision = version.revision; filter.updatedAt = version.updatedAt === null ? null : new Date(version.updatedAt); }
     writeStarted = true;
-    const memory = await populateQuery(MealMemory.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, update, { new: true, runValidators: true }), household._id);
-    if (!memory) return res.status(404).json({ error: '未找到回忆记录' });
-    res.json(memory);
+    const memory = await populateQuery(MealMemory.findOneAndUpdate(filter, update, { new: true, runValidators: true }), household._id);
+    if (!memory) { await discardNewUploads(req); return res.status(409).json({ code: 'MEMORY_CONFLICT', error: '回忆已更新或删除，请核对最新内容' }); }
+    res.json(present(memory));
   } catch (err) { if (!writeStarted) await discardNewUploads(req); next(err); }
 };
 

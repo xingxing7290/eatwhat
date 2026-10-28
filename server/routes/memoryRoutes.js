@@ -6,6 +6,7 @@ const router = express.Router();
 
 router.use(auth());
 router.get('/', controller.list);
+router.get('/:id', controller.get);
 router.post('/', upload.array('photos', 12), controller.create);
 router.put('/:id', upload.array('photos', 12), controller.update);
 router.delete('/:id', controller.remove);

@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 
 const memorySchema = new mongoose.Schema({
   householdId: { type: mongoose.Schema.Types.ObjectId, ref: 'Household', required: true, index: true },
@@ -13,8 +14,18 @@ const memorySchema = new mongoose.Schema({
   photos: { type: [String], default: [] },
   mealIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Meal' }],
   participants: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  editRevision: { type: String, default: null }
 }, { timestamps: true });
+
+memorySchema.pre('save', function () { this.editRevision = randomUUID(); });
+for (const operation of ['findOneAndUpdate', 'updateOne', 'updateMany']) {
+  memorySchema.pre(operation, function () {
+    const update = this.getUpdate();
+    if (Array.isArray(update)) update.push({ $set: { editRevision: randomUUID() } });
+    else this.set({ editRevision: randomUUID() });
+  });
+}
 
 memorySchema.index({ householdId: 1, date: -1 });
 memorySchema.index({ householdId: 1, mealIds: 1 });
