@@ -49,6 +49,17 @@ async function assertMealsInHousehold(meals, householdId) {
   return count === ids.length;
 }
 function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
+function present(item) {
+  return { ...item.toObject(), supportsConditionalEdit: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
+}
+function parseEditVersion(value) {
+  const version = parseJson(value, null);
+  if (!version || typeof version !== 'object' || Array.isArray(version)) return null;
+  if (!Object.prototype.hasOwnProperty.call(version, 'revision') || !Object.prototype.hasOwnProperty.call(version, 'updatedAt')) return null;
+  if (version.revision !== null && (typeof version.revision !== 'string' || !version.revision || version.revision.length > 128)) return null;
+  if (version.updatedAt !== null && (typeof version.updatedAt !== 'string' || !Number.isFinite(Date.parse(version.updatedAt)))) return null;
+  return version;
+}
 async function discardNewUploads(req) {
   const root = path.resolve(__dirname, '..', 'uploads');
   await Promise.all((Array.isArray(req.files) ? req.files : []).map(async file => {
@@ -63,7 +74,7 @@ exports.list = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const items = await populateQuery(AnniversaryMenu.find({ householdId: household._id }).sort({ date: 1, createdAt: -1 }), household._id);
-    res.json(items);
+    res.json(items.map(present));
   } catch (err) { next(err); }
 };
 
@@ -88,7 +99,7 @@ exports.create = async (req, res, next) => {
       meals,
       createdBy: req.user.uid
     });
-    res.status(201).json(await populateQuery(AnniversaryMenu.findById(item._id), household._id));
+    res.status(201).json(present(await populateQuery(AnniversaryMenu.findById(item._id), household._id)));
   } catch (err) { if (!writeStarted) await discardNewUploads(req); next(err); }
 };
 
@@ -100,6 +111,9 @@ exports.update = async (req, res, next) => {
     if (!existing) { await discardNewUploads(req); return res.status(404).json({ error: '未找到纪念日菜单' }); }
     const body = req.body || {};
     const has = key => Object.prototype.hasOwnProperty.call(body, key);
+    const conditional = has('expectedEditVersion');
+    const version = conditional ? parseEditVersion(body.expectedEditVersion) : null;
+    if (conditional && !version) { await discardNewUploads(req); return res.status(400).json({ error: '菜单版本无效，请重新加载' }); }
     const mealInput = has('meals') ? parseJson(body.meals, {}) : null;
     const meals = has('meals') ? normalizeMeals(mealInput) : null;
     if (meals && !(await assertMealsInHousehold(meals, household._id))) { await discardNewUploads(req); return res.status(400).json({ error: '包含无效菜品' }); }
@@ -109,14 +123,16 @@ exports.update = async (req, res, next) => {
     for (const field of ['title', 'date', 'description', 'theme']) if (has(field)) update[field] = String(body[field] || '').trim();
     if (meals) for (const type of ['breakfast', 'lunch', 'dinner']) if (Object.prototype.hasOwnProperty.call(mealInput, type)) update[`meals.${type}`] = meals[type];
     if (has('existingPhotos') || photoUrls(req).length) update.photos = [...(has('existingPhotos') ? normalizePhotos(body.existingPhotos) : existing.photos), ...photoUrls(req)];
+    const filter = { _id: req.params.id, householdId: household._id };
+    if (conditional) { filter.editRevision = version.revision; filter.updatedAt = version.updatedAt === null ? null : new Date(version.updatedAt); }
     writeStarted = true;
     const item = await populateQuery(AnniversaryMenu.findOneAndUpdate(
-      { _id: req.params.id, householdId: household._id },
+      filter,
       update,
       { new: true, runValidators: true }
     ), household._id);
-    if (!item) return res.status(404).json({ error: '未找到纪念日菜单' });
-    res.json(item);
+    if (!item) { await discardNewUploads(req); return res.status(409).json({ code: 'ANNIVERSARY_CONFLICT', error: '菜单已更新或删除，请核对最新内容' }); }
+    res.json(present(item));
   } catch (err) { if (!writeStarted) await discardNewUploads(req); next(err); }
 };
 

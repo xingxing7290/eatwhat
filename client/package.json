@@ -14,6 +14,7 @@
     "test:album": "node test/album-workflows.cjs",
     "test:memory": "node test/memory-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
+    "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
     "test:dashboard-theme": "node test/dashboard-theme.cjs",
     "test:media": "node --test test/uploaded-image.test.mjs",
