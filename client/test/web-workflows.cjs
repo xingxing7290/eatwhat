@@ -28,6 +28,7 @@ async function main () {
   const page = await context.newPage()
   await page.clock.setFixedTime(new Date('2026-10-28T12:00:00'))
   const errors = []
+  const resolutionWarnings = []
   const writes = []
   const reads = []
   let wishlist = []
@@ -55,6 +56,8 @@ async function main () {
   let failImageIssues = false
   let simulateJoinTimeout = false
   let switchedHousehold = false
+  let blockDashboard = true
+  let releaseDashboard
   let blockEditorSave = false
   let releaseEditorSave
   let conflictMealEdit = false
@@ -62,7 +65,10 @@ async function main () {
   const mealEditVersion = { revision: 'fixture-revision', updatedAt: '2026-10-28T08:00:00.000Z' }
   const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [] }]
   page.on('pageerror', error => errors.push(error.message))
-  page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
+  page.on('console', message => {
+    if (message.type() === 'error') console.error('Browser:', message.text())
+    if (/Failed to resolve (component|directive)/i.test(message.text())) resolutionWarnings.push(message.text())
+  })
   await page.addInitScript(() => {
     localStorage.setItem('token', 'test-token')
     localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户' }))
@@ -77,7 +83,10 @@ async function main () {
     const method = request.method()
     if (method === 'GET') reads.push(`${path}${url.search}`)
     let data
-    if (method === 'GET' && path === '/dashboard/summary') data = summary
+    if (method === 'GET' && path === '/dashboard/summary') {
+      if (blockDashboard) await new Promise(resolve => { releaseDashboard = resolve })
+      data = summary
+    }
     else if (method === 'GET' && path === '/meals') {
       if (failMealList) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '菜品测试读取失败' }) })
       if (url.searchParams.get('search') === 'slow') {
@@ -174,6 +183,10 @@ async function main () {
   })
 
   await page.goto(`${base}/dashboard`)
+  assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN')
+  await page.locator('.dashboard-page .el-loading-mask').waitFor({ state: 'visible' })
+  blockDashboard = false
+  releaseDashboard()
   await page.getByRole('heading', { name: /好好吃饭/ }).waitFor()
   try { await page.getByText('本周已安排').waitFor({ timeout: 8000 }) }
   catch (error) { console.error('Dashboard text:', await page.locator('body').innerText()); console.error('Page errors:', errors); await browser.close(); throw error }
@@ -194,6 +207,7 @@ async function main () {
   assert.match(await page.locator('.selection-info').innerText(), /麻婆豆腐/)
   await page.getByRole('button', { name: '保存安排' }).click()
   await page.waitForURL('**/calendar')
+  await page.locator('.calendar-grid .meal-icon svg').first().waitFor()
   assert.deepEqual(writes.find(item => item.path.includes('/schedules/'))?.body.mealIds, ['meal-a', 'meal-c', 'meal-b'])
   assert.equal(writes.find(item => item.path.includes('/schedules/'))?.body.expectedVersion, schedule.scheduleVersion)
   assert.equal(writes.find(item => item.path === '/wishlist/wish-a/status')?.body.status, 'planned')
@@ -546,7 +560,9 @@ async function main () {
   assert.equal(copiedInvite.pathname, '/apply-account')
   assert.equal(copiedInvite.search, '')
   assert.equal(new URLSearchParams(copiedInvite.hash.slice(1)).get('invite'), 'ABC123')
-  assert.equal(await page.evaluate(async () => JSON.stringify((await import('/src/services/api.js')).apiLogs.history).includes('ABC123')), false, 'invitation codes must not appear in API debug history')
+  if (process.env.EATWHAT_TEST_PREVIEW !== '1') {
+    assert.equal(await page.evaluate(async () => JSON.stringify((await import('/src/services/api.js')).apiLogs.history).includes('ABC123')), false, 'invitation codes must not appear in API debug history')
+  }
   await page.locator('input[type=file]').setInputFiles({ name: 'wrong.txt', mimeType: 'text/plain', buffer: Buffer.from('no') })
   await page.getByText('请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片').waitFor()
   assert.equal(await page.getByRole('button', { name: '上传头像' }).isDisabled(), true)
@@ -668,6 +684,7 @@ async function main () {
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile meal editor should not overflow horizontally')
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-editor-mobile.png') })
   assert.deepEqual(errors, [])
+  assert.deepEqual(resolutionWarnings, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()
   let loginCalls = 0

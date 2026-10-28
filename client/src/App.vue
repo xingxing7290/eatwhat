@@ -1,11 +1,10 @@
 <script setup>
-import { ref, watch, computed, onBeforeUnmount } from 'vue';
+import { ref, watch, computed, onBeforeUnmount, defineAsyncComponent } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs';
 import { RouterLink, RouterView } from 'vue-router'
 import { onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import ApiLogger from './components/ApiLogger.vue';
 import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present, SwitchButton, ArrowDown } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
 import { useScheduleStore } from './stores/schedule';
@@ -19,6 +18,7 @@ const locale = ref(zhCn);
 // API日志查看器
 const showApiLogger = ref(false);
 const showDevTools = import.meta.env.DEV;
+const ApiLogger = import.meta.env.DEV ? defineAsyncComponent(() => import('./components/ApiLogger.vue')) : null;
 
 // 移动端导航菜单
 const showMobileMenu = ref(false);

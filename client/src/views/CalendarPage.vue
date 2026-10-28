@@ -7,6 +7,7 @@ import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { format, addMonths, subMonths, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { ArrowLeft, ArrowRight, Edit, Delete, Plus, Sunrise, Sunny, Sunset } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const scheduleStore = useScheduleStore();
@@ -37,9 +38,9 @@ const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 
 // 餐食类型
 const mealTypes = [
-  { key: 'breakfast', label: '早餐', icon: 'Sunrise', color: '#e6a84f', symbol: '早' },
-  { key: 'lunch', label: '午餐', icon: 'Sunny', color: '#d86f63', symbol: '午' },
-  { key: 'dinner', label: '晚餐', icon: 'Sunset', color: '#a76783', symbol: '晚' }
+  { key: 'breakfast', label: '早餐', icon: Sunrise, color: '#e6a84f', symbol: '早' },
+  { key: 'lunch', label: '午餐', icon: Sunny, color: '#d86f63', symbol: '午' },
+  { key: 'dinner', label: '晚餐', icon: Sunset, color: '#a76783', symbol: '晚' }
 ];
 
 const isTodayDate = (date) => date && format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
