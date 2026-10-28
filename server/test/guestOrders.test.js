@@ -109,6 +109,7 @@ test('request logging redacts capability tokens and private guest fields', () =>
     safeRequestUrl('/guest-orders/public/share-secret/orders/order-secret'),
     '/guest-orders/public/[share-token]/orders/[order-token]'
   );
+  assert.equal(safeRequestUrl('/guest-orders?page=1&search=private%20party'), '/guest-orders?page=1&search=[redacted]');
   assert.deepEqual(safeRequestHeaders({ authorization: 'Bearer secret', host: 'example.test' }), {
     authorization: '[redacted]',
     host: 'example.test'

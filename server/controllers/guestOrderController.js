@@ -101,7 +101,7 @@ function versionFilter(session, version) {
 }
 
 exports.capabilities = async (req, res, next) => {
-  try { const { household } = await hostContext(req); res.json({ householdId: String(household._id), supportsConditionalSession: true, supportsIdempotentSessionCreate: true }); }
+  try { const { household } = await hostContext(req); res.json({ householdId: String(household._id), supportsConditionalSession: true, supportsIdempotentSessionCreate: true, supportsSessionPagination: true }); }
   catch (error) { next(error); }
 };
 
@@ -195,14 +195,34 @@ exports.list = async (req, res, next) => {
   try {
     const { household } = await hostContext(req);
     const query = { householdId: household._id };
-    if (req.query.status && ['open', 'locked', 'completed', 'cancelled'].includes(req.query.status)) {
+    const paginated = Object.prototype.hasOwnProperty.call(req.query, 'page');
+    let page; let limit; let total;
+    if (paginated) {
+      page = Number(req.query.page); limit = req.query.limit === undefined ? 12 : Number(req.query.limit);
+      if (!Number.isSafeInteger(page) || page < 1 || page > 1000000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 50) throw httpError('宴请分页参数无效', 400);
+      if ((req.query.search !== undefined && typeof req.query.search !== 'string') || (req.query.status !== undefined && typeof req.query.status !== 'string')) throw httpError('宴请筛选参数无效', 400);
+      const search = String(req.query.search || '').trim(); const status = String(req.query.status || '').trim();
+      if (search.length > 80 || (status && !['open', 'locked', 'completed', 'cancelled', 'expired'].includes(status))) throw httpError('宴请筛选参数无效', 400);
+      if (search) {
+        const titleMatch = { $regex: search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
+        if ('来家里吃饭'.includes(search)) query.$or = [{ title: titleMatch }, { title: null }, { title: '' }];
+        else query.title = titleMatch;
+      }
+      if (status === 'open' || status === 'expired') {
+        const expires = { $convert: { input: '$expiresAt', to: 'date', onError: null, onNull: null } };
+        const expired = { $and: [{ $ne: [expires, null] }, { $lte: [expires, new Date()] }] };
+        const open = { $in: [{ $ifNull: ['$status', ''] }, ['open', '', false, 0]] };
+        query.$expr = { $and: [open, status === 'expired' ? expired : { $not: [expired] }] };
+      } else if (status) query.status = status;
+    } else if (req.query.status && ['open', 'locked', 'completed', 'cancelled'].includes(req.query.status)) {
       query.status = req.query.status;
     }
-    const sessions = await GuestOrderSession.find(query)
-      .select('+shareToken')
-      .sort({ createdAt: -1 })
-      .limit(SESSION_LIMIT)
-      .lean();
+    let sessionQuery = GuestOrderSession.find(query).select('+shareToken').sort({ createdAt: -1, _id: -1 });
+    if (paginated) sessionQuery = sessionQuery.skip((page - 1) * limit).limit(limit);
+    else sessionQuery = sessionQuery.limit(SESSION_LIMIT);
+    let sessions;
+    if (paginated) [total, sessions] = await Promise.all([GuestOrderSession.countDocuments(query), sessionQuery.lean()]);
+    else sessions = await sessionQuery.lean();
     const ids = sessions.map(item => item._id);
     const counts = ids.length ? await GuestOrder.aggregate([
       { $match: { sessionId: { $in: ids } } },
@@ -214,6 +234,7 @@ exports.list = async (req, res, next) => {
     ]) : [];
     const countById = new Map(counts.map(item => [String(item._id), item]));
     res.json({
+      ...(paginated ? { householdId: String(household._id), pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) } } : {}),
       sessions: sessions.map(session => {
         const count = countById.get(String(session._id)) || {};
         return sessionPayload(req, session, {

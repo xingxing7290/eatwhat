@@ -20,7 +20,7 @@ async function main () {
     await page.goto(`${base}/guest-orders`)
     await page.getByRole('button', { name: '查看详情' }).click()
     await page.getByRole('heading', { name: '大家想吃' }).waitFor()
-    const checks = ['.detail-head h2', '.detail-head p', '.share-panel p', '.summary-head > span', '.dish-row strong', '.dish-row small']
+    const checks = ['.session-card h3', '.session-card p', '.card-top > span:last-child', '.card-top .el-tag__content', '.card-bottom small', '.detail-head .el-tag__content', '.detail-head h2', '.detail-head p', '.share-panel p', '.summary-head > span', '.dish-row strong', '.dish-row small']
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const [width, height] of [[1280, 900], [390, 844]]) {

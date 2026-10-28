@@ -367,7 +367,7 @@ export const dashboardApi = {
 
 export const guestOrderApi = {
 	capabilities: () => api.get('/guest-orders/capabilities'),
-	list: () => api.get('/guest-orders'),
+	list: (params = {}) => api.get('/guest-orders', { params }),
 	get: id => api.get(`/guest-orders/${encodeURIComponent(id)}`),
 	createSafe: payload => api.post('/guest-orders/idempotent', payload),
 	update: (id, payload) => api.patch(`/guest-orders/${encodeURIComponent(id)}`, payload),

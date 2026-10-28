@@ -7,15 +7,18 @@ import { useDraftGuard } from '@/composables/useDraftGuard';
 
 const loading = ref(false); const working = ref(false); const listError = ref('');
 const capabilities = ref(null); const capabilitiesError = ref(''); const sessions = ref([]);
+const search = ref(''); const statusFilter = ref(''); const listPage = ref(1); const listPagination = ref(null); const paginationAvailable = ref(false);
 const createOpen = ref(false); const detailOpen = ref(false); const detailLoading = ref(false);
 const selectedId = ref(''); const detail = ref(null); const detailError = ref('');
 const pending = ref(null); const mutationIssue = ref(null); const editing = ref(false);
 const now = ref(Date.now());
 const form = reactive({ title: '', eventAt: null, hours: 72 });
 const editForm = reactive({ title: '', eventAt: null });
-let listSequence = 0; let detailSequence = 0; let alive = true; let clockTimer;
+let listSequence = 0; let detailSequence = 0; let alive = true; let clockTimer; let filterTimer;
 const statusLabels = { open: '正在点菜', locked: '已锁单', completed: '已完成', cancelled: '已取消', expired: '链接已过期' };
 const statusTypes = { open: 'success', locked: 'warning', completed: 'info', cancelled: 'info', expired: 'info' };
+const visibleSessions = computed(() => paginationAvailable.value ? sessions.value : sessions.value.filter(item => (!statusFilter.value || item.status === statusFilter.value) && (!search.value.trim() || item.title.toLowerCase().includes(search.value.trim().toLowerCase()))));
+const hasFilters = computed(() => !!(search.value.trim() || statusFilter.value));
 const safeCreate = computed(() => capabilities.value?.supportsIdempotentSessionCreate === true && /^[a-f0-9]{24}$/.test(capabilities.value?.householdId || ''));
 const pendingKey = computed(() => safeCreate.value ? `eatwhat.hostGuest.create.${capabilities.value.householdId}` : '');
 const validVersion = item => item?.supportsConditionalSession === true && item.editVersion && (item.editVersion.revision === null || (typeof item.editVersion.revision === 'string' && !!item.editVersion.revision)) && (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
@@ -63,8 +66,13 @@ function acceptSession(item, withOrders = false) {
   return item;
 }
 async function load() {
+  clearTimeout(filterTimer);
+  const requestedPage = listPage.value;
+  const params = { page: requestedPage, limit: 12 };
+  if (search.value.trim()) params.search = search.value.trim();
+  if (statusFilter.value) params.status = statusFilter.value;
   const sequence = ++listSequence; loading.value = true; listError.value = ''; capabilitiesError.value = '';
-  const [caps, result] = await Promise.allSettled([api.guestOrder.capabilities(), api.guestOrder.list()]);
+  const [caps, result] = await Promise.allSettled([api.guestOrder.capabilities(), api.guestOrder.list(params)]);
   if (!alive || sequence !== listSequence) return;
   if (caps.status === 'fulfilled' && caps.value && /^[a-f0-9]{24}$/.test(caps.value.householdId || '')) {
     const oldHome = capabilities.value?.householdId;
@@ -74,14 +82,31 @@ async function load() {
   } else { capabilities.value = null; pending.value = null; capabilitiesError.value = '服务器未提供安全宴请能力，当前只能查看。'; }
   if (result.status === 'fulfilled') {
     try {
-      if (!Array.isArray(result.value?.sessions) || result.value.sessions.length > 30) throw new Error('宴请列表不完整');
+      const supportsPagination = capabilities.value?.supportsSessionPagination === true;
+      const meta = result.value?.pagination;
+      if (!Array.isArray(result.value?.sessions)) throw new Error('宴请列表不完整');
+      if (supportsPagination) {
+        if (!meta || result.value.householdId !== capabilities.value.householdId || meta.page !== requestedPage || meta.limit !== 12 || !Number.isSafeInteger(meta.total) || meta.total < 0 || meta.totalPages !== Math.max(1, Math.ceil(meta.total / 12)) || result.value.sessions.length > 12) throw new Error('宴请分页数据不完整，请重试');
+        if (requestedPage > meta.totalPages) { listPage.value = meta.totalPages; return load(); }
+        if (result.value.sessions.length !== Math.min(12, Math.max(0, meta.total - (requestedPage - 1) * 12))) throw new Error('宴请列表可能已变化，请重新加载');
+        listPagination.value = meta; paginationAvailable.value = true;
+      } else {
+        if (meta || result.value.sessions.length > 30) throw new Error('无法确认宴请列表范围，请重试');
+        listPagination.value = null; paginationAvailable.value = false; listPage.value = 1;
+      }
       const rows = result.value.sessions.map(item => acceptSession(item));
       if (new Set(rows.map(item => item.id)).size !== rows.length) throw new Error('宴请列表存在重复记录');
       sessions.value = rows;
-    } catch (error) { sessions.value = []; listError.value = error.message; }
-  } else { sessions.value = []; listError.value = result.reason?.error || result.reason?.message || '宴请列表加载失败'; }
+    } catch (error) { sessions.value = []; listPagination.value = null; paginationAvailable.value = false; listError.value = error.message; }
+  } else { sessions.value = []; listPagination.value = null; paginationAvailable.value = false; listError.value = result.reason?.error || result.reason?.message || '宴请列表加载失败'; }
   loading.value = false;
 }
+function queueFilters() {
+  clearTimeout(filterTimer); listSequence++; listPage.value = 1; loading.value = true; listError.value = '';
+  filterTimer = setTimeout(load, 250);
+}
+function clearFilters() { search.value = ''; statusFilter.value = ''; queueFilters(); }
+function changePage(next) { if (loading.value || !listPagination.value || next < 1 || next > listPagination.value.totalPages) return; listPage.value = next; load(); }
 async function readDetail(id, review = false) {
   const sequence = ++detailSequence; detailLoading.value = true; detailError.value = '';
   if (review && mutationIssue.value) mutationIssue.value.checked = false;
@@ -200,7 +225,7 @@ async function copyLink() {
   catch (_) { ElMessage.warning('无法自动复制，请手动选择下方链接'); }
 }
 onMounted(() => { load(); clockTimer = setInterval(() => { now.value = Date.now(); }, 30000); });
-onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; clearInterval(clockTimer); });
+onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; clearInterval(clockTimer); clearTimeout(filterTimer); });
 </script>
 
 <template>
@@ -208,11 +233,15 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; clearIn
     <section class="hero"><div><span class="eyebrow">GATHER TOGETHER · 家庭宴请</span><h1>邀请大家，点一桌好菜</h1><p>创建专属菜单，分享给客人，再一起查看大家想吃什么。</p></div><div class="hero-actions"><el-button :loading="loading" :disabled="working" @click="load"><el-icon><Refresh /></el-icon>刷新</el-button><el-button type="primary" :disabled="!safeCreate || loading || working || !!pending" @click="createOpen = true"><el-icon><Plus /></el-icon>创建宴请</el-button></div></section>
     <el-alert v-if="capabilitiesError" type="warning" :closable="false" show-icon :title="capabilitiesError" />
     <el-alert v-if="pending" type="warning" :closable="false" show-icon :title="pending.invalid ? '无法读取安全创建凭证，请检查浏览器存储并与家人核对。' : '有一份宴请的创建结果待核对。安全重试会使用原内容，不会重复创建。'"><div class="alert-actions"><el-button link type="primary" :disabled="working || !!pending.invalid" @click="retryCreate">安全重试</el-button><el-button link :disabled="working" @click="abandonPending">放弃安全重试</el-button></div></el-alert>
-    <div class="section-head"><div><span class="eyebrow">YOUR GATHERINGS</span><h2>我的宴请</h2></div><span class="muted">{{ sessions.length }} 场{{ sessions.length === 30 ? ' · 仅显示最近 30 场' : '' }}</span></div>
+    <div class="section-head"><div><span class="eyebrow">YOUR GATHERINGS</span><h2>我的宴请</h2></div><span class="muted" aria-live="polite">{{ loading ? '加载中' : listError ? '暂不可用' : `${paginationAvailable ? listPagination.total : visibleSessions.length} 场` }}</span></div>
+    <div class="list-filters"><el-input v-model="search" clearable maxlength="80" aria-label="搜索宴请名称" placeholder="搜索宴请名称" :disabled="working" @input="queueFilters" /><el-select v-model="statusFilter" aria-label="筛选宴请状态" placeholder="全部状态" :disabled="working" @change="queueFilters"><el-option label="全部状态" value="" /><el-option label="正在点菜" value="open" /><el-option label="已锁单" value="locked" /><el-option label="已完成" value="completed" /><el-option label="已取消" value="cancelled" /><el-option label="链接已过期" value="expired" /></el-select><el-button v-if="hasFilters" :disabled="working" @click="clearFilters">清除筛选</el-button></div>
+    <p v-if="!loading && !listError && !paginationAvailable && sessions.length === 30" class="legacy-note">当前服务器仅提供最近 30 场宴请，搜索和筛选结果可能不完整。</p>
+    <nav v-if="!loading && !listError && listPagination && listPagination.totalPages > 1" class="list-pagination top" aria-label="宴请顶部分页"><el-button :disabled="working || listPage <= 1" aria-label="上一页（顶部）" @click="changePage(listPage - 1)">上一页</el-button><span>第 {{ listPage }} / {{ listPagination.totalPages }} 页</span><el-button :disabled="working || listPage >= listPagination.totalPages" aria-label="下一页（顶部）" @click="changePage(listPage + 1)">下一页</el-button></nav>
     <div v-if="listError" class="empty-card" role="alert"><p>{{ listError }}</p><el-button @click="load">重新加载</el-button></div>
     <div v-else-if="loading" class="empty-card">正在加载宴请…</div>
-    <div v-else-if="!sessions.length" class="empty-card"><el-icon :size="34"><Food /></el-icon><h3>还没有宴请</h3><p>创建一场聚餐，邀请客人挑选喜欢的菜。</p><el-button type="primary" :disabled="!safeCreate || !!pending" @click="createOpen = true">创建第一场宴请</el-button></div>
-    <div v-else class="session-grid"><article v-for="item in sessions" :key="item.id" class="session-card"><div class="card-top"><el-tag :type="statusTypes[item.status]" round>{{ statusLabels[item.status] }}</el-tag><span>有效至 {{ dateText(item.expiresAt) }}</span></div><h3>{{ item.title }}</h3><p>聚餐时间：{{ dateText(item.eventAt) }}</p><div class="card-bottom"><div><strong>{{ item.guestCount || 0 }}</strong><small> 位客人</small><strong>{{ item.totalQuantity || 0 }}</strong><small> 份菜</small></div><el-button :disabled="working || !!mutationIssue" @click="openDetail(item)">查看详情</el-button></div></article></div>
+    <div v-else-if="!visibleSessions.length" class="empty-card"><el-icon :size="34"><Food /></el-icon><template v-if="hasFilters"><h3>没有找到匹配的宴请</h3><p>试试其他名称或状态。</p><el-button @click="clearFilters">清除筛选</el-button></template><template v-else><h3>还没有宴请</h3><p>创建一场聚餐，邀请客人挑选喜欢的菜。</p><el-button type="primary" :disabled="!safeCreate || !!pending" @click="createOpen = true">创建第一场宴请</el-button></template></div>
+    <div v-else class="session-grid"><article v-for="item in visibleSessions" :key="item.id" class="session-card"><div class="card-top"><el-tag :type="statusTypes[item.status]" round>{{ statusLabels[item.status] }}</el-tag><span>有效至 {{ dateText(item.expiresAt) }}</span></div><h3>{{ item.title }}</h3><p>聚餐时间：{{ dateText(item.eventAt) }}</p><div class="card-bottom"><div><strong>{{ item.guestCount || 0 }}</strong><small> 位客人</small><strong>{{ item.totalQuantity || 0 }}</strong><small> 份菜</small></div><el-button :disabled="working || !!mutationIssue" @click="openDetail(item)">查看详情</el-button></div></article></div>
+    <nav v-if="!loading && !listError && listPagination && listPagination.totalPages > 1" class="list-pagination" aria-label="宴请分页"><el-button :disabled="working || listPage <= 1" @click="changePage(listPage - 1)">上一页</el-button><span>第 {{ listPage }} / {{ listPagination.totalPages }} 页</span><el-button :disabled="working || listPage >= listPagination.totalPages" @click="changePage(listPage + 1)">下一页</el-button></nav>
 
     <el-dialog v-model="createOpen" title="创建宴请" width="min(560px, 94vw)" :before-close="closeCreate" :close-on-click-modal="false" :close-on-press-escape="!working"><el-alert v-if="pending" type="warning" :closable="false" show-icon title="创建结果待核对，可安全重试原内容。"><div class="alert-actions"><el-button link type="primary" :disabled="working || !!pending.invalid" @click="retryCreate">安全重试</el-button><el-button link :disabled="working" @click="abandonPending">放弃安全重试</el-button></div></el-alert><el-form label-position="top"><el-form-item label="宴请名称"><el-input v-model="form.title" maxlength="80" show-word-limit placeholder="例如：周末家庭聚餐" :disabled="working || !!pending" /></el-form-item><el-form-item label="聚餐时间（选填）"><el-date-picker v-model="form.eventAt" type="datetime" placeholder="选择日期和时间" aria-label="聚餐时间" :disabled="working || !!pending" style="width:100%" /></el-form-item><el-form-item label="链接有效期"><el-select v-model="form.hours" :disabled="working || !!pending" style="width:100%"><el-option :value="24" label="24 小时" /><el-option :value="72" label="3 天" /><el-option :value="168" label="7 天" /></el-select></el-form-item></el-form><p class="dialog-note">链接仅供受邀客人使用；创建后可复制或更换。</p><template #footer><el-button :disabled="working || !!pending" @click="closeCreate(() => createOpen = false)">取消</el-button><el-button type="primary" :loading="working" :disabled="!!pending || !safeCreate" @click="createSession">创建并查看链接</el-button></template></el-dialog>
 
@@ -232,4 +261,7 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; clearIn
 <style scoped>
 .guest-host-page{display:flex;flex-direction:column;gap:20px}.hero{display:flex;justify-content:space-between;align-items:center;gap:24px;padding:clamp(24px,3.5vw,40px);border:1px solid var(--border-color);border-radius:28px;background:linear-gradient(130deg,var(--bg-primary),var(--bg-secondary));box-shadow:0 12px 28px var(--shadow-color)}.hero h1{margin:8px 0;font-family:Georgia,'Songti SC',serif;font-size:clamp(27px,3.2vw,40px)}.hero p,.dialog-note,.muted,.detail-head p,.share-panel p,.session-card p{color:var(--text-secondary);line-height:1.6}.eyebrow{color:var(--secondary-color);font-size:11px;font-weight:800;letter-spacing:.14em}.hero-actions,.inline-actions,.status-actions,.alert-actions{display:flex;gap:10px;flex-wrap:wrap}.hero-actions .el-button,.inline-actions .el-button,.status-actions .el-button,.alert-actions .el-button{margin:0}.section-head,.summary-head{display:flex;align-items:end;justify-content:space-between;gap:12px}.section-head h2,.summary-head h3{margin:5px 0 0}.session-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,310px),1fr));gap:16px}.session-card,.empty-card,.share-panel,.summary,.edit-panel{padding:22px;border:1px solid var(--border-color);border-radius:22px;background:var(--bg-primary);box-shadow:0 8px 22px var(--shadow-color)}.session-card h3{font-size:20px;margin:18px 0 4px;overflow-wrap:anywhere}.card-top,.card-bottom{display:flex;justify-content:space-between;align-items:center;gap:10px}.card-top span,.card-bottom small{color:var(--text-secondary);font-size:12px}.card-bottom{margin-top:20px}.card-bottom strong{font-size:22px;color:var(--secondary-color);margin-left:12px}.card-bottom strong:first-child{margin-left:0}.empty-card{text-align:center;color:var(--text-secondary);padding:38px}.detail-head{display:flex;justify-content:space-between;gap:16px;align-items:start}.detail-head h2{margin:10px 0 4px;overflow-wrap:anywhere}.share-panel,.summary,.edit-panel{margin-top:18px;box-shadow:none;background:var(--bg-secondary)}.share-panel h3,.summary h3{margin:6px 0}.share-panel p{margin:6px 0 14px}.share-panel .inline-actions{margin-top:12px}.status-actions{margin-top:18px}.dish-list{margin-top:12px}.dish-row{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--border-light)}.dish-row:last-child{border-bottom:0}.dish-row small{display:block;margin-top:4px;color:var(--text-secondary);overflow-wrap:anywhere}.dish-row b{white-space:nowrap;color:var(--secondary-color)}.summary-empty{padding:18px 0 4px;color:var(--text-secondary)}.orders{margin-top:20px}.orders p{margin:8px 0;overflow-wrap:anywhere}.alert-actions{margin-top:8px}@media(max-width:720px){.hero{align-items:stretch;flex-direction:column}.hero-actions .el-button{flex:1;min-height:44px}.session-grid{grid-template-columns:1fr}.detail-head{flex-direction:column}.status-actions .el-button{min-height:44px}.session-card{padding:18px}.card-top{align-items:flex-start}.card-top span{text-align:right}}
 .share-panel p,.dish-row small{color:var(--text-primary)}
+.card-top :deep(.el-tag),.detail-head :deep(.el-tag){color:var(--text-primary);background:var(--bg-primary);border-color:var(--border-color)}
+.card-top :deep(.el-tag__content),.detail-head :deep(.el-tag__content){color:var(--text-primary)}
+.list-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.list-filters .el-input{flex:1;min-width:180px}.list-filters .el-select{width:180px}.list-filters .el-button{margin:0}.legacy-note{margin:0;color:var(--text-primary);font-size:13px}.list-pagination{display:flex;justify-content:center;align-items:center;gap:12px;color:var(--text-primary);font-size:13px}.list-pagination.top{justify-content:flex-end}.list-pagination .el-button{margin:0}@media(max-width:720px){.list-filters .el-input{flex-basis:100%}.list-filters .el-select{flex:1;min-width:0}.list-filters :deep(.el-input__wrapper),.list-filters :deep(.el-select__wrapper),.list-filters .el-button,.list-pagination .el-button{min-height:44px}}
 </style>

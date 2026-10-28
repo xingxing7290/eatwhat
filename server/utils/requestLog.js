@@ -2,7 +2,8 @@ function safeRequestUrl(value) {
   return String(value || '')
     .replace(/(\/guest-orders\/public\/)[^/?]+/g, '$1[share-token]')
     .replace(/(\/guest-order\/)[^/?]+/g, '$1[share-token]')
-    .replace(/(\/orders\/)[^/?]+/g, '$1[order-token]');
+    .replace(/(\/orders\/)[^/?]+/g, '$1[order-token]')
+    .replace(/([?&]search=)[^&#]*/gi, '$1[redacted]');
 }
 
 function redactSensitivePayload(value) {
