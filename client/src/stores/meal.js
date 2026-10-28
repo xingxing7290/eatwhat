@@ -167,8 +167,8 @@ export const useMealStore = defineStore('meal', {
         ElMessage.success('菜品更新成功');
         return updatedMeal;
       } catch (err) {
-        this.error = err.message || '更新菜品失败';
-        ElMessage.error(this.error);
+        this.error = err?.error || err?.message || '更新菜品失败';
+        if (err?.code !== 'MEAL_CONFLICT') ElMessage.error(this.error);
         throw err;
       } finally {
         this.loading = false;
@@ -205,4 +205,4 @@ export const useMealStore = defineStore('meal', {
       this.error = null;
     }
   }
-}); 
+});

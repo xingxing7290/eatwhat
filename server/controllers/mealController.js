@@ -1,6 +1,8 @@
 const Meal = require('../models/mealModel');
 const MealMemory = require('../models/memoryModel');
 const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
 const { body, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { ensureUserHousehold } = require('../utils/household');
@@ -61,6 +63,28 @@ function normalizeSteps(value) {
 function collectFileUrls(req, field) {
   const files = (req.files && req.files[field]) || [];
   return files.map(file => buildImageUrl(req, file.filename));
+}
+async function discardNewUploads(req) {
+  const uploadRoot = path.resolve(__dirname, '..', 'uploads');
+  const files = Array.isArray(req.files) ? req.files : Object.values(req.files || {}).flat();
+  await Promise.all(files.map(async file => {
+    if (!file?.path || !file?.filename) return;
+    const target = path.resolve(file.path);
+    if (path.dirname(target) !== uploadRoot || path.basename(target) !== file.filename) return;
+    try { await fs.promises.unlink(target); }
+    catch (error) { if (error.code !== 'ENOENT') logger.warn(`无法清理未使用的上传文件: ${error.message}`); }
+  }));
+}
+function editVersion(meal) {
+  return { revision: meal.editRevision || null, updatedAt: meal.updatedAt ? meal.updatedAt.toISOString() : null };
+}
+function parseEditVersion(value) {
+  const version = parseMaybeJson(value, null);
+  if (!version || typeof version !== 'object' || Array.isArray(version)) return null;
+  if (!Object.prototype.hasOwnProperty.call(version, 'revision') || !Object.prototype.hasOwnProperty.call(version, 'updatedAt')) return null;
+  if (version.revision !== null && (typeof version.revision !== 'string' || !version.revision || version.revision.length > 128)) return null;
+  if (version.updatedAt !== null && (typeof version.updatedAt !== 'string' || !Number.isFinite(Date.parse(version.updatedAt)))) return null;
+  return version;
 }
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -160,7 +184,7 @@ exports.getMealById = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: '无效的菜品ID' });
     const meal = await Meal.findOne({ _id: req.params.id, householdId: household._id });
     if (!meal) return res.status(404).json({ error: '未找到指定菜品' });
-    res.status(200).json(meal);
+    res.status(200).json({ ...meal.toObject(), supportsConditionalEdit: true, editVersion: editVersion(meal) });
   } catch (error) { next(error); }
 };
 
@@ -231,15 +255,29 @@ exports.createMeal = async (req, res, next) => {
 exports.updateMeal = async (req, res, next) => {
   try {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    if (!errors.isEmpty()) { await discardNewUploads(req); return res.status(400).json({ errors: errors.array() }); }
     const { household } = await ensureUserHousehold(req.user.uid);
+    const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedEditVersion');
+    const version = conditional ? parseEditVersion(req.body.expectedEditVersion) : null;
+    if (conditional && !version) { await discardNewUploads(req); return res.status(400).json({ error: '菜谱版本无效，请重新加载' }); }
     const existing = await Meal.findOne({ _id: req.params.id, householdId: household._id });
-    if (!existing) return res.status(404).json({ error: '未找到指定菜品' });
-    const updatedMeal = await Meal.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, mealPayloadFromRequest(req, existing), { new: true, runValidators: true });
+    if (!existing) { await discardNewUploads(req); return res.status(404).json({ error: '未找到指定菜品' }); }
+    const filter = { _id: req.params.id, householdId: household._id };
+    if (conditional) {
+      filter.editRevision = version.revision;
+      filter.updatedAt = version.updatedAt === null ? null : new Date(version.updatedAt);
+    }
+    let updatedMeal = await Meal.findOneAndUpdate(filter, mealPayloadFromRequest(req, existing), { new: true, runValidators: true });
+    if (!updatedMeal) { await discardNewUploads(req); return res.status(409).json({ code: 'MEAL_CONFLICT', error: '菜谱已被更新，请核对最新内容' }); }
     if (!updatedMeal.imageUrl) {
-      updatedMeal.imageUrl = ensureMealImage(updatedMeal);
-      updatedMeal.photos = Array.from(new Set([updatedMeal.imageUrl, ...(updatedMeal.photos || [])].filter(Boolean)));
-      await updatedMeal.save();
+      const fallbackUrl = ensureMealImage(updatedMeal);
+      const fallbackPhotos = Array.from(new Set([fallbackUrl, ...(updatedMeal.photos || [])].filter(Boolean)));
+      const withFallback = await Meal.findOneAndUpdate(
+        { _id: updatedMeal._id, householdId: household._id, editRevision: updatedMeal.editRevision, updatedAt: updatedMeal.updatedAt },
+        { $set: { imageUrl: fallbackUrl, photos: fallbackPhotos } },
+        { new: true, runValidators: true }
+      );
+      updatedMeal = withFallback || await Meal.findOne({ _id: updatedMeal._id, householdId: household._id }) || updatedMeal;
     }
     res.status(200).json(updatedMeal);
   } catch (error) { logger.error(`更新菜品失败: ${error.message}`); next(error); }

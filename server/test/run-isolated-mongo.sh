@@ -35,4 +35,8 @@ runner_may_exist=1
 timeout 120s docker run --rm --name "$runner" --network "$network" -w /tmp \
   -e NODE_PATH=/app/node_modules \
   -e EATWHAT_TEST_MONGO_URI=mongodb://eatwhat-integration-mongo:27017/isolated_eatwhat_integration \
-  -v "$serverdir:/work:ro" "$backend_image" node /work/test/weeklyPlanMongo.integration.cjs
+  -v "$serverdir:/source:ro" "$backend_image" sh -c '
+    mkdir -p /tmp/eatwhat-test-src/uploads
+    cp -a /source/controllers /source/models /source/utils /source/middleware /source/data /source/test /tmp/eatwhat-test-src/
+    exec node /tmp/eatwhat-test-src/test/weeklyPlanMongo.integration.cjs
+  '

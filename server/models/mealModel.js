@@ -1,4 +1,5 @@
 const mongoose = require('mongoose');
+const { randomUUID } = require('crypto');
 
 const ingredientSchema = new mongoose.Schema({
   name: { type: String, trim: true },
@@ -35,8 +36,19 @@ const mealSchema = new mongoose.Schema({
   isDefault: { type: Boolean, default: false, index: true },
   defaultKey: { type: String, trim: true, default: '', index: true },
   favorite: { type: Boolean, default: false },
-  rating: { type: Number, default: 0, min: 0, max: 5 }
+  rating: { type: Number, default: 0, min: 0, max: 5 },
+  editRevision: { type: String, default: null }
 }, { timestamps: true });
+
+// Every Mongoose write path gets a fresh token, including bulk default-image updates.
+mealSchema.pre('save', function () { this.editRevision = randomUUID(); });
+for (const operation of ['findOneAndUpdate', 'updateOne', 'updateMany']) {
+  mealSchema.pre(operation, function () {
+    const update = this.getUpdate();
+    if (Array.isArray(update)) update.push({ $set: { editRevision: randomUUID() } });
+    else this.set({ editRevision: randomUUID() });
+  });
+}
 
 mealSchema.index({ householdId: 1, createdAt: -1 });
 mealSchema.index({ householdId: 1, category: 1, subcategory: 1 });

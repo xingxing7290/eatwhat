@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const express = require('express');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const fs = require('node:fs/promises');
+const path = require('node:path');
 process.env.JWT_SECRET = 'isolated-integration-secret-not-for-production';
 const Household = require('../models/householdModel');
 const User = require('../models/userModel');
@@ -13,6 +15,8 @@ const weekly = require('../controllers/weeklyPlanController');
 const schedules = require('../controllers/scheduleController');
 const wishlist = require('../controllers/wishlistController');
 const anniversary = require('../controllers/anniversaryController');
+const mealController = require('../controllers/mealController');
+const upload = require('../middleware/upload');
 const authController = require('../controllers/authController');
 const requireAuth = require('../middleware/auth');
 
@@ -32,7 +36,7 @@ async function main() {
     const user = await User.create({ username: 'integration-a', passwordHash, householdId: house._id });
     const otherUser = await User.create({ username: 'integration-b', passwordHash, householdId: otherHouse._id });
     const [mealA, mealB] = await Meal.create([
-      { householdId: house._id, name: 'Test meal A' },
+      { householdId: house._id, name: 'Test meal A', imageUrl: '/api/uploads/integration-a.png' },
       { householdId: house._id, name: 'Test meal B' }
     ]);
     const dates = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01'];
@@ -51,6 +55,8 @@ async function main() {
     app.get('/wishlist', wishlist.list);
     app.patch('/wishlist/:id/meal', wishlist.attachMeal);
     app.post('/anniversaries', anniversary.create);
+    app.get('/meals/:id', mealController.getMealById);
+    app.put('/meals/:id', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'photos', maxCount: 12 }, { name: 'stepImages', maxCount: 20 }]), mealController.validateMeal, mealController.updateMeal);
     app.use((error, req, res, next) => res.status(500).json({ error: error.message }));
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     const base = `http://127.0.0.1:${server.address().port}`;
@@ -172,7 +178,80 @@ async function main() {
     assert.equal(String(repeatedMeal.data.meals.dinner[0]._id), String(mealA._id));
     const foreignMenu = await request('/anniversaries', { method: 'POST', token: loginB.data.token, body: anniversaryBody });
     assert.equal(foreignMenu.status, 400);
-    console.log('Mongo integration passed: real login and JWT, schedules, wish linking, anniversary meals and household isolation');
+
+    const detail = await request(`/meals/${mealA._id}`);
+    assert.equal(detail.data.supportsConditionalEdit, true);
+    assert.ok(detail.data.editVersion.revision);
+    const originalTime = detail.data.editVersion.updatedAt;
+    await Meal.updateOne({ _id: mealA._id }, { $set: { description: 'Concurrent change' } }, { timestamps: false });
+    const afterConcurrent = await Meal.findById(mealA._id);
+    assert.equal(afterConcurrent.updatedAt.toISOString(), originalTime);
+    assert.notEqual(afterConcurrent.editRevision, detail.data.editVersion.revision);
+    const uploadDir = path.join(__dirname, '..', 'uploads');
+    const beforeUploads = await fs.readdir(uploadDir);
+    const staleForm = new FormData();
+    staleForm.set('name', 'Stale edit');
+    staleForm.set('expectedEditVersion', JSON.stringify(detail.data.editVersion));
+    staleForm.set('image', new Blob(['test-image'], { type: 'image/png' }), 'test.png');
+    staleForm.append('photos', new Blob(['test-photo'], { type: 'image/png' }), 'photo.png');
+    staleForm.append('stepImages', new Blob(['test-step'], { type: 'image/png' }), 'step.png');
+    const staleResponse = await fetch(`${base}/meals/${mealA._id}`, { method: 'PUT', headers: { authorization: `Bearer ${primaryToken}` }, body: staleForm });
+    assert.equal(staleResponse.status, 409);
+    assert.equal((await staleResponse.json()).code, 'MEAL_CONFLICT');
+    assert.deepEqual(await fs.readdir(uploadDir), beforeUploads);
+    assert.equal((await Meal.findById(mealA._id)).description, 'Concurrent change');
+    const badVersionForm = new FormData();
+    badVersionForm.set('name', 'Invalid version');
+    badVersionForm.set('expectedEditVersion', 'not-json');
+    badVersionForm.set('image', new Blob(['test-image'], { type: 'image/png' }), 'test.png');
+    const badVersion = await fetch(`${base}/meals/${mealA._id}`, { method: 'PUT', headers: { authorization: `Bearer ${primaryToken}` }, body: badVersionForm });
+    assert.equal(badVersion.status, 400);
+    assert.deepEqual(await fs.readdir(uploadDir), beforeUploads);
+    const latest = await request(`/meals/${mealA._id}`);
+    const updated = await request(`/meals/${mealA._id}`, { method: 'PUT', body: { name: 'Fresh edit', expectedEditVersion: latest.data.editVersion } });
+    assert.equal(updated.status, 200);
+    assert.equal(updated.data.name, 'Fresh edit');
+    const imageVersion = (await request(`/meals/${mealA._id}`)).data.editVersion;
+    const freshForm = new FormData();
+    freshForm.set('name', 'Fresh image');
+    freshForm.set('expectedEditVersion', JSON.stringify(imageVersion));
+    freshForm.set('image', new Blob(['saved-image'], { type: 'image/png' }), 'saved.png');
+    const imageResponse = await fetch(`${base}/meals/${mealA._id}`, { method: 'PUT', headers: { authorization: `Bearer ${primaryToken}` }, body: freshForm });
+    assert.equal(imageResponse.status, 200);
+    const imageMeal = await imageResponse.json();
+    const imageFilename = path.basename(new URL(imageMeal.imageUrl, 'http://localhost').pathname);
+    assert.equal((await fs.readFile(path.join(uploadDir, imageFilename))).toString(), 'saved-image');
+    const currentMeal = await Meal.findById(mealA._id);
+    await Meal.updateMany({ _id: mealA._id }, [{ $set: { favorite: true } }], { timestamps: false });
+    assert.notEqual((await Meal.findById(mealA._id)).editRevision, currentMeal.editRevision);
+    await Meal.updateOne({ householdId: house._id, name: 'Upsert test' }, { $set: { category: 'test' } }, { upsert: true });
+    assert.ok((await Meal.findOne({ householdId: house._id, name: 'Upsert test' })).editRevision);
+    const old = await Meal.collection.insertOne({ householdId: house._id, name: 'Legacy meal', imageUrl: '/api/uploads/legacy.png' });
+    const oldDetail = await request(`/meals/${old.insertedId}`);
+    assert.deepEqual(oldDetail.data.editVersion, { revision: null, updatedAt: null });
+    const oldUpdate = await request(`/meals/${old.insertedId}`, { method: 'PUT', body: { name: 'Legacy updated', expectedEditVersion: oldDetail.data.editVersion } });
+    assert.equal(oldUpdate.status, 200);
+    assert.ok(oldUpdate.data.editRevision);
+
+    const noCover = await Meal.create({ householdId: house._id, name: 'No cover' });
+    const noCoverVersion = (await request(`/meals/${noCover._id}`)).data.editVersion;
+    const originalMealUpdate = Meal.findOneAndUpdate;
+    let injectedCover = false;
+    Meal.findOneAndUpdate = function (filter, update, ...args) {
+      if (String(filter._id) !== String(noCover._id) || !update?.$set?.imageUrl || injectedCover) return originalMealUpdate.call(this, filter, update, ...args);
+      injectedCover = true;
+      return (async () => {
+        await Meal.updateOne({ _id: noCover._id }, { $set: { imageUrl: '/api/uploads/other.png', photos: ['/api/uploads/other.png'] } });
+        return originalMealUpdate.call(this, filter, update, ...args);
+      })();
+    };
+    const noCoverUpdate = await request(`/meals/${noCover._id}`, { method: 'PUT', body: { name: 'No cover updated', expectedEditVersion: noCoverVersion } });
+    Meal.findOneAndUpdate = originalMealUpdate;
+    assert.equal(noCoverUpdate.status, 200);
+    assert.equal((await Meal.findById(noCover._id)).imageUrl, '/api/uploads/other.png');
+    const legacyClient = await request(`/meals/${mealB._id}`, { method: 'PUT', body: { name: 'Legacy client edit' } });
+    assert.equal(legacyClient.status, 200);
+    console.log('Mongo integration passed: login, schedules, wish linking, anniversaries, guarded meal edits and upload cleanup');
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     await mongoose.disconnect();

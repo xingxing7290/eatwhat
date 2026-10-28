@@ -49,6 +49,9 @@ async function main () {
   let failEditorSave = false
   let blockEditorSave = false
   let releaseEditorSave
+  let conflictMealEdit = false
+  let supportsMealEdit = true
+  const mealEditVersion = { revision: 'fixture-revision', updatedAt: '2026-10-28T08:00:00.000Z' }
   const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [] }]
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
@@ -70,7 +73,7 @@ async function main () {
     else if (method === 'GET' && path === '/meals') data = url.searchParams.has('page') ? { data: meals, total: meals.length } : meals
     else if (method === 'GET' && path === '/meals/categories') data = [{ category: '家常菜' }, { category: '川菜' }]
     else if (method === 'GET' && path === '/meals/tags') data = []
-    else if (method === 'GET' && path === '/meals/meal-a') data = meals[0]
+    else if (method === 'GET' && path === '/meals/meal-a') data = { ...meals[0], supportsConditionalEdit: supportsMealEdit, editVersion: mealEditVersion }
     else if (method === 'GET' && path === '/memories' && failMemories) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '回忆测试读取失败' }) })
     else if (method === 'GET' && path === '/memories') data = []
     else if (method === 'GET' && path === `/schedules/day/${today}` && failSchedule) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) })
@@ -93,6 +96,11 @@ async function main () {
       writes.push({ path, body: request.postDataJSON() })
       if (failMealCreate) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试创建结果不确定' }) })
       data = { _id: 'created-meal', name: '想吃的新菜' }
+    }
+    else if (method === 'PUT' && path === '/meals/meal-a') {
+      writes.push({ path, editorUpdate: true, body: request.postData() })
+      if (conflictMealEdit) return route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ code: 'MEAL_CONFLICT', error: '菜谱已被更新，请核对最新内容' }) })
+      data = { ...meals[0], name: '更新菜谱' }
     }
     else if (method === 'PATCH' && (path === '/wishlist/convert-wish/meal' || path === '/wishlist/wish-existing/meal')) {
       writes.push({ path, body: request.postDataJSON() })
@@ -411,6 +419,30 @@ async function main () {
   await page.getByRole('button', { name: '取消', exact: true }).click()
   await page.getByRole('button', { name: '放弃并离开' }).click()
   await page.waitForURL('**/meals')
+
+  conflictMealEdit = true
+  await page.goto(`${base}/meals/editor/meal-a`)
+  await page.getByPlaceholder('给这道菜起个名字').fill('冲突时保留的菜名')
+  await page.locator('.side-column .el-card').first().locator('input[type=file]').setInputFiles({ name: 'conflict.png', mimeType: 'image/png', buffer: Buffer.from('image') })
+  await page.getByAltText('菜品封面预览').waitFor()
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByText('这道菜已被其他成员修改，本次未保存').waitFor()
+  assert.equal(await page.getByPlaceholder('给这道菜起个名字').inputValue(), '冲突时保留的菜名')
+  assert.equal(await page.getByAltText('菜品封面预览').count(), 1)
+  assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
+  assert.equal(await page.getByRole('link', { name: '查看最新菜谱' }).getAttribute('target'), '_blank')
+  assert.match(writes.find(item => item.editorUpdate).body, /fixture-revision/)
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '放弃并离开' }).click()
+  await page.waitForURL('**/meals')
+  conflictMealEdit = false
+  supportsMealEdit = false
+  await page.goto(`${base}/meals/editor/meal-a`)
+  await page.getByText('服务器未提供有效的菜谱版本').waitFor()
+  assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.waitForURL('**/meals')
+  supportsMealEdit = true
 
   failEditorSave = true
   await page.goto(`${base}/meals/editor`)
