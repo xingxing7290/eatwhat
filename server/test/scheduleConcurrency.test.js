@@ -31,7 +31,7 @@ test('conditional updates compare the household and version atomically', async (
   assert.equal(observed.filter.date, '2026-10-28');
   assert.equal(observed.filter.updatedAt.toISOString(), '2026-10-28T08:00:00.000Z');
   assert.equal(observed.options.upsert, false);
-  assert.deepEqual(observed.update.$set['meals.dinner'], []);
+  assert.deepEqual(observed.update[0].$set['meals.dinner'], []);
 });
 
 test('stale versions return a conflict rather than upserting', async () => {
@@ -55,7 +55,7 @@ test('legacy clients remain supported and malformed versions are rejected', asyn
   let options;
   Schedule.findOneAndUpdate = (filter, update, opts) => { options = opts; return { populate: async () => ({}) }; };
   assert.equal((await update({ mealIds: [] })).statusCode, 200);
-  assert.equal(options.upsert, true);
+  assert.equal(options.upsert, false);
   assert.equal((await update({ mealIds: [], expectedVersion: 'invalid' })).statusCode, 400);
 });
 

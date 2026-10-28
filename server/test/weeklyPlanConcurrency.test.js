@@ -106,5 +106,5 @@ test('legacy weekly clients can still apply without a version snapshot', async (
   const res = await apply({ days: makeDays() });
   assert.equal(res.statusCode, 200);
   assert.equal(options.length, 7);
-  assert.equal(options.every(value => value.upsert === true), true);
+  assert.equal(options.every(value => value.upsert === false), true);
 });

@@ -247,6 +247,12 @@ const getAddedByInitial = (item) => {
   return name ? name.slice(0, 1).toUpperCase() : '';
 };
 
+const getAddedByLabel = (item) => {
+  const u = getAddedBy(item);
+  const name = (u?.displayName || u?.username || '').trim();
+  return name ? `由${name}添加` : '添加者未知';
+};
+
 // 删除餐食安排
 const handleDeleteSchedule = async (date, mealType) => {
   if (deleting.value || isLoading.value || loadError.value) return;
@@ -469,11 +475,11 @@ onMounted(() => {
                           <span
                             v-if="getAddedBy(item)?.avatarUrl"
                             class="added-by-avatar"
+                            :title="getAddedByLabel(item)"
                           >
-                            <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" alt="成员头像" />
+                            <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" :alt="getAddedByLabel(item)" />
                           </span>
-                          <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
-                          <span v-else class="added-by-avatar placeholder"></span>
+                          <span v-else class="added-by-avatar placeholder" role="img" :aria-label="getAddedByLabel(item)" :title="getAddedByLabel(item)">{{ getAddedByInitial(item) || '?' }}</span>
                           <span class="food-dot">●</span>
                           {{ findMealById(item).name }}
                         </div>
@@ -570,11 +576,11 @@ onMounted(() => {
                       <span
                         v-if="getAddedBy(item)?.avatarUrl"
                         class="added-by-avatar"
+                        :title="getAddedByLabel(item)"
                       >
-                        <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" alt="成员头像" />
+                        <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" :alt="getAddedByLabel(item)" />
                       </span>
-                      <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
-                      <span v-else class="added-by-avatar placeholder"></span>
+                      <span v-else class="added-by-avatar placeholder" role="img" :aria-label="getAddedByLabel(item)" :title="getAddedByLabel(item)">{{ getAddedByInitial(item) || '?' }}</span>
                       <span class="meal-name">{{ findMealById(item).name }}</span>
                     </div>
                   </div>

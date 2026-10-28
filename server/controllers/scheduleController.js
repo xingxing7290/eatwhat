@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const { body, param, query, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { ensureUserHousehold } = require('../utils/household');
+const { retainedMealAssignments, scheduleUpdatePipeline } = require('../utils/scheduleAssignments');
 
 function normalizeMealItems(scheduleDoc) {
 	if (!scheduleDoc || !scheduleDoc.meals) return;
@@ -38,19 +39,6 @@ function compactSchedule(schedule) {
 	};
 }
 
-function fillMissingAddedBy(scheduleDoc, uid) {
-	if (!uid || !scheduleDoc || !scheduleDoc.meals) return false;
-	const uidObj = mongoose.Types.ObjectId.isValid(uid) ? new mongoose.Types.ObjectId(uid) : null;
-	if (!uidObj) return false;
-	for (const mealType of ['breakfast', 'lunch', 'dinner']) {
-		const arr = scheduleDoc.meals[mealType];
-		if (!Array.isArray(arr)) continue;
-		for (const item of arr) {
-			if (item && typeof item === 'object' && !item.addedBy) item.addedBy = uidObj;
-		}
-	}
-}
-
 exports.validateSchedulesQuery = [
   query('year').notEmpty().withMessage('年份参数不能为空').isInt({ min: 2000, max: 2100 }).withMessage('年份无效'),
   query('month').notEmpty().withMessage('月份参数不能为空').isInt({ min: 1, max: 12 }).withMessage('月份无效 (1-12)')
@@ -79,7 +67,6 @@ exports.getSchedules = async (req, res, next) => {
       date: { $gte: `${monthPrefix}-01`, $lte: `${monthPrefix}-${String(endDate.getDate()).padStart(2, '0')}` }
     });
     schedulesInDb.forEach(s => normalizeMealItems(s));
-    schedulesInDb.forEach(s => fillMissingAddedBy(s, req.user.uid));
     await Schedule.populate(schedulesInDb, [
       { path: 'meals.breakfast.meal' },
       { path: 'meals.lunch.meal' },
@@ -113,7 +100,6 @@ exports.getScheduleByDate = async (req, res, next) => {
       return res.status(200).json({ date, meals: { breakfast: [], lunch: [], dinner: [] }, scheduleExists: false, scheduleVersion: null });
     }
     normalizeMealItems(schedule);
-    fillMissingAddedBy(schedule, req.user.uid);
     await schedule.populate([
       { path: 'meals.breakfast.meal' },
       { path: 'meals.lunch.meal' },
@@ -143,6 +129,7 @@ exports.updateSchedule = async (req, res, next) => {
     }
     const mealIds = Array.isArray(req.body.mealIds) ? req.body.mealIds.filter(Boolean) : [];
     if (mealIds.length > 0) {
+      if (mealIds.some(id => typeof id !== 'string' || !mongoose.isValidObjectId(id))) return res.status(400).json({ error: '一个或多个菜品ID无效' });
       const meals = await Meal.find({ _id: { $in: mealIds }, householdId: household._id });
       if (meals.length !== mealIds.length) return res.status(400).json({ error: '一个或多个菜品ID无效' });
     }
@@ -171,9 +158,21 @@ exports.updateSchedule = async (req, res, next) => {
     } else {
       const filter = { householdId: household._id, date };
       if (conditional) filter.updatedAt = new Date(expectedVersion);
-      schedule = await Schedule.findOneAndUpdate(filter, { $set: updateData }, {
-        new: true, upsert: !conditional, runValidators: true
-      }).populate(population);
+      const assignment = retainedMealAssignments(mealType, mealIds, req.user.uid);
+      const pipeline = scheduleUpdatePipeline(household._id, { [`meals.${mealType}`]: assignment });
+      const updateExisting = () => Schedule.findOneAndUpdate(filter, pipeline, { new: true, upsert: false, runValidators: true, timestamps: false }).populate(population);
+      schedule = await updateExisting();
+      // Pipeline upserts do not populate Mongoose's createdAt. Insert a new
+      // document explicitly; if another writer inserted first, retry atomically.
+      if (!schedule && !conditional) {
+        try {
+          schedule = await Schedule.create({ householdId: household._id, date, meals: { [mealType]: updateData[`meals.${mealType}`] } });
+          await schedule.populate(population);
+        } catch (error) {
+          if (error.code !== 11000) throw error;
+          schedule = await updateExisting();
+        }
+      }
       if (!schedule) return res.status(409).json({ code: 'SCHEDULE_CONFLICT', error: '餐食安排已被更新，请重新加载' });
     }
     res.status(200).json(schedule);

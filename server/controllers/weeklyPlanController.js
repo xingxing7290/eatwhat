@@ -4,6 +4,8 @@ const WishlistItem = require('../models/wishlistModel');
 const MealMemory = require('../models/memoryModel');
 const { ensureUserHousehold } = require('../utils/household');
 const { startOfWeek, weekDates, dateKey } = require('../utils/week');
+const mongoose = require('mongoose');
+const { retainedMealAssignments, scheduleUpdatePipeline } = require('../utils/scheduleAssignments');
 
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
 const mealTypeLabels = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
@@ -136,6 +138,7 @@ exports.apply = async (req, res, next) => {
     }
     const ids = [...new Set(days.flatMap(day => mealTypes.flatMap(type => day.meals[type])))];
     if (ids.length) {
+      if (ids.some(id => !mongoose.isValidObjectId(id))) return res.status(400).json({ error: '计划中包含无效菜品' });
       const count = await Meal.countDocuments({ householdId: household._id, _id: { $in: ids } });
       if (count !== ids.length) return res.status(400).json({ error: '计划中包含无效菜品' });
     }
@@ -156,16 +159,21 @@ exports.apply = async (req, res, next) => {
     try {
       for (const day of days) {
         activeDate = day.date;
-        const update = { householdId: household._id };
         const meals = {};
-        mealTypes.forEach(type => { meals[type] = day.meals[type].map(id => ({ meal: id, addedBy: req.user.uid })); update[`meals.${type}`] = meals[type]; });
+        mealTypes.forEach(type => { meals[type] = day.meals[type].map(id => ({ meal: id, addedBy: req.user.uid })); });
         if (conditional && versions[day.date] === null) {
           try { await Schedule.create({ householdId: household._id, date: day.date, meals }); }
           catch (error) { if (error.code === 11000) return conflict(day.date, appliedDates); throw error; }
         } else {
           const filter = { householdId: household._id, date: day.date };
           if (conditional) filter.updatedAt = new Date(versions[day.date]);
-          const result = await Schedule.findOneAndUpdate(filter, { $set: update }, { upsert: !conditional, new: true, runValidators: true });
+          const assignments = Object.fromEntries(mealTypes.map(type => [`meals.${type}`, retainedMealAssignments(type, day.meals[type], req.user.uid)]));
+          const updateExisting = () => Schedule.findOneAndUpdate(filter, scheduleUpdatePipeline(household._id, assignments), { upsert: false, new: true, runValidators: true, timestamps: false });
+          let result = await updateExisting();
+          if (!result && !conditional) {
+            try { result = await Schedule.create({ householdId: household._id, date: day.date, meals }); }
+            catch (error) { if (error.code !== 11000) throw error; result = await updateExisting(); }
+          }
           if (!result) return conflict(day.date, appliedDates);
         }
         appliedDates.push(day.date);
