@@ -6,11 +6,11 @@ const { cleanHouseholdName } = require('./text');
 
 async function generateInviteCode() {
   for (let i = 0; i < 20; i++) {
-    const code = crypto.randomBytes(3).toString('hex').toUpperCase();
+    const code = crypto.randomBytes(10).toString('hex').toUpperCase();
     const exists = await Household.exists({ inviteCode: code });
     if (!exists) return code;
   }
-  return crypto.randomBytes(5).toString('hex').toUpperCase();
+  throw new Error('无法生成唯一邀请码，请重试');
 }
 
 async function createHousehold(name, createdBy = null) {
@@ -38,29 +38,26 @@ async function getOrCreateDefaultHousehold() {
   return household;
 }
 
-async function ensureUserHousehold(userId) {
-  const user = await User.findById(userId);
+async function ensureUserHousehold(userId, attempt = 0) {
+  let user = await User.findById(userId);
   if (!user) {
     const err = new Error('用户不存在');
     err.status = 404;
     throw err;
   }
 
-  if (!user.householdId) {
-    const household = await getOrCreateDefaultHousehold();
-    user.householdId = household._id;
-    await user.save();
-    await Household.updateOne({ _id: household._id }, { $addToSet: { members: user._id } });
-    return { user, household };
-  }
-
-  const household = await Household.findById(user.householdId);
+  let household = user.householdId ? await Household.findById(user.householdId) : null;
   if (!household) {
     const fallback = await getOrCreateDefaultHousehold();
-    user.householdId = fallback._id;
-    await user.save();
-    await Household.updateOne({ _id: fallback._id }, { $addToSet: { members: user._id } });
-    return { user, household: fallback };
+    const updated = await User.findOneAndUpdate({ _id: user._id, householdId: user.householdId || null }, { $set: { householdId: fallback._id } }, { new: true });
+    if (!updated) {
+      if (attempt < 3) return ensureUserHousehold(userId, attempt + 1);
+      const error = new Error('所属小家正在变化，请重试');
+      error.status = 409;
+      throw error;
+    }
+    user = updated;
+    household = fallback;
   }
 
   await Household.updateOne({ _id: household._id }, { $addToSet: { members: user._id } });
@@ -77,10 +74,23 @@ function householdPayload(household) {
   };
 }
 
+// The user record is authoritative. The denormalized members array can be
+// stale after interrupted or concurrent switches and must not leak ex-members.
+async function withCurrentMembers(household, requesterId) {
+  const members = await User.find({ householdId: household._id }).select('username displayName avatarUrl').sort({ _id: 1 }).lean();
+  if (requesterId && !members.some(member => String(member._id) === String(requesterId))) {
+    const error = new Error('所属小家已变化，请重新核对');
+    error.status = 409;
+    throw error;
+  }
+  return { ...household.toObject(), members };
+}
+
 module.exports = {
   generateInviteCode,
   createHousehold,
   getOrCreateDefaultHousehold,
   ensureUserHousehold,
-  householdPayload
+  householdPayload,
+  withCurrentMembers
 };

@@ -17,9 +17,10 @@
         请先用刚填写的用户名和密码尝试登录，避免重复创建账号。如果无法登录，再返回此页重新填写。
         <div><el-button link type="primary" @click="goToLogin">前往登录</el-button><el-button link @click="uncertain = false">继续填写</el-button></div>
       </el-alert>
-      <div v-if="hasExistingSession && inviteFromLink" class="existing-account">
+      <el-alert v-if="invalidInviteLink" class="uncertain-alert" title="邀请链接中的邀请码过长，请向家人重新确认。" type="warning" :closable="false" show-icon />
+      <div v-if="hasExistingSession && hasLinkInvite" class="existing-account">
         <p>已经登录？可以使用当前账号加入邀请的小家，无需重新注册。</p>
-        <el-button :disabled="loading" @click="useCurrentAccount">使用当前账号加入</el-button>
+        <el-button :disabled="loading || uncertain || !form.inviteCode.trim() || form.inviteCode.trim().length > 20" @click="useCurrentAccount">使用当前账号加入</el-button>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top" class="apply-form" :disabled="loading || uncertain" @submit.prevent="onSubmit">
         <div class="mode-heading">选择小家</div>
@@ -32,7 +33,7 @@
           <el-input v-model="form.householdName" placeholder="小家名称，可选" clearable size="large" :prefix-icon="HomeFilled" class="custom-input" maxlength="40" />
         </el-form-item>
         <el-form-item v-else label="邀请码" prop="inviteCode">
-          <el-input v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" />
+          <el-input v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" @input="invalidInviteLink = false" />
         </el-form-item>
         <el-form-item label="昵称（可选）" prop="displayName">
           <el-input
@@ -118,8 +119,10 @@ const uncertain = ref(false)
 const hasExistingSession = !!localStorage.getItem('token')
 const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '')
 const linkInvite = hashParams.get('invite') || (typeof route.query.invite === 'string' ? route.query.invite : '')
-const inviteFromLink = linkInvite.trim().slice(0, 20)
-const mode = ref(inviteFromLink ? 'join' : 'create')
+const hasLinkInvite = !!linkInvite.trim()
+const invalidInviteLink = ref(linkInvite.trim().length > 20)
+const inviteFromLink = invalidInviteLink.value ? '' : linkInvite.trim()
+const mode = ref(hasLinkInvite ? 'join' : 'create')
 const form = ref({
   displayName: '',
   householdName: '',
@@ -130,7 +133,7 @@ const form = ref({
 })
 
 // Remove the capability-like invite code from the visible address once read.
-if (inviteFromLink) {
+if (linkInvite) {
   const { invite, ...query } = route.query
   hashParams.delete('invite')
   const rest = hashParams.toString()
@@ -138,7 +141,11 @@ if (inviteFromLink) {
 }
 
 const goToLogin = () => router.push({ name: 'login', query: { username: form.value.username.trim() } })
-const useCurrentAccount = () => router.push({ name: 'settings', hash: `#invite=${encodeURIComponent(form.value.inviteCode.trim())}` })
+const useCurrentAccount = () => {
+  const code = form.value.inviteCode.trim()
+  if (!code || code.length > 20) return ElMessage.warning('请确认邀请码后再加入')
+  return router.push({ name: 'settings', hash: `#invite=${encodeURIComponent(code)}` })
+}
 const onSubmit = async () => {
   if (loading.value || uncertain.value || !formRef.value) return
   loading.value = true

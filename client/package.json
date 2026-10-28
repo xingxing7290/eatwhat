@@ -10,6 +10,7 @@
     "test:selection": "node test/selection-workflows.cjs",
     "test:shopping": "node test/shopping-workflows.cjs",
     "test:weekly": "node test/weekly-workflows.cjs",
+    "test:invitation": "node test/invitation-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
     "test:dashboard-theme": "node test/dashboard-theme.cjs",
     "test:media": "node --test test/uploaded-image.test.mjs",

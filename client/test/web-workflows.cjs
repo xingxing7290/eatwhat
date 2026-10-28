@@ -190,7 +190,7 @@ async function main () {
       await new Promise(resolve => { releaseShoppingUpdate = resolve })
       data = { weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: 1, items: [{ _id: 'item-a', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: false, manual: false }] }
     }
-    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户' }, household: switchedHousehold ? { id: 'home-b', name: '已切换家庭', inviteCode: 'DEF456', members: [{ _id: 'user-a', displayName: '测试用户' }] } : { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
+    else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户', householdId: switchedHousehold ? 'home-b' : 'home-a' }, household: switchedHousehold ? { id: 'home-b', name: '已切换家庭', inviteCode: 'DEF456', members: [{ _id: 'user-a', displayName: '测试用户' }] } : { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
     else if (method === 'PUT' && path === '/auth/profile') {
       writes.push({ path, body: request.postDataJSON() })
       data = { user: { id: 'user-a', username: 'test', displayName: request.postDataJSON().displayName }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: request.postDataJSON().displayName }] } }
