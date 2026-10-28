@@ -6,6 +6,7 @@ import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { format, addMonths, subMonths, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
+import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 
 const router = useRouter();
 const scheduleStore = useScheduleStore();
@@ -468,7 +469,7 @@ onMounted(() => {
                             v-if="getAddedBy(item)?.avatarUrl"
                             class="added-by-avatar"
                           >
-                            <img :src="getAddedBy(item).avatarUrl" alt="avatar" />
+                            <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" alt="成员头像" />
                           </span>
                           <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
                           <span v-else class="added-by-avatar placeholder"></span>
@@ -569,7 +570,7 @@ onMounted(() => {
                         v-if="getAddedBy(item)?.avatarUrl"
                         class="added-by-avatar"
                       >
-                        <img :src="getAddedBy(item).avatarUrl" alt="avatar" />
+                        <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" alt="成员头像" />
                       </span>
                       <span v-else-if="getAddedByInitial(item)" class="added-by-avatar placeholder">{{ getAddedByInitial(item) }}</span>
                       <span v-else class="added-by-avatar placeholder"></span>

@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "test:workflows": "node test/web-workflows.cjs",
+    "test:media": "node --test test/uploaded-image.test.mjs",
     "test:full-stack": "node test/full-stack.cjs"
   },
   "dependencies": {

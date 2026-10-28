@@ -7,7 +7,7 @@
       <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="头像">
           <div class="avatar-row">
-            <div class="avatar-preview"><img v-if="avatarPreview || user.avatarUrl" :src="avatarPreview || user.avatarUrl" alt="头像预览" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
+            <div class="avatar-preview"><img v-if="avatarPreview || user.avatarUrl" :src="avatarPreview || resolveUploadedImage(user.avatarUrl)" alt="头像预览" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
             <div class="avatar-actions">
               <input ref="fileInputRef" type="file" accept="image/*" class="file-input" @change="onFileChange" />
               <el-button :disabled="saving || avatarUploading" @click="chooseFile">选择图片</el-button>
@@ -95,7 +95,7 @@
           <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" /><el-button type="primary" :loading="joining" @click="joinHousehold">加入</el-button></div>
         </el-form-item>
         <el-form-item label="成员">
-          <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="member.avatarUrl" :src="member.avatarUrl" /><span v-else>{{ memberInitial(member) }}</span></div><span>{{ member.displayName || member.username }}</span></div></div>
+          <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="member.avatarUrl" :src="resolveUploadedImage(member.avatarUrl)" :alt="`${member.displayName || member.username || '成员'}的头像`" /><span v-else>{{ memberInitial(member) }}</span></div><span>{{ member.displayName || member.username }}</span></div></div>
         </el-form-item>
         <el-form-item><el-button type="primary" :loading="householdSaving" @click="saveHousehold">保存小家</el-button></el-form-item>
       </el-form>
@@ -109,6 +109,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
+import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 
 const mealStore = useMealStore();
 const scheduleStore = useScheduleStore();
