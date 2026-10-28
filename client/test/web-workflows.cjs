@@ -287,9 +287,64 @@ async function main () {
   await page.keyboard.press('Enter')
   await page.waitForURL('**/meals/detail/meal-a')
   await page.goto(`${base}/meals`)
-  await page.getByRole('button', { name: '投喂灵感' }).click()
+  await page.getByRole('button', { name: '查看想吃清单', exact: true }).click()
+  await page.waitForURL('**/wishlist')
+  assert.equal(writes.filter(item => item.path === '/wishlist').length, 0, 'opening wishlist must not add an arbitrary meal')
+  await page.goto(`${base}/meals`)
+  blockWishSave = true
+  await page.locator('.meal-card-wrapper').filter({ hasText: '番茄炒蛋' }).getByRole('button', { name: '加入想吃清单：番茄炒蛋' }).click()
+  await page.getByText('「番茄炒蛋」正在添加', { exact: true }).waitFor()
+  assert.equal(await page.locator('.meal-card-wrapper').filter({ hasText: '番茄炒蛋' }).getByRole('button', { name: '加入想吃清单：番茄炒蛋' }).isDisabled(), true)
+  assert.equal(writes.filter(item => item.path === '/wishlist').length, 1)
+  releaseWishSave()
+  blockWishSave = false
   await page.waitForFunction(() => document.body.innerText.includes('已加入小家的想吃清单'))
   assert.equal(writes.find(item => item.path === '/wishlist')?.body.mealId, 'meal-a')
+
+  failWishlistLoad = true
+  const wishesBeforeFailedCheck = writes.filter(item => item.path === '/wishlist').length
+  await page.locator('.meal-card-wrapper').filter({ hasText: '麻婆豆腐' }).getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
+  await page.getByText('无法核对想吃清单，本次没有提交').waitFor()
+  assert.equal(writes.filter(item => item.path === '/wishlist').length, wishesBeforeFailedCheck)
+  failWishlistLoad = false
+  failWishSave = true
+  await page.locator('.meal-card-wrapper').filter({ hasText: '麻婆豆腐' }).getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
+  await page.getByText('「麻婆豆腐」加入结果未确认', { exact: true }).waitFor()
+  assert.equal(await page.locator('.meal-card-wrapper').filter({ hasText: '麻婆豆腐' }).getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).isDisabled(), true)
+  await page.reload()
+  await page.getByText('「麻婆豆腐」加入结果未确认', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '刷新并核对' }).click()
+  await page.getByRole('button', { name: '已核对，允许重试' }).click()
+  await page.getByRole('button', { name: '继续等待' }).click()
+  assert.equal(await page.getByText('「麻婆豆腐」加入结果未确认', { exact: true }).isVisible(), true)
+  await page.getByRole('button', { name: '已核对，允许重试' }).click()
+  await page.getByRole('button', { name: '已了解，允许重试' }).click()
+  failWishSave = false
+  await page.locator('.meal-card-wrapper').filter({ hasText: '麻婆豆腐' }).getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
+  await page.waitForFunction(() => document.body.innerText.includes('「麻婆豆腐」已加入小家的想吃清单'))
+  failWishSave = true
+  await page.locator('.meal-card-wrapper').filter({ hasText: '清炒青菜' }).getByRole('button', { name: '加入想吃清单：清炒青菜' }).click()
+  await page.getByText('「清炒青菜」加入结果未确认', { exact: true }).waitFor()
+  wishlist = [{ _id: 'saved-wish', mealId: { _id: 'meal-c' }, status: 'open', title: '清炒青菜' }]
+  await page.getByRole('button', { name: '刷新并核对' }).click()
+  await page.getByText('已在想吃清单中找到「清炒青菜」').waitFor()
+  const wishesBeforeDuplicate = writes.filter(item => item.path === '/wishlist').length
+  await page.locator('.meal-card-wrapper').filter({ hasText: '清炒青菜' }).getByRole('button', { name: '加入想吃清单：清炒青菜' }).click()
+  await page.getByText('这道菜已经在想吃清单中').waitFor()
+  assert.equal(writes.filter(item => item.path === '/wishlist').length, wishesBeforeDuplicate)
+  failWishSave = false
+  wishlist = []
+  await page.getByText('列表', { exact: true }).click()
+  await Promise.all([
+    page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/wishlist' && response.request().postDataJSON().mealId === 'meal-a'),
+    page.locator('.meal-list-item').filter({ hasText: '番茄炒蛋' }).getByRole('button', { name: '加入想吃清单：番茄炒蛋' }).click()
+  ])
+  await page.getByText('表格', { exact: true }).click()
+  await Promise.all([
+    page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/wishlist' && response.request().postDataJSON().mealId === 'meal-b'),
+    page.locator('.meals-table').getByRole('button', { name: '加入想吃清单：麻婆豆腐' }).click()
+  ])
+  await page.getByText('网格', { exact: true }).click()
 
   const search = page.getByPlaceholder('搜索菜名、描述、食材或做法...')
   await Promise.all([

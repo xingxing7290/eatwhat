@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
+import { useDraftGuard } from '../composables/useDraftGuard';
 import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
@@ -213,25 +214,93 @@ const handleMealKeydown = (event, meal) => {
   handleViewMeal(meal);
 };
 
-const sharingMealIds = new Set();
-const handleShareMeal = async (meal) => {
-  const id = meal?._id || meal?.id;
-  if (!id || sharingMealIds.has(String(id))) return;
-  sharingMealIds.add(String(id));
+const sharingMealIds = reactive({});
+const pendingWishes = ref([]);
+const pendingStorageAvailable = ref(true);
+const wishStorageKey = (() => {
   try {
-    const existing = await api.wishlist.list({ status: 'open' });
-    const match = (existing || []).find(item => String(item.mealId?._id || item.mealId?.id || item.mealId || '') === String(id));
-    if (match) {
+    const user = JSON.parse(localStorage.getItem('user') || '{}');
+    const identity = user.id || user._id || user.username;
+    const household = user.householdId?._id || user.householdId || 'unknown';
+    return identity ? `eatwhat-pending-meal-wishes:${identity}:${household}` : '';
+  } catch (_) { return ''; }
+})();
+useDraftGuard({ dirty: computed(() => false), busy: computed(() => false), uncertain: computed(() => pendingWishes.value.length > 0 && !pendingStorageAvailable.value), label: '菜品添加' });
+const persistPendingWishes = () => {
+  try {
+    if (!wishStorageKey) throw new Error('用户标识不可用');
+    sessionStorage.setItem(wishStorageKey, JSON.stringify(pendingWishes.value.map(({ id, name }) => ({ id, name }))));
+    pendingStorageAvailable.value = true;
+  } catch (_) { pendingStorageAvailable.value = false; }
+};
+const hasPendingWish = (id) => pendingWishes.value.some(item => item.id === String(id));
+const removePendingWish = (id) => {
+  pendingWishes.value = pendingWishes.value.filter(item => item.id !== String(id));
+  persistPendingWishes();
+};
+const getOpenWishes = async () => {
+  const items = await api.wishlist.list({ status: 'open' });
+  if (!Array.isArray(items)) throw new Error('清单响应不完整');
+  return items;
+};
+const wishMatchesMeal = (item, id) => String(item.mealId?._id || item.mealId?.id || item.mealId || '') === String(id);
+const handleShareMeal = async (meal) => {
+  const id = String(meal?._id || meal?.id || '');
+  if (!id || sharingMealIds[id] || hasPendingWish(id)) return;
+  sharingMealIds[id] = true;
+  let existing;
+  try {
+    existing = await getOpenWishes();
+    if (existing.some(item => wishMatchesMeal(item, id))) {
       ElMessage.info('这道菜已经在想吃清单中');
+      delete sharingMealIds[id];
       return;
     }
-    await api.wishlist.create({ title: meal.name, mealId: id, category: meal.category || '', priority: 'normal' });
-    ElMessage.success(`「${meal.name}」已加入小家的想吃清单`);
-  } catch (error) {
-    ElMessage.error(error?.error || '加入想吃清单失败');
-  } finally {
-    sharingMealIds.delete(String(id));
+  } catch (_) {
+    ElMessage.warning('无法核对想吃清单，本次没有提交');
+    delete sharingMealIds[id];
+    return;
   }
+  pendingWishes.value.push({ id, name: String(meal.name || '这道菜'), reviewed: false, reviewing: false });
+  persistPendingWishes();
+  try {
+    const created = await api.wishlist.create({ title: meal.name, mealId: id, category: meal.category || '', priority: 'normal' });
+    if (!created?._id && !created?.id) throw new Error('保存响应不完整');
+    removePendingWish(id);
+    ElMessage.success(`「${meal.name}」已加入小家的想吃清单`);
+  } catch (_) {
+    ElMessage.warning(`「${meal.name}」加入结果未确认，请先核对想吃清单`);
+  } finally {
+    delete sharingMealIds[id];
+  }
+};
+
+const reviewPendingWish = async (item) => {
+  if (item.reviewing || sharingMealIds[item.id]) return;
+  item.reviewing = true;
+  item.reviewed = false;
+  try {
+    const items = await getOpenWishes();
+    if (items.some(wish => wishMatchesMeal(wish, item.id))) {
+      removePendingWish(item.id);
+      ElMessage.success(`已在想吃清单中找到「${item.name}」`);
+    } else {
+      item.reviewed = true;
+    }
+  } catch (_) { ElMessage.warning('清单读取失败，请稍后重新核对'); }
+  finally { item.reviewing = false; }
+};
+
+const allowWishRetry = async (item) => {
+  if (!item.reviewed || item.reviewing || item.deciding || sharingMealIds[item.id]) return;
+  item.deciding = true;
+  try {
+    await ElMessageBox.confirm('清单暂未显示这道菜，但之前的请求仍可能稍后完成；重新提交可能产生重复记录。', '确认允许重试？', {
+      type: 'warning', confirmButtonText: '已了解，允许重试', cancelButtonText: '继续等待'
+    });
+    removePendingWish(item.id);
+  } catch (_) { /* Keep the pending record until the user confirms. */ }
+  finally { item.deciding = false; }
 };
 
 const handleImageIssue = async (meal) => {
@@ -241,16 +310,6 @@ const handleImageIssue = async (meal) => {
   } catch (e) {
     ElMessage.error(e?.error || '提交失败');
   }
-};
-
-const feedInspiration = () => {
-  if (loading.value || loadError.value) return;
-  const meal = displayedMeals.value[0];
-  if (meal) {
-    handleShareMeal(meal);
-    return;
-  }
-  router.push({ name: 'MealEditor' });
 };
 
 // 删除菜品
@@ -378,6 +437,10 @@ const loadCategories = async () => {
 };
 
 onMounted(async () => {
+  try {
+    const saved = wishStorageKey ? JSON.parse(sessionStorage.getItem(wishStorageKey) || '[]') : [];
+    if (Array.isArray(saved)) pendingWishes.value = saved.filter(item => typeof item?.id === 'string' && typeof item?.name === 'string').map(item => ({ id: item.id, name: item.name, reviewed: false, reviewing: false }));
+  } catch (_) { /* Storage is optional; keep the page usable. */ }
   await fetchMeals();
   await loadCategories();
   try { await mealStore.fetchMealTags(); } catch (_) {}
@@ -418,13 +481,23 @@ onBeforeUnmount(() => {
       </div>
       <div class="presence-copy">
         <strong>把好味道留给家人</strong>
-        <p>挑一道菜加入想吃清单，家人可以一起查看和安排。</p>
+        <p>在菜品卡片选择“加入想吃”，家人可以一起查看和安排。</p>
       </div>
-      <el-button type="primary" class="feed-inspiration-btn" :disabled="loading || !!loadError" @click="feedInspiration">
+      <el-button type="primary" class="feed-inspiration-btn" @click="router.push({ name: 'wishlist' })">
         <el-icon><Present /></el-icon>
-        投喂灵感
+        查看想吃清单
       </el-button>
     </div>
+
+    <el-alert v-for="item in pendingWishes" :key="item.id" type="warning" :closable="false" show-icon class="wish-recovery" :title="`「${item.name}」${sharingMealIds[item.id] ? '正在添加' : '加入结果未确认'}`">
+      <p v-if="sharingMealIds[item.id]">正在提交，请稍候。</p>
+      <p v-else>请先核对想吃清单。原请求可能仍在处理，立即重试可能产生重复记录。<span v-if="!pendingStorageAvailable">当前浏览器无法暂存此提示，离开页面后提示可能丢失。</span></p>
+      <div class="wish-recovery-actions">
+        <el-button link type="primary" :loading="item.reviewing" :disabled="!!sharingMealIds[item.id]" @click="reviewPendingWish(item)">刷新并核对</el-button>
+        <el-button link type="primary" @click="router.push({ name: 'wishlist' })">查看想吃清单</el-button>
+        <el-button v-if="item.reviewed" link type="primary" :disabled="item.deciding" @click="allowWishRetry(item)">已核对，允许重试</el-button>
+      </div>
+    </el-alert>
 
     <!-- 搜索和过滤区域 -->
     <div class="filter-section">
@@ -568,6 +641,8 @@ onBeforeUnmount(() => {
                     v-for="meal in sub.meals"
                     :key="meal._id || meal.id"
                     :meal="meal"
+                    :share-pending="!!sharingMealIds[String(meal._id || meal.id)]"
+                    :share-uncertain="hasPendingWish(meal._id || meal.id)"
                     @view="handleViewMeal"
                     @edit="handleEditMeal"
                     @delete="handleDeleteMeal"
@@ -587,6 +662,8 @@ onBeforeUnmount(() => {
           v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
           :meal="meal"
+          :share-pending="!!sharingMealIds[String(meal._id || meal.id)]"
+          :share-uncertain="hasPendingWish(meal._id || meal.id)"
           @view="handleViewMeal"
           @edit="handleEditMeal"
           @delete="handleDeleteMeal"
@@ -623,6 +700,7 @@ onBeforeUnmount(() => {
                   type="info"
                   size="small"
                   circle
+                  :aria-label="`查看${meal.name}`"
                   @click.stop="handleViewMeal(meal)"
                 >
                   <el-icon><View /></el-icon>
@@ -631,6 +709,9 @@ onBeforeUnmount(() => {
                   type="warning"
                   size="small"
                   circle
+                  :aria-label="`加入想吃清单：${meal.name}`"
+                  :loading="!!sharingMealIds[String(meal._id || meal.id)]"
+                  :disabled="!!sharingMealIds[String(meal._id || meal.id)] || hasPendingWish(meal._id || meal.id)"
                   class="list-feed-btn"
                   @click.stop="handleShareMeal(meal)"
                 >
@@ -640,6 +721,7 @@ onBeforeUnmount(() => {
                   type="primary"
                   size="small"
                   circle
+                  :aria-label="`编辑${meal.name}`"
                   @click.stop="handleEditMeal(meal)"
                 >
                   <el-icon><Edit /></el-icon>
@@ -648,6 +730,7 @@ onBeforeUnmount(() => {
                   type="danger"
                   size="small"
                   circle
+                  :aria-label="`删除${meal.name}`"
                   @click.stop="handleDeleteMeal(meal)"
                 >
                   <el-icon><Delete /></el-icon>
@@ -692,7 +775,7 @@ onBeforeUnmount(() => {
           style="width: 100%"
           class="meals-table-content"
         >
-          <el-table-column label="操作" width="160" align="center">
+          <el-table-column label="图片" width="160" align="center">
             <template #default="{ row }">
               <div class="table-image">
                 <img
@@ -745,13 +828,15 @@ onBeforeUnmount(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="120" align="center">
+          <el-table-column label="操作" width="220" align="center">
             <template #default="{ row }">
               <div class="table-actions">
+                <el-button type="warning" size="small" circle :aria-label="`加入想吃清单：${row.name}`" :loading="!!sharingMealIds[String(row._id || row.id)]" :disabled="!!sharingMealIds[String(row._id || row.id)] || hasPendingWish(row._id || row.id)" @click="handleShareMeal(row)"><el-icon><Present /></el-icon></el-button>
                 <el-button
                   type="info"
                   size="small"
                   circle
+                  :aria-label="`查看${row.name}`"
                   @click="handleViewMeal(row)"
                 >
                   <el-icon><View /></el-icon>
@@ -760,6 +845,7 @@ onBeforeUnmount(() => {
                   type="primary"
                   size="small"
                   circle
+                  :aria-label="`编辑${row.name}`"
                   @click="handleEditMeal(row)"
                 >
                   <el-icon><Edit /></el-icon>
@@ -768,6 +854,7 @@ onBeforeUnmount(() => {
                   type="danger"
                   size="small"
                   circle
+                  :aria-label="`删除${row.name}`"
                   @click="handleDeleteMeal(row)"
                 >
                   <el-icon><Delete /></el-icon>
@@ -1969,4 +2056,9 @@ onBeforeUnmount(() => {
   .catalog-content .meals-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
 }
 .results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
+.wish-recovery { margin-bottom: 12px; }
+.wish-recovery p { margin: 4px 0 8px; line-height: 1.5; }
+.wish-recovery-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.wish-recovery-actions :deep(.el-button + .el-button) { margin-left: 0; }
+.table-actions :deep(.el-button + .el-button), .meal-list-actions :deep(.el-button + .el-button) { margin-left: 0; }
 </style>

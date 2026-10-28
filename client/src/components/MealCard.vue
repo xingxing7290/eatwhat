@@ -19,6 +19,14 @@ const props = defineProps({
   selectable: {
     type: Boolean,
     default: false
+  },
+  sharePending: {
+    type: Boolean,
+    default: false
+  },
+  shareUncertain: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -144,6 +152,8 @@ const imageUrl = computed(() => {
             size="small"
             circle
             :aria-label="`加入想吃清单：${meal.name}`"
+            :loading="sharePending"
+            :disabled="sharePending || shareUncertain"
             @click.stop="emit('share', meal)"
             class="mobile-share-btn"
           >
@@ -188,12 +198,14 @@ const imageUrl = computed(() => {
             <el-button
               type="warning"
               size="small"
-              circle
               :aria-label="`加入想吃清单：${meal.name}`"
+              :loading="sharePending"
+              :disabled="sharePending || shareUncertain"
               @click.stop="emit('share', meal)"
               class="feed-btn"
             >
               <el-icon><Present /></el-icon>
+              <span>{{ shareUncertain ? '待核对' : '加入想吃' }}</span>
             </el-button>
             <el-button
               type="warning"
