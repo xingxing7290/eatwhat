@@ -45,7 +45,7 @@ async function partnerWishlistFor(householdId, uid) {
 
 exports.summary = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const today = dateKey(new Date());
     const weekStart = startOfWeek(today);
     const week = await _weekSchedules(household._id, weekStart);

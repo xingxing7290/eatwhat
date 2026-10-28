@@ -102,7 +102,7 @@ async function buildGeneratedPlan(householdId) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const weekStart = requestedWeek(req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '周计划日期无效' });
     const days = await weekSchedules(household._id, weekStart);
@@ -116,7 +116,7 @@ exports.list = async (req, res, next) => {
 
 exports.generate = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '周计划日期无效' });
     const planDays = await buildGeneratedPlan(household._id);
@@ -134,7 +134,7 @@ exports.generate = async (req, res, next) => {
 
 exports.apply = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const invalid = error => res.status(400).json({ code: 'WEEKLY_PLAN_INVALID', error, appliedDates: [] });
     const days = normalizePlan(req.body.days);
     if (!Array.isArray(req.body.days) || !days.length || days.length !== req.body.days.length) return invalid('周计划日期无效或不完整');

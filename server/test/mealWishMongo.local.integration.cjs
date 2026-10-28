@@ -180,11 +180,11 @@ async function main() {
     app.patch('/wishlist/:id/status', wishlist.updateStatus);
     app.patch('/wishlist/:id/meal', wishlist.attachMeal);
     app.delete('/wishlist/:id', wishlist.remove);
-    app.use((error, req, res, next) => res.status(error.status || 500).json({ error: error.message }));
+    app.use((error, req, res, next) => res.status(error.status || 500).json({ error: error.message, ...(error.code === 'HOUSEHOLD_SCOPE_CHANGED' ? { code: error.code } : {}) }));
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     const base = `http://127.0.0.1:${server.address().port}`;
-    async function request(url, { method = 'GET', body, token } = {}) {
-      const result = await fetch(base + url, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    async function request(url, { method = 'GET', body, token, expectedHousehold } = {}) {
+      const result = await fetch(base + url, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}), ...(expectedHousehold !== undefined ? { 'x-eatwhat-household': expectedHousehold } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
       return { status: result.status, data: result.status === 204 ? null : await result.json() };
     }
     async function login(username) {
@@ -193,6 +193,22 @@ async function main() {
       return result.data.token;
     }
     const [tokenA, tokenPartner, tokenB] = await Promise.all(['test-local-a', 'test-local-partner', 'test-local-b'].map(login));
+    const fenceHomeA = await Household.create({ name: 'Scope A', inviteCode: 'FENCE-A' });
+    const fenceHomeB = await Household.create({ name: 'Scope B', inviteCode: 'FENCE-B' });
+    const fenceUser = await User.create({ username: 'test-local-fence', passwordHash: hash, householdId: fenceHomeA._id });
+    const fenceToken = await login('test-local-fence');
+    assert.equal((await request('/dashboard/summary', { token: fenceToken, expectedHousehold: String(fenceHomeA._id) })).status, 200);
+    assert.equal((await request('/dashboard/summary', { token: fenceToken, expectedHousehold: 'invalid' })).status, 400);
+    await User.updateOne({ _id: fenceUser._id }, { $set: { householdId: fenceHomeB._id } });
+    const fencedRead = await request('/dashboard/summary', { token: fenceToken, expectedHousehold: String(fenceHomeA._id) });
+    assert.equal(fencedRead.status, 409);
+    assert.equal(fencedRead.data.code, 'HOUSEHOLD_SCOPE_CHANGED');
+    const fencedWrite = await request('/wishlist', { method: 'POST', token: fenceToken, expectedHousehold: String(fenceHomeA._id), body: { title: '旧设备不应创建' } });
+    assert.equal(fencedWrite.status, 409);
+    assert.equal(await WishlistItem.countDocuments({ title: '旧设备不应创建' }), 0);
+    assert.equal((await request('/household/join', { method: 'POST', token: fenceToken, expectedHousehold: String(fenceHomeA._id), body: { inviteCode: 'FENCE-A' } })).status, 409);
+    assert.equal(String((await User.findById(fenceUser._id)).householdId), String(fenceHomeB._id));
+    assert.equal((await request('/dashboard/summary', { token: fenceToken })).status, 200, 'legacy requests without the opt-in header remain compatible');
     const reviewHome = await Household.create({ name: '回顾隔离家庭', inviteCode: 'LOCAL-REVIEW' });
     const reviewUser = await User.create({ username: 'test-local-review', passwordHash: hash, householdId: reviewHome._id });
     const reviewToken = await login('test-local-review');
@@ -883,12 +899,33 @@ async function main() {
       await switchPage.getByRole('button', { name: '确认加入' }).click();
       await switchPage.getByText('已加入小家').waitFor();
       assert.equal(String((await User.findById(scopeUser._id)).householdId), String(scopeHomeB._id));
-      await staleEditor.getByRole('alert').filter({ hasText: '账号或小家已在其他页面变化' }).waitFor();
+      await staleEditor.locator('.session-warning').getByText('账号或小家已变化').waitFor();
       await staleEditor.getByRole('button', { name: '保存', exact: true }).click();
       await staleEditor.getByText('本次请求未发送', { exact: false }).first().waitFor();
       assert.equal(await staleEditor.getByPlaceholder('给这道菜起个名字').inputValue(), '旧家庭浏览器草稿');
       assert.equal(await Meal.countDocuments({ name: '旧家庭浏览器草稿' }), 0, 'stale tab must not save a draft to the new household');
       await scopeContext.close();
+      const otherDevice = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await otherDevice.addInitScript(({ token, id, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id, householdId, username: 'test-local-scope' })); }, { token: scopeToken, id: String(scopeUser._id), householdId: String(scopeHomeA._id) });
+      const otherDevicePage = await otherDevice.newPage();
+      await otherDevicePage.goto(`${webBase}/meals/editor`);
+      await otherDevicePage.getByPlaceholder('给这道菜起个名字').fill('另一设备旧家庭草稿');
+      await otherDevicePage.getByRole('button', { name: '保存', exact: true }).click();
+      await otherDevicePage.locator('.session-warning').getByText('账号或小家已变化').waitFor();
+      assert.equal(await otherDevicePage.getByPlaceholder('给这道菜起个名字').inputValue(), '另一设备旧家庭草稿');
+      assert.equal(await Meal.countDocuments({ name: '另一设备旧家庭草稿' }), 0, 'server must reject another device’s stale household context');
+      assert.equal(await otherDevicePage.getByRole('button', { name: '重新登录', exact: true }).isVisible(), true);
+      await otherDevicePage.getByRole('button', { name: '重新登录', exact: true }).click();
+      otherDevicePage.once('dialog', dialog => dialog.accept());
+      await otherDevicePage.locator('.el-message-box').getByRole('button', { name: '重新登录', exact: true }).click();
+      await otherDevicePage.waitForURL('**/login');
+      await otherDevicePage.getByPlaceholder('请输入用户名').fill('test-local-scope');
+      await otherDevicePage.getByPlaceholder('请输入密码').fill('test-only-password');
+      await otherDevicePage.getByRole('button', { name: '立即登录' }).click();
+      await otherDevicePage.waitForURL('**/dashboard');
+      assert.equal(await otherDevicePage.evaluate(() => JSON.parse(localStorage.getItem('user')).householdId), String(scopeHomeB._id));
+      assert.equal(await otherDevicePage.locator('.session-warning').count(), 0);
+      await otherDevice.close();
       const hostListContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       await hostListContext.addInitScript(({ token, user, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id: user, householdId, username: 'test-local-guest-list' })); }, { token: listToken, user: String(listUser._id), householdId: String(listHome._id) });
       const hostListPage = await hostListContext.newPage();

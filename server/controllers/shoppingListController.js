@@ -76,7 +76,7 @@ function handleError(err, res, next) {
 
 exports.get = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     await requireUniqueListIndex();
     const weekStart = requestedWeek(req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
@@ -87,7 +87,7 @@ exports.get = async (req, res, next) => {
 
 exports.generate = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     await requireUniqueListIndex();
     const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
@@ -133,7 +133,7 @@ exports.generate = async (req, res, next) => {
 
 exports.addItem = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     await requireUniqueListIndex();
     const weekStart = requestedWeek(req.body.weekStart || req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
@@ -150,7 +150,7 @@ exports.addItem = async (req, res, next) => {
 
 exports.updateItem = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     await requireUniqueListIndex();
     const weekStart = requestedWeek(req.body.weekStart || req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
@@ -169,7 +169,7 @@ exports.updateItem = async (req, res, next) => {
 
 exports.deleteItem = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     await requireUniqueListIndex();
     const weekStart = requestedWeek(req.query.weekStart || req.body?.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
@@ -186,7 +186,7 @@ exports.deleteItem = async (req, res, next) => {
 
 exports.clearPurchased = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     await requireUniqueListIndex();
     const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });

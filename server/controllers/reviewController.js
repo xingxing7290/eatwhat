@@ -180,7 +180,7 @@ function summarySentence({ type, label, memoryCount, plannedCount, topMealsList,
 }
 
 async function buildReview(req, type) {
-  const { household } = await ensureUserHousehold(req.user.uid);
+  const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
   const range = selectedRange(req, type);
   const label = range.month || range.year;
   const dateQuery = { $gte: range.start, $lte: range.end };

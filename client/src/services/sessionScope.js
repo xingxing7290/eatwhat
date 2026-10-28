@@ -16,6 +16,7 @@ function lockSession() {
     window.dispatchEvent(new CustomEvent('eatwhat-session-changed'));
   }
 }
+export function markSessionStale() { lockSession(); }
 export function currentSessionScope() { return { token: boundToken, ...boundUser }; }
 export function sessionIsCurrent(requestScope = currentSessionScope()) {
   const actual = userScope(localStorage.getItem('user'));

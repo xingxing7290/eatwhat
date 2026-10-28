@@ -58,7 +58,7 @@ async function discardNewUploads(req) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const query = { householdId: household._id };
     if (req.query.date) { if (typeof req.query.date !== 'string' || !validDate(req.query.date)) return res.status(400).json({ error: '日期无效' }); query.date = req.query.date; }
     if (req.query.month) { if (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month)) return res.status(400).json({ error: '月份无效' }); query.date = { $regex: `^${req.query.month}` }; }
@@ -70,7 +70,7 @@ exports.list = async (req, res, next) => {
 
 exports.get = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '回忆编号无效' });
     const memory = await populateQuery(MealMemory.findOne({ _id: req.params.id, householdId: household._id }), household._id);
     if (!memory) return res.status(404).json({ code: 'MEMORY_NOT_FOUND', error: '未找到回忆记录' });
@@ -81,7 +81,7 @@ exports.get = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   let writeStarted = false;
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const body = req.body || {};
     const mealIds = stringArray(body.mealIds);
     const participants = stringArray(body.participants);
@@ -113,7 +113,7 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   let writeStarted = false;
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const existing = await MealMemory.findOne({ _id: req.params.id, householdId: household._id });
     if (!existing) { await discardNewUploads(req); return res.status(404).json({ error: '未找到回忆记录' }); }
     const body = req.body || {};
@@ -146,7 +146,7 @@ exports.update = async (req, res, next) => {
 
 exports.remove = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const conditional = Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedEditVersion');
     const version = conditional ? parseEditVersion(req.query.expectedEditVersion) : null;
     if (conditional && !version) return res.status(400).json({ error: '回忆版本无效，请重新加载' });

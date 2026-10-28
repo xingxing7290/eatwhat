@@ -40,7 +40,7 @@ function decorateList(items, uid) { return (items || []).map(item => decorateIte
 
 exports.list = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const query = { householdId: household._id };
     if (req.query.status) query.status = req.query.status;
     const items = await populateQuery(WishlistItem.find(query).sort({ status: 1, priority: -1, createdAt: -1 }), household._id);
@@ -55,7 +55,7 @@ exports.list = async (req, res, next) => {
 
 exports.get = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '想吃编号无效' });
     const item = await populateQuery(WishlistItem.findOne({ _id: req.params.id, householdId: household._id }), household._id);
     if (!item) return res.status(404).json({ code: 'WISH_NOT_FOUND', error: '未找到想吃项' });
@@ -67,7 +67,7 @@ exports.get = async (req, res, next) => {
 // can promise that concurrent requests from different devices are safe.
 exports.createMealWish = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const mealId = req.body?.mealId;
     if (typeof mealId !== 'string' || !/^[a-f\d]{24}$/i.test(mealId) || !mongoose.isValidObjectId(mealId)) return res.status(400).json({ error: '菜品编号无效' });
     if (!await hasSafeMealWishIndex(WishlistItem.collection)) {
@@ -93,7 +93,7 @@ exports.createMealWish = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const title = String(req.body.title || '').trim();
     if (!title) return res.status(400).json({ error: '想吃内容不能为空' });
     const mealId = req.body.mealId || null;
@@ -121,7 +121,7 @@ exports.create = async (req, res, next) => {
 
 exports.vote = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const base = { _id: req.params.id, householdId: household._id };
     let item = await populateQuery(WishlistItem.findOneAndUpdate({ ...base, votes: { $ne: req.user.uid } }, { $addToSet: { votes: req.user.uid } }, { new: true }), household._id);
     if (!item) item = await populateQuery(WishlistItem.findOneAndUpdate({ ...base, votes: req.user.uid }, { $pull: { votes: req.user.uid } }, { new: true }), household._id);
@@ -135,7 +135,7 @@ exports.vote = async (req, res, next) => {
 
 exports.setVote = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     if (typeof req.body?.voted !== 'boolean') return res.status(400).json({ error: '投票状态无效' });
     const update = req.body.voted ? { $addToSet: { votes: req.user.uid } } : { $pull: { votes: req.user.uid } };
     const item = await populateQuery(WishlistItem.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, update, { new: true }), household._id);
@@ -146,7 +146,7 @@ exports.setVote = async (req, res, next) => {
 
 exports.updateDetails = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const body = req.body || {};
     const version = parseEditVersion(body.expectedEditVersion);
     if (!version) return res.status(400).json({ error: '想吃记录版本无效，请重新加载' });
@@ -171,7 +171,7 @@ exports.updateDetails = async (req, res, next) => {
 
 exports.updateStatus = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const status = ['open', 'planned', 'done'].includes(req.body.status) ? req.body.status : null;
     if (!status) return res.status(400).json({ error: '状态无效' });
     const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedEditVersion');
@@ -190,7 +190,7 @@ exports.updateStatus = async (req, res, next) => {
 
 exports.attachMeal = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const mealId = req.body.mealId || null;
     if (!mealId) return res.status(400).json({ error: '\u83dc\u54c1\u4e0d\u80fd\u4e3a\u7a7a' });
     const meal = await Meal.findOne({ _id: mealId, householdId: household._id });
@@ -218,7 +218,7 @@ exports.attachMeal = async (req, res, next) => {
 
 exports.remove = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const conditional = Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedEditVersion');
     const version = conditional ? parseEditVersion(req.query.expectedEditVersion) : null;
     if (conditional && !version) return res.status(400).json({ error: '想吃记录版本无效，请重新加载' });

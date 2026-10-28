@@ -72,7 +72,7 @@ async function discardNewUploads(req) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const items = await populateQuery(AnniversaryMenu.find({ householdId: household._id }).sort({ date: 1, createdAt: -1 }), household._id);
     res.json(items.map(present));
   } catch (err) { next(err); }
@@ -81,7 +81,7 @@ exports.list = async (req, res, next) => {
 exports.create = async (req, res, next) => {
   let writeStarted = false;
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const body = req.body || {};
     const title = String(body.title || '').trim();
     const date = String(body.date || '').trim();
@@ -106,7 +106,7 @@ exports.create = async (req, res, next) => {
 exports.update = async (req, res, next) => {
   let writeStarted = false;
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const existing = await AnniversaryMenu.findOne({ _id: req.params.id, householdId: household._id });
     if (!existing) { await discardNewUploads(req); return res.status(404).json({ error: '未找到纪念日菜单' }); }
     const body = req.body || {};
@@ -138,7 +138,7 @@ exports.update = async (req, res, next) => {
 
 exports.remove = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const conditional = Object.prototype.hasOwnProperty.call(req.query || {}, 'expectedEditVersion');
     const version = conditional ? parseEditVersion(req.query.expectedEditVersion) : null;
     if (conditional && !version) return res.status(400).json({ error: '菜单版本无效，请重新加载' });

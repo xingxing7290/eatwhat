@@ -44,6 +44,23 @@ test('legacy fallback cannot overwrite a concurrent household switch', async () 
   assert.deepEqual(membershipUpdates, [{ _id: 'home-b' }]);
 });
 
+test('expected household is rechecked before fallback or membership updates', async () => {
+  User.findById = async () => ({ _id: 'u1', householdId: 'home-b' });
+  let writes = 0;
+  Household.updateOne = async () => { writes++; };
+  await assert.rejects(household.ensureUserHousehold('u1', 0, 'home-a'), error => error.status === 409 && error.code === 'HOUSEHOLD_SCOPE_CHANGED');
+  assert.equal(writes, 0);
+});
+
+test('a scoped request cannot repair a missing household into another household', async () => {
+  User.findById = async () => ({ _id: 'u1', householdId: 'deleted-home' });
+  Household.findById = async () => null;
+  let fallbackReads = 0;
+  Household.findOne = async () => { fallbackReads++; return null; };
+  await assert.rejects(household.ensureUserHousehold('u1', 0, 'deleted-home'), error => error.status === 409 && error.code === 'HOUSEHOLD_SCOPE_CHANGED');
+  assert.equal(fallbackReads, 0);
+});
+
 test('fallback initializes an unassigned account only if it remains unassigned', async () => {
   User.findById = async () => ({ _id: 'u1', householdId: null });
   Household.findOne = async () => ({ _id: 'default-home', createdBy: null });

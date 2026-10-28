@@ -1,7 +1,7 @@
 import axios from 'axios';
 import mockData from './mockData';
 import { ElMessage } from 'element-plus';
-import { currentSessionScope, currentSessionToken, sessionChangedError, sessionIsCurrent } from './sessionScope';
+import { currentSessionScope, currentSessionToken, markSessionStale, sessionChangedError, sessionIsCurrent } from './sessionScope';
 
 // 是否使用模拟数据
 const USE_MOCK = false;
@@ -117,6 +117,7 @@ api.interceptors.request.use(
 		if (token) {
 			config.headers = config.headers || {};
 			config.headers.Authorization = `Bearer ${token}`;
+			if (/^[a-f0-9]{24}$/i.test(config._eatwhatSessionScope.householdId)) config.headers['X-Eatwhat-Household'] = config._eatwhatSessionScope.householdId;
 		}
 		// 打印请求信息
 		logAPI('request', `${config.method.toUpperCase()} ${config.url}`, config.data);
@@ -144,6 +145,10 @@ api.interceptors.response.use(
 		if (error.config && !isPublicAuth(error.config) && !sessionIsCurrent(error.config._eatwhatSessionScope)) return Promise.reject(sessionChangedError(true));
 		// 统一处理错误
 		const { response } = error;
+		if (response?.status === 409 && response.data?.code === 'HOUSEHOLD_SCOPE_CHANGED') {
+			markSessionStale();
+			return Promise.reject(response.data);
+		}
 		if (response) {
 			const errorMsg = response.data?.error || response.data?.errors?.[0]?.msg || '\u670d\u52a1\u5668\u9519\u8bef';
 			logAPI('error', `${error.config?.method?.toUpperCase() || 'ERROR'} ${error.config?.url || '\u672a\u77e5URL'}`, response.data, response.status);

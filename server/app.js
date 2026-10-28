@@ -95,7 +95,7 @@ app.use((err, req, res, next) => {
 	logger.error(`\u9519\u8bef: ${message}`);
 	logger.error(`\u9519\u8bef\u8be6\u60c5: status=${status} name=${err.name || ''} code=${err.code || ''} field=${err.field || ''} route=${req.method} ${safeRequestUrl(req.originalUrl)}`);
 	if (err.uploadDetails) logger.error(`\u4e0a\u4f20\u8be6\u60c5: ${err.uploadDetails}`);
-	res.status(status).json({ error: message });
+	res.status(status).json({ error: message, ...(err.code === 'HOUSEHOLD_SCOPE_CHANGED' ? { code: err.code } : {}) });
 });
 
 const PORT = process.env.PORT || 3000;

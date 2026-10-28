@@ -14,6 +14,8 @@ The browser/database check also opens monthly and yearly reviews with a real aut
 
 `npm run test:session-scope` from `client` checks same-browser account and household changes across tabs, blocking new requests, preserving a recipe draft, rejecting a late response and normal login. See `docs/session-scope-safety.md` for cross-device and in-flight request limitations.
 
+The isolated database test additionally checks the optional household request header against an actual changed account, rejects stale reads, writes and household joins, preserves legacy requests without the header, and exercises a second browser context with a stale household and an unsaved recipe draft.
+
 ## Docker-based application integration
 
 Run `sh test/run-isolated-mongo.sh` from the server directory on a Linux host with Docker, `timeout`, MongoDB 7 and a locally available backend image containing dependencies at `/app/node_modules`. The default images are `mongo:7.0` and `eatwhat-backend-local:latest`; set `EATWHAT_TEST_MONGO_IMAGE` or `EATWHAT_TEST_BACKEND_IMAGE` to override them.

@@ -10,7 +10,7 @@ function populate(q, householdId) {
 
 exports.list = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const query = { householdId: household._id };
     if (req.query.status) query.status = req.query.status;
     res.json(await populate(MealImageIssue.find(query).sort({ status: 1, createdAt: -1 }).limit(200), household._id));
@@ -19,7 +19,7 @@ exports.list = async (req, res, next) => {
 
 exports.create = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const meal = await Meal.findOne({ _id: req.body.mealId, householdId: household._id });
     if (!meal) return res.status(400).json({ error: '菜品不存在' });
     const issue = await MealImageIssue.create({
@@ -35,7 +35,7 @@ exports.create = async (req, res, next) => {
 
 exports.update = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const update = {};
     if (req.body.status && ['open', 'fixed', 'ignored'].includes(req.body.status)) {
       update.status = req.body.status;

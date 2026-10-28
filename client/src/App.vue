@@ -41,6 +41,12 @@ const reloadChangedSession = async () => {
     window.location.reload();
   } catch (_) { /* Keep the current page and draft. */ }
 };
+const reloginChangedSession = async () => {
+  try {
+    await ElMessageBox.confirm('重新登录会离开本页并丢失未保存内容。请先复制或记录草稿。', '确认重新登录？', { type: 'warning', confirmButtonText: '重新登录', cancelButtonText: '继续保留草稿' });
+    window.location.assign(router.resolve({ name: 'login' }).href);
+  } catch (_) { /* Keep the current page and draft. */ }
+};
 
 // 检测是否为移动设备
 const isMobile = computed(() => {
@@ -200,8 +206,8 @@ onBeforeUnmount(() => {
     <div class="app-container" :class="{ 'dark-mode': isDarkMode }">
       <a href="#app-main" class="skip-link" @click.prevent="focusMain">跳转到主要内容</a>
       <div v-if="sessionChanged" class="session-warning" role="alert">
-        <div><strong>账号或小家已在其他页面变化</strong><span>本页新请求已暂停，未保存内容仍在。此前已发送的请求可能仍会完成，请先核对。</span></div>
-        <button type="button" @click="reloadChangedSession">重新加载</button>
+        <div><strong>账号或小家已变化</strong><span>本页新请求已暂停，未保存内容仍在。此前已发送的请求可能仍会完成，请先核对。</span></div>
+        <div class="session-warning-actions"><button type="button" @click="reloadChangedSession">重新加载</button><button type="button" @click="reloginChangedSession">重新登录</button></div>
       </div>
       <!-- 移动端遮罩层 -->
       <div 

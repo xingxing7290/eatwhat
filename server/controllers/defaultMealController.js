@@ -11,14 +11,14 @@ async function statusFor(householdId) {
 
 exports.status = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     res.json(await statusFor(household._id));
   } catch (err) { next(err); }
 };
 
 exports.importMissing = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const before = await statusFor(household._id);
     const result = await seedDefaultMealsForHousehold(household._id, req.user.uid);
     const after = await statusFor(household._id);
@@ -28,7 +28,7 @@ exports.importMissing = async (req, res, next) => {
 
 exports.restoreImages = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     ensureDefaultMealImages();
     let updated = 0;
     for (const item of defaultMeals) {

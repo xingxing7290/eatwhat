@@ -92,7 +92,7 @@ exports.me = async (req, res, next) => {
 	try {
 		const uid = req.user && req.user.uid;
 		if (!uid) return res.status(401).json({ error: '未认证' });
-		const { user, household } = await ensureUserHousehold(uid);
+		const { user, household } = await ensureUserHousehold(uid, 0, req.expectedHouseholdId);
 		const currentHousehold = await withCurrentMembers(household, uid);
 		return res.json({ user: toSafeUser(user, currentHousehold), household: householdPayload(currentHousehold) });
 	} catch (err) { next(err); }
@@ -107,7 +107,7 @@ exports.updateProfile = async (req, res, next) => {
 		if (looksBrokenText(safeDisplayName)) return res.status(400).json({ error: '\u6635\u79f0\u770b\u8d77\u6765\u662f\u4e71\u7801\uff0c\u8bf7\u91cd\u65b0\u8f93\u5165' });
 		const user = await User.findByIdAndUpdate(uid, { $set: { displayName: safeDisplayName } }, { new: true });
 		if (!user) return res.status(404).json({ error: '\u7528\u6237\u4e0d\u5b58\u5728' });
-		const { user: currentUser, household } = await ensureUserHousehold(uid);
+		const { user: currentUser, household } = await ensureUserHousehold(uid, 0, req.expectedHouseholdId);
 		const currentHousehold = await withCurrentMembers(household, uid);
 		return res.json({ user: toSafeUser(currentUser, currentHousehold), household: householdPayload(currentHousehold) });
 	} catch (err) { next(err); }
@@ -121,7 +121,7 @@ exports.uploadAvatar = async (req, res, next) => {
 		const avatarUrl = buildUploadUrl(req, req.file.filename);
 		const user = await User.findByIdAndUpdate(uid, { $set: { avatarUrl } }, { new: true });
 		if (!user) return res.status(404).json({ error: '用户不存在' });
-		const { user: currentUser, household } = await ensureUserHousehold(uid);
+		const { user: currentUser, household } = await ensureUserHousehold(uid, 0, req.expectedHouseholdId);
 		const currentHousehold = await withCurrentMembers(household, uid);
 		return res.json({ user: toSafeUser(currentUser, currentHousehold), household: householdPayload(currentHousehold) });
 	} catch (err) { next(err); }

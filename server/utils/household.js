@@ -38,20 +38,32 @@ async function getOrCreateDefaultHousehold() {
   return household;
 }
 
-async function ensureUserHousehold(userId, attempt = 0) {
+function assertExpectedHousehold(user, expected) {
+  if (expected && String(user?.householdId || '').toLowerCase() !== String(expected).toLowerCase()) {
+    const error = new Error('当前账号所属小家已变化，请保留草稿并重新登录');
+    error.status = 409; error.code = 'HOUSEHOLD_SCOPE_CHANGED'; throw error;
+  }
+}
+
+async function ensureUserHousehold(userId, attempt = 0, expected = undefined) {
   let user = await User.findById(userId);
   if (!user) {
     const err = new Error('用户不存在');
     err.status = 404;
     throw err;
   }
+  assertExpectedHousehold(user, expected);
 
   let household = user.householdId ? await Household.findById(user.householdId) : null;
   if (!household) {
+    if (expected) {
+      const error = new Error('当前小家不可用，请重新登录核对');
+      error.status = 409; error.code = 'HOUSEHOLD_SCOPE_CHANGED'; throw error;
+    }
     const fallback = await getOrCreateDefaultHousehold();
     const updated = await User.findOneAndUpdate({ _id: user._id, householdId: user.householdId || null }, { $set: { householdId: fallback._id } }, { new: true });
     if (!updated) {
-      if (attempt < 3) return ensureUserHousehold(userId, attempt + 1);
+      if (attempt < 3) return ensureUserHousehold(userId, attempt + 1, expected);
       const error = new Error('所属小家正在变化，请重试');
       error.status = 409;
       throw error;
@@ -91,6 +103,7 @@ module.exports = {
   createHousehold,
   getOrCreateDefaultHousehold,
   ensureUserHousehold,
+  assertExpectedHousehold,
   householdPayload,
   withCurrentMembers
 };

@@ -58,7 +58,7 @@ exports.getSchedules = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const { year, month } = req.query;
     const endDate = new Date(year, month, 0);
     const monthPrefix = `${year}-${String(month).padStart(2, '0')}`;
@@ -93,7 +93,7 @@ exports.getScheduleByDate = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const { date } = req.params;
     const schedule = await Schedule.findOne({ householdId: household._id, date });
     if (!schedule) {
@@ -119,7 +119,7 @@ exports.updateSchedule = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const { date, mealType } = req.params;
     const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedVersion');
     const expectedVersion = req.body.expectedVersion;

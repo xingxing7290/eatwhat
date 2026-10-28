@@ -100,7 +100,7 @@ exports.validateMeal = [
 
 exports.getAllMeals = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const { search, tag, category, subcategory, difficulty, favorite, page, limit, archived } = req.query;
     if (archived !== undefined && archived !== 'true' && archived !== 'false') return res.status(400).json({ error: '归档筛选参数无效' });
     const query = { householdId: household._id, archived: archived === 'true' ? true : { $ne: true } };
@@ -134,7 +134,7 @@ exports.getAllMeals = async (req, res, next) => {
 
 exports.getMealCategories = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const rows = await Meal.aggregate([
       { $match: { householdId: household._id, archived: { $ne: true } } },
       { $group: { _id: { category: { $ifNull: ['$category', ''] }, subcategory: { $ifNull: ['$subcategory', ''] } }, count: { $sum: 1 } } },
@@ -147,7 +147,7 @@ exports.getMealCategories = async (req, res, next) => {
 
 exports.getMealTags = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const tags = await Meal.distinct('tags', { householdId: household._id, archived: { $ne: true } });
     res.status(200).json((tags || []).filter(t => t && String(t).trim()).map(t => String(t).trim()).sort((a, b) => a.localeCompare(b, 'zh')));
   } catch (error) { next(error); }
@@ -155,7 +155,7 @@ exports.getMealTags = async (req, res, next) => {
 
 exports.getMealStats = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const [total, favorites, memories, categories] = await Promise.all([
       Meal.countDocuments({ householdId: household._id, archived: { $ne: true } }),
       Meal.countDocuments({ householdId: household._id, favorite: true, archived: { $ne: true } }),
@@ -168,7 +168,7 @@ exports.getMealStats = async (req, res, next) => {
 
 exports.getMealById = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: '无效的菜品ID' });
     const meal = await Meal.findOne({ _id: req.params.id, householdId: household._id });
     if (!meal) return res.status(404).json({ code: 'MEAL_NOT_FOUND', error: '未找到指定菜品' });
@@ -179,7 +179,7 @@ exports.getMealById = async (req, res, next) => {
 exports.archiveCapabilities = (_req, res) => res.json({ supportsMealArchive: true });
 exports.setArchived = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '无效的菜品ID' });
     if (typeof req.body?.archived !== 'boolean') return res.status(400).json({ error: '归档状态无效' });
     const version = parseEditVersion(req.body.expectedEditVersion);
@@ -244,7 +244,7 @@ exports.createMeal = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const newMeal = await Meal.create({ ...mealPayloadFromRequest(req), householdId: household._id, createdBy: req.user.uid });
     if (!newMeal.imageUrl) {
       newMeal.imageUrl = ensureMealImage(newMeal);
@@ -259,7 +259,7 @@ exports.updateMeal = async (req, res, next) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) { await discardNewUploads(req); return res.status(400).json({ errors: errors.array() }); }
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedEditVersion');
     const version = conditional ? parseEditVersion(req.body.expectedEditVersion) : null;
     if (conditional && !version) { await discardNewUploads(req); return res.status(400).json({ error: '菜谱版本无效，请重新加载' }); }
@@ -288,7 +288,7 @@ exports.updateMeal = async (req, res, next) => {
 
 exports.deleteMeal = async (req, res, next) => {
   try {
-    const { household } = await ensureUserHousehold(req.user.uid);
+    const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const deletedMeal = await Meal.findOneAndDelete({ _id: req.params.id, householdId: household._id });
     if (!deletedMeal) return res.status(404).json({ error: '未找到指定菜品' });
     res.status(204).send();

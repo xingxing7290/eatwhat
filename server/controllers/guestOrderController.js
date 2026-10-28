@@ -106,7 +106,7 @@ exports.capabilities = async (req, res, next) => {
 };
 
 async function hostContext(req) {
-  return ensureUserHousehold(req.user.uid);
+  return ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
 }
 
 async function hostSession(req, { includeToken = false } = {}) {
