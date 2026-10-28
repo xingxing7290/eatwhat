@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { ArrowLeft, Edit, Star, Clock, Bowl, Picture, Check, Warning } from '@element-plus/icons-vue';
 import api from '@/services/api';
-import defaultImage from '@/assets/meal-placeholder.png';
+import defaultImage from '@/assets/meal-placeholder.svg';
 
 const route = useRoute();
 const router = useRouter();

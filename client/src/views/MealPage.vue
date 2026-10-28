@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
+import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
 
@@ -113,7 +114,7 @@ const allTags = computed(() => {
 const getMealImage = (meal) => {
   const imagePath = meal.imageUrl || meal.image;
   if (!imagePath) {
-    return '/src/assets/meal-placeholder.png';
+    return defaultImageSrc;
   }
   if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
     try {
@@ -129,7 +130,7 @@ const getMealImage = (meal) => {
     } catch (_) {}
     return imagePath;
   }
-  return '/src/assets/meal-placeholder.png';
+  return defaultImageSrc;
 };
 
 // 图片加载错误处理
@@ -146,7 +147,10 @@ const handleImageError = (e) => {
       return;
     }
   } catch (_) {}
-  img.src = '/src/assets/meal-placeholder.png';
+  if (img.dataset.placeholder !== '1') {
+    img.dataset.placeholder = '1';
+    img.src = defaultImageSrc;
+  }
 };
 
 // 加载所有菜品

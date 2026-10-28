@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed } from 'vue';
-import defaultImageSrc from '../assets/meal-placeholder.png';
+import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { Check, Edit, Delete, View, Present, Warning } from '@element-plus/icons-vue';
 
 const props = defineProps({
