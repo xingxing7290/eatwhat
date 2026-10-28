@@ -67,6 +67,12 @@ async function main () {
   catch (error) { console.error('Dashboard text:', await page.locator('body').innerText()); console.error('Page errors:', errors); await browser.close(); throw error }
   assert.equal(await page.getByText('本周已安排').count(), 1)
   await page.screenshot({ path: process.env.EATWHAT_DESKTOP_SHOT || path.join(os.tmpdir(), 'eatwhat-web-dashboard-desktop.png'), fullPage: true })
+  await page.getByRole('button', { name: '切换到暗色模式' }).click()
+  assert.equal(await page.evaluate(() => document.documentElement.classList.contains('dark')), true)
+  const darkBackground = await page.evaluate(() => getComputedStyle(document.querySelector('.app-main')).backgroundImage)
+  assert.match(darkBackground, /32, 26, 24/)
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-dashboard-dark.png'), fullPage: true })
+  await page.getByRole('button', { name: '切换到亮色模式' }).click()
   await page.getByRole('button', { name: '安排晚餐' }).click()
   try { await page.getByRole('heading', { name: /选择晚餐/ }).waitFor({ timeout: 12000 }) }
   catch (error) { console.error('Selection URL:', page.url(), 'text:', await page.locator('body').innerText(), 'errors:', errors); await browser.close(); throw error }
@@ -127,6 +133,16 @@ async function main () {
   await page.getByText('将删除 1 项已购食材。').waitFor()
   await page.getByRole('button', { name: '取消' }).last().click()
   assert.deepEqual(errors, [])
+  const loginContext = await browser.newContext()
+  const loginPage = await loginContext.newPage()
+  await loginPage.addInitScript(() => localStorage.setItem('eatwhat_remember_login', JSON.stringify({ remember: true, username: 'old-user', password: 'old-plaintext' })))
+  await loginPage.goto(`${base}/login`)
+  await loginPage.getByPlaceholder('请输入用户名').waitFor()
+  assert.equal(await loginPage.getByPlaceholder('请输入用户名').inputValue(), 'old-user')
+  assert.equal(await loginPage.getByPlaceholder('请输入密码').inputValue(), '')
+  const remembered = await loginPage.evaluate(() => JSON.parse(localStorage.getItem('eatwhat_remember_login')))
+  assert.equal('password' in remembered, false)
+  await loginContext.close()
   console.log('Web workflows passed: dashboard, safe selection, wishlist, weekly plan, shopping and mobile navigation')
   await browser.close()
 }

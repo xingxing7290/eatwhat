@@ -48,7 +48,7 @@
         </el-form-item>
 
         <div class="login-options">
-          <el-checkbox v-model="rememberPassword">记住密码</el-checkbox>
+          <el-checkbox v-model="rememberPassword">记住账号</el-checkbox>
         </div>
         
         <el-button 
@@ -94,7 +94,9 @@ const loadRememberedLogin = () => {
     if (saved?.remember) {
       rememberPassword.value = true
       form.value.username = saved.username || ''
-      form.value.password = saved.password || ''
+      if ('password' in saved) {
+        localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({ remember: true, username: saved.username || '' }))
+      }
     }
   } catch (_) {
     localStorage.removeItem(REMEMBER_LOGIN_KEY)
@@ -114,8 +116,7 @@ const persistRememberedLogin = () => {
 
   localStorage.setItem(REMEMBER_LOGIN_KEY, JSON.stringify({
     remember: true,
-    username: form.value.username,
-    password: form.value.password
+    username: form.value.username
   }))
 }
 

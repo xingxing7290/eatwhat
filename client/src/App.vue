@@ -257,6 +257,7 @@ onBeforeUnmount(() => {
             <el-tooltip :content="isDarkMode ? '切换到亮色模式' : '切换到暗色模式'" placement="bottom">
               <el-button 
                 circle 
+                :aria-label="isDarkMode ? '切换到亮色模式' : '切换到暗色模式'"
                 @click="toggleDarkMode"
               >
                 <el-icon>
@@ -1209,6 +1210,46 @@ html[data-theme] .el-popper {
 .app-header .header-right .desktop-actions .desktop-logout-btn { display: none; }
 .mobile-nav-link.router-link-active { color: var(--secondary-color); background: var(--bg-secondary); font-weight: 700; }
 .app-header .header-right .mobile-menu-btn { color: var(--text-primary); }
+html.dark[data-theme] {
+  --primary-color: #ffad99;
+  --secondary-color: #efb27c;
+  --accent-color: #e8c087;
+  --text-primary: #fff3e8;
+  --text-secondary: #dbc7ba;
+  --text-muted: #bfa99b;
+  --bg-primary: #29211e;
+  --bg-secondary: #352a26;
+  --bg-tertiary: #41322c;
+  --border-color: #604b40;
+  --border-light: #4c3a32;
+  --shadow-color: rgba(0, 0, 0, .28);
+  --body-bg: linear-gradient(180deg, #201a18, #2a211e);
+  --header-bg: rgba(38, 30, 27, .96);
+  --el-bg-color: #29211e;
+  --el-bg-color-overlay: #352a26;
+  --el-fill-color-blank: #29211e;
+  --el-fill-color-light: #41322c;
+  --el-text-color-primary: #fff3e8;
+  --el-text-color-regular: #dbc7ba;
+  --el-text-color-secondary: #bfa99b;
+  --el-border-color: #604b40;
+  --el-border-color-light: #4c3a32;
+  color-scheme: dark;
+}
+html.dark[data-theme] body, html.dark[data-theme] .app-main { background: var(--body-bg); color: var(--text-primary); }
+html.dark[data-theme] .app-header { background: var(--header-bg); }
+html.dark[data-theme] .app-header .header-left .logo,
+html.dark[data-theme] .app-header .header-left .main-nav .nav-link,
+html.dark[data-theme] .app-header .header-right .desktop-actions .user-menu-btn { color: var(--text-primary); }
+html.dark[data-theme] .app-header .header-left .logo,
+html.dark[data-theme] .app-header .header-right .desktop-actions .user-menu-btn { background: var(--bg-secondary); }
+html.dark[data-theme] .dark-mode .el-card { color: var(--text-primary); }
+html.dark[data-theme] .dark-mode .el-card strong { color: var(--text-primary); }
+html.dark[data-theme] .dark-mode .el-input__wrapper,
+html.dark[data-theme] .dark-mode .el-textarea__inner,
+html.dark[data-theme] .dark-mode .el-select__wrapper { background: var(--bg-secondary) !important; }
+html.dark[data-theme] .el-dialog__title,
+html.dark[data-theme] .el-message-box__title { color: var(--text-primary); }
 @media (min-width: 769px) and (max-width: 1120px) {
   .app-header { padding-left: 16px; padding-right: 16px; }
   .app-header .header-left .logo { margin-right: 8px; font-size: 18px; }
