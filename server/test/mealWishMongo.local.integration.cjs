@@ -150,6 +150,12 @@ async function main() {
     for (let index = 0; index < 7; index++) for (const type of ['breakfast', 'lunch', 'dinner']) {
       assert.deepEqual(futureDraft.data.preview[index].meals[type].map(meal => String(meal._id)), futureDraft.data.days[index].meals[type]);
     }
+    const foreignDraft = futureDraft.data.days.map((day, index) => index ? day : { ...day, meals: { ...day.meals, dinner: [String(otherMeal._id)] } });
+    const invalidDraft = await request('/weekly-plans/apply', { method: 'POST', token: tokenA, body: { days: foreignDraft, expectedVersions: Object.fromEntries(foreignDraft.map(day => [day.date, null])) } });
+    assert.equal(invalidDraft.status, 400);
+    assert.equal(invalidDraft.data.code, 'WEEKLY_PLAN_INVALID');
+    assert.deepEqual(invalidDraft.data.appliedDates, []);
+    assert.equal(await Schedule.countDocuments({ householdId: homeA._id, date: { $in: foreignDraft.map(day => day.date) } }), 0, 'invalid plans never write a partial week');
     const shoppingWeek = '2026-11-09';
     await ShoppingList.collection.dropIndex('householdId_1_weekStart_1');
     const unsafeShopping = await request(`/shopping-list?weekStart=${shoppingWeek}`, { token: tokenA });
@@ -449,11 +455,22 @@ async function main() {
       await pages[0].goto(`${webBase}/weekly-plan`);
       await pages[0].getByRole('button', { name: '生成草稿' }).click();
       await pages[0].getByText('规则生成草稿').waitFor();
+      const editableMeal = await Meal.create({ householdId: homeA._id, name: '周计划手动加菜', category: '家常菜' });
+      const beforeDraftEdit = await Schedule.countDocuments({ householdId: homeA._id });
+      await pages[0].getByRole('button', { name: '调整2026-10-26晚餐' }).click();
+      const weeklyPicker = pages[0].getByRole('dialog', { name: '调整 2026-10-26 晚餐' });
+      await weeklyPicker.getByRole('textbox', { name: '搜索周计划菜品' }).fill('周计划手动加菜');
+      await weeklyPicker.getByRole('button', { name: '选择周计划手动加菜' }).click();
+      await weeklyPicker.getByRole('button', { name: '保存到草稿' }).click();
+      await pages[0].locator('.draft-card').getByText('周计划手动加菜', { exact: true }).waitFor();
+      assert.equal(await Schedule.countDocuments({ householdId: homeA._id }), beforeDraftEdit, 'editing the draft must not write any schedules');
       await pages[0].getByRole('button', { name: '应用到日历' }).click();
       await pages[0].getByRole('button', { name: '确认替换' }).click();
       await pages[0].getByText('已应用到日历').waitFor();
       assert.equal(await pages[0].getByText('规则生成草稿').count(), 0);
       assert.equal(await Schedule.countDocuments({ householdId: homeA._id, date: { $in: ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01'] } }), 7);
+      const editedDay = await request('/schedules/day/2026-10-26', { token: tokenA });
+      assert.ok(editedDay.data.meals.dinner.some(item => String(item.meal._id) === String(editableMeal._id)), 'the edited draft is what reaches the database');
       assert.deepEqual(browserErrors, []);
       await pages[1].screenshot({ path: path.join(root, 'mobile-catalog.png'), fullPage: true });
       console.log('Real browser integration passed: partner reminders, catalog, atomic meal wishes, scheduling and collaborative shopping.');

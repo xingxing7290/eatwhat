@@ -135,8 +135,9 @@ exports.generate = async (req, res, next) => {
 exports.apply = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
+    const invalid = error => res.status(400).json({ code: 'WEEKLY_PLAN_INVALID', error, appliedDates: [] });
     const days = normalizePlan(req.body.days);
-    if (!Array.isArray(req.body.days) || !days.length || days.length !== req.body.days.length) return res.status(400).json({ error: '周计划日期无效或不完整' });
+    if (!Array.isArray(req.body.days) || !days.length || days.length !== req.body.days.length) return invalid('周计划日期无效或不完整');
     const conditional = Object.prototype.hasOwnProperty.call(req.body, 'expectedVersions');
     const versions = req.body.expectedVersions;
     if (conditional) {
@@ -147,13 +148,13 @@ exports.apply = async (req, res, next) => {
       const validVersions = versions && typeof versions === 'object' && !Array.isArray(versions) &&
         days.every(day => Object.prototype.hasOwnProperty.call(versions, day.date) &&
           (versions[day.date] === null || (typeof versions[day.date] === 'string' && Number.isFinite(Date.parse(versions[day.date])))));
-      if (!validDays || !validVersions) return res.status(400).json({ error: '周计划或版本信息不完整，请重新加载' });
+      if (!validDays || !validVersions) return invalid('周计划或版本信息不完整，请重新加载');
     }
     const ids = [...new Set(days.flatMap(day => mealTypes.flatMap(type => day.meals[type])))];
     if (ids.length) {
-      if (ids.some(id => !mongoose.isValidObjectId(id))) return res.status(400).json({ error: '计划中包含无效菜品' });
+      if (ids.some(id => !mongoose.isValidObjectId(id))) return invalid('计划中包含无效菜品');
       const count = await Meal.countDocuments({ householdId: household._id, _id: { $in: ids } });
-      if (count !== ids.length) return res.status(400).json({ error: '计划中包含无效菜品' });
+      if (count !== ids.length) return invalid('计划中包含无效菜品');
     }
     const conflict = (date, appliedDates) => res.status(409).json({ code: 'WEEKLY_PLAN_CONFLICT', error: '日历安排已变化，请重新核对', conflictDate: date, appliedDates });
     if (conditional) {

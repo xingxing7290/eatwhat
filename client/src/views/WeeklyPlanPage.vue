@@ -3,6 +3,7 @@ import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import WeeklyPlanMealPicker from '@/components/WeeklyPlanMealPicker.vue';
 
 const loading = ref(false);
 const applying = ref(false);
@@ -12,6 +13,8 @@ const changingWeek = ref(false);
 const generating = ref(false);
 const current = ref(null);
 const draft = ref(null);
+const slotEditor = ref(null);
+const editedDates = ref([]);
 const loadError = ref('');
 const applyIssue = ref('');
 let loadSequence = 0;
@@ -87,6 +90,27 @@ const validateApplied = (result, expectedDays, requestedWeek) => {
     }
   }
 };
+const editSlot = (date, type) => {
+  if (!draft.value || busy.value || loading.value) return;
+  const preview = draft.value.preview.find(day => day.date === date);
+  if (!preview || !Array.isArray(preview.meals[type])) return;
+  slotEditor.value = { date, type, meals: preview.meals[type].map(meal => ({ ...meal })) };
+};
+const saveSlot = meals => {
+  const editor = slotEditor.value;
+  if (!editor || !draft.value || !Array.isArray(meals)) return;
+  const day = draft.value.days.find(item => item.date === editor.date);
+  const preview = draft.value.preview.find(item => item.date === editor.date);
+  const ids = meals.map(meal => String(mealId(meal)));
+  if (!day || !preview || ids.some(id => !id) || new Set(ids).size !== ids.length || meals.some(meal => typeof meal.name !== 'string' || !meal.name.trim())) return ElMessage.error('菜品信息不完整，请重新选择');
+  if (JSON.stringify(day.meals[editor.type]) !== JSON.stringify(ids)) {
+    day.meals[editor.type] = ids;
+    preview.meals[editor.type] = meals.map(meal => ({ ...meal }));
+    preview.hints = [];
+    if (!editedDates.value.includes(editor.date)) editedDates.value = [...editedDates.value, editor.date];
+  }
+  slotEditor.value = null;
+};
 const load = async () => {
   if (!weekStart.value) return;
   const requestedWeek = weekStart.value;
@@ -112,6 +136,7 @@ const generate = async () => {
     loading.value = true;
     const result = await api.weeklyPlan.generate(weekStart.value);
     draft.value = validateDraft(result, weekStart.value);
+    editedDates.value = [];
     ElMessage.success('已生成本周菜单草稿');
   } catch (e) { ElMessage.error(e?.error || e?.message || '生成失败'); }
   finally { loading.value = false; generating.value = false; }
@@ -119,6 +144,7 @@ const generate = async () => {
 const applyDraft = async () => {
   if (!draft.value?.days?.length || loading.value || busy.value || loadError.value || applyIssue.value || !versionsAvailable.value) return;
   const currentDates = current.value.days.map(day => day.date);
+  try { validateDraft(draft.value, weekStart.value); } catch (error) { return ElMessage.error(error.message || '草稿不完整，请重新检查'); }
   if (draft.value.days.length !== 7 || draft.value.days.some((day, index) => day.date !== currentDates[index])) return ElMessage.error('草稿与当前周不一致，请重新生成');
   if (!draft.value.days.some(day => Object.values(day.meals || {}).some(items => items?.length))) return ElMessage.warning('草稿中没有菜品，请先添加菜谱');
   applying.value = true;
@@ -129,9 +155,13 @@ const applyDraft = async () => {
     const expectedVersions = Object.fromEntries(current.value.days.map(day => [day.date, day.scheduleVersion]));
     const result = await api.weeklyPlan.apply(draft.value.days, expectedVersions);
     validateApplied(result, draft.value.days, weekStart.value);
-    ElMessage.success('已应用到日历'); draft.value = null; applyIssue.value = ''; await load();
+    ElMessage.success('已应用到日历'); draft.value = null; editedDates.value = []; applyIssue.value = ''; await load();
   }
   catch (e) {
+    if (e?.code === 'WEEKLY_PLAN_INVALID' && Array.isArray(e.appliedDates) && e.appliedDates.length === 0) {
+      ElMessage.warning('草稿已保留，请调整无效菜品或重新检查后重试。');
+      return;
+    }
     const applied = Array.isArray(e?.appliedDates) ? e.appliedDates : null;
     if (e?.code === 'WEEKLY_PLAN_CONFLICT' && applied) {
       applyIssue.value = `${e.conflictDate || '某天'}的安排已变化。${applied.length ? `已写入：${applied.join('、')}；其余日期未写入。` : '本次未写入任何日期。'}请核对最新日历后重新生成草稿。`;
@@ -139,6 +169,7 @@ const applyDraft = async () => {
       applyIssue.value = `${applied?.length ? `已确认写入：${applied.join('、')}。` : ''}${e?.uncertainDate ? `${e.uncertainDate} 的写入结果不确定。` : '可能有部分日期已写入。'}请核对最新日历后重新生成草稿。`;
     }
     draft.value = null;
+    editedDates.value = [];
     await load();
   }
   finally { applying.value = false; }
@@ -152,7 +183,7 @@ const changeWeek = async () => {
       try { await ElMessageBox.confirm('切换周会放弃当前草稿及未确认提示，请先核对。', '切换周计划？', { type: 'warning', confirmButtonText: '切换并放弃', cancelButtonText: '继续编辑' }); }
       catch (_) { weekChoice.value = weekStart.value; return; }
     }
-    draft.value = null; applyIssue.value = ''; weekStart.value = weekChoice.value; await load();
+    draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; await load();
   } finally { changingWeek.value = false; }
 };
 onMounted(() => { weekStart.value = monday(); weekChoice.value = weekStart.value; load(); });
@@ -168,10 +199,11 @@ onBeforeUnmount(() => { loadSequence++; });
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
-    <el-card v-if="draft" class="draft-card"><template #header>规则生成草稿</template><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length" class="muted">空</span></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div></el-card>
+    <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><strong>规则生成草稿</strong><span>可逐餐调整，应用后才会写入日历</span></div></template><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length" class="muted">空</span></div><el-button link type="primary" class="edit-slot" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-card v-else><template #header>当前日历安排</template><div class="plan-grid"><div v-for="day in current?.days || []" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="item in day.meals?.[type] || []" :key="item.meal?._id || item._id" effect="plain">{{ item.meal?.name || item.name || '未命名' }}</el-tag><span v-if="!day.meals?.[type]?.length" class="muted">未安排</span></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div><el-empty v-if="current && !current.days?.length" description="这一周暂无安排" /></el-card>
+    <WeeklyPlanMealPicker v-if="slotEditor" :date="slotEditor.date" :label="mealTypes[slotEditor.type]" :meals="slotEditor.meals" @cancel="slotEditor = null" @confirm="saveSlot" />
   </div>
 </template>
 
@@ -186,5 +218,14 @@ h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-fam
 .slot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .slot strong { min-width: 42px; }.hints { display: flex; gap: 6px; flex-wrap: wrap; }
 .draft-card { border-color: var(--secondary-color); }
+.draft-heading { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.draft-heading span,.edited-note { color: var(--text-secondary); font-size: 12px; }
+.draft-slot { flex-wrap: nowrap; align-items: flex-start; }
+.draft-slot strong { padding-top: 7px; }
+.slot-meals { display: flex; flex: 1; min-width: 0; flex-wrap: wrap; gap: 5px; padding-top: 4px; overflow-wrap: anywhere; }
+.slot-meals :deep(.el-tag) { max-width: 100%; height: auto; min-height: 24px; white-space: normal; }
+.edit-slot { min-width: 40px; min-height: 34px; flex-shrink: 0; }
+.edited-note { margin: 0; line-height: 1.5; }
 @media (max-width: 720px) { .page-header { flex-direction: column; align-items: stretch; } .actions { justify-content: flex-start; } .actions .el-button { min-height: 44px; margin-left: 0; } }
+@media (max-width: 720px) { .edit-slot { min-width: 44px; min-height: 44px; } }
 </style>
