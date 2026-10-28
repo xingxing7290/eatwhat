@@ -16,6 +16,8 @@ The browser/database check also opens monthly and yearly reviews with a real aut
 
 `npm run test:scope-capability` checks that missing capabilities, mismatched scope, network errors, missing local identity and a server downgrade block protected requests without discarding drafts. It also verifies recovery and concurrent-probe coalescing.
 
+`npm run test:session-expiry` checks a 401 during the capability probe and after a request is sent, failed login and a late 401 from a previous account. The isolated browser/database test also uses an expired test-only JWT and verifies that the draft is retained and login can be restored.
+
 The isolated database test additionally checks the optional household request header against an actual changed account, rejects stale reads, writes and household joins, preserves legacy requests without the header, and exercises a second browser context with a stale household and an unsaved recipe draft.
 
 ## Docker-based application integration

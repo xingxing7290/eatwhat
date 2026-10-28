@@ -8,7 +8,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present, SwitchButton, ArrowDown } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
 import { useScheduleStore } from './stores/schedule';
-import { adoptSession, sessionIsLocked } from './services/sessionScope';
+import { adoptSession, sessionIsLocked, sessionLockReason } from './services/sessionScope';
 import { householdVerificationFailed, verifyCurrentHousehold } from './services/api';
 
 const route = useRoute();
@@ -31,6 +31,7 @@ const authToken = ref(localStorage.getItem('token') || '');
 const authUser = ref(null);
 const loggingOut = ref(false);
 const sessionChanged = ref(sessionIsLocked());
+const sessionExpired = ref(sessionLockReason() === 'expired');
 const scopeUnverified = ref(householdVerificationFailed());
 const checkingScope = ref(false);
 const markScopeUnverified = () => { scopeUnverified.value = true; };
@@ -43,8 +44,10 @@ const retryScopeVerification = async () => {
   finally { checkingScope.value = false; }
 };
 const markSessionChanged = () => { sessionChanged.value = true; };
+const markSessionExpired = () => { sessionExpired.value = true; sessionChanged.value = true; };
 const markSessionAdopted = () => {
   sessionChanged.value = sessionIsLocked();
+  sessionExpired.value = sessionLockReason() === 'expired';
   scopeUnverified.value = householdVerificationFailed();
   if (!sessionChanged.value) { clearMealState(); loadAuthState(); }
 };
@@ -132,7 +135,7 @@ const clearMealState = () => {
 
 const handleLogout = async () => {
   if (loggingOut.value) return;
-  if (sessionIsLocked()) { ElMessage.warning('账号或小家已变化，请先保留草稿并重新加载。'); return; }
+  if (sessionIsLocked()) { ElMessage.warning('当前会话已失效或变化，请先保留草稿并重新登录。'); return; }
   loggingOut.value = true;
   try {
     // Let the current page finish or reject navigation before clearing auth.
@@ -141,7 +144,7 @@ const handleLogout = async () => {
       const failure = await router.replace({ name: 'login' });
       if (failure) return;
     }
-    if (sessionIsLocked()) { ElMessage.warning('账号或小家已变化，请重新加载后再操作。'); return; }
+    if (sessionIsLocked()) { ElMessage.warning('当前会话已失效或变化，请重新登录后再操作。'); return; }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     adoptSession('');
@@ -176,10 +179,12 @@ onMounted(async () => {
   window.addEventListener('resize', handleResize);
   window.addEventListener('eatwhat-theme-change', handleColorThemeChange);
   window.addEventListener('eatwhat-session-changed', markSessionChanged);
+  window.addEventListener('eatwhat-session-expired', markSessionExpired);
   window.addEventListener('eatwhat-session-adopted', markSessionAdopted);
   window.addEventListener('eatwhat-scope-unverified', markScopeUnverified);
   window.addEventListener('eatwhat-scope-verified', markScopeVerified);
   sessionChanged.value = sessionIsLocked();
+  sessionExpired.value = sessionLockReason() === 'expired';
   scopeUnverified.value = householdVerificationFailed();
   
   // Meal data is loaded by each page on demand to keep the larger default catalog from slowing the app shell.
@@ -213,6 +218,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('eatwhat-theme-change', handleColorThemeChange);
   window.removeEventListener('eatwhat-session-changed', markSessionChanged);
+  window.removeEventListener('eatwhat-session-expired', markSessionExpired);
   window.removeEventListener('eatwhat-session-adopted', markSessionAdopted);
   window.removeEventListener('eatwhat-scope-unverified', markScopeUnverified);
   window.removeEventListener('eatwhat-scope-verified', markScopeVerified);
@@ -223,7 +229,11 @@ onBeforeUnmount(() => {
   <el-config-provider :locale="locale">
     <div class="app-container" :class="{ 'dark-mode': isDarkMode }">
       <a href="#app-main" class="skip-link" @click.prevent="focusMain">跳转到主要内容</a>
-      <div v-if="sessionChanged" class="session-warning" role="alert">
+      <div v-if="sessionExpired" class="session-warning" role="alert">
+        <div><strong>登录状态已失效</strong><span>本页新请求已暂停，草稿仍在。请先记录未保存内容；此前发送的请求可能仍会完成。</span></div>
+        <div class="session-warning-actions"><button type="button" @click="reloginChangedSession">重新登录</button></div>
+      </div>
+      <div v-else-if="sessionChanged" class="session-warning" role="alert">
         <div><strong>账号或小家已变化</strong><span>本页新请求已暂停，未保存内容仍在。此前已发送的请求可能仍会完成，请先核对。</span></div>
         <div class="session-warning-actions"><button type="button" @click="reloadChangedSession">重新加载</button><button type="button" @click="reloginChangedSession">重新登录</button></div>
       </div>

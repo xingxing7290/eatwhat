@@ -1,7 +1,7 @@
 import axios from 'axios';
 import mockData from './mockData';
 import { ElMessage } from 'element-plus';
-import { currentSessionScope, currentSessionToken, markSessionStale, sessionChangedError, sessionIsCurrent } from './sessionScope';
+import { currentSessionScope, currentSessionToken, markSessionExpired, markSessionStale, sessionExpiredError, sessionIsCurrent, sessionUnavailableError } from './sessionScope';
 
 // 是否使用模拟数据
 const USE_MOCK = false;
@@ -118,22 +118,26 @@ const unverifiedError = () => ({ code: 'HOUSEHOLD_SCOPE_UNVERIFIED', requestSent
 
 export async function verifyCurrentHousehold({ force = false } = {}) {
 	const scope = currentSessionScope();
-	if (!sessionIsCurrent(scope)) throw sessionChangedError();
+	if (!sessionIsCurrent(scope)) throw sessionUnavailableError();
 	if (!force && sameScope(verifiedScope, scope)) return;
 	if (pendingScope && sameScope(pendingScope.scope, scope)) return pendingScope.promise;
 	const attempt = (async () => {
 		try {
 			if (!scope.token || !/^[a-z0-9_-]{1,128}$/i.test(scope.householdId)) throw unverifiedError();
 			const response = await scopeProbe.get('/auth/household-scope', { headers: { Authorization: `Bearer ${scope.token}`, 'X-Eatwhat-Household': scope.householdId } });
-			if (!sessionIsCurrent(scope)) throw sessionChangedError();
+			if (!sessionIsCurrent(scope)) throw sessionUnavailableError();
 			if (response.data?.supportsHouseholdScope !== true || String(response.data?.householdId || '').toLowerCase() !== scope.householdId.toLowerCase()) throw unverifiedError();
 			verifiedScope = scope;
 			unverifiedScope = null;
 			window.dispatchEvent(new CustomEvent('eatwhat-scope-verified'));
 		} catch (error) {
 			if (sameScope(verifiedScope, scope)) verifiedScope = null;
-			if (!sessionIsCurrent(scope)) throw sessionChangedError();
-			if (error?.code === 'SESSION_CHANGED') throw error;
+			if (!sessionIsCurrent(scope)) throw sessionUnavailableError();
+			if (error?.code === 'SESSION_CHANGED' || error?.code === 'SESSION_EXPIRED') throw error;
+			if (error?.response?.status === 401) {
+				markSessionExpired();
+				throw sessionExpiredError();
+			}
 			if (error?.response?.status === 409 && error.response.data?.code === 'HOUSEHOLD_SCOPE_CHANGED') {
 				markSessionStale();
 				throw error.response.data;
@@ -151,11 +155,11 @@ export async function verifyCurrentHousehold({ force = false } = {}) {
 // 请求拦截器
 api.interceptors.request.use(
 	async config => {
-		if (!isPublicAuth(config) && !sessionIsCurrent()) return Promise.reject(sessionChangedError());
+		if (!isPublicAuth(config) && !sessionIsCurrent()) return Promise.reject(sessionUnavailableError());
 		config._eatwhatSessionScope = currentSessionScope();
 		if (!isPublicAuth(config)) {
 			await verifyCurrentHousehold({ force: true });
-			if (!sessionIsCurrent(config._eatwhatSessionScope)) return Promise.reject(sessionChangedError());
+			if (!sessionIsCurrent(config._eatwhatSessionScope)) return Promise.reject(sessionUnavailableError());
 		}
 		// 注入token
 		const token = isPublicAuth(config) ? '' : currentSessionToken();
@@ -179,17 +183,21 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
 	response => {
-		if (!isPublicAuth(response.config) && !sessionIsCurrent(response.config._eatwhatSessionScope)) return Promise.reject(sessionChangedError(true));
+		if (!isPublicAuth(response.config) && !sessionIsCurrent(response.config._eatwhatSessionScope)) return Promise.reject(sessionUnavailableError(true));
 		// 打印响应信息
 		logAPI('response', `${response.config.method.toUpperCase()} ${response.config.url}`, response.data, response.status);
 		
 		return response.data;
 	},
 	error => {
-		if (error?.code === 'SESSION_CHANGED' || error?.code === 'HOUSEHOLD_SCOPE_UNVERIFIED' || error?.code === 'HOUSEHOLD_SCOPE_CHANGED') return Promise.reject(error);
-		if (error.config && !isPublicAuth(error.config) && !sessionIsCurrent(error.config._eatwhatSessionScope)) return Promise.reject(sessionChangedError(true));
+		if (error?.code === 'SESSION_CHANGED' || error?.code === 'SESSION_EXPIRED' || error?.code === 'HOUSEHOLD_SCOPE_UNVERIFIED' || error?.code === 'HOUSEHOLD_SCOPE_CHANGED') return Promise.reject(error);
+		if (error.config && !isPublicAuth(error.config) && !sessionIsCurrent(error.config._eatwhatSessionScope)) return Promise.reject(sessionUnavailableError(true));
 		// 统一处理错误
 		const { response } = error;
+		if (response?.status === 401 && !isPublicAuth(error.config)) {
+			markSessionExpired();
+			return Promise.reject(sessionExpiredError(true));
+		}
 		if (response?.status === 409 && response.data?.code === 'HOUSEHOLD_SCOPE_CHANGED') {
 			markSessionStale();
 			return Promise.reject(response.data);
