@@ -1389,9 +1389,15 @@ async function main() {
       assert.deepEqual(sharedShopping.data.items.map(item => item.name).sort(), ['浏览器面包', '浏览器鸡蛋'].sort());
       await pages[1].getByText('浏览器面包', { exact: true }).click();
       await pages[1].waitForFunction(() => [...document.querySelectorAll('.item-row')].some(row => row.textContent.includes('浏览器面包') && row.querySelector('input')?.checked));
+      await pages[1].getByRole('button', { name: '待买', exact: true }).click();
+      await pages[1].getByText('显示 1 / 2 项 · 本周待买 1 项').waitFor();
+      assert.equal(await pages[1].getByText('浏览器面包', { exact: true }).count(), 0);
       await pages[1].getByRole('button', { name: '清空已购' }).click();
+      await pages[1].getByText('此操作作用于本周全部已购食材，包括筛选后未显示的项目。', { exact: false }).waitFor();
       await pages[1].getByRole('button', { name: '清空', exact: true }).click();
       await pages[1].getByText('浏览器面包', { exact: true }).waitFor({ state: 'hidden' });
+      await pages[1].getByText('显示 1 / 1 项 · 本周待买 1 项').waitFor();
+      assert.deepEqual((await request('/shopping-list?weekStart=2026-10-26', { token: tokenA })).data.items.map(item => item.name), ['浏览器鸡蛋']);
       await pages[1].getByRole('button', { name: '从排餐生成' }).click();
       await pages[1].getByText('已按本周排餐生成购物清单').waitFor();
       await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor();
