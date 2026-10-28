@@ -6,7 +6,8 @@
     "dev": "vite --host",
     "build": "vite build",
     "preview": "vite preview --host",
-    "test:workflows": "node test/web-workflows.cjs"
+    "test:workflows": "node test/web-workflows.cjs",
+    "test:full-stack": "node test/full-stack.cjs"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.1.0",

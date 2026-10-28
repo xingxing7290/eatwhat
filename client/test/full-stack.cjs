@@ -1,0 +1,113 @@
+const assert = require('node:assert/strict')
+const { chromium } = require('playwright')
+
+const base = process.env.EATWHAT_E2E_URL
+if (base !== 'http://127.0.0.1:5189') throw new Error('Refusing to run outside the dedicated loopback tunnel')
+
+async function main () {
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+  const page = await context.newPage()
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  try {
+    const marker = await context.request.get(`${base}/api/health`)
+    assert.equal(marker.status(), 200)
+    assert.equal(marker.headers()['x-eatwhat-isolated'], 'codex-e2e-only')
+    assert.equal(await marker.text(), 'healthy')
+
+    async function login (username) {
+      await page.goto(`${base}/login`)
+      await page.getByPlaceholder('请输入用户名').fill(username)
+      await page.getByPlaceholder('请输入密码').fill('e2e-only-password')
+      await page.getByPlaceholder('请输入密码').press('Enter')
+      await page.waitForURL('**/dashboard')
+      await page.getByRole('heading', { name: /好好吃饭/ }).waitFor()
+    }
+    async function apiGet (path) {
+      return page.evaluate(async endpoint => {
+        const response = await fetch(`/api${endpoint}`, { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } })
+        if (!response.ok) throw new Error(`GET ${endpoint}: ${response.status}`)
+        return response.json()
+      }, path)
+    }
+    await login('e2e-user-a')
+    const me = await apiGet('/auth/me')
+    assert.equal(me.household.name, 'E2E 家庭甲')
+    console.log('E2E: login and household loaded')
+
+    await page.goto(`${base}/meals`)
+    await Promise.all([
+      page.waitForResponse(response => new URL(response.url()).pathname === '/api/meals' && new URL(response.url()).searchParams.get('search') === '联调菜谱 01' && response.status() === 200),
+      page.getByPlaceholder('搜索菜名、描述、食材或做法...').fill('联调菜谱 01')
+    ])
+    await page.locator('.meals-grid .meal-card-wrapper').filter({ hasText: '联调菜谱 01' }).first().click()
+    await page.getByRole('heading', { name: '联调菜谱 01' }).waitFor()
+    await page.getByRole('button', { name: '记录做过' }).click()
+    const memoryDialog = page.getByRole('dialog', { name: '记录饭后回忆' })
+    await memoryDialog.waitFor()
+    await memoryDialog.locator('textarea').fill('真实联调回忆')
+    await memoryDialog.locator('input[type=file]').setInputFiles({ name: 'e2e.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64') })
+    await memoryDialog.getByRole('button', { name: '保存' }).click()
+    await page.getByText('真实联调回忆').waitFor()
+    await page.goto(`${base}/photo-album`)
+    await page.locator('.photo-card').first().click()
+    await page.getByRole('dialog', { name: '饭桌回忆' }).waitFor()
+    console.log('E2E: memory photo and album loaded')
+
+    await page.goto(`${base}/meals/editor`)
+    await page.getByPlaceholder('给这道菜起个名字').fill('联调新菜')
+    await page.getByPlaceholder('食材', { exact: true }).fill('联调鸡蛋')
+    await page.getByPlaceholder('用量').fill('2个')
+    await page.getByRole('button', { name: '添加食材' }).click()
+    await page.getByPlaceholder('写下一个步骤').fill('先搅拌再炒')
+    await page.getByRole('button', { name: '添加步骤' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForURL('**/meals')
+    const created = await apiGet('/meals?search=%E8%81%94%E8%B0%83%E6%96%B0%E8%8F%9C&page=1&limit=8')
+    assert.equal(created.data.length, 1)
+    assert.equal(created.data[0].ingredients[0].name, '联调鸡蛋')
+    const today = await page.evaluate(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
+    await page.goto(`${base}/selection?date=${today}&mealType=dinner&suggestedMealId=${created.data[0]._id}`)
+    await page.locator('.selection-info').getByText('联调新菜').waitFor()
+    await page.getByRole('button', { name: '保存安排' }).click()
+    await page.waitForURL('**/calendar')
+    const day = await apiGet(`/schedules/day/${today}`)
+    assert.equal(day.meals.dinner.some(item => item.meal?.name === '联调新菜'), true)
+    console.log('E2E: recipe created and scheduled')
+
+    await page.goto(`${base}/weekly-plan`)
+    await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByText('规则生成草稿').waitFor()
+    await page.getByRole('button', { name: '应用到日历' }).click()
+    await page.getByRole('button', { name: '确认替换' }).click()
+    await page.getByText('已应用到日历').waitFor()
+    const week = await apiGet(`/weekly-plans?weekStart=${today}`)
+    assert.equal(week.days.length, 7)
+    assert.equal(week.days.every(item => item.scheduleExists), true)
+    console.log('E2E: weekly plan applied')
+
+    await page.goto(`${base}/shopping-list`)
+    await page.getByRole('button', { name: '从排餐生成' }).click()
+    await page.getByText('联调食材', { exact: true }).waitFor()
+    await page.getByText('联调食材', { exact: true }).click()
+    await page.waitForFunction(() => document.querySelector('.item-row.checked') !== null)
+    console.log('E2E: shopping list updated')
+
+    await page.goto(`${base}/wishlist`)
+    await page.getByRole('button', { name: '添加想吃' }).click()
+    await page.getByPlaceholder('比如：冬阴功火锅、楼下那家牛肉面').fill('联调想吃')
+    await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '保存' }).click()
+    await page.getByText('联调想吃').waitFor()
+
+    await page.evaluate(() => { localStorage.removeItem('token'); localStorage.removeItem('user') })
+    await login('e2e-user-b')
+    const mealsB = await apiGet('/meals')
+    assert.equal(mealsB.length, 1)
+    assert.equal(mealsB[0].name, '乙家庭专属菜')
+    assert.equal((await apiGet('/wishlist')).length, 0)
+    assert.deepEqual(errors, [])
+    console.log('Full-stack E2E passed: login, recipe, memory photo, album, calendar, week plan, shopping, wishlist and household isolation')
+  } finally { await browser.close() }
+}
+main().catch(error => { console.error(error); process.exitCode = 1 })
