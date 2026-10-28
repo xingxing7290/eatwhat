@@ -36,6 +36,7 @@
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
     "test:dashboard-theme": "node test/dashboard-theme.cjs",
+    "test:dashboard": "node test/dashboard-workflows.cjs",
     "test:media": "node --test test/uploaded-image.test.mjs",
     "test:bundle": "node test/bundle-budget.cjs",
     "test:full-stack": "node test/full-stack.cjs"

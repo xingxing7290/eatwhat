@@ -11,7 +11,7 @@ const summary = {
   today,
   todaySchedule: { meals: { breakfast: [], lunch: [], dinner: [{ meal: { _id: 'a', name: '番茄炒蛋' } }] } },
   todayHints: ['留意蔬菜搭配'],
-  week: { days: [{ date: today, meals: { breakfast: [], lunch: [], dinner: [{ meal: { _id: 'a', name: '番茄炒蛋' } }] } }] },
+  week: { days: Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.UTC(2026, 9, 26 + index)).toISOString().slice(0, 10), meals: { breakfast: [], lunch: [], dinner: index === 3 ? [{ meal: { _id: 'a', name: '番茄炒蛋' } }] : [] } })) },
   partnerWishlist: [{ _id: 'wish-a', title: '家人想吃的菜', mealId: { _id: 'a', name: '番茄炒蛋' } }],
   recentPhotos: [
     { photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="10" height="10"%3E%3Crect width="10" height="10" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'm1', title: '温暖晚餐', date: today },

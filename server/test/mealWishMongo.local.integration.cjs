@@ -1195,6 +1195,14 @@ async function main() {
       await Promise.all([pages[0].getByText('partner high', { exact: true }).waitFor(), pages[1].getByText('self only', { exact: true }).waitFor()]);
       assert.equal(await pages[0].getByText('self only', { exact: true }).count(), 0, 'dashboard must not show own wish as a partner reminder');
       assert.equal(await pages[1].getByText('partner high', { exact: true }).count(), 0, 'the partner must not see their own wish as another member’s');
+      const dashboardWish = await WishlistItem.create({ householdId: homeA._id, title: '首页时效测试心愿', status: 'open', priority: 'high', votes: [], createdBy: partnerA._id, mealId: uiMeal._id });
+      await pages[0].getByRole('button', { name: '刷新饭桌' }).click();
+      const dashboardWishRow = pages[0].locator('.wishlist-row').filter({ hasText: '首页时效测试心愿' });
+      await dashboardWishRow.waitFor();
+      await WishlistItem.updateOne({ _id: dashboardWish._id }, { $set: { status: 'planned' } });
+      await dashboardWishRow.getByRole('button', { name: '安排晚餐' }).click();
+      await pages[0].waitForURL('**/wishlist');
+      await pages[0].getByText('心愿已变化，请先在想吃清单中核对').waitFor();
       const browserVote = await WishlistItem.create({ householdId: homeA._id, title: '浏览器协作投票', status: 'open', votes: [], createdBy: userA._id });
       await Promise.all(pages.map(page => page.goto(`${webBase}/wishlist`)));
       await Promise.all(pages.map(page => page.getByRole('button', { name: '我想吃浏览器协作投票' }).click()));

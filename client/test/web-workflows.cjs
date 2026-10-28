@@ -17,7 +17,7 @@ const weekDays = weekDates.map(date => date === today ? { ...schedule, hints: []
 const draftDays = weekDates.map(date => ({ date, meals: { breakfast: [], lunch: [], dinner: ['meal-a'] } }))
 const summary = {
   today, todaySchedule: schedule, todayHints: [],
-  week: { days: [{ date: today, meals: schedule.meals }], plannedMeals: 2 },
+  week: { days: weekDays, plannedMeals: 2 },
   partnerWishlist: [{ _id: 'wish-a', title: '麻婆豆腐', mealId: meals[1] }],
   recentPhotos: [], defaultMeals: { imported: 2, total: 2 }, imageIssues: { open: 0 }, meals: { favorites: 0 }
 }

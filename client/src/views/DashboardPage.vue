@@ -1,13 +1,15 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Calendar, ShoppingCart, Picture, Star, Warning, Food } from '@element-plus/icons-vue';
 import api from '@/services/api';
+import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 
 const router = useRouter();
 const loading = ref(false);
 const summary = ref(null);
+const arranging = ref('');
 const failedPhotos = reactive(new Set());
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 
@@ -15,27 +17,55 @@ const mealName = (item) => item?.meal?.name || item?.name || '未命名菜品';
 const mealId = (meal) => meal?._id || meal?.id || meal?.mealId || (typeof meal === 'string' ? meal : '');
 const plannedSlots = computed(() => (summary.value?.week?.days || []).reduce((count, day) => count + Object.keys(mealTypeText).filter(type => day.meals?.[type]?.length).length, 0));
 const loadError = ref('');
-const load = async () => {
+let loadRequest = null;
+let active = true;
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
+const validMeals = value => value && typeof value === 'object' && Object.keys(mealTypeText).every(type => Array.isArray(value[type]));
+const validCount = value => Number.isSafeInteger(value) && value >= 0;
+const validateSummary = value => {
+  if (!value || !validDate(value.today) || !validMeals(value.todaySchedule?.meals) ||
+      !Array.isArray(value.todayHints) || value.todayHints.some(hint => typeof hint !== 'string') ||
+      !Array.isArray(value.week?.days) || value.week.days.length !== 7 || value.week.days.some(day => !day || !validDate(day.date) || !validMeals(day.meals)) ||
+      !Array.isArray(value.partnerWishlist) || value.partnerWishlist.some(item => !item || !(item._id || item.id) || typeof item.title !== 'string') ||
+      !Array.isArray(value.recentPhotos) || value.recentPhotos.some(photo => !photo || typeof photo.photo !== 'string') ||
+      !validCount(value.defaultMeals?.imported) || !validCount(value.defaultMeals?.total) || !validCount(value.imageIssues?.open) || !validCount(value.meals?.favorites)) throw new Error('饭桌信息不完整，请重新加载');
+  const days = value.week.days.map(day => day.date).sort();
+  if (!days.includes(value.today) || days.some((day, index) => index && Date.parse(`${day}T00:00:00Z`) - Date.parse(`${days[index - 1]}T00:00:00Z`) !== 86400000)) throw new Error('饭桌信息不完整，请重新加载');
+  return value;
+};
+const load = () => {
+  if (loadRequest) return loadRequest;
   loading.value = true;
   loadError.value = '';
-  try { summary.value = await api.dashboard.summary(); failedPhotos.clear(); }
-  catch (e) { loadError.value = e?.error || '暂时无法读取饭桌信息，请稍后重试'; }
-  finally { loading.value = false; }
+  loadRequest = (async () => {
+    try { const result = validateSummary(await api.dashboard.summary()); summary.value = result; failedPhotos.clear(); return result; }
+    catch (e) { loadError.value = e?.error || e?.message || '暂时无法读取饭桌信息，请稍后重试'; return null; }
+    finally { loading.value = false; loadRequest = null; }
+  })();
+  return loadRequest;
 };
-const arrangeWishlistDinner = (item) => {
-  const id = mealId(item.mealId);
-  if (!id) return router.push('/wishlist');
-  return router.push({ name: 'MealSelection', query: {
-    date: summary.value.today, mealType: 'dinner', suggestedMealId: id, wishlistId: item._id
-  } });
+const arrangeWishlistDinner = async (item) => {
+  if (arranging.value || loading.value) return;
+  if (!mealId(item.mealId)) return router.push('/wishlist');
+  const wishId = String(item._id || item.id || '');
+  arranging.value = wishId;
+  try {
+    const fresh = await load();
+    if (!active || !fresh) return;
+    const current = fresh.partnerWishlist.find(wish => String(wish._id || wish.id || '') === wishId);
+    const id = mealId(current?.mealId);
+    if (!current || !id) { ElMessage.warning('心愿已变化，请先在想吃清单中核对'); return router.push('/wishlist'); }
+    return router.push({ name: 'MealSelection', query: { date: fresh.today, mealType: 'dinner', suggestedMealId: id, wishlistId: wishId } });
+  } finally { arranging.value = ''; }
 };
 const photoKey = (photo, index) => `${photo.memoryId || ''}:${index}:${photo.photo || ''}`;
 
 onMounted(load);
+onBeforeUnmount(() => { active = false; });
 </script>
 
 <template>
-  <div class="dashboard-page" v-loading="loading">
+  <div class="dashboard-page" v-loading="loading" element-loading-text="正在更新饭桌信息" :aria-busy="loading ? 'true' : 'false'">
     <section class="hero-panel">
       <div>
         <p class="eyebrow">OUR TABLE · 小家饭桌</p>
@@ -50,7 +80,7 @@ onMounted(load);
     </section>
 
     <div v-if="loadError && !loading" class="load-error" role="alert"><div><strong>暂时没有加载出饭桌信息</strong><p>{{ loadError }}</p></div><el-button @click="load">重新加载</el-button></div>
-    <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><span>{{ summary.today }}</span></div>
+    <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><div class="summary-controls"><span>{{ summary.today }}</span><el-button size="small" plain :disabled="loading || !!arranging" @click="load">刷新饭桌</el-button></div></div>
     <section class="dashboard-grid" v-if="summary && !loadError">
       <el-card class="today-card">
         <template #header><div class="card-title"><el-icon><Food /></el-icon><span>今天吃什么</span><el-tag>{{ summary.today }}</el-tag></div></template>
@@ -82,7 +112,7 @@ onMounted(load);
         <div v-else class="wishlist-list">
           <div v-for="item in summary.partnerWishlist" :key="item._id" class="wishlist-row">
             <div><strong>{{ item.title }}</strong><p>{{ item.mealId?.name || item.note || '可以安排到今天晚餐' }}</p></div>
-            <el-button size="small" type="primary" @click="arrangeWishlistDinner(item)">安排晚餐</el-button>
+            <el-button size="small" type="primary" :loading="arranging === String(item._id || item.id)" :disabled="loading || !!arranging" @click="arrangeWishlistDinner(item)">{{ mealId(item.mealId) ? '安排晚餐' : '查看心愿' }}</el-button>
           </div>
         </div>
       </el-card>
@@ -92,7 +122,7 @@ onMounted(load);
         <el-empty v-if="!summary.recentPhotos?.length" description="还没有饭后照片" />
         <div v-else class="photo-strip">
           <router-link v-for="(photo, index) in summary.recentPhotos" :key="photoKey(photo, index)" to="/photo-album" class="photo-tile" :aria-label="`前往饭桌相册：${photo.title || photo.date || '饭桌照片'}`">
-            <img v-if="!failedPhotos.has(photoKey(photo, index))" :src="photo.photo" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="failedPhotos.add(photoKey(photo, index))" />
+            <img v-if="!failedPhotos.has(photoKey(photo, index))" :src="resolveUploadedImage(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="failedPhotos.add(photoKey(photo, index))" />
             <span v-else class="photo-unavailable">照片暂不可用</span>
           </router-link>
         </div>
@@ -126,7 +156,7 @@ h1 span { color: var(--dashboard-accent-ink); }
 .hero-panel p { color: var(--text-secondary); line-height: 1.8; font-size: 14px; max-width: 470px; }
 .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 24px; }.hero-actions .el-button { margin: 0; }
 .hero-image { min-height: 260px; position: relative; background: linear-gradient(0deg, rgba(34,25,20,.52), transparent 50%), url('../assets/dashboard-hero.jpg') center/cover; }.hero-image span { position: absolute; right: 22px; bottom: 20px; color: white; font-size: 12px; letter-spacing: .12em; }
-.section-heading { display: flex; justify-content: space-between; align-items: end; padding: 8px 2px 0; }.section-heading small { color: var(--dashboard-accent-ink); letter-spacing: .14em; font-weight: 800; }.section-heading h2 { margin: 6px 0 0; font-size: 22px; color: var(--text-primary); }.section-heading > span { color: var(--text-secondary); font-size: 13px; }
+.section-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; padding: 8px 2px 0; }.section-heading small { color: var(--dashboard-accent-ink); letter-spacing: .14em; font-weight: 800; }.section-heading h2 { margin: 6px 0 0; font-size: 22px; color: var(--text-primary); }.summary-controls { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 13px; }
 .load-error { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; }.load-error p { margin-top: 5px; color: var(--text-secondary); }
 .dashboard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .card-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 700; }.card-title .el-icon { color: var(--secondary-color); }.card-title .el-tag { margin-left: auto; }
