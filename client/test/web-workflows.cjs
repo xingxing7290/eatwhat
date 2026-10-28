@@ -41,6 +41,7 @@ async function main () {
   let failAttach = false
   let failAlbum = false
   let failMealCreate = false
+  let failMemories = false
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
   await page.addInitScript(() => {
@@ -59,6 +60,7 @@ async function main () {
     else if (method === 'GET' && path === '/meals/categories') data = [{ category: '家常菜' }, { category: '川菜' }]
     else if (method === 'GET' && path === '/meals/tags') data = []
     else if (method === 'GET' && path === '/meals/meal-a') data = meals[0]
+    else if (method === 'GET' && path === '/memories' && failMemories) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '回忆测试读取失败' }) })
     else if (method === 'GET' && path === '/memories') data = []
     else if (method === 'GET' && path === `/schedules/day/${today}` && failSchedule) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) })
     else if (method === 'GET' && path === `/schedules/day/${today}`) data = dailySchedule
@@ -267,7 +269,13 @@ async function main () {
   supportsWeeklyVersions = true
 
   await page.goto(`${base}/meals/detail/meal-a`)
+  failMemories = true
   await page.getByRole('button', { name: '记录做过' }).click()
+  await page.getByText('无法加载回忆').waitFor()
+  assert.equal(await page.getByText('还没有饭后回忆').count(), 0)
+  assert.equal(new URL(page.url()).searchParams.get('mealId'), 'meal-a')
+  failMemories = false
+  await page.getByRole('button', { name: '重新加载' }).click()
   await page.getByRole('dialog', { name: '记录饭后回忆' }).waitFor()
   assert.equal(await page.locator('input').evaluateAll(items => items.some(item => item.value === '做过一次：番茄炒蛋')), true)
   assert.equal(writes.some(item => item.path === '/memories'), false)
@@ -330,16 +338,49 @@ async function main () {
   await page.waitForTimeout(700)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile album should not overflow horizontally')
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-album-mobile.png'), fullPage: true })
+  await page.goto(`${base}/memories`)
+  await page.getByText('还没有饭后回忆').waitFor()
+  await page.waitForTimeout(700)
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile memories should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-memories-mobile.png'), fullPage: true })
   assert.deepEqual(errors, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()
+  let loginCalls = 0
+  let releaseLogin
+  let delayLogin = true
+  await loginPage.route('**/api/**', async route => {
+    const pathname = new URL(route.request().url()).pathname
+    if (pathname.endsWith('/auth/login')) {
+      loginCalls++
+      if (delayLogin) await new Promise(resolve => { releaseLogin = resolve })
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'login-token', user: { username: 'old-user' } }) })
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pathname.endsWith('/weekly-plans') ? { days: [] } : {}) })
+  })
   await loginPage.addInitScript(() => localStorage.setItem('eatwhat_remember_login', JSON.stringify({ remember: true, username: 'old-user', password: 'old-plaintext' })))
-  await loginPage.goto(`${base}/login`)
+  await loginPage.goto(`${base}/login?redirect=%2Fweekly-plan`)
   await loginPage.getByPlaceholder('请输入用户名').waitFor()
   assert.equal(await loginPage.getByPlaceholder('请输入用户名').inputValue(), 'old-user')
   assert.equal(await loginPage.getByPlaceholder('请输入密码').inputValue(), '')
   const remembered = await loginPage.evaluate(() => JSON.parse(localStorage.getItem('eatwhat_remember_login')))
   assert.equal('password' in remembered, false)
+  await loginPage.getByPlaceholder('请输入密码').fill('test-password')
+  await Promise.all([
+    loginPage.waitForRequest(request => new URL(request.url()).pathname.endsWith('/auth/login')),
+    loginPage.getByPlaceholder('请输入密码').press('Enter')
+  ])
+  await loginPage.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  assert.equal(loginCalls, 1)
+  releaseLogin()
+  await loginPage.waitForURL('**/weekly-plan')
+  assert.equal(await loginPage.evaluate(() => localStorage.getItem('token')), 'login-token')
+  delayLogin = false
+  await loginPage.goto(`${base}/login?redirect=%2F%2Fevil.example`)
+  await loginPage.getByPlaceholder('请输入密码').fill('test-password')
+  await loginPage.getByPlaceholder('请输入密码').press('Enter')
+  await loginPage.waitForURL('**/dashboard')
+  assert.equal(new URL(loginPage.url()).origin, new URL(base).origin)
   await loginContext.close()
   console.log('Web workflows passed: dashboard, safe selection, wishlist, weekly plan, shopping and mobile navigation')
   await browser.close()

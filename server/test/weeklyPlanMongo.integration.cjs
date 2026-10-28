@@ -2,6 +2,8 @@
 const assert = require('node:assert/strict');
 const express = require('express');
 const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+process.env.JWT_SECRET = 'isolated-integration-secret-not-for-production';
 const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const Meal = require('../models/mealModel');
@@ -10,6 +12,8 @@ const WishlistItem = require('../models/wishlistModel');
 const weekly = require('../controllers/weeklyPlanController');
 const schedules = require('../controllers/scheduleController');
 const wishlist = require('../controllers/wishlistController');
+const authController = require('../controllers/authController');
+const requireAuth = require('../middleware/auth');
 
 const uri = process.env.EATWHAT_TEST_MONGO_URI;
 if (uri !== 'mongodb://eatwhat-integration-mongo:27017/isolated_eatwhat_integration') {
@@ -23,8 +27,9 @@ async function main() {
     await Schedule.init();
     const house = await Household.create({ name: 'Integration A', inviteCode: 'TEST-A' });
     const otherHouse = await Household.create({ name: 'Integration B', inviteCode: 'TEST-B' });
-    const user = await User.create({ username: 'integration-a', passwordHash: 'unused', householdId: house._id });
-    const otherUser = await User.create({ username: 'integration-b', passwordHash: 'unused', householdId: otherHouse._id });
+    const passwordHash = await bcrypt.hash('test-only-password', 4);
+    const user = await User.create({ username: 'integration-a', passwordHash, householdId: house._id });
+    const otherUser = await User.create({ username: 'integration-b', passwordHash, householdId: otherHouse._id });
     const [mealA, mealB] = await Meal.create([
       { householdId: house._id, name: 'Test meal A' },
       { householdId: house._id, name: 'Test meal B' }
@@ -34,7 +39,9 @@ async function main() {
 
     const app = express();
     app.use(express.json());
-    app.use((req, res, next) => { req.user = { uid: req.headers['x-test-user'] || String(user._id) }; next(); });
+    app.post('/auth/login', authController.login);
+    app.get('/auth/me', requireAuth(), authController.me);
+    app.use(requireAuth());
     app.get('/weekly-plans', weekly.list);
     app.post('/weekly-plans/apply', weekly.apply);
     app.get('/schedules/day/:date', schedules.getScheduleByDate);
@@ -44,10 +51,25 @@ async function main() {
     app.use((error, req, res, next) => res.status(500).json({ error: error.message }));
     server = await new Promise(resolve => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
     const base = `http://127.0.0.1:${server.address().port}`;
-    async function request(path, { method = 'GET', body, userId } = {}) {
-      const response = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(userId ? { 'x-test-user': userId } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    let primaryToken;
+    async function request(path, { method = 'GET', body, token = primaryToken } = {}) {
+      const response = await fetch(base + path, { method, headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) }, ...(body ? { body: JSON.stringify(body) } : {}) });
       return { status: response.status, data: await response.json() };
     }
+    const loginA = await request('/auth/login', { method: 'POST', token: null, body: { username: 'integration-a', password: 'test-only-password' } });
+    const loginB = await request('/auth/login', { method: 'POST', token: null, body: { username: 'integration-b', password: 'test-only-password' } });
+    assert.equal(loginA.status, 200);
+    assert.equal(loginB.status, 200);
+    assert.ok(loginA.data.token && loginB.data.token);
+    primaryToken = loginA.data.token;
+    assert.equal((await request('/auth/login', { method: 'POST', token: null, body: { username: 'integration-a', password: 'incorrect' } })).status, 401);
+    assert.equal((await request('/auth/me', { token: null })).status, 401);
+    assert.equal((await request('/auth/me', { token: 'not-a-valid-token' })).status, 401);
+    assert.equal((await request(`/weekly-plans?weekStart=${dates[0]}`, { token: null })).status, 401);
+    const me = await request('/auth/me');
+    assert.equal(me.status, 200);
+    assert.equal(String(me.data.user.householdId), String(house._id));
+    assert.equal('passwordHash' in me.data.user, false);
     async function snapshot(weekStart = dates[0]) {
       const result = await request(`/weekly-plans?weekStart=${weekStart}`);
       assert.equal(result.status, 200);
@@ -117,9 +139,9 @@ async function main() {
     assert.equal(stale.status, 409);
     assert.equal((await Schedule.findOne({ householdId: house._id, date: dates[2] })).meals.dinner.length, 1);
 
-    const otherDaily = await request(`/schedules/day/${dates[2]}`, { userId: String(otherUser._id) });
+    const otherDaily = await request(`/schedules/day/${dates[2]}`, { token: loginB.data.token });
     assert.equal(otherDaily.data.scheduleExists, false);
-    const crossHouse = await request(`/schedules/${dates[2]}/dinner`, { method: 'PUT', userId: String(otherUser._id), body: { mealIds: [String(mealA._id)], expectedVersion: null } });
+    const crossHouse = await request(`/schedules/${dates[2]}/dinner`, { method: 'PUT', token: loginB.data.token, body: { mealIds: [String(mealA._id)], expectedVersion: null } });
     assert.equal(crossHouse.status, 400);
 
     const wish = await WishlistItem.create({ householdId: house._id, title: 'Integration wish', status: 'planned', createdBy: user._id });
@@ -131,9 +153,9 @@ async function main() {
     const linkConflict = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', body: { mealId: String(mealB._id), onlyIfUnlinked: true } });
     assert.equal(linkConflict.status, 409);
     assert.equal(String((await WishlistItem.findById(wish._id)).mealId), String(mealA._id));
-    const foreignLink = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', userId: String(otherUser._id), body: { mealId: String(mealA._id), onlyIfUnlinked: true } });
+    const foreignLink = await request(`/wishlist/${wish._id}/meal`, { method: 'PATCH', token: loginB.data.token, body: { mealId: String(mealA._id), onlyIfUnlinked: true } });
     assert.equal(foreignLink.status, 400);
-    console.log('Mongo integration passed: real HTTP, schedule conflicts, partial writes, retry, wish linking and household isolation');
+    console.log('Mongo integration passed: real login and JWT, schedule conflicts, partial writes, retry, wish linking and household isolation');
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
     await mongoose.disconnect();

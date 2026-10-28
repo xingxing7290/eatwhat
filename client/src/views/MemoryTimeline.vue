@@ -10,6 +10,8 @@ const route = useRoute();
 const router = useRouter();
 const meals = ref([]);
 const loading = ref(false);
+const loadError = ref('');
+const deletingId = ref('');
 const dialogVisible = ref(false);
 const saving = ref(false);
 const photoFiles = ref([]);
@@ -78,11 +80,23 @@ const resetForm = () => {
 };
 const load = async () => {
   loading.value = true;
+  loadError.value = '';
   try {
     const [memoryData, mealData] = await Promise.all([api.memory.list(), api.meal.getAllMeals()]);
     memories.value = memoryData || [];
     meals.value = mealData.data || mealData || [];
-  } catch (e) { ElMessage.error(e?.error || '加载饭后回忆失败'); }
+    if (route.query.new === '1' && typeof route.query.mealId === 'string') {
+      const meal = meals.value.find(item => String(item._id || item.id) === route.query.mealId);
+      if (meal) {
+        form.mealIds = [meal._id || meal.id];
+        form.title = `做过一次：${meal.name}`;
+        dialogVisible.value = true;
+      } else {
+        ElMessage.warning('未找到这道菜，请手动选择');
+      }
+      await router.replace({ name: 'memories' });
+    }
+  } catch (e) { loadError.value = e?.error || '加载饭后回忆失败'; }
   finally { loading.value = false; }
 };
 const save = async () => {
@@ -109,43 +123,34 @@ const save = async () => {
   finally { saving.value = false; }
 };
 const remove = async (item) => {
+  if (deletingId.value || saving.value) return;
+  deletingId.value = item._id;
   try {
     await ElMessageBox.confirm('确定删除这条饭后回忆吗？', '删除确认');
     await api.memory.delete(item._id);
     ElMessage.success('已删除');
     await load();
-  } catch (e) { if (e !== 'cancel') ElMessage.error(e?.error || '删除失败'); }
+  } catch (e) { if (e !== 'cancel' && e !== 'close') ElMessage.error(e?.error || '删除失败'); }
+  finally { deletingId.value = ''; }
 };
-onMounted(async () => {
-  await load();
-  if (route.query.new === '1' && typeof route.query.mealId === 'string') {
-    const meal = meals.value.find(item => String(item._id || item.id) === route.query.mealId);
-    if (meal) {
-      form.mealIds = [meal._id || meal.id];
-      form.title = `做过一次：${meal.name}`;
-      dialogVisible.value = true;
-    } else {
-      ElMessage.warning('未找到这道菜，请手动选择');
-    }
-    router.replace({ name: 'memories' });
-  }
-});
+onMounted(load);
 </script>
 
 <template>
   <div class="memory-page">
     <div class="page-header">
-      <div><h1>饭后回忆</h1><p>把每一餐后的心情、照片和小故事留下来。</p></div>
-      <el-button type="primary" @click="dialogVisible = true"><el-icon><Plus /></el-icon>记录一餐</el-button>
+      <div><span class="eyebrow">AFTER THE MEAL · 饭后时光</span><h1>饭后回忆</h1><p>把每一餐后的心情、照片和小故事留下来。</p></div>
+      <el-button type="primary" :disabled="loading || !!loadError || !!deletingId" @click="dialogVisible = true"><el-icon><Plus /></el-icon>记录一餐</el-button>
     </div>
 
     <div v-loading="loading" class="timeline">
-      <el-empty v-if="!memories.length" description="还没有饭后回忆" />
-      <section v-for="(items, date) in grouped" :key="date" class="day-group">
+      <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
+      <el-empty v-else-if="!loading && !memories.length" description="还没有饭后回忆" />
+      <section v-for="(items, date) in (loadError ? {} : grouped)" :key="date" class="day-group">
         <h2>{{ date }}</h2>
         <div class="memory-grid">
           <el-card v-for="item in items" :key="item._id" class="memory-card">
-            <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><el-button type="danger" link @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div>
+            <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><el-button type="danger" link :disabled="!!deletingId || saving" :aria-label="`删除${item.title || '这条回忆'}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div>
             <h3>{{ item.title || '温馨一餐' }}</h3>
             <p>{{ item.note || '没有文字，也是一段回忆。' }}</p>
             <div class="meta"><span>{{ item.mood || '日常' }}</span><el-rate :model-value="item.rating || 0" disabled size="small" /></div>
@@ -156,7 +161,7 @@ onMounted(async () => {
       </section>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="记录饭后回忆" width="min(560px, 92vw)">
+    <el-dialog v-model="dialogVisible" title="记录饭后回忆" width="min(560px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <el-form label-position="top">
         <el-form-item label="日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" type="date" /></el-form-item>
         <el-form-item label="餐次"><el-select v-model="form.mealType"><el-option v-for="(label, key) in mealTypeText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
@@ -167,15 +172,16 @@ onMounted(async () => {
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
         <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
 .memory-page { display: flex; flex-direction: column; gap: 18px; }
-.page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border-radius: 12px; padding: 20px; box-shadow: 0 2px 8px var(--shadow-color); }
+.page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 h1, h2, h3 { margin: 0; color: var(--text-primary); }
+h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}
 .page-header p { color: var(--text-secondary); margin: 6px 0 0; }
 .day-group { display: flex; flex-direction: column; gap: 12px; }
 .memory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }

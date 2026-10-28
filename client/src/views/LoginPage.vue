@@ -23,7 +23,7 @@
       </div>
 
       <!-- 登录表单 -->
-      <el-form :model="form" :rules="rules" ref="formRef" label-width="0" class="login-form">
+      <el-form :model="form" :rules="rules" ref="formRef" label-width="0" class="login-form" @submit.prevent="onSubmit">
         <el-form-item prop="username">
           <el-input 
             v-model="form.username" 
@@ -32,6 +32,8 @@
             size="large"
             :prefix-icon="User"
             class="custom-input"
+            autocomplete="username"
+            :disabled="loading"
           />
         </el-form-item>
         
@@ -44,6 +46,8 @@
             size="large"
             :prefix-icon="Lock"
             class="custom-input"
+            autocomplete="current-password"
+            :disabled="loading"
           />
         </el-form-item>
 
@@ -56,7 +60,7 @@
           :loading="loading" 
           class="login-btn" 
           size="large"
-          @click="onSubmit"
+          native-type="submit"
         >
           <span v-if="!loading">立即登录</span>
           <span v-else>登录中...</span>
@@ -121,23 +125,26 @@ const persistRememberedLogin = () => {
 }
 
 const onSubmit = async () => {
-  await formRef.value?.validate(async (valid) => {
+  if (loading.value || !formRef.value) return
+  loading.value = true
+  try {
+    let valid = false
+    try { valid = await formRef.value.validate() } catch (_) { return }
     if (!valid) return
     try {
-      loading.value = true
-      const res = await api.auth.login(form.value)
+      const res = await api.auth.login({ username: form.value.username.trim(), password: form.value.password })
+      if (typeof res?.token !== 'string' || !res.token || !res.user) throw new Error('登录响应不完整')
       localStorage.setItem('token', res.token)
       localStorage.setItem('user', JSON.stringify(res.user))
       persistRememberedLogin()
       ElMessage.success('登录成功')
-      const redirect = typeof route.query.redirect === 'string' && route.query.redirect ? route.query.redirect : '/'
-      router.replace(redirect)
+      const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+      const redirect = requested.startsWith('/') && !requested.startsWith('//') && !/[\\\r\n]/.test(requested) && router.resolve(requested).matched.length ? requested : '/'
+      await router.replace(redirect)
     } catch (e) {
       ElMessage.error(e?.error || '登录失败')
-    } finally {
-      loading.value = false
     }
-  })
+  } finally { loading.value = false }
 }
 
 const rules = {
