@@ -15,22 +15,9 @@ const loading = ref(false);
 const totalTime = computed(() => Number(meal.value?.prepTime || 0) + Number(meal.value?.cookTime || 0));
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
 const coverImage = computed(() => meal.value?.imageUrl || defaultImage);
-const todayKey = () => new Date().toISOString().slice(0, 10);
-const doneOnce = async () => {
+const doneOnce = () => {
   if (!meal.value) return;
-  try {
-    const fd = new FormData();
-    fd.append('date', todayKey());
-    fd.append('mealType', 'dinner');
-    fd.append('title', `做过一次：${meal.value.name}`);
-    fd.append('mealIds', JSON.stringify([meal.value._id || meal.value.id]));
-    fd.append('rating', String(meal.value.rating || 5));
-    fd.append('actualCookTime', String(totalTime.value || 0));
-    fd.append('nextImprovement', '下次可以根据这次口味继续微调。');
-    await api.memory.create(fd);
-    ElMessage.success('已记录为一条饭后回忆');
-    router.push('/memories');
-  } catch (e) { ElMessage.error(e?.error || '记录失败'); }
+  router.push({ name: 'memories', query: { new: '1', mealId: meal.value._id || meal.value.id } });
 };
 const reportImageIssue = async () => {
   if (!meal.value) return;
@@ -60,7 +47,7 @@ onMounted(load);
     <div class="detail-toolbar">
       <el-button @click="router.push('/meals')"><el-icon><ArrowLeft /></el-icon>返回</el-button>
       <div class="toolbar-actions">
-        <el-button type="success" @click="doneOnce"><el-icon><Check /></el-icon>做过一次</el-button>
+        <el-button type="success" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
         <el-button type="warning" @click="reportImageIssue"><el-icon><Warning /></el-icon>图片不对</el-button>
         <el-button type="primary" @click="router.push({ name: 'MealEditor', params: { id: route.params.id } })">
           <el-icon><Edit /></el-icon>编辑菜品

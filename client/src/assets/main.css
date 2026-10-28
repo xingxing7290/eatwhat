@@ -227,12 +227,19 @@ body::before {
   transform: translateY(-1px);
 }
 
-.el-button--primary,
-.el-button--warning {
+.el-button--primary:not(.is-plain),
+.el-button--warning:not(.is-plain) {
   border: 0;
-  color: #fffaf3;
+  color: #493226;
   background: linear-gradient(135deg, #ffb4a2, #e09f67);
   box-shadow: 0 12px 24px rgba(224, 159, 103, 0.22);
+}
+
+.el-button--primary.is-plain,
+.el-button--warning.is-plain {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  border-color: var(--border-color);
 }
 
 .el-button--danger {

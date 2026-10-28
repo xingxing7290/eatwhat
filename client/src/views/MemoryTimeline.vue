@@ -1,15 +1,20 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture } from '@element-plus/icons-vue';
 import api from '@/services/api';
 
 const memories = ref([]);
+const route = useRoute();
+const router = useRouter();
 const meals = ref([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
+const saving = ref(false);
 const photoFiles = ref([]);
-const form = reactive({ date: new Date().toISOString().slice(0, 10), mealType: 'dinner', title: '', mood: '', rating: 5, note: '', mealIds: [] });
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', mealIds: [] });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
 const supportedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 const supportedPhotoExts = ['.jpeg', '.jpg', '.png', '.gif', '.webp'];
@@ -68,7 +73,7 @@ const grouped = computed(() => memories.value.reduce((acc, item) => {
 }, {}));
 
 const resetForm = () => {
-  Object.assign(form, { date: new Date().toISOString().slice(0, 10), mealType: 'dinner', title: '', mood: '', rating: 5, note: '', mealIds: [] });
+  Object.assign(form, { date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', mealIds: [] });
   photoFiles.value = [];
 };
 const load = async () => {
@@ -81,6 +86,8 @@ const load = async () => {
   finally { loading.value = false; }
 };
 const save = async () => {
+  if (!form.date) return ElMessage.warning('请选择日期');
+  if (saving.value) return;
   try {
     const invalidPhoto = photoFiles.value.find(file => !isSupportedPhoto(file.raw || file));
     if (invalidPhoto) {
@@ -89,6 +96,7 @@ const save = async () => {
       ElMessage.warning(reason === 'size' ? '\u56fe\u7247\u4e0d\u80fd\u8d85\u8fc7 5MB' : '\u8bf7\u4e0a\u4f20 jpg\u3001png\u3001gif\u3001webp \u56fe\u7247');
       return;
     }
+    saving.value = true;
     const fd = new FormData();
     Object.entries(form).forEach(([key, value]) => fd.append(key, Array.isArray(value) ? JSON.stringify(value) : value));
     photoFiles.value.forEach(file => fd.append('photos', file.raw || file));
@@ -98,6 +106,7 @@ const save = async () => {
     resetForm();
     await load();
   } catch (e) { ElMessage.error(e?.error || '保存失败'); }
+  finally { saving.value = false; }
 };
 const remove = async (item) => {
   try {
@@ -107,7 +116,20 @@ const remove = async (item) => {
     await load();
   } catch (e) { if (e !== 'cancel') ElMessage.error(e?.error || '删除失败'); }
 };
-onMounted(load);
+onMounted(async () => {
+  await load();
+  if (route.query.new === '1' && typeof route.query.mealId === 'string') {
+    const meal = meals.value.find(item => String(item._id || item.id) === route.query.mealId);
+    if (meal) {
+      form.mealIds = [meal._id || meal.id];
+      form.title = `做过一次：${meal.name}`;
+      dialogVisible.value = true;
+    } else {
+      ElMessage.warning('未找到这道菜，请手动选择');
+    }
+    router.replace({ name: 'memories' });
+  }
+});
 </script>
 
 <template>
@@ -134,7 +156,7 @@ onMounted(load);
       </section>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="记录饭后回忆" width="560px">
+    <el-dialog v-model="dialogVisible" title="记录饭后回忆" width="min(560px, 92vw)">
       <el-form label-position="top">
         <el-form-item label="日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" type="date" /></el-form-item>
         <el-form-item label="餐次"><el-select v-model="form.mealType"><el-option v-for="(label, key) in mealTypeText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
@@ -145,7 +167,7 @@ onMounted(load);
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
         <el-form-item label="照片"><el-upload action="#" :accept="photoAccept" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload></el-form-item>
       </el-form>
-      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" @click="save">保存</el-button></template>
+      <template #footer><el-button @click="dialogVisible = false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
   </div>
 </template>

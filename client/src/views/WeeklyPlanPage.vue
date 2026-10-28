@@ -1,6 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 
 const loading = ref(false);
@@ -13,7 +13,7 @@ const monday = () => {
   const d = new Date();
   const day = d.getDay() || 7;
   d.setDate(d.getDate() - day + 1);
-  return d.toISOString().slice(0, 10);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 const mealId = meal => meal?._id || meal?.id || '';
 const load = async () => {
@@ -23,18 +23,25 @@ const load = async () => {
   finally { loading.value = false; }
 };
 const generate = async () => {
+  if (!weekStart.value) return ElMessage.warning('请选择要安排的日期');
   loading.value = true;
+  draft.value = null;
   try { draft.value = await api.weeklyPlan.generate(weekStart.value); ElMessage.success('已生成本周菜单草稿'); }
   catch (e) { ElMessage.error(e?.error || '生成失败'); }
   finally { loading.value = false; }
 };
 const applyDraft = async () => {
   if (!draft.value?.days?.length) return;
+  if (!draft.value.days.some(day => Object.values(day.meals || {}).some(items => items?.length))) return ElMessage.warning('草稿中没有菜品，请先添加菜谱');
+  try {
+    await ElMessageBox.confirm('应用草稿会替换这一周每天的早餐、午餐和晚餐，包括草稿中的空餐次。请确认已检查当前安排。', '确认应用周计划', { type: 'warning', confirmButtonText: '确认替换', cancelButtonText: '再检查一下' });
+  } catch (_) { return; }
   applying.value = true;
   try { await api.weeklyPlan.apply(draft.value.days); ElMessage.success('已应用到日历'); draft.value = null; await load(); }
   catch (e) { ElMessage.error(e?.error || '应用失败'); }
   finally { applying.value = false; }
 };
+const changeWeek = () => { draft.value = null; if (weekStart.value) load(); else current.value = null; };
 onMounted(() => { weekStart.value = monday(); load(); });
 </script>
 
@@ -42,7 +49,7 @@ onMounted(() => { weekStart.value = monday(); load(); });
   <div class="weekly-page" v-loading="loading">
     <div class="page-header">
       <div><h1>本周饭桌计划</h1><p>先生成草稿，再确认写入日历。</p></div>
-      <div class="actions"><el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" @change="load" /><el-button type="primary" @click="generate">生成草稿</el-button><el-button :disabled="!draft" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
+      <div class="actions"><el-date-picker v-model="weekStart" type="date" value-format="YYYY-MM-DD" @change="changeWeek" /><el-button type="primary" @click="generate">生成草稿</el-button><el-button :disabled="!draft" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
 
     <el-card v-if="draft" class="draft-card"><template #header>规则生成草稿</template><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3>{{ day.date }}</h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length" class="muted">空</span></div><div class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div></el-card>

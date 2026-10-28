@@ -10,7 +10,8 @@ const templates = ref([]);
 const loading = ref(false);
 const dialogVisible = ref(false);
 const photoFiles = ref([]);
-const form = reactive({ title: '', date: new Date().toISOString().slice(0, 10), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
+const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const applyTemplate = (tpl) => {
   form.title = tpl.title;
@@ -19,7 +20,7 @@ const applyTemplate = (tpl) => {
 };
 
 const reset = () => {
-  Object.assign(form, { title: '', date: new Date().toISOString().slice(0, 10), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
+  Object.assign(form, { title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] } });
   photoFiles.value = [];
 };
 const load = async () => {
@@ -78,7 +79,7 @@ onMounted(load);
       </el-card>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="新增纪念日菜单" width="620px">
+    <el-dialog v-model="dialogVisible" title="新增纪念日菜单" width="min(620px, 92vw)">
       <el-form label-position="top">
         <el-form-item label="菜单模板"><div class="template-list"><el-button v-for="tpl in templates" :key="tpl.key" size="small" @click="applyTemplate(tpl)">{{ tpl.title }}</el-button></div></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" placeholder="比如：三周年晚餐" /></el-form-item>

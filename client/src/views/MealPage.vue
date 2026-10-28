@@ -1,9 +1,10 @@
 <script setup>
-import { ref, onMounted, computed, reactive, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
+import defaultImageSrc from '../assets/meal-placeholder.png';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
 
@@ -113,7 +114,7 @@ const allTags = computed(() => {
 const getMealImage = (meal) => {
   const imagePath = meal.imageUrl || meal.image;
   if (!imagePath) {
-    return '/src/assets/meal-placeholder.png';
+    return defaultImageSrc;
   }
   if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
     try {
@@ -129,7 +130,7 @@ const getMealImage = (meal) => {
     } catch (_) {}
     return imagePath;
   }
-  return '/src/assets/meal-placeholder.png';
+  return defaultImageSrc;
 };
 
 // 图片加载错误处理
@@ -146,7 +147,10 @@ const handleImageError = (e) => {
       return;
     }
   } catch (_) {}
-  img.src = '/src/assets/meal-placeholder.png';
+  if (img.dataset.placeholder !== '1') {
+    img.dataset.placeholder = '1';
+    img.src = defaultImageSrc;
+  }
 };
 
 // 加载所有菜品
@@ -190,8 +194,25 @@ const handleViewMeal = (meal) => {
   router.push({ name: 'MealDetail', params: { id: mealId } });
 };
 
-const handleShareMeal = (meal) => {
-  ElMessage.success(`已把「${meal.name}」投喂给 TA 的今日灵感`);
+const sharingMealIds = new Set();
+const handleShareMeal = async (meal) => {
+  const id = meal?._id || meal?.id;
+  if (!id || sharingMealIds.has(String(id))) return;
+  sharingMealIds.add(String(id));
+  try {
+    const existing = await api.wishlist.list({ status: 'open' });
+    const match = (existing || []).find(item => String(item.mealId?._id || item.mealId?.id || item.mealId || '') === String(id));
+    if (match) {
+      ElMessage.info('这道菜已经在想吃清单中');
+      return;
+    }
+    await api.wishlist.create({ title: meal.name, mealId: id, category: meal.category || '', priority: 'normal' });
+    ElMessage.success(`「${meal.name}」已加入小家的想吃清单`);
+  } catch (error) {
+    ElMessage.error(error?.error || '加入想吃清单失败');
+  } finally {
+    sharingMealIds.delete(String(id));
+  }
 };
 
 const handleImageIssue = async (meal) => {
@@ -331,6 +352,10 @@ onMounted(async () => {
     await mealStore.fetchMealTags();
   } catch (_) {}
 });
+onBeforeUnmount(() => {
+  if (fetchTimer) clearTimeout(fetchTimer);
+  if (newMealImagePreviewUrl.value) URL.revokeObjectURL(newMealImagePreviewUrl.value);
+});
 </script>
 
 <template>
@@ -361,8 +386,8 @@ onMounted(async () => {
         <span>TA</span>
       </div>
       <div class="presence-copy">
-        <strong>TA 正在看当前的菜谱...</strong>
-        <p>挑一道今晚一起吃的菜，或者把灵感先投喂给 TA。</p>
+        <strong>把好味道留给家人</strong>
+        <p>挑一道菜加入想吃清单，家人可以一起查看和安排。</p>
       </div>
       <el-button type="primary" class="feed-inspiration-btn" @click="feedInspiration">
         <el-icon><Present /></el-icon>

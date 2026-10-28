@@ -160,6 +160,7 @@ const mockResponse = (data, delay = 300) => {
 
 // 餐食计划相关API
 export const scheduleApi = {
+	getScheduleByDate: (date) => api.get(`/schedules/day/${encodeURIComponent(date)}`),
 	// 获取某月餐食计划
 	getSchedulesByMonth: (year, month) => {
 		if (USE_MOCK) {
@@ -398,6 +399,7 @@ export const wishlistApi = {
 	create: (payload) => api.post('/wishlist', payload, { headers: { 'Content-Type': 'application/json' } }),
 	vote: (id) => api.post(`/wishlist/${id}/vote`),
 	updateStatus: (id, status) => api.patch(`/wishlist/${id}/status`, { status }, { headers: { 'Content-Type': 'application/json' } }),
+	attachMeal: (id, mealId) => api.patch(`/wishlist/${id}/meal`, { mealId }, { headers: { 'Content-Type': 'application/json' } }),
 	delete: (id) => api.delete(`/wishlist/${id}`)
 };
 
@@ -424,4 +426,4 @@ export default {
 	defaultMeal: defaultMealApi,
 	mealImageIssue: mealImageIssueApi,
 	anniversaryTemplate: anniversaryTemplateApi
-}; 
+};

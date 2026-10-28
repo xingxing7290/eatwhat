@@ -7,6 +7,7 @@ import MealCard from '../components/MealCard.vue';
 import { ElMessage } from 'element-plus';
 import { format } from 'date-fns';
 import { Grid, Menu, Search, Filter } from '@element-plus/icons-vue';
+import api from '../services/api';
 
 const route = useRoute();
 const router = useRouter();
@@ -17,6 +18,7 @@ const date = computed(() => route.query.date);
 const mealType = computed(() => route.query.mealType);
 
 const isLoading = ref(false);
+const loadError = ref(false);
 const searchQuery = ref('');
 const selectedMeals = ref([]);
 const currentPage = ref(1);
@@ -180,42 +182,6 @@ const toggleMealSelection = (meal) => {
   }
 };
 
-// 加载已有安排
-const loadExistingSchedule = async () => {
-  try {
-    const schedule = scheduleStore.getScheduleByDate(date.value);
-    
-    // 如果有已经安排的餐食，预选中这些菜品
-    const mealIds = scheduleStore.getMealIdsByDateAndType(date.value, mealType.value);
-    if (mealIds.length > 0) {
-      const meals = mealStore.getMealsByIds(mealIds);
-      
-      if (meals.length > 0) {
-        selectedMeals.value = meals;
-      }
-    }
-  } catch (error) {
-    console.error('加载已有安排失败', error);
-  }
-};
-
-// 加载所有菜品
-const fetchAllMeals = async () => {
-  isLoading.value = true;
-  
-  try {
-    if (mealStore.meals.length === 0) {
-      await mealStore.fetchAllMeals();
-    }
-    
-    await loadExistingSchedule();
-  } catch (error) {
-    ElMessage.error('获取菜品列表失败');
-  } finally {
-    isLoading.value = false;
-  }
-};
-
 // 保存餐食安排
 const saveSelection = async () => {
   // 确保有日期和餐食类型
@@ -240,6 +206,15 @@ const saveSelection = async () => {
     }
     
     await scheduleStore.setMeal(date.value, mealType.value, mealIds);
+    const suggestedId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
+    const wishlistId = typeof route.query.wishlistId === 'string' ? route.query.wishlistId : '';
+    if (wishlistId && suggestedId && mealIds.some(id => String(id) === suggestedId)) {
+      try {
+        await api.wishlist.updateStatus(wishlistId, 'planned');
+      } catch (_) {
+        ElMessage.warning('餐食已保存，但想吃清单状态未更新，请在想吃清单中检查');
+      }
+    }
     
     // 跳回日历页
     router.push({ name: 'calendar' });
@@ -289,40 +264,46 @@ const goToNewMeal = () => {
   router.push({ name: 'MealEditor' });
 };
 
-onMounted(async () => {
+const loadSelection = async () => {
   // 检查必要参数
-  if (!date.value || !mealType.value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value || '') || !['breakfast', 'lunch', 'dinner'].includes(mealType.value)) {
     ElMessage.error('缺少必要参数');
     router.push({ name: 'calendar' });
     return;
   }
 
   isLoading.value = true;
+  loadError.value = false;
   try {
-    // 确保菜品列表已加载
-    if (mealStore.meals.length === 0) {
+    if (!mealStore.allLoaded) {
       await mealStore.fetchAllMeals();
     }
-
+    const schedule = await api.schedule.getScheduleByDate(date.value);
+    const items = schedule?.meals?.[mealType.value] || [];
+    const existingIds = items.map(item => {
+      const meal = item?.meal || item;
+      return meal?._id || meal?.id || (typeof meal === 'string' ? meal : '');
+    }).filter(Boolean).map(String);
+    if (existingIds.length !== items.length) {
+      throw new Error('现有安排中有无法读取的菜品，请先在日历中检查');
+    }
+    const suggestedId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
+    const ids = [...new Set([...existingIds, suggestedId].filter(Boolean))];
+    selectedMeals.value = mealStore.getMealsByIds(ids);
+    if (selectedMeals.value.length !== ids.length) {
+      throw new Error('部分已安排的菜品无法读取，请刷新后重试');
+    }
     try {
       await mealStore.fetchMealCategories();
     } catch (_) {}
-    
-    // 优先处理从URL传入的ID (编辑模式)
-    const mealIdsFromQuery = route.query.currentMealIds;
-    if (mealIdsFromQuery) {
-      const ids = mealIdsFromQuery.split(',').filter(id => id); // 过滤空字符串
-      const preSelected = mealStore.getMealsByIds(ids);
-      selectedMeals.value = preSelected;
-    }
-    
   } catch (error) {
-    console.error('加载菜品或预选安排失败:', error);
-    ElMessage.error('加载页面数据失败');
+    loadError.value = true;
+    ElMessage.error(error?.message || '加载页面数据失败，请重试');
   } finally {
     isLoading.value = false;
   }
-});
+};
+onMounted(loadSelection);
 </script>
 
 <template>
@@ -335,13 +316,16 @@ onMounted(async () => {
         <el-button 
           type="primary" 
           @click="saveSelection" 
-          :disabled="isLoading"
+          :disabled="isLoading || loadError"
           :loading="isLoading"
         >
           保存安排
         </el-button>
       </div>
     </div>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon title="无法读取完整的现有安排，为保护数据暂时不能保存。">
+      <el-button link type="primary" @click="loadSelection">重新加载</el-button>
+    </el-alert>
     
     <div class="selection-info">
       <div class="selected-count">
@@ -678,4 +662,4 @@ onMounted(async () => {
     }
   }
 }
-</style> 
+</style>

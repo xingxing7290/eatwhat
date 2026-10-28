@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, computed } from 'vue';
+import { ref, watch, computed, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs';
 import { RouterLink, RouterView } from 'vue-router'
@@ -21,17 +21,13 @@ const showDevTools = import.meta.env.DEV;
 
 // 移动端导航菜单
 const showMobileMenu = ref(false);
+const viewportWidth = ref(window.innerWidth);
 const authToken = ref(localStorage.getItem('token') || '');
 const authUser = ref(null);
 
-// 获取当前页面标题
-const pageTitle = computed(() => {
-  return route.meta.title || '安排吃啥';
-});
-
 // 检测是否为移动设备
 const isMobile = computed(() => {
-  return window.innerWidth <= 768;
+  return viewportWidth.value <= 768;
 });
 
 // 切换暗黑模式
@@ -70,12 +66,12 @@ watch(selectedColorTheme, () => {
 
 watch(() => route.fullPath, () => {
   loadAuthState();
+  closeMobileMenu();
 });
 
 const appName = "安排吃啥"
 
 const mealStore = useMealStore();
-const hasMeals = computed(() => mealStore.meals.length > 0);
 const isLoggedIn = computed(() => !!authToken.value);
 const currentUserName = computed(() => authUser.value?.displayName || authUser.value?.username || '我的账号');
 const currentUserInitial = computed(() => currentUserName.value.slice(0, 1).toUpperCase());
@@ -117,57 +113,9 @@ const handleUserCommand = (command) => {
   if (command === 'logout') handleLogout();
 };
 
-// 添加示例菜品
-const addSampleMeals = async () => {
-  try {
-    // 示例菜品1
-    await mealStore.createMeal({
-      name: '糖醋里脊',
-      description: '酸甜可口，外脆里嫩',
-      tags: ['家常菜', '热菜', '肉类'],
-      ingredients: [
-        { name: '里脊肉', amount: '300克' },
-        { name: '白糖', amount: '30克' },
-        { name: '醋', amount: '20ml' },
-        { name: '番茄酱', amount: '30克' },
-        { name: '淀粉', amount: '适量' }
-      ]
-    });
-    
-    // 示例菜品2
-    await mealStore.createMeal({
-      name: '西红柿炒鸡蛋',
-      description: '家常美味，营养丰富',
-      tags: ['家常菜', '快手菜', '素菜'],
-      ingredients: [
-        { name: '西红柿', amount: '2个' },
-        { name: '鸡蛋', amount: '3个' },
-        { name: '葱', amount: '适量' },
-        { name: '盐', amount: '适量' },
-        { name: '糖', amount: '少许' }
-      ]
-    });
-    
-    // 示例菜品3
-    await mealStore.createMeal({
-      name: '麻婆豆腐',
-      description: '麻辣鲜香，下饭神器',
-      tags: ['川菜', '辣菜', '豆制品'],
-      ingredients: [
-        { name: '豆腐', amount: '1块' },
-        { name: '肉末', amount: '100克' },
-        { name: '豆瓣酱', amount: '1勺' },
-        { name: '花椒', amount: '适量' },
-        { name: '辣椒', amount: '适量' }
-      ]
-    });
-  } catch (error) {
-    console.error('添加示例菜品失败:', error);
-  }
-};
-
 onMounted(async () => {
   loadAuthState();
+  applyColorTheme();
 
   // 初始化暗黑模式
   document.documentElement.classList.toggle('dark', isDarkMode.value);
@@ -177,6 +125,7 @@ onMounted(async () => {
   
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleResize);
+  window.addEventListener('eatwhat-theme-change', handleColorThemeChange);
   
   // Meal data is loaded by each page on demand to keep the larger default catalog from slowing the app shell.
 })
@@ -193,10 +142,17 @@ const handleKeyDown = (e) => {
 
 // 窗口大小变化处理
 const handleResize = () => {
-  if (window.innerWidth > 768) {
+  viewportWidth.value = window.innerWidth;
+  if (viewportWidth.value > 768) {
     showMobileMenu.value = false;
   }
 };
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeyDown);
+  window.removeEventListener('resize', handleResize);
+  window.removeEventListener('eatwhat-theme-change', handleColorThemeChange);
+});
 </script>
 
 <template>
@@ -209,7 +165,7 @@ const handleResize = () => {
         @click="closeMobileMenu"
       ></div>
       
-      <header class="app-header">
+      <header v-if="isLoggedIn" class="app-header">
         <div class="header-left">
           <router-link to="/dashboard" class="logo" @click="closeMobileMenu">
             {{ appName }}
@@ -220,21 +176,20 @@ const handleResize = () => {
             <router-link to="/dashboard" class="nav-link" @click="closeMobileMenu">首页</router-link>
             <router-link to="/calendar" class="nav-link" @click="closeMobileMenu">日历</router-link>
             <router-link to="/weekly-plan" class="nav-link" @click="closeMobileMenu">周计划</router-link>
-            <router-link to="/shopping-list" class="nav-link" @click="closeMobileMenu">购物清单</router-link>
             <router-link to="/meals" class="nav-link" @click="closeMobileMenu">菜品</router-link>
-            <router-link to="/memories" class="nav-link" @click="closeMobileMenu">回忆</router-link>
-            <router-link to="/photo-album" class="nav-link" @click="closeMobileMenu">相册</router-link>
-            <router-link to="/wishlist" class="nav-link" @click="closeMobileMenu">想吃</router-link>
-            <router-link to="/anniversaries" class="nav-link" @click="closeMobileMenu">纪念日</router-link>
-            <router-link to="/settings" class="nav-link" @click="closeMobileMenu">设置</router-link>
-            <el-button 
-              v-if="$route.path === '/meals' && !hasMeals" 
-              type="success" 
-              size="small"
-              @click="addSampleMeals"
-            >
-              添加示例菜品
-            </el-button>
+            <router-link to="/shopping-list" class="nav-link" @click="closeMobileMenu">购物清单</router-link>
+            <el-dropdown trigger="click">
+              <button class="nav-more" type="button" aria-label="更多功能">更多 <el-icon><ArrowDown /></el-icon></button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item><router-link to="/wishlist">想吃清单</router-link></el-dropdown-item>
+                  <el-dropdown-item><router-link to="/memories">饭后回忆</router-link></el-dropdown-item>
+                  <el-dropdown-item><router-link to="/photo-album">饭桌相册</router-link></el-dropdown-item>
+                  <el-dropdown-item><router-link to="/anniversaries">纪念日</router-link></el-dropdown-item>
+                  <el-dropdown-item divided><router-link to="/settings">设置</router-link></el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </nav>
         </div>
         
@@ -244,6 +199,8 @@ const handleResize = () => {
             v-if="isMobile"
             type="text" 
             class="mobile-menu-btn"
+            aria-label="打开导航菜单"
+            :aria-expanded="showMobileMenu"
             @click="toggleMobileMenu"
           >
             <el-icon v-if="!showMobileMenu"><Menu /></el-icon>
@@ -252,10 +209,6 @@ const handleResize = () => {
           
           <!-- 桌面端功能按钮 -->
           <div class="desktop-actions">
-            <div v-if="isLoggedIn" class="presence-pill">
-              <span class="presence-dot"></span>
-              <span>TA 正在同步小家的菜单</span>
-            </div>
             <el-dropdown
               v-if="isLoggedIn"
               trigger="click"
@@ -317,7 +270,7 @@ const handleResize = () => {
       </header>
       
       <!-- 移动端导航菜单 -->
-      <div class="mobile-nav" :class="{ 'show': showMobileMenu }">
+      <div v-if="isLoggedIn" class="mobile-nav" :class="{ 'show': showMobileMenu }" :inert="!showMobileMenu ? '' : null" :aria-hidden="!showMobileMenu">
         <div class="mobile-nav-header">
           <h3>菜单</h3>
           <el-button type="text" @click="closeMobileMenu">
@@ -383,16 +336,6 @@ const handleResize = () => {
             </el-button>
           </div>
 
-          <el-button 
-            v-if="$route.path === '/meals' && !hasMeals" 
-            type="success" 
-            size="large"
-            @click="addSampleMeals"
-            class="mobile-sample-btn"
-          >
-            添加示例菜品
-          </el-button>
-          
           <div class="mobile-utility-buttons">
             <el-button 
               v-if="showDevTools"
@@ -1253,6 +1196,27 @@ html[data-theme] .el-popper {
     font-size: 17px;
     padding: 6px 10px;
   }
+}
+
+/* Compact global navigation */
+.app-header { gap: 16px; }
+.app-header .header-left { min-width: 0; }
+.app-header .header-left .main-nav { gap: 3px; }
+.app-header .header-left .main-nav .nav-link { padding: 9px 11px; font-size: 14px; white-space: nowrap; }
+.nav-more { display: inline-flex; align-items: center; gap: 4px; border: 0; padding: 9px 11px; border-radius: 999px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
+.nav-more:hover, .nav-more:focus-visible { color: var(--text-primary); background: var(--bg-secondary); }
+.el-dropdown-menu__item a { color: inherit; text-decoration: none; display: block; width: 100%; }
+.app-header .header-right .desktop-actions .desktop-logout-btn { display: none; }
+.mobile-nav-link.router-link-active { color: var(--secondary-color); background: var(--bg-secondary); font-weight: 700; }
+.app-header .header-right .mobile-menu-btn { color: var(--text-primary); }
+@media (min-width: 769px) and (max-width: 1120px) {
+  .app-header { padding-left: 16px; padding-right: 16px; }
+  .app-header .header-left .logo { margin-right: 8px; font-size: 18px; }
+  .app-header .header-left .main-nav .nav-link { padding-left: 7px; padding-right: 7px; font-size: 13px; }
+  .app-header .header-right .desktop-actions .user-name { max-width: 65px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
 </style> 

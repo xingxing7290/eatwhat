@@ -15,7 +15,6 @@ const currentDate = ref(new Date());
 const isLoading = ref(false);
 const meals = ref([]);
 const partnerWishlist = ref([]);
-const arrangingWishlist = ref('');
 
 // 记录是否需要在加载完成后滚动到今天
 const shouldScrollToToday = ref(false);
@@ -82,18 +81,12 @@ const loadPartnerWishlist = async () => {
     partnerWishlist.value = (items || []).filter(item => item.partnerSignal).slice(0, 3);
   } catch (_) {}
 };
-const arrangeWishlistDinner = async (item) => {
+const arrangeWishlistDinner = (item) => {
   const id = item.mealId?._id || item.mealId?.id;
   if (!id) return ElMessage.warning('这个想吃项还没有关联菜品');
-  try {
-    arrangingWishlist.value = item._id;
-    await scheduleStore.setMeal(format(new Date(), 'yyyy-MM-dd'), 'dinner', [id]);
-    await api.wishlist.updateStatus(item._id, 'planned');
-    ElMessage.success('已安排到今天晚餐');
-    await loadPartnerWishlist();
-    await fetchMonthSchedules();
-  } catch (e) { ElMessage.error(e?.error || '安排失败'); }
-  finally { arrangingWishlist.value = ''; }
+  return router.push({ name: 'MealSelection', query: {
+    date: format(new Date(), 'yyyy-MM-dd'), mealType: 'dinner', suggestedMealId: id, wishlistId: item._id
+  } });
 };
 const fetchMonthSchedules = async () => {
   isLoading.value = true;
@@ -324,7 +317,7 @@ onMounted(() => {
 
     <div v-if="partnerWishlist.length" class="partner-wishlist-banner">
       <div><strong>TA 最近想吃</strong><span v-for="item in partnerWishlist" :key="item._id">{{ item.title }}</span></div>
-      <el-button size="small" type="primary" :loading="arrangingWishlist === partnerWishlist[0]._id" @click="arrangeWishlistDinner(partnerWishlist[0])">安排今天晚餐</el-button>
+      <el-button size="small" type="primary" @click="arrangeWishlistDinner(partnerWishlist[0])">安排今天晚餐</el-button>
     </div>
 
     <!-- 移动端月份导航 - 只在移动端显示 -->
@@ -1380,4 +1373,4 @@ onMounted(() => {
   }
 }
 
-</style> 
+</style>

@@ -4,7 +4,8 @@ import api from '@/services/api';
 import { ElMessage } from 'element-plus';
 
 const loading = ref(false);
-const month = ref(new Date().toISOString().slice(0, 7));
+const now = new Date();
+const month = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
 const data = ref({ photos: [] });
 const selected = ref(null);
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
@@ -17,7 +18,7 @@ onMounted(load);
     <div class="page-header"><div><h1>饭桌相册</h1><p>把饭后回忆里的照片按月份收起来。</p></div><el-date-picker v-model="month" type="month" value-format="YYYY-MM" @change="load" /></div>
     <el-empty v-if="!data.photos?.length" description="这个月还没有饭桌照片" />
     <div v-else class="album-grid"><button v-for="item in data.photos" :key="item.photo + item.memoryId" class="photo-card" type="button" @click="selected = item"><img :src="item.photo" :alt="item.title || item.date" /><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span></button></div>
-    <el-dialog :model-value="!!selected" title="饭桌回忆" width="680px" @update:model-value="val => { if (!val) selected = null }" @close="selected=null"><template v-if="selected"><img class="preview" :src="selected.photo" /><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="meal in selected.meals || []" :key="meal._id || meal.id">{{ meal.name }}</el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /></template></el-dialog>
+    <el-dialog :model-value="!!selected" title="饭桌回忆" width="min(680px, 92vw)" @update:model-value="val => { if (!val) selected = null }" @close="selected=null"><template v-if="selected"><img class="preview" :src="selected.photo" :alt="selected.title || '饭桌照片'" /><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="meal in selected.meals || []" :key="meal._id || meal.id">{{ meal.name }}</el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /></template></el-dialog>
   </div>
 </template>
 
