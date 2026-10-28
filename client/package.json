@@ -19,6 +19,7 @@
     "test:meal-detail": "node test/meal-detail-workflows.cjs",
     "test:meal-archive": "node test/meal-archive-workflows.cjs",
     "test:guest-order": "node test/guest-order-workflows.cjs",
+    "test:guest-menu": "node test/guest-menu-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",

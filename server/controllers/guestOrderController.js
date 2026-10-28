@@ -298,8 +298,37 @@ exports.publicDetail = async (req, res, next) => {
     const status = effectiveSessionStatus(session);
     const household = await Household.findById(session.householdId).select('name').lean();
     const statusOnly = req.query.statusOnly === '1';
+    const paginated = !statusOnly && Object.prototype.hasOwnProperty.call(req.query, 'page');
     let meals = [];
-    if (!statusOnly && !['cancelled', 'expired'].includes(status)) {
+    let menu;
+    if (paginated) {
+      const page = Number(req.query.page);
+      const limit = req.query.limit === undefined ? 24 : Number(req.query.limit);
+      if (!Number.isSafeInteger(page) || page < 1 || page > 1000000 || !Number.isSafeInteger(limit) || limit < 1 || limit > 48) throw httpError('菜单分页参数无效', 400);
+      if ((req.query.search !== undefined && typeof req.query.search !== 'string') || (req.query.category !== undefined && typeof req.query.category !== 'string')) throw httpError('菜单筛选参数无效', 400);
+      const search = String(req.query.search || '').trim();
+      const category = String(req.query.category || '').trim();
+      if (search.length > 100 || category.length > 1000) throw httpError('菜单筛选条件过长', 400);
+      let total = 0; let categories = [];
+      if (!['cancelled', 'expired'].includes(status)) {
+        const base = { householdId: session.householdId, archived: { $ne: true } };
+        if (search) {
+          const literal = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          base.$or = ['name', 'category', 'subcategory', 'description', 'tags', 'taste'].map(field => ({ [field]: { $regex: literal, $options: 'i' } }));
+        }
+        const query = { ...base };
+        if (category) query.category = category === '其他' ? { $in: ['', null, '其他'] } : category;
+        const categoryExpr = { $cond: [{ $in: [{ $ifNull: ['$category', ''] }, ['', '其他']] }, '其他', '$category'] };
+        [total, meals, categories] = await Promise.all([
+          Meal.countDocuments(query),
+          Meal.find(query).select('_id defaultKey name category subcategory imageUrl description tags servingSize prepTime cookTime taste spiceLevel isDefault')
+            .sort({ isDefault: -1, category: 1, name: 1, _id: 1 }).skip((page - 1) * limit).limit(limit).lean(),
+          Meal.aggregate([{ $match: base }, { $group: { _id: categoryExpr, count: { $sum: 1 } } }, { $sort: { _id: 1 } }])
+        ]);
+      }
+      menu = { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)), categories: categories.map(row => ({ name: row._id, count: row.count })) };
+    }
+    if (!statusOnly && !paginated && !['cancelled', 'expired'].includes(status)) {
       meals = await Meal.find({ householdId: session.householdId, archived: { $ne: true } })
         .select('_id defaultKey name category subcategory imageUrl description tags servingSize prepTime cookTime taste spiceLevel isDefault')
         .sort({ isDefault: -1, category: 1, name: 1 })
@@ -315,9 +344,10 @@ exports.publicDetail = async (req, res, next) => {
         status,
         canOrder: status === 'open',
         expiresAt: session.expiresAt,
-        supportsIdempotentCreate: true
+        supportsIdempotentCreate: true,
+        supportsGuestMenuPagination: true
       },
-      ...(statusOnly ? {} : { meals })
+      ...(statusOnly ? {} : { meals, ...(paginated ? { menu } : {}) })
     });
   } catch (error) {
     next(error);

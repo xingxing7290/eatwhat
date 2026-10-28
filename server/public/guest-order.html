@@ -91,6 +91,7 @@
     }
     .search span { font-size: 19px; }
     .search input { flex: 1; min-width: 0; border: 0; outline: 0; color: var(--cocoa); background: transparent; font-weight: 750; }
+    .search:focus-within { border-color: var(--peach-dark); box-shadow: 0 0 0 3px rgba(214, 77, 53, .16); }
     .filters { display: flex; gap: 8px; overflow-x: auto; padding: 10px 1px 3px; scrollbar-width: none; }
     .filters::-webkit-scrollbar { display: none; }
     .filter {
@@ -105,6 +106,7 @@
       cursor: pointer;
     }
     .filter.active { color: white; background: var(--peach); border-color: var(--peach); }
+    .filter:focus-visible, .menu-pagination button:focus-visible, .menu-retry:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
     .section-head { display: flex; align-items: end; justify-content: space-between; margin: 20px 2px 12px; }
     .section-head h2 { margin: 0; font-size: 21px; }
     .count { color: var(--muted); font-size: 13px; font-weight: 800; }
@@ -163,6 +165,11 @@
       line-height: 1.7;
     }
     .error { color: #9a4b38; }
+    .menu-note { margin: 8px 2px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+    .menu-pagination { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 22px 0 0; color: var(--muted); font-size: 13px; font-weight: 800; }
+    .menu-pagination.top { justify-content: flex-end; margin: 0 0 14px; }
+    .menu-pagination button, .menu-retry { min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; color: var(--cocoa); background: var(--paper); cursor: pointer; font-weight: 800; }
+    .menu-retry { display: block; margin: 12px auto 0; }
     .cart-bar {
       position: fixed;
       z-index: 20;
@@ -241,12 +248,15 @@
     </section>
 
     <section class="toolbar">
-      <div class="search"><span>⌕</span><input id="search" autocomplete="off" placeholder="搜索菜名、分类或口味"></div>
-      <div class="filters" id="filters"></div>
+      <div class="search"><span aria-hidden="true">⌕</span><input id="search" aria-label="搜索菜品" maxlength="100" autocomplete="off" placeholder="搜索菜名、分类或口味"></div>
+      <div class="filters" id="filters" role="group" aria-label="菜品分类"></div>
     </section>
 
-    <div class="section-head"><h2>今天想吃什么</h2><span class="count" id="count">加载中</span></div>
-    <section class="grid" id="mealGrid"><div class="empty">正在端上菜单…</div></section>
+    <div class="section-head"><h2>今天想吃什么</h2><span class="count" id="count" aria-live="polite">加载中</span></div>
+    <p class="menu-note" id="legacyMenuNote" hidden>当前服务器仅提供前 600 道菜，搜索和分类可能不完整，请联系主人升级服务。</p>
+    <nav class="menu-pagination top" id="menuPaginationTop" aria-label="菜单顶部分页" hidden><button type="button" id="menuPreviousTop" aria-label="上一页（顶部）">上一页</button><span id="menuPageInfoTop"></span><button type="button" id="menuNextTop" aria-label="下一页（顶部）">下一页</button></nav>
+    <section class="grid" id="mealGrid" aria-busy="true"><div class="empty">正在端上菜单…</div></section>
+    <nav class="menu-pagination" id="menuPagination" aria-label="菜单分页" hidden><button type="button" id="menuPrevious">上一页</button><span id="menuPageInfo"></span><button type="button" id="menuNext">下一页</button></nav>
   </main>
 
   <div class="cart-bar" id="cartBar">
@@ -287,9 +297,9 @@
       function setUncertainty(value) { state.uncertain = value; try { if (value) sessionStorage.setItem(uncertaintyKey, '1'); else sessionStorage.removeItem(uncertaintyKey); } catch (_) { /* Warning remains active in this page. */ } }
       function validPending(value) { return !!value && /^[A-Za-z0-9_-]{43}$/.test(value.creationKey || '') && typeof value.guestName === 'string' && typeof value.note === 'string' && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= 50 && value.items.every(item => item && /^[a-f0-9]{24}$/.test(item.mealId || '') && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20 && typeof item.note === 'string' && typeof item.name === 'string'); }
       function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return null; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
-      const state = { session: null, meals: [], category: '全部', search: '', cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), pending: storedPending(), storageFailed: false, unavailable: new Set() };
+      const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), pending: storedPending(), storageFailed: false, unavailable: new Set() };
       const $ = id => document.getElementById(id);
-      let toastTimer;
+      let toastTimer; let searchTimer;
 
       function toast(message) {
         $('toast').textContent = message;
@@ -338,19 +348,25 @@
       }
 
       function categories() {
+        if (state.menuSupported === true) {
+          const rows = (state.menu?.categories || []).map(item => ({ value: item.name, count: item.count }));
+          if (state.category && !rows.some(item => item.value === state.category)) rows.push({ value: state.category, count: 0 });
+          return [{ value: '', count: rows.reduce((sum, item) => sum + item.count, 0) }, ...rows];
+        }
         const counts = new Map();
         state.meals.forEach(meal => {
           const category = String(meal.category || '其他');
           counts.set(category, (counts.get(category) || 0) + 1);
         });
-        return ['全部', ...[...counts.keys()].sort((a, b) => a.localeCompare(b, 'zh-CN'))];
+        return [{ value: '', count: state.meals.length }, ...[...counts.keys()].sort((a, b) => a.localeCompare(b, 'zh-CN')).map(value => ({ value, count: counts.get(value) }))];
       }
 
       function visibleMeals() {
+        if (state.menuSupported === true) return state.meals;
         const query = state.search.trim().toLowerCase();
         return state.meals.filter(meal => {
           const category = String(meal.category || '其他');
-          if (state.category !== '全部' && category !== state.category) return false;
+          if (state.category && category !== state.category) return false;
           if (!query) return true;
           return [meal.name, meal.category, meal.subcategory, meal.description, ...(meal.tags || []), ...(meal.taste || [])].join(' ').toLowerCase().includes(query);
         });
@@ -369,13 +385,18 @@
       }
 
       function renderFilters() {
+        const focused = $('filters').contains(document.activeElement) ? document.activeElement.dataset.category : null;
         $('filters').replaceChildren(...categories().map(category => {
           const button = document.createElement('button');
-          button.className = `filter${state.category === category ? ' active' : ''}`;
-          button.textContent = category;
-          button.addEventListener('click', () => { state.category = category; renderFilters(); renderMeals(); });
+          button.type = 'button';
+          button.className = `filter${state.category === category.value ? ' active' : ''}`;
+          button.dataset.category = category.value;
+          button.textContent = `${category.value || '全部'} ${category.count}`;
+          button.setAttribute('aria-pressed', String(state.category === category.value));
+          button.addEventListener('click', () => { if (state.category === category.value) return; state.category = category.value; state.menuPage = 1; renderFilters(); if (state.menuSupported === false) renderMeals(); else queueMenu(0); });
           return button;
         }));
+        if (focused !== null) [...$('filters').children].find(button => button.dataset.category === focused)?.focus({ preventScroll: true });
       }
 
       function setQuantity(meal, next) {
@@ -411,15 +432,30 @@
         const meta = document.createElement('div'); meta.className = 'meal-meta'; meta.textContent = mealMeta(meal);
         const add = document.createElement('button'); add.className = 'add'; add.textContent = canOrder() ? '＋ 想吃' : '已停止点菜'; add.disabled = state.busy || !!state.pending || !canOrder(); add.addEventListener('click', () => setQuantity(meal, 1));
         const stepper = document.createElement('div'); stepper.className = 'stepper';
-        const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !!state.pending || !canOrder(); minus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 1) - 1));
+        const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !!state.pending || !canOrder(); minus.setAttribute('aria-label', `减少${meal.name}`); minus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 1) - 1));
         const quantity = document.createElement('strong'); quantity.textContent = item?.quantity || 0;
-        const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !!state.pending || !canOrder(); plus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 0) + 1));
+        const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !!state.pending || !canOrder(); plus.setAttribute('aria-label', `增加${meal.name}`); plus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 0) + 1));
         stepper.append(minus, quantity, plus); body.append(title, meta, add, stepper); card.append(photo, body); return card;
       }
 
       function renderMeals() {
         const meals = visibleMeals();
-        $('count').textContent = `${meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
+        $('mealGrid').setAttribute('aria-busy', String(state.menuLoading));
+        $('legacyMenuNote').hidden = !(state.menuSupported === false && state.meals.length >= 600);
+        const paginationHidden = state.menuSupported !== true || state.menuLoading || !!state.menuError || !state.menu || state.menu.totalPages <= 1;
+        $('menuPagination').hidden = paginationHidden; $('menuPaginationTop').hidden = paginationHidden;
+        if (state.menu) {
+          $('menuPageInfo').textContent = $('menuPageInfoTop').textContent = `第 ${state.menuPage} / ${state.menu.totalPages} 页`;
+          $('menuPrevious').disabled = $('menuPreviousTop').disabled = state.menuLoading || state.menuPage <= 1;
+          $('menuNext').disabled = $('menuNextTop').disabled = state.menuLoading || state.menuPage >= state.menu.totalPages;
+        }
+        if (state.menuLoading) { $('count').textContent = '加载中'; const loading = document.createElement('div'); loading.className = 'empty'; loading.textContent = '正在端上菜单…'; $('mealGrid').replaceChildren(loading); return; }
+        if (state.menuError) {
+          $('count').textContent = '加载失败';
+          const box = document.createElement('div'); box.className = 'error'; box.textContent = '菜单暂时无法加载，请检查网络后重试。';
+          const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'menu-retry'; retry.textContent = '重新加载菜单'; retry.addEventListener('click', () => loadMenu()); box.appendChild(retry); $('mealGrid').replaceChildren(box); return;
+        }
+        $('count').textContent = `${state.menuSupported === true ? state.menu.total : meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
         if (!state.session) return;
         if (!state.meals.length && !canOrder()) {
           const closed = document.createElement('div'); closed.className = 'empty'; closed.textContent = '本次点菜已经结束。你仍可通过下方点菜单查看自己已提交的内容。'; $('mealGrid').replaceChildren(closed); return;
@@ -547,13 +583,53 @@
         }
       }
 
-      async function refreshMenu() {
-        const data = await jsonRequest(apiRoot);
-        if (!Array.isArray(data.meals) || !data.session) throw new Error('菜单数据不完整');
-        state.session = data.session; state.meals = data.meals;
-        if (!categories().includes(state.category)) state.category = '全部';
-        renderHeader(); renderFilters(); renderMeals(); renderCartBar();
+      function queueMenu(delay = 250) {
+        clearTimeout(searchTimer);
+        state.menuSequence++; state.menuLoading = true; state.menuError = '';
+        renderMeals();
+        searchTimer = setTimeout(() => loadMenu(), delay);
       }
+
+      async function loadMenu() {
+        clearTimeout(searchTimer);
+        const sequence = ++state.menuSequence;
+        const page = state.menuPage;
+        const params = new URLSearchParams({ page: String(page), limit: '24' });
+        if (state.search.trim()) params.set('search', state.search.trim());
+        if (state.category) params.set('category', state.category);
+        state.menuLoading = true; state.menuError = ''; renderMeals();
+        try {
+          const data = await jsonRequest(`${apiRoot}?${params}`);
+          if (sequence !== state.menuSequence) return;
+          if (!data.session || !Array.isArray(data.meals)) throw new Error('菜单数据不完整');
+          const supported = data.session.supportsGuestMenuPagination === true;
+          if (supported) {
+            const menu = data.menu;
+            if (!menu || menu.page !== page || menu.limit !== 24 || !Number.isSafeInteger(menu.total) || menu.total < 0 || menu.totalPages !== Math.max(1, Math.ceil(menu.total / 24)) || !Array.isArray(menu.categories) || menu.categories.some(item => !item || typeof item.name !== 'string' || !item.name || !Number.isSafeInteger(item.count) || item.count < 0) || data.meals.length > 24 || data.meals.some(meal => !meal || typeof meal._id !== 'string' || typeof meal.name !== 'string')) throw new Error('菜单分页数据不完整');
+            if (page > menu.totalPages) { state.menuPage = menu.totalPages; return loadMenu(); }
+            state.menu = menu;
+          } else { state.menu = null; state.menuPage = 1; }
+          state.menuSupported = supported; state.session = data.session; state.meals = data.meals;
+          if (!state.menuInitialized) {
+            if (!state.menuBootstrap) state.menuBootstrap = (async () => {
+              if (state.pending) restorePendingDraft();
+              else if (state.accessToken) { try { await loadOwnOrder(true); } catch (_) { state.conflict = 'load'; toast('暂时无法读取已提交的订单，请先核对'); } }
+              state.menuInitialized = true;
+            })();
+            await state.menuBootstrap;
+          }
+          if (sequence !== state.menuSequence) return;
+          renderHeader(); renderFilters(); renderCartBar(); renderCartList();
+        } catch (error) {
+          if (sequence !== state.menuSequence) return;
+          state.menuError = error.message || '菜单加载失败';
+          if (!state.menuInitialized && state.pending) { restorePendingDraft(); renderCartBar(); renderCartList(); }
+        } finally {
+          if (sequence === state.menuSequence) { state.menuLoading = false; renderMeals(); }
+        }
+      }
+
+      async function refreshMenu() { return loadMenu(); }
 
       async function loadLatestOrder() {
         if (state.busy || !state.conflict || !confirm('载入最新订单会替换本页未保存的菜品和备注。确定继续吗？')) return;
@@ -564,28 +640,17 @@
       }
 
       async function loadSession(first = false) {
+        if (first) return loadMenu();
         try {
           const wasOpen = canOrder();
-          const data = await jsonRequest(first ? apiRoot : `${apiRoot}?statusOnly=1`);
-          state.session = data.session || {};
-          if (Array.isArray(data.meals) && (data.meals.length || first)) state.meals = data.meals;
-          if (first && state.pending) restorePendingDraft();
-          else if (first && state.accessToken) { try { await loadOwnOrder(true); } catch (_) { state.conflict = 'load'; toast('暂时无法读取已提交的订单，请先核对'); } }
+          const data = await jsonRequest(`${apiRoot}?statusOnly=1`);
+          if (!data.session) return;
+          state.session = { ...(state.session || {}), ...data.session };
           renderHeader();
-          if (first) {
-            renderFilters(); renderMeals(); renderCartBar(); renderCartList();
-          } else if (wasOpen !== canOrder()) {
+          if (wasOpen !== canOrder()) {
             renderMeals(); renderCartBar(); renderCartList();
           }
-        } catch (error) {
-          if (first) {
-            $('title').textContent = '点菜链接打不开';
-            $('subtitle').textContent = error.message;
-            const box = document.createElement('div'); box.className = 'error'; box.textContent = `${error.message}。请让主人重新分享链接。`; $('mealGrid').replaceChildren(box);
-            $('count').textContent = '加载失败';
-            if (state.pending) { restorePendingDraft(); renderCartBar(); renderCartList(); }
-          }
-        }
+        } catch (_) { /* Keep the last confirmed status until it can be checked again. */ }
       }
 
       async function submitOrder() {
@@ -634,7 +699,11 @@
         } finally { state.busy = false; renderMeals(); renderCartBar(); renderCartList(); }
       }
 
-      $('search').addEventListener('input', event => { state.search = event.target.value; renderMeals(); });
+      $('search').addEventListener('input', event => { state.search = event.target.value; state.menuPage = 1; if (state.menuSupported === false) renderMeals(); else queueMenu(); });
+      $('menuPrevious').addEventListener('click', () => { if (state.menuSupported === true && !state.menuLoading && state.menuPage > 1) { state.menuPage--; queueMenu(0); } });
+      $('menuNext').addEventListener('click', () => { if (state.menuSupported === true && !state.menuLoading && state.menuPage < state.menu.totalPages) { state.menuPage++; queueMenu(0); } });
+      $('menuPreviousTop').addEventListener('click', () => $('menuPrevious').click());
+      $('menuNextTop').addEventListener('click', () => $('menuNext').click());
       $('openCart').addEventListener('click', openCart);
       $('closeCart').addEventListener('click', closeCart);
       $('continue').addEventListener('click', closeCart);
