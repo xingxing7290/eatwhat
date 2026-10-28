@@ -419,6 +419,7 @@ export const wishlistApi = {
 	createMealWish: (mealId) => api.post('/wishlist/meal', { mealId }, { headers: { 'Content-Type': 'application/json' } }),
 	vote: (id) => api.post(`/wishlist/${id}/vote`),
 	setVote: (id, voted) => api.put(`/wishlist/${id}/vote`, { voted }, { headers: { 'Content-Type': 'application/json' } }),
+	updateDetails: (id, changes, expectedEditVersion) => api.patch(`/wishlist/${id}`, { ...changes, expectedEditVersion }, { headers: { 'Content-Type': 'application/json' } }),
 	updateStatus: (id, status, expectedEditVersion) => api.patch(`/wishlist/${id}/status`, { status, ...(expectedEditVersion === undefined ? {} : { expectedEditVersion }) }, { headers: { 'Content-Type': 'application/json' } }),
 	attachMeal: (id, mealId, options = {}) => api.patch(`/wishlist/${id}/meal`, { mealId, ...options }, { headers: { 'Content-Type': 'application/json' } }),
 	delete: (id, expectedEditVersion) => api.delete(`/wishlist/${id}`, { params: expectedEditVersion === undefined ? {} : { expectedEditVersion: JSON.stringify(expectedEditVersion) } })

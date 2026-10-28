@@ -32,6 +32,7 @@ function decorateItem(item, uid) {
   obj.supportsSetVote = true;
   const updatedAt = obj.updatedAt ? new Date(obj.updatedAt) : null;
   obj.supportsConditionalActions = !updatedAt || Number.isFinite(updatedAt.getTime());
+  obj.supportsWishEdit = obj.supportsConditionalActions;
   obj.editVersion = obj.supportsConditionalActions ? { revision: obj.editRevision || null, updatedAt: updatedAt ? updatedAt.toISOString() : null } : null;
   return obj;
 }
@@ -139,6 +140,31 @@ exports.setVote = async (req, res, next) => {
     const update = req.body.voted ? { $addToSet: { votes: req.user.uid } } : { $pull: { votes: req.user.uid } };
     const item = await populateQuery(WishlistItem.findOneAndUpdate({ _id: req.params.id, householdId: household._id }, update, { new: true }), household._id);
     if (!item) return res.status(404).json({ error: '未找到想吃项' });
+    res.json(decorateItem(item, req.user.uid));
+  } catch (err) { next(err); }
+};
+
+exports.updateDetails = async (req, res, next) => {
+  try {
+    const { household } = await ensureUserHousehold(req.user.uid);
+    const body = req.body || {};
+    const version = parseEditVersion(body.expectedEditVersion);
+    if (!version) return res.status(400).json({ error: '想吃记录版本无效，请重新加载' });
+    const fields = ['title', 'note', 'category', 'priority'];
+    if (Object.keys(body).some(key => key !== 'expectedEditVersion' && !fields.includes(key))) return res.status(400).json({ error: '包含不支持修改的字段' });
+    const update = {};
+    for (const key of fields) {
+      if (!Object.prototype.hasOwnProperty.call(body, key)) continue;
+      if (typeof body[key] !== 'string') return res.status(400).json({ error: '想吃内容格式无效' });
+      update[key] = body[key].trim();
+    }
+    if (!Object.keys(update).length) return res.status(400).json({ error: '没有可保存的修改' });
+    if (Object.prototype.hasOwnProperty.call(update, 'title') && (!update.title || update.title.length > 100)) return res.status(400).json({ error: '想吃内容不能为空且不能超过 100 字' });
+    if (Object.prototype.hasOwnProperty.call(update, 'priority') && !['low', 'normal', 'high'].includes(update.priority)) return res.status(400).json({ error: '优先级无效' });
+    const filter = { _id: req.params.id, householdId: household._id };
+    addVersionFilter(filter, version);
+    const item = await populateQuery(WishlistItem.findOneAndUpdate(filter, update, { new: true, runValidators: true }), household._id);
+    if (!item) return res.status(409).json({ code: 'WISH_CONFLICT', error: '想吃记录已修改或删除，请刷新核对' });
     res.json(decorateItem(item, req.user.uid));
   } catch (err) { next(err); }
 };

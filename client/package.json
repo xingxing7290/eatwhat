@@ -15,6 +15,7 @@
     "test:memory": "node test/memory-workflows.cjs",
     "test:memory-edit": "node test/memory-edit-workflows.cjs",
     "test:wishlist": "node test/wishlist-workflows.cjs",
+    "test:wishlist-edit": "node test/wishlist-edit-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
