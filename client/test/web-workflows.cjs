@@ -46,6 +46,9 @@ async function main () {
   let failAnniversaries = false
   let failAnniversarySave = false
   let failMonth = false
+  let failEditorSave = false
+  let blockEditorSave = false
+  let releaseEditorSave
   const anniversaryMenus = [{ _id: 'ann-a', title: '周年晚餐', date: today, theme: '纪念日', meals: { breakfast: [], lunch: [], dinner: [meals[0]] }, photos: [] }]
   page.on('pageerror', error => errors.push(error.message))
   page.on('console', message => { if (message.type() === 'error') console.error('Browser:', message.text()) })
@@ -81,6 +84,12 @@ async function main () {
     else if (method === 'PATCH' && path === '/wishlist/wish-a/status') { writes.push({ path, body: request.postDataJSON() }); data = { status: 'planned' } }
     else if (method === 'POST' && path === '/wishlist') { writes.push({ path, body: request.postDataJSON() }); data = { _id: 'new-wish' } }
     else if (method === 'POST' && path === '/meals') {
+      if ((request.headers()['content-type'] || '').includes('multipart/form-data')) {
+        writes.push({ path, editor: true, body: request.postData() })
+        if (failEditorSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '编辑器测试保存未确认' }) })
+        if (blockEditorSave) await new Promise(resolve => { releaseEditorSave = resolve })
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ _id: 'editor-meal', name: '测试菜谱' }) })
+      }
       writes.push({ path, body: request.postDataJSON() })
       if (failMealCreate) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试创建结果不确定' }) })
       data = { _id: 'created-meal', name: '想吃的新菜' }
@@ -353,6 +362,71 @@ async function main () {
   await page.getByRole('button', { name: '返回并核对' }).click()
   await page.getByText('周年晚餐').waitFor()
 
+  await page.goto(`${base}/meals/editor`)
+  await page.getByPlaceholder('给这道菜起个名字').fill('测试菜谱')
+  await page.getByPlaceholder('食材', { exact: true }).fill('鸡蛋')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByText('还有未添加到列表的食材或步骤').waitFor()
+  await page.getByRole('button', { name: '返回添加' }).click()
+  assert.equal(writes.some(item => item.editor), false)
+  await page.getByRole('button', { name: '添加食材' }).click()
+  await page.getByPlaceholder('写下一个步骤').fill('煎熟鸡蛋')
+  await page.getByRole('button', { name: '添加步骤' }).click()
+  await page.getByText('无步骤图').waitFor()
+  const coverUpload = page.locator('.side-column .el-card').first().locator('input[type=file]')
+  await coverUpload.setInputFiles({ name: 'bad.txt', mimeType: 'text/plain', buffer: Buffer.from('bad') })
+  await page.getByText('只支持 JPG、PNG').waitFor()
+  assert.equal(await page.getByAltText('菜品封面预览').count(), 0)
+  await coverUpload.setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('cover') })
+  await page.getByAltText('菜品封面预览').waitFor()
+  const galleryUpload = page.locator('.side-column .el-card').nth(1).locator('input[type=file]')
+  await galleryUpload.setInputFiles([
+    { name: 'valid.png', mimeType: 'image/png', buffer: Buffer.from('valid') },
+    { name: 'bad.txt', mimeType: 'text/plain', buffer: Buffer.from('bad') }
+  ])
+  await page.waitForFunction(() => document.querySelectorAll('.side-column .el-upload-list__item').length === 1)
+  assert.equal(await page.locator('.side-column .el-upload-list__item img').evaluate(img => window.__testObjectUrlNames[img.src]), 'valid.png')
+  blockEditorSave = true
+  await Promise.all([
+    page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname.endsWith('/meals')),
+    page.getByRole('button', { name: '保存', exact: true }).click()
+  ])
+  assert.equal(await page.getByRole('button', { name: '取消', exact: true }).isDisabled(), true)
+  assert.equal(writes.filter(item => item.editor).length, 1)
+  const editorPayload = writes.find(item => item.editor).body
+  assert.match(editorPayload, /cover\.png/)
+  assert.match(editorPayload, /valid\.png/)
+  assert.doesNotMatch(editorPayload, /bad\.txt/)
+  releaseEditorSave()
+  blockEditorSave = false
+  await page.waitForURL('**/meals')
+
+  await page.goto(`${base}/meals/editor/meal-a`)
+  await page.getByPlaceholder('给这道菜起个名字').fill('修改后菜名')
+  assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByText('当前编辑内容尚未保存').waitFor()
+  await page.getByRole('button', { name: '继续编辑' }).click()
+  assert.equal(await page.getByPlaceholder('给这道菜起个名字').inputValue(), '修改后菜名')
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '放弃并离开' }).click()
+  await page.waitForURL('**/meals')
+
+  failEditorSave = true
+  await page.goto(`${base}/meals/editor`)
+  await page.getByPlaceholder('给这道菜起个名字').fill('待核对菜品')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await page.locator('.meal-editor .el-alert').waitFor()
+  assert.match(await page.locator('.meal-editor .el-alert').innerText(), /保存结果未确认/)
+  assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
+  await page.getByRole('button', { name: '已核对，允许重试' }).click()
+  await page.getByRole('button', { name: '取消', exact: true }).last().click()
+  assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
+  failEditorSave = false
+  await page.getByRole('button', { name: '取消', exact: true }).first().click()
+  await page.getByRole('button', { name: '放弃并离开' }).click()
+  await page.waitForURL('**/meals')
+
   await page.goto(`${base}/settings`)
   await page.getByPlaceholder('输入伴侣的邀请码').fill('OTHER1')
   await page.getByRole('button', { name: '加入', exact: true }).click()
@@ -427,6 +501,10 @@ async function main () {
   assert.equal(await page.locator('.mobile-date-list').getByRole('button', { name: `安排${today}早餐` }).count(), 1)
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile calendar should not overflow horizontally')
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-calendar-mobile.png') })
+  await page.goto(`${base}/meals/editor`)
+  await page.getByPlaceholder('给这道菜起个名字').waitFor()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile meal editor should not overflow horizontally')
+  await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-editor-mobile.png') })
   assert.deepEqual(errors, [])
   const loginContext = await browser.newContext()
   const loginPage = await loginContext.newPage()
