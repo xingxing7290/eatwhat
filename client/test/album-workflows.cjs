@@ -17,6 +17,7 @@ async function main () {
     let legacy = false
     let malformed = false
     let failPage = false
+    let holdPage = false; let releasePage; let noPhotos = false
     const reads = []
     await page.route('**/broken-photo.png', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/api/**', async route => {
@@ -30,8 +31,9 @@ async function main () {
         const current = Number(url.searchParams.get('page') || 1)
         const limit = Number(url.searchParams.get('limit') || 24)
         reads.push({ month, page: current, limit })
+        if (holdPage && current === 2) await new Promise(resolve => { releasePage = resolve })
         if (failPage && current === 2) return route.fulfill({ status: 503, json: { error: '相册读取失败' } })
-        const rows = month === '2026-10' ? photos : []
+        const rows = month === '2026-10' && !noPhotos ? photos : []
         data = legacy ? { month, photos: rows } : { month, total: rows.length, page: current, limit, photos: malformed ? [] : rows.slice((current - 1) * limit, current * limit) }
       } else if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       await route.fulfill({ status: 200, json: data })
@@ -55,6 +57,59 @@ async function main () {
     await viewer.getByText('26 / 30').waitFor()
     await page.keyboard.press('Escape')
     await viewer.waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 26 张'))
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByRole('button', { name: /第 24 张/ }).click()
+    await viewer.getByText('24 / 30').waitFor()
+    holdPage = true
+    await viewer.getByRole('button', { name: '下一张照片' }).click()
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(typeof releasePage, 'function')
+    assert.equal(await page.locator('.album-page').getAttribute('aria-busy'), 'true')
+    await page.keyboard.press('Escape')
+    await viewer.waitFor({ state: 'hidden' })
+    const delayedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/photo-album' && new URL(response.url()).searchParams.get('page') === '2')
+    holdPage = false; releasePage(); await delayedResponse
+    await page.getByRole('button', { name: /第 25 张/ }).waitFor()
+    assert.equal(await viewer.isVisible(), false, 'closing a pending viewer must not reopen it after loading')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 25 张'))
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByRole('button', { name: /第 24 张/ }).click()
+    await viewer.getByText('24 / 30').waitFor()
+    holdPage = true; releasePage = null
+    await viewer.getByRole('button', { name: '下一张照片' }).click()
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(typeof releasePage, 'function')
+    await page.keyboard.press('Escape')
+    await viewer.waitFor({ state: 'hidden' })
+    await page.locator('.logo').focus()
+    const lateResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/photo-album' && new URL(response.url()).searchParams.get('page') === '2')
+    holdPage = false; releasePage(); await lateResponse
+    await page.getByRole('button', { name: /第 25 张/ }).waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('logo')), true, 'a late response must not steal focus from another control')
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByRole('button', { name: /第 24 张/ }).click()
+    await viewer.getByText('24 / 30').waitFor()
+    failPage = true
+    await viewer.getByRole('button', { name: '下一张照片' }).click()
+    await page.getByText('相册暂时无法加载', { exact: false }).waitFor()
+    await viewer.waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('重新加载'))
+    failPage = false
+    await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByRole('button', { name: /第 25 张/ }).waitFor()
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByRole('button', { name: /第 24 张/ }).click()
+    await viewer.getByText('24 / 30').waitFor()
+    holdPage = true; releasePage = null
+    await viewer.getByRole('button', { name: '下一张照片' }).click()
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(typeof releasePage, 'function')
+    noPhotos = true; holdPage = false; releasePage()
+    await page.getByText('这个月还没有饭桌照片').waitFor()
+    await viewer.waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '上个月')
+    noPhotos = false
     legacy = true
     await page.reload()
     await page.getByText('2026-10 · 30 张照片').waitFor()

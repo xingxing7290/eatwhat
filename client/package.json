@@ -12,6 +12,7 @@
     "test:weekly": "node test/weekly-workflows.cjs",
     "test:invitation": "node test/invitation-workflows.cjs",
     "test:album": "node test/album-workflows.cjs",
+    "test:album-theme": "node test/album-theme.cjs",
     "test:memory": "node test/memory-workflows.cjs",
     "test:memory-edit": "node test/memory-edit-workflows.cjs",
     "test:wishlist": "node test/wishlist-workflows.cjs",

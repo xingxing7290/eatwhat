@@ -1426,7 +1426,24 @@ async function main() {
       await photoDialog.getByText('25 / 26').waitFor();
       await pages[0].keyboard.press('ArrowLeft');
       await photoDialog.getByText('24 / 26').waitFor();
+      let releaseAlbum;
+      const delayAlbumPage = async route => {
+        if (new URL(route.request().url()).searchParams.get('page') === '2') await new Promise(resolve => { releaseAlbum = resolve; });
+        await route.continue();
+      };
+      await pages[0].route('**/api/photo-album?*', delayAlbumPage);
       await pages[0].keyboard.press('ArrowRight');
+      for (let i = 0; i < 100 && !releaseAlbum; i++) await new Promise(resolve => setTimeout(resolve, 50));
+      assert.equal(typeof releaseAlbum, 'function');
+      await pages[0].keyboard.press('Escape');
+      await photoDialog.waitFor({ state: 'hidden' });
+      const albumResponse = pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/photo-album' && new URL(response.url()).searchParams.get('page') === '2');
+      releaseAlbum(); await albumResponse;
+      await pages[0].getByRole('button', { name: /第 25 张/ }).waitFor();
+      assert.equal(await photoDialog.isVisible(), false, 'a late album page must not reopen a closed viewer');
+      await pages[0].waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 25 张'));
+      await pages[0].unroute('**/api/photo-album?*', delayAlbumPage);
+      await pages[0].getByRole('button', { name: /第 25 张/ }).click();
       await photoDialog.getByText('25 / 26').waitFor();
       assert.equal(await pages[0].getByText('乙家庭私密照片').count(), 0);
       await photoDialog.getByRole('link', { name: '编辑这条饭后回忆' }).click();
