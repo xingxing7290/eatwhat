@@ -115,6 +115,7 @@ import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { replaceSessionUser } from '@/services/sessionScope';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 const mealStore = useMealStore();
@@ -177,7 +178,7 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true } 
   household.value = res.household || res.user?.household || household.value;
   if (syncDisplayName) displayName.value = user.value.displayName || '';
   if (syncHouseholdName) householdName.value = household.value.name || '';
-  localStorage.setItem('user', JSON.stringify(user.value));
+  replaceSessionUser(user.value);
 };
 const loadGovernance = async () => {
   if (governanceLoading.value) return;

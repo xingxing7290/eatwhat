@@ -82,6 +82,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import api from '@/services/api'
+import { adoptSession } from '@/services/sessionScope'
 
 const REMEMBER_LOGIN_KEY = 'eatwhat_remember_login'
 
@@ -136,6 +137,7 @@ const onSubmit = async () => {
       if (typeof res?.token !== 'string' || !res.token || !res.user) throw new Error('登录响应不完整')
       localStorage.setItem('token', res.token)
       localStorage.setItem('user', JSON.stringify(res.user))
+      adoptSession(res.token)
       persistRememberedLogin()
       ElMessage.success('登录成功')
       const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''

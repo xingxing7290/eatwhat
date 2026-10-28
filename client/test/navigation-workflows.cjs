@@ -54,6 +54,7 @@ async function main () {
     }
     await page.evaluate(() => { const pad = document.createElement('div'); pad.id = 'test-scroll-pad'; pad.style.height = '3000px'; document.body.appendChild(pad) })
     await page.evaluate(() => window.scrollTo(0, 500))
+    await page.waitForFunction(() => Math.round(window.scrollY) === 500)
     await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/missing-page?source=other') })
     await page.waitForTimeout(100)
     assert.equal(await page.evaluate(() => Math.round(window.scrollY)), 500, 'query-only navigation should keep scroll')

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import mockData from './mockData';
 import { ElMessage } from 'element-plus';
+import { currentSessionScope, currentSessionToken, sessionChangedError, sessionIsCurrent } from './sessionScope';
 
 // 是否使用模拟数据
 const USE_MOCK = false;
@@ -104,12 +105,15 @@ const api = axios.create({
 	timeout: 10000
 	// 移除默认的 Content-Type, 以便在上传文件时 axios 能自动设置 multipart/form-data
 });
+const isPublicAuth = config => /\/auth\/(?:login|register)(?:\?|$)/i.test(String(config?.url || ''));
 
 // 请求拦截器
 api.interceptors.request.use(
 	config => {
+		if (!isPublicAuth(config) && !sessionIsCurrent()) return Promise.reject(sessionChangedError());
+		config._eatwhatSessionScope = currentSessionScope();
 		// 注入token
-		const token = localStorage.getItem('token');
+		const token = isPublicAuth(config) ? '' : currentSessionToken();
 		if (token) {
 			config.headers = config.headers || {};
 			config.headers.Authorization = `Bearer ${token}`;
@@ -129,12 +133,15 @@ api.interceptors.request.use(
 // 响应拦截器
 api.interceptors.response.use(
 	response => {
+		if (!isPublicAuth(response.config) && !sessionIsCurrent(response.config._eatwhatSessionScope)) return Promise.reject(sessionChangedError(true));
 		// 打印响应信息
 		logAPI('response', `${response.config.method.toUpperCase()} ${response.config.url}`, response.data, response.status);
 		
 		return response.data;
 	},
 	error => {
+		if (error?.code === 'SESSION_CHANGED') return Promise.reject(error);
+		if (error.config && !isPublicAuth(error.config) && !sessionIsCurrent(error.config._eatwhatSessionScope)) return Promise.reject(sessionChangedError(true));
 		// 统一处理错误
 		const { response } = error;
 		if (response) {

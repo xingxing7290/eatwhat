@@ -27,6 +27,7 @@
     "test:review-theme": "node test/review-theme.cjs",
     "test:navigation": "node test/navigation-workflows.cjs",
     "test:vite-proxy": "node test/vite-proxy.cjs",
+    "test:session-scope": "node test/session-scope-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",

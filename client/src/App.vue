@@ -4,10 +4,11 @@ import { useRoute, useRouter } from 'vue-router';
 import zhCn from 'element-plus/dist/locale/zh-cn.mjs';
 import { RouterLink, RouterView } from 'vue-router'
 import { onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, Star, Present, SwitchButton, ArrowDown } from '@element-plus/icons-vue';
 import { useMealStore } from './stores/meal';
 import { useScheduleStore } from './stores/schedule';
+import { adoptSession, sessionIsLocked } from './services/sessionScope';
 
 const route = useRoute();
 const router = useRouter();
@@ -28,6 +29,18 @@ const viewportWidth = ref(window.innerWidth);
 const authToken = ref(localStorage.getItem('token') || '');
 const authUser = ref(null);
 const loggingOut = ref(false);
+const sessionChanged = ref(sessionIsLocked());
+const markSessionChanged = () => { sessionChanged.value = true; };
+const markSessionAdopted = () => {
+  sessionChanged.value = sessionIsLocked();
+  if (!sessionChanged.value) { clearMealState(); loadAuthState(); }
+};
+const reloadChangedSession = async () => {
+  try {
+    await ElMessageBox.confirm('重新加载会丢失本页未保存的内容。请先复制或记录草稿。', '确认重新加载？', { type: 'warning', confirmButtonText: '重新加载', cancelButtonText: '继续保留草稿' });
+    window.location.reload();
+  } catch (_) { /* Keep the current page and draft. */ }
+};
 
 // 检测是否为移动设备
 const isMobile = computed(() => {
@@ -100,6 +113,7 @@ const clearMealState = () => {
 
 const handleLogout = async () => {
   if (loggingOut.value) return;
+  if (sessionIsLocked()) { ElMessage.warning('账号或小家已变化，请先保留草稿并重新加载。'); return; }
   loggingOut.value = true;
   try {
     // Let the current page finish or reject navigation before clearing auth.
@@ -108,8 +122,10 @@ const handleLogout = async () => {
       const failure = await router.replace({ name: 'login' });
       if (failure) return;
     }
+    if (sessionIsLocked()) { ElMessage.warning('账号或小家已变化，请重新加载后再操作。'); return; }
     localStorage.removeItem('token');
     localStorage.removeItem('user');
+    adoptSession('');
     loadAuthState();
     clearMealState();
     closeMobileMenu();
@@ -140,6 +156,9 @@ onMounted(async () => {
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleResize);
   window.addEventListener('eatwhat-theme-change', handleColorThemeChange);
+  window.addEventListener('eatwhat-session-changed', markSessionChanged);
+  window.addEventListener('eatwhat-session-adopted', markSessionAdopted);
+  sessionChanged.value = sessionIsLocked();
   
   // Meal data is loaded by each page on demand to keep the larger default catalog from slowing the app shell.
 })
@@ -171,6 +190,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('eatwhat-theme-change', handleColorThemeChange);
+  window.removeEventListener('eatwhat-session-changed', markSessionChanged);
+  window.removeEventListener('eatwhat-session-adopted', markSessionAdopted);
 });
 </script>
 
@@ -178,6 +199,10 @@ onBeforeUnmount(() => {
   <el-config-provider :locale="locale">
     <div class="app-container" :class="{ 'dark-mode': isDarkMode }">
       <a href="#app-main" class="skip-link" @click.prevent="focusMain">跳转到主要内容</a>
+      <div v-if="sessionChanged" class="session-warning" role="alert">
+        <div><strong>账号或小家已在其他页面变化</strong><span>本页新请求已暂停，未保存内容仍在。此前已发送的请求可能仍会完成，请先核对。</span></div>
+        <button type="button" @click="reloadChangedSession">重新加载</button>
+      </div>
       <!-- 移动端遮罩层 -->
       <div 
         v-if="showMobileMenu" 
@@ -405,6 +430,10 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss">
+.session-warning { position: relative; z-index: 2001; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 20px; padding: 12px 20px; background: #fff4d6; color: #33220d; border-bottom: 1px solid #aa773c; }
+.session-warning div { display: flex; flex-wrap: wrap; gap: 4px 12px; line-height: 1.5; }
+.session-warning button { min-height: 44px; padding: 8px 14px; border: 1px solid #523510; border-radius: 9px; color: #fff; background: #523510; cursor: pointer; font-weight: 700; }
+.session-warning button:focus-visible { outline: 3px solid #523510; outline-offset: 2px; }
 .skip-link { position: fixed; z-index: 3000; top: 8px; left: 8px; padding: 12px 16px; transform: translateY(-160%); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font-weight: 700; box-shadow: 0 3px 16px var(--shadow-color); }
 .skip-link:focus-visible { transform: translateY(0); outline: 3px solid var(--secondary-color); outline-offset: 2px; }
 .app-main:focus { outline: none; }

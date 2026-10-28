@@ -12,6 +12,8 @@ The browser/database check also opens monthly and yearly reviews with a real aut
 
 `node --test test/proxyConfig.test.js` statically checks the repository proxy templates for guest path routing, disabled access logging and production API cache protection. It does not execute Nginx. `npm run test:vite-proxy` from `client` additionally checks the local development proxy with a test-only loopback backend on port 3000; it fails if that port is already in use. `npm run test:navigation` covers missing routes, login return paths, focus, titles and scroll behavior.
 
+`npm run test:session-scope` from `client` checks same-browser account and household changes across tabs, blocking new requests, preserving a recipe draft, rejecting a late response and normal login. See `docs/session-scope-safety.md` for cross-device and in-flight request limitations.
+
 ## Docker-based application integration
 
 Run `sh test/run-isolated-mongo.sh` from the server directory on a Linux host with Docker, `timeout`, MongoDB 7 and a locally available backend image containing dependencies at `/app/node_modules`. The default images are `mongo:7.0` and `eatwhat-backend-local:latest`; set `EATWHAT_TEST_MONGO_IMAGE` or `EATWHAT_TEST_BACKEND_IMAGE` to override them.
