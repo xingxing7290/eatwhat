@@ -30,11 +30,12 @@ async function main() {
     page.on('pageerror', error => errors.push(error.message));
     await page.addInitScript(() => {
       localStorage.setItem('token', 'dashboard-test-token');
-      localStorage.setItem('user', JSON.stringify({ id: 'dashboard-user', username: 'dashboard-user' }));
+      localStorage.setItem('user', JSON.stringify({ id: 'dashboard-user', username: 'dashboard-user', householdId: 'home-a' }));
       localStorage.setItem('darkMode', 'false');
       localStorage.setItem('colorTheme', 'cream');
     });
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url());
       if (url.pathname === '/api/dashboard/summary' && failSummary) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试读取失败' }) });
       const data = url.pathname === '/api/dashboard/summary' ? summary : url.pathname === '/api/photo-album' ? { photos: [] } : url.pathname === '/api/wishlist'

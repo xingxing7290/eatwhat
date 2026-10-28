@@ -147,6 +147,7 @@ const submit = async () => {
     } catch (e) {
       if (e?.code === 'MEAL_CONFLICT') conflict.value = true;
       else if (e?.code === 'SESSION_CHANGED' && !e.requestSent) ElMessage.warning(e.error);
+      else if (e?.code === 'HOUSEHOLD_SCOPE_UNVERIFIED') ElMessage.warning(e.error);
       else if (e?.code === 'HOUSEHOLD_SCOPE_CHANGED') ElMessage.warning(e.error);
       else { saveUncertain.value = true; ElMessage.warning('保存结果未确认，请先在菜谱列表核对，避免重复提交'); }
     }

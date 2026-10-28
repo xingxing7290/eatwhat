@@ -8,13 +8,14 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const home = '111111111111111111111111'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const items = Array.from({ length: 41 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), householdId: home, title: i === 40 ? '延迟旧宴请' : `宴请${String(i).padStart(3, '0')}`, status: i % 2 ? 'completed' : 'open', storedStatus: i % 2 ? 'completed' : 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: `https://example.test/guest-order/token${i}`, supportsConditionalSession: true, editVersion: { revision: `v${i}`, updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: i, totalQuantity: i }))
     let slowStarted; const slowRequest = new Promise(resolve => { slowStarted = resolve })
     let malformed = false; let truncated = false; let failCapabilities = false
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
       if (pathname === '/guest-orders/capabilities') return failCapabilities ? route.fulfill({ status: 503, json: { error: '能力暂不可用' } }) : route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true, supportsSessionPagination: true } })
       if (pathname === '/guest-orders') {
@@ -77,8 +78,9 @@ async function main () {
     await page.close()
 
     const legacy = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token') })
+    await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' })) })
     await legacy.route('**/api/**', route => route.request().url().includes('/capabilities') ? route.fulfill({ status: 404, json: { error: '旧服务' } }) : route.fulfill({ json: { sessions: items.slice(0, 30) } }))
+    await legacy.route('**/api/auth/household-scope', route => route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } }))
     await legacy.goto(`${base}/guest-orders`)
     await legacy.getByText('当前服务器仅提供最近 30 场宴请', { exact: false }).waitFor()
     await legacy.getByRole('textbox', { name: '搜索宴请名称' }).fill('宴请029')

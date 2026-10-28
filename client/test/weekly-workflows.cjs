@@ -16,7 +16,7 @@ async function main () {
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => {
       localStorage.setItem('token', 'test-token')
-      localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户' }))
+      localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户', householdId: 'home-a' }))
     })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
@@ -32,6 +32,7 @@ async function main () {
     const planned = () => dates.map(date => ({ date, meals: { ...emptyMeals(), dinner: [meal._id] } }))
     let expectedPlan = planned()
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request()
       const url = new URL(req.url())
       const pathname = url.pathname.replace(/^\/api/, '')

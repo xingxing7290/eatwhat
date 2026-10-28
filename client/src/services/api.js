@@ -106,18 +106,63 @@ const api = axios.create({
 	// 移除默认的 Content-Type, 以便在上传文件时 axios 能自动设置 multipart/form-data
 });
 const isPublicAuth = config => /\/auth\/(?:login|register)(?:\?|$)/i.test(String(config?.url || ''));
+// Probe with a separate client so the check never recursively invokes itself.
+// Success is scoped to the exact account and household for this page only.
+const scopeProbe = axios.create({ baseURL: computedBaseURL, timeout: 10000 });
+let verifiedScope = null;
+let pendingScope = null;
+let unverifiedScope = null;
+const sameScope = (a, b) => !!a && !!b && a.token === b.token && a.userId === b.userId && a.householdId === b.householdId;
+export const householdVerificationFailed = () => sameScope(unverifiedScope, currentSessionScope());
+const unverifiedError = () => ({ code: 'HOUSEHOLD_SCOPE_UNVERIFIED', requestSent: false, error: '无法确认服务器支持家庭保护，本次请求未发送。' });
+
+export async function verifyCurrentHousehold({ force = false } = {}) {
+	const scope = currentSessionScope();
+	if (!sessionIsCurrent(scope)) throw sessionChangedError();
+	if (!force && sameScope(verifiedScope, scope)) return;
+	if (pendingScope && sameScope(pendingScope.scope, scope)) return pendingScope.promise;
+	const attempt = (async () => {
+		try {
+			if (!scope.token || !/^[a-z0-9_-]{1,128}$/i.test(scope.householdId)) throw unverifiedError();
+			const response = await scopeProbe.get('/auth/household-scope', { headers: { Authorization: `Bearer ${scope.token}`, 'X-Eatwhat-Household': scope.householdId } });
+			if (!sessionIsCurrent(scope)) throw sessionChangedError();
+			if (response.data?.supportsHouseholdScope !== true || String(response.data?.householdId || '').toLowerCase() !== scope.householdId.toLowerCase()) throw unverifiedError();
+			verifiedScope = scope;
+			unverifiedScope = null;
+			window.dispatchEvent(new CustomEvent('eatwhat-scope-verified'));
+		} catch (error) {
+			if (sameScope(verifiedScope, scope)) verifiedScope = null;
+			if (!sessionIsCurrent(scope)) throw sessionChangedError();
+			if (error?.code === 'SESSION_CHANGED') throw error;
+			if (error?.response?.status === 409 && error.response.data?.code === 'HOUSEHOLD_SCOPE_CHANGED') {
+				markSessionStale();
+				throw error.response.data;
+			}
+			unverifiedScope = scope;
+			window.dispatchEvent(new CustomEvent('eatwhat-scope-unverified'));
+			throw unverifiedError();
+		}
+	})();
+	const record = { scope, promise: attempt };
+	pendingScope = record;
+	try { await attempt; } finally { if (pendingScope === record) pendingScope = null; }
+}
 
 // 请求拦截器
 api.interceptors.request.use(
-	config => {
+	async config => {
 		if (!isPublicAuth(config) && !sessionIsCurrent()) return Promise.reject(sessionChangedError());
 		config._eatwhatSessionScope = currentSessionScope();
+		if (!isPublicAuth(config)) {
+			await verifyCurrentHousehold({ force: true });
+			if (!sessionIsCurrent(config._eatwhatSessionScope)) return Promise.reject(sessionChangedError());
+		}
 		// 注入token
 		const token = isPublicAuth(config) ? '' : currentSessionToken();
 		if (token) {
 			config.headers = config.headers || {};
 			config.headers.Authorization = `Bearer ${token}`;
-			if (/^[a-f0-9]{24}$/i.test(config._eatwhatSessionScope.householdId)) config.headers['X-Eatwhat-Household'] = config._eatwhatSessionScope.householdId;
+			config.headers['X-Eatwhat-Household'] = config._eatwhatSessionScope.householdId;
 		}
 		// 打印请求信息
 		logAPI('request', `${config.method.toUpperCase()} ${config.url}`, config.data);
@@ -141,7 +186,7 @@ api.interceptors.response.use(
 		return response.data;
 	},
 	error => {
-		if (error?.code === 'SESSION_CHANGED') return Promise.reject(error);
+		if (error?.code === 'SESSION_CHANGED' || error?.code === 'HOUSEHOLD_SCOPE_UNVERIFIED' || error?.code === 'HOUSEHOLD_SCOPE_CHANGED') return Promise.reject(error);
 		if (error.config && !isPublicAuth(error.config) && !sessionIsCurrent(error.config._eatwhatSessionScope)) return Promise.reject(sessionChangedError(true));
 		// 统一处理错误
 		const { response } = error;

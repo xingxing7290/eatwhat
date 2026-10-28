@@ -9,7 +9,7 @@ async function main () {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
     await context.addInitScript(() => {
       localStorage.setItem('token', 'test-token')
-      localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test' }))
+      localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' }))
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { window.__copiedInvite = text } } })
     })
     const page = await context.newPage()
@@ -26,6 +26,7 @@ async function main () {
     const household = id => ({ id, name: id === 'home-a' ? '甲家庭' : '乙家庭', inviteCode: codes[id], members: [{ _id: 'u1', username: 'test', displayName: '测试用户' }] })
     const profile = () => ({ user: { id: 'u1', username: 'test', displayName: '测试用户', householdId: home }, household: household(home) })
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request()
       const path = new URL(req.url()).pathname.replace(/^\/api/, '')
       let data = {}

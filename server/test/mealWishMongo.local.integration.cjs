@@ -40,7 +40,6 @@ const memoryController = require('../controllers/memoryController');
 const mealImageIssueController = require('../controllers/mealImageIssueController');
 const anniversaryController = require('../controllers/anniversaryController');
 const anniversaryTemplateController = require('../controllers/anniversaryTemplateController');
-const authController = require('../controllers/authController');
 const householdController = require('../controllers/householdController');
 const requireAuth = require('../middleware/auth');
 const { auditAndApply } = require('../scripts/meal-wish-index');
@@ -118,8 +117,7 @@ async function main() {
 
     const app = express();
     app.use(express.json());
-    app.post('/auth/login', authController.login);
-    app.post('/auth/register', authController.register);
+    app.use('/auth', require('../routes/authRoutes'));
     // The workspace is under a dot-prefixed directory, so Express's default
     // sendFile dotfile policy would reject this fixture path on Windows.
     app.get('/guest-order/:shareToken', (_req, res) => res.type('html').send(fs.readFileSync(path.join(__dirname, '../public/guest-order.html'), 'utf8')));
@@ -129,7 +127,6 @@ async function main() {
     app.get('/guest-public/:shareToken/orders/:accessToken', guestOrderController.publicOrder);
     app.put('/guest-public/:shareToken/orders/:accessToken', guestOrderController.updatePublicOrder);
     app.use(requireAuth());
-    app.get('/auth/me', authController.me);
     app.get('/household/me', householdController.me);
     app.post('/household/invite/refresh', householdController.refreshInvite);
     app.post('/household/join', householdController.join);
@@ -197,12 +194,17 @@ async function main() {
     const fenceHomeB = await Household.create({ name: 'Scope B', inviteCode: 'FENCE-B' });
     const fenceUser = await User.create({ username: 'test-local-fence', passwordHash: hash, householdId: fenceHomeA._id });
     const fenceToken = await login('test-local-fence');
+    const fenceCapability = await request('/auth/household-scope', { token: fenceToken, expectedHousehold: String(fenceHomeA._id) });
+    assert.equal(fenceCapability.status, 200);
+    assert.deepEqual(fenceCapability.data, { supportsHouseholdScope: true, householdId: String(fenceHomeA._id) });
+    assert.equal((await request('/auth/household-scope', { token: fenceToken })).status, 400);
     assert.equal((await request('/dashboard/summary', { token: fenceToken, expectedHousehold: String(fenceHomeA._id) })).status, 200);
     assert.equal((await request('/dashboard/summary', { token: fenceToken, expectedHousehold: 'invalid' })).status, 400);
     await User.updateOne({ _id: fenceUser._id }, { $set: { householdId: fenceHomeB._id } });
     const fencedRead = await request('/dashboard/summary', { token: fenceToken, expectedHousehold: String(fenceHomeA._id) });
     assert.equal(fencedRead.status, 409);
     assert.equal(fencedRead.data.code, 'HOUSEHOLD_SCOPE_CHANGED');
+    assert.equal((await request('/auth/household-scope', { token: fenceToken, expectedHousehold: String(fenceHomeA._id) })).status, 409);
     const fencedWrite = await request('/wishlist', { method: 'POST', token: fenceToken, expectedHousehold: String(fenceHomeA._id), body: { title: '旧设备不应创建' } });
     assert.equal(fencedWrite.status, 409);
     assert.equal(await WishlistItem.countDocuments({ title: '旧设备不应创建' }), 0);
@@ -926,6 +928,36 @@ async function main() {
       assert.equal(await otherDevicePage.evaluate(() => JSON.parse(localStorage.getItem('user')).householdId), String(scopeHomeB._id));
       assert.equal(await otherDevicePage.locator('.session-warning').count(), 0);
       await otherDevice.close();
+      const lostHomeA = await Household.create({ name: '响应丢失家庭甲', inviteCode: 'LOST-A' });
+      const lostHomeB = await Household.create({ name: '响应丢失家庭乙', inviteCode: 'LOST-B' });
+      const lostUser = await User.create({ username: 'test-local-lost-switch', passwordHash: hash, householdId: lostHomeA._id });
+      const lostToken = await login('test-local-lost-switch');
+      const lostContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+      await lostContext.addInitScript(({ token, id, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id, householdId, username: 'test-local-lost-switch' })); }, { token: lostToken, id: String(lostUser._id), householdId: String(lostHomeA._id) });
+      const lostPage = await lostContext.newPage();
+      await lostPage.route('**/api/household/join', async route => {
+        const result = await route.fetch();
+        assert.equal(result.status(), 200);
+        await route.fulfill({ status: 503, json: { error: '模拟切换响应丢失' } });
+      });
+      await lostPage.goto(`${webBase}/settings`);
+      await lostPage.getByText('响应丢失家庭甲', { exact: true }).waitFor();
+      await lostPage.getByPlaceholder('输入伴侣的邀请码').fill('LOST-B');
+      await lostPage.getByRole('button', { name: '加入', exact: true }).click();
+      await lostPage.getByRole('button', { name: '确认加入' }).click();
+      await lostPage.getByText('家庭切换结果未确认').waitFor();
+      assert.equal(String((await User.findById(lostUser._id)).householdId), String(lostHomeB._id));
+      await lostPage.getByRole('button', { name: '重新核对家庭' }).click();
+      await lostPage.locator('.session-warning').getByText('账号或小家已变化').waitFor();
+      await lostPage.locator('.session-warning').getByRole('button', { name: '重新登录' }).click();
+      await lostPage.locator('.el-message-box').getByRole('button', { name: '重新登录' }).click();
+      await lostPage.waitForURL('**/login');
+      await lostPage.getByPlaceholder('请输入用户名').fill('test-local-lost-switch');
+      await lostPage.getByPlaceholder('请输入密码').fill('test-only-password');
+      await lostPage.getByRole('button', { name: '立即登录' }).click();
+      await lostPage.waitForURL('**/dashboard');
+      assert.equal(await lostPage.evaluate(() => JSON.parse(localStorage.getItem('user')).householdId), String(lostHomeB._id));
+      await lostContext.close();
       const hostListContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       await hostListContext.addInitScript(({ token, user, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id: user, householdId, username: 'test-local-guest-list' })); }, { token: listToken, user: String(listUser._id), householdId: String(listHome._id) });
       const hostListPage = await hostListContext.newPage();

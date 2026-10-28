@@ -9,11 +9,12 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const writes = []; const errors = []; let mode = 'conflict'; let failDetail = false; let compatible = true
     let item = { _id: 'wish-a', title: '想吃面条', note: '少辣', category: '家常', priority: 'normal', status: 'planned', mealId: { _id: 'meal-a', name: '面条' }, votes: [{ _id: 'u1' }], votedByMe: true, supportsSetVote: true, supportsSafeMealLink: true, supportsConditionalActions: true, supportsWishEdit: true, editVersion: version('v1') }
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const path = new URL(req.url()).pathname.replace(/^\/api/, '')
       let data = {}
       if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }

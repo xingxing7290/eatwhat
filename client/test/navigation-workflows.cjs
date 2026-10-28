@@ -10,7 +10,8 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', route => {
-      if (route.request().url().includes('/auth/login')) return route.fulfill({ json: { token: 'test-token', user: { id: 'u1', username: 'test' } } })
+      if (route.request().url().includes('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
+      if (route.request().url().includes('/auth/login')) return route.fulfill({ json: { token: 'test-token', user: { id: 'u1', username: 'test', householdId: 'home-a' } } })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/missing-page?source=test`)

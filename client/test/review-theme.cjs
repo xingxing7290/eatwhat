@@ -9,9 +9,9 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await page.clock.setFixedTime(new Date(2026, 9, 29, 12))
-    await page.addInitScript(() => { localStorage.setItem('token', 'theme-token'); localStorage.setItem('user', JSON.stringify({ username: 'theme' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'theme-token'); localStorage.setItem('user', JSON.stringify({ username: 'theme', householdId: 'home-a' })) })
     const data = { supportsHouseholdScopedReview: true, type: 'month', label: '2026-10', range: { start: '2026-10-01', end: '2026-10-31' }, summary: { memoryCount: 1, plannedMealCount: 2, reviewedDayCount: 1, photoCount: 1, wishlistOpen: 3, mealTotal: 15, favoriteTotal: 2 }, topMeals: [{ id: 'meal', name: '番茄炒蛋', count: 3, scheduleCount: 2, memoryCount: 1 }], moodStats: [{ mood: '开心', count: 1 }], categoryStats: [{ category: '家常菜', count: 3 }], healthTagStats: [{ tag: '少油', count: 1 }], bestMemory: { id: 'memory', date: '2026-10-10', title: '温暖的晚餐', mood: '开心', photos: [] }, photos: [], recentMemories: [{ _id: 'memory', date: '2026-10-10', title: '温暖的晚餐' }] }
-    await page.route('**/api/**', route => route.fulfill({ json: data }))
+    await page.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/auth/household-scope') ? { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } : data }))
     await page.goto(`${base}/review`)
     await page.getByRole('heading', { name: '常出现在饭桌上的菜' }).waitFor()
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })

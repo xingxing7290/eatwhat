@@ -81,12 +81,13 @@ async function main () {
   })
   await page.addInitScript(() => {
     localStorage.setItem('token', 'test-token')
-    localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户' }))
+    localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户', householdId: 'home-a' }))
     const createObjectURL = URL.createObjectURL.bind(URL)
     window.__testObjectUrlNames = {}
     URL.createObjectURL = blob => { const url = createObjectURL(blob); window.__testObjectUrlNames[url] = blob.name; return url }
   })
   await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
     const request = route.request()
     const url = new URL(request.url())
     const path = url.pathname.replace(/^\/api/, '')
@@ -194,7 +195,7 @@ async function main () {
     else if (method === 'GET' && path === '/auth/me') data = { user: { id: 'user-a', username: 'test', displayName: '测试用户', householdId: switchedHousehold ? 'home-b' : 'home-a' }, household: switchedHousehold ? { id: 'home-b', name: '已切换家庭', inviteCode: 'DEF456', members: [{ _id: 'user-a', displayName: '测试用户' }] } : { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: '测试用户' }] } }
     else if (method === 'PUT' && path === '/auth/profile') {
       writes.push({ path, body: request.postDataJSON() })
-      data = { user: { id: 'user-a', username: 'test', displayName: request.postDataJSON().displayName }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: request.postDataJSON().displayName }] } }
+      data = { user: { id: 'user-a', username: 'test', householdId: 'home-a', displayName: request.postDataJSON().displayName }, household: { id: 'home-a', name: '测试小家', inviteCode: 'ABC123', members: [{ _id: 'user-a', displayName: request.postDataJSON().displayName }] } }
     }
     else if (method === 'GET' && path === '/photo-album' && failAlbum) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '相册测试读取失败' }) })
     else if (method === 'GET' && path === '/photo-album') data = { month: '2026-10', photos: [{ photo: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="300" height="200"%3E%3Crect width="300" height="200" fill="%23d49a75"/%3E%3C/svg%3E', memoryId: 'memory-a', date: today, mealType: 'dinner', title: '测试晚餐' }] }
@@ -222,6 +223,8 @@ async function main () {
   await page.goto(`${base}/dashboard`)
   assert.equal(await page.locator('html').getAttribute('lang'), 'zh-CN')
   await page.locator('.dashboard-page .el-loading-mask').waitFor({ state: 'visible' })
+  for (let i = 0; i < 100 && !releaseDashboard; i++) await new Promise(resolve => setTimeout(resolve, 50))
+  assert.equal(typeof releaseDashboard, 'function', 'dashboard request should start after the scope check')
   blockDashboard = false
   releaseDashboard()
   await page.getByRole('heading', { name: /好好吃饭/ }).waitFor()
@@ -239,6 +242,7 @@ async function main () {
   try { await page.getByRole('heading', { name: /选择晚餐/ }).waitFor({ timeout: 12000 }) }
   catch (error) { console.error('Selection URL:', page.url(), 'text:', await page.locator('body').innerText(), 'errors:', errors); await browser.close(); throw error }
   await page.getByText('已选择:').waitFor()
+  await page.waitForFunction(() => ['番茄炒蛋', '清炒青菜', '麻婆豆腐'].every(name => document.querySelector('.selection-info')?.textContent.includes(name)))
   assert.match(await page.locator('.selection-info').innerText(), /番茄炒蛋/)
   assert.match(await page.locator('.selection-info').innerText(), /清炒青菜/)
   assert.match(await page.locator('.selection-info').innerText(), /麻婆豆腐/)
@@ -465,8 +469,10 @@ async function main () {
   await page.getByRole('dialog', { name: '添加想吃' }).getByRole('button', { name: '保存' }).click()
   await page.getByRole('dialog', { name: '添加想吃' }).waitFor({ state: 'hidden' })
   assert.equal(writes.filter(item => item.path === '/wishlist').length, wishAttemptsAfterFailure + 1)
+  const failedAttachResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/wishlist/convert-wish/meal' && response.status() === 503)
   await page.getByRole('button', { name: '转菜品' }).click()
   await page.getByText('关联尚未确认').waitFor()
+  await failedAttachResponse
   assert.equal(writes.filter(item => item.path === '/meals').length, 1)
   failAttach = false
   await page.getByRole('button', { name: '重试关联' }).click()
@@ -863,7 +869,8 @@ async function main () {
   assert.equal(await page.getByRole('button', { name: '加入', exact: true }).isDisabled(), true)
   await page.getByRole('button', { name: '重新核对家庭' }).click()
   await page.getByRole('button', { name: '放弃并刷新' }).click()
-  await page.getByText('已切换家庭').waitFor()
+  try { await page.getByText('已切换家庭').waitFor({ timeout: 10000 }) }
+  catch (error) { console.error('Household recovery:', await page.locator('body').innerText(), 'errors:', errors); throw error }
   assert.equal(await page.getByText('家庭切换结果未确认').count(), 0)
   await page.goto(`${base}/apply-account#invite=OTHER2`)
   await page.getByRole('button', { name: '使用当前账号加入' }).click()
@@ -987,11 +994,12 @@ async function main () {
   let releaseLogin
   let delayLogin = true
   await loginPage.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
     const pathname = new URL(route.request().url()).pathname
     if (pathname.endsWith('/auth/login')) {
       loginCalls++
       if (delayLogin) await new Promise(resolve => { releaseLogin = resolve })
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'login-token', user: { username: 'old-user' } }) })
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'login-token', user: { username: 'old-user', householdId: 'home-a' } }) })
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pathname.endsWith('/weekly-plans') ? { days: [] } : {}) })
   })
@@ -1033,6 +1041,7 @@ async function main () {
   let holdRegistration = true
   let failRegistration = false
   await registerPage.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
     if (new URL(route.request().url()).pathname === '/api/auth/register') {
       registrations.push(route.request().postDataJSON())
       if (holdRegistration) await new Promise(resolve => { releaseRegister = resolve })

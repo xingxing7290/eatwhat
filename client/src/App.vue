@@ -9,6 +9,7 @@ import { Monitor, Moon, Sunny, Menu, Close, Calendar, Food, User, ChatDotRound, 
 import { useMealStore } from './stores/meal';
 import { useScheduleStore } from './stores/schedule';
 import { adoptSession, sessionIsLocked } from './services/sessionScope';
+import { householdVerificationFailed, verifyCurrentHousehold } from './services/api';
 
 const route = useRoute();
 const router = useRouter();
@@ -30,9 +31,21 @@ const authToken = ref(localStorage.getItem('token') || '');
 const authUser = ref(null);
 const loggingOut = ref(false);
 const sessionChanged = ref(sessionIsLocked());
+const scopeUnverified = ref(householdVerificationFailed());
+const checkingScope = ref(false);
+const markScopeUnverified = () => { scopeUnverified.value = true; };
+const markScopeVerified = () => { scopeUnverified.value = false; };
+const retryScopeVerification = async () => {
+  if (checkingScope.value) return;
+  checkingScope.value = true;
+  try { await verifyCurrentHousehold(); ElMessage.success('家庭保护已确认，请在页面重试加载或保存。'); }
+  catch (_) { /* The appropriate warning remains visible. */ }
+  finally { checkingScope.value = false; }
+};
 const markSessionChanged = () => { sessionChanged.value = true; };
 const markSessionAdopted = () => {
   sessionChanged.value = sessionIsLocked();
+  scopeUnverified.value = householdVerificationFailed();
   if (!sessionChanged.value) { clearMealState(); loadAuthState(); }
 };
 const reloadChangedSession = async () => {
@@ -164,7 +177,10 @@ onMounted(async () => {
   window.addEventListener('eatwhat-theme-change', handleColorThemeChange);
   window.addEventListener('eatwhat-session-changed', markSessionChanged);
   window.addEventListener('eatwhat-session-adopted', markSessionAdopted);
+  window.addEventListener('eatwhat-scope-unverified', markScopeUnverified);
+  window.addEventListener('eatwhat-scope-verified', markScopeVerified);
   sessionChanged.value = sessionIsLocked();
+  scopeUnverified.value = householdVerificationFailed();
   
   // Meal data is loaded by each page on demand to keep the larger default catalog from slowing the app shell.
 })
@@ -198,6 +214,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('eatwhat-theme-change', handleColorThemeChange);
   window.removeEventListener('eatwhat-session-changed', markSessionChanged);
   window.removeEventListener('eatwhat-session-adopted', markSessionAdopted);
+  window.removeEventListener('eatwhat-scope-unverified', markScopeUnverified);
+  window.removeEventListener('eatwhat-scope-verified', markScopeVerified);
 });
 </script>
 
@@ -208,6 +226,10 @@ onBeforeUnmount(() => {
       <div v-if="sessionChanged" class="session-warning" role="alert">
         <div><strong>账号或小家已变化</strong><span>本页新请求已暂停，未保存内容仍在。此前已发送的请求可能仍会完成，请先核对。</span></div>
         <div class="session-warning-actions"><button type="button" @click="reloadChangedSession">重新加载</button><button type="button" @click="reloginChangedSession">重新登录</button></div>
+      </div>
+      <div v-else-if="scopeUnverified" class="session-warning" role="alert">
+        <div><strong>暂时无法确认家庭保护</strong><span>服务器可能未升级、网络异常或账号资料不完整；未通过核验的请求不会发送，草稿仍在。此前发出的请求可能仍会完成。</span></div>
+        <div class="session-warning-actions"><button type="button" :disabled="checkingScope" @click="retryScopeVerification">{{ checkingScope ? '检查中…' : '重新检查' }}</button><button type="button" @click="reloginChangedSession">重新登录</button></div>
       </div>
       <!-- 移动端遮罩层 -->
       <div 

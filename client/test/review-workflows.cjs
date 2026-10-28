@@ -26,11 +26,12 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.clock.setFixedTime(new Date(2026, 9, 29, 12))
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     let scenario = 'normal'; let slowStarted
     const slowRequest = new Promise(resolve => { slowStarted = resolve })
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url())
       if (url.pathname.startsWith('/api/review/')) {
         const type = url.pathname.endsWith('/yearly') ? 'year' : 'month'; const label = url.searchParams.get(type === 'year' ? 'year' : 'month')

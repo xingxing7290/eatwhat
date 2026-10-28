@@ -14,6 +14,8 @@ The browser/database check also opens monthly and yearly reviews with a real aut
 
 `npm run test:session-scope` from `client` checks same-browser account and household changes across tabs, blocking new requests, preserving a recipe draft, rejecting a late response and normal login. See `docs/session-scope-safety.md` for cross-device and in-flight request limitations.
 
+`npm run test:scope-capability` checks that missing capabilities, mismatched scope, network errors, missing local identity and a server downgrade block protected requests without discarding drafts. It also verifies recovery and concurrent-probe coalescing.
+
 The isolated database test additionally checks the optional household request header against an actual changed account, rejects stale reads, writes and household joins, preserves legacy requests without the header, and exercises a second browser context with a stale household and an unsaved recipe draft.
 
 ## Docker-based application integration

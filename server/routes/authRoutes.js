@@ -6,6 +6,7 @@ const upload = require('../middleware/upload');
 
 router.post('/register', authCtl.register);
 router.post('/login', authCtl.login);
+router.get('/household-scope', auth(), authCtl.householdScope);
 router.get('/me', auth(), authCtl.me);
 
 router.put('/profile', auth(), authCtl.updateProfile);

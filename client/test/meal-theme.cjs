@@ -14,11 +14,12 @@ async function main() {
     const page = await context.newPage();
     await page.addInitScript(() => {
       localStorage.setItem('token', 'theme-test-token');
-      localStorage.setItem('user', JSON.stringify({ id: 'theme-user', username: 'theme-user' }));
+      localStorage.setItem('user', JSON.stringify({ id: 'theme-user', username: 'theme-user', householdId: 'home-a' }));
       localStorage.setItem('darkMode', 'false');
       localStorage.setItem('colorTheme', 'cream');
     });
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url());
       let data = {};
       if (url.pathname === '/api/meals') data = { data: [{ _id: 'meal-a', name: '番茄炒蛋', description: '家常味道', category: '家常菜', tags: ['家常'] }], total: 1 };

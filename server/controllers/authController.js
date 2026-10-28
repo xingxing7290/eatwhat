@@ -88,6 +88,12 @@ exports.login = async (req, res, next) => {
 	} catch (err) { next(err); }
 };
 
+exports.householdScope = (req, res) => {
+	res.set('Cache-Control', 'private, no-store');
+	if (!req.expectedHouseholdId) return res.status(400).json({ error: '缺少家庭标识' });
+	return res.json({ supportsHouseholdScope: true, householdId: req.expectedHouseholdId });
+};
+
 exports.me = async (req, res, next) => {
 	try {
 		const uid = req.user && req.user.uid;

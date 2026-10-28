@@ -15,6 +15,7 @@ async function main () {
     let supported = false; let archiveMode = 'conflict'; const writes = []; const reads = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, ''); let data = {}
       if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       else if (req.method() === 'GET' && path === '/meals/archive-capabilities') data = { supportsMealArchive: supported }

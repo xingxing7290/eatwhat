@@ -9,13 +9,14 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     page.on('dialog', dialog => dialog.accept())
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const home = '111111111111111111111111'; const id = '222222222222222222222222'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false
     const version = value => ({ revision: `v${value}`, updatedAt: `2026-10-29T00:00:0${value}.000Z` })
     const detail = () => ({ ...current, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, guestNames: ['测试客人'], notes: ['测试客人：少盐'] }] }, orders: [{ id: 'order-1', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ name: '客人想吃的菜', quantity: 2, note: '少盐' }], note: '整单备注' }] })
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
       if (req.method() === 'GET' && pathname === '/guest-orders/capabilities') return route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true } })
       if (req.method() === 'GET' && pathname === '/guest-orders') return route.fulfill({ json: { sessions: current ? [{ ...current, guestCount: 1, totalQuantity: 2 }] : [] } })
@@ -108,8 +109,9 @@ async function main () {
     assert.deepEqual(errors, [])
     await page.close()
     const legacy = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token') })
+    await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' })) })
     await legacy.route('**/api/**', route => route.request().url().endsWith('/guest-orders/capabilities') ? route.fulfill({ status: 404, json: { error: '未找到' } }) : route.fulfill({ json: { sessions: [] } }))
+    await legacy.route('**/api/auth/household-scope', route => route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } }))
     await legacy.goto(`${base}/guest-orders`)
     await legacy.getByText('服务器未提供安全宴请能力', { exact: false }).waitFor()
     await legacy.getByRole('button', { name: '更多功能' }).click()
@@ -117,9 +119,10 @@ async function main () {
     assert.equal(await legacy.getByRole('button', { name: '创建第一场宴请' }).isDisabled(), true)
     await legacy.close()
     const expiredPage = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await expiredPage.addInitScript(() => { localStorage.setItem('token', 'test-token') })
+    await expiredPage.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' })) })
     const expired = { ...current, title: '过期的锁单宴请', status: 'locked', storedStatus: 'locked', expiresAt: '2020-01-01T00:00:00.000Z' }
     await expiredPage.route('**/api/**', route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const pathname = new URL(route.request().url()).pathname.replace(/^\/api/, '')
       if (pathname === '/guest-orders/capabilities') return route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true } })
       if (pathname === '/guest-orders') return route.fulfill({ json: { sessions: [{ ...expired, guestCount: 0, totalQuantity: 0 }] } })

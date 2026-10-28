@@ -11,7 +11,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     let legacy = false
@@ -20,6 +20,7 @@ async function main () {
     const reads = []
     await page.route('**/broken-photo.png', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request()
       const url = new URL(req.url())
       const path = url.pathname.replace(/^\/api/, '')

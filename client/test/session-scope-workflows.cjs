@@ -14,6 +14,7 @@ async function main () {
     let writes = 0; let sentAuthorization = ''
     await context.route('**/api/**', async route => {
       const req = route.request(); const path = new URL(req.url()).pathname
+      if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: req.headers()['x-eatwhat-household'] } })
       if (path === '/api/dashboard/summary') {
         sentAuthorization = req.headers().authorization || ''
         requestStarted(); await blocked
@@ -23,7 +24,7 @@ async function main () {
       return route.fulfill({ json: {} })
     })
     await first.goto(`${base}/login`)
-    await first.evaluate(() => { localStorage.setItem('token', 'account-a'); localStorage.setItem('user', JSON.stringify({ id: 'a', username: 'a' })) })
+    await first.evaluate(() => { localStorage.setItem('token', 'account-a'); localStorage.setItem('user', JSON.stringify({ id: 'a', username: 'a', householdId: 'home-a' })) })
     await first.goto(`${base}/meals/editor`)
     await first.getByRole('heading', { name: '创建菜品' }).waitFor()
     await first.getByPlaceholder('给这道菜起个名字').fill('需要保留的草稿')
@@ -49,7 +50,7 @@ async function main () {
 
     const householdContext = await browser.newContext()
     const householdPage = await householdContext.newPage()
-    await householdContext.route('**/api/**', route => route.fulfill({ json: {} }))
+    await householdContext.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/auth/household-scope') ? { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } : {} }))
     await householdPage.goto(`${base}/login`)
     await householdPage.evaluate(() => { localStorage.setItem('token', 'same-account'); localStorage.setItem('user', JSON.stringify({ id: 'same-user', householdId: 'home-a', displayName: '原昵称' })) })
     await householdPage.goto(`${base}/meals/editor`)
@@ -71,7 +72,8 @@ async function main () {
     let dashboardAuth = ''
     await page.route('**/api/**', route => {
       const path = new URL(route.request().url()).pathname
-      if (path === '/api/auth/login') return route.fulfill({ json: { token: 'login-token', user: { id: 'c', username: 'c' } } })
+      if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
+      if (path === '/api/auth/login') return route.fulfill({ json: { token: 'login-token', user: { id: 'c', username: 'c', householdId: 'home-c' } } })
       if (path === '/api/dashboard/summary') dashboardAuth = route.request().headers().authorization || ''
       return route.fulfill({ json: {} })
     })
