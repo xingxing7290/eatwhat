@@ -3,6 +3,7 @@ const User = require('../models/userModel');
 const { ensureUserHousehold, assertExpectedHousehold, generateInviteCode, householdPayload, withCurrentMembers } = require('../utils/household');
 const { toSafeUser } = require('./authController');
 const { looksBrokenText } = require('../utils/text');
+const { randomUUID } = require('crypto');
 
 async function loadHousehold(uid, expected) {
   const { user, household } = await ensureUserHousehold(uid, 0, expected);
@@ -20,11 +21,14 @@ exports.update = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
-    if (!name) return res.status(400).json({ error: '\u5c0f\u5bb6\u540d\u79f0\u4e0d\u80fd\u4e3a\u7a7a' });
-    if (looksBrokenText(name)) return res.status(400).json({ error: '\u5c0f\u5bb6\u540d\u79f0\u770b\u8d77\u6765\u662f\u4e71\u7801\uff0c\u8bf7\u91cd\u65b0\u8f93\u5165' });
-    household.name = name;
-    await household.save();
-    res.json({ household: householdPayload(await withCurrentMembers(household, req.user.uid)) });
+    if (!name || name.length > 40 || looksBrokenText(name)) return res.status(400).json({ code: 'HOUSEHOLD_NAME_INVALID', error: '小家名称不能为空、不能超过 40 字，且不能是乱码' });
+    const conditional = Object.prototype.hasOwnProperty.call(req.body || {}, 'expectedNameVersion');
+    const version = req.body?.expectedNameVersion;
+    if (conditional && (!version || typeof version !== 'object' || Array.isArray(version) || Object.keys(version).length !== 1 || !Object.prototype.hasOwnProperty.call(version, 'revision') || !(version.revision === null || (typeof version.revision === 'string' && version.revision.length > 0 && version.revision.length <= 128)))) return res.status(400).json({ code: 'HOUSEHOLD_NAME_INVALID_VERSION', error: '小家名称版本无效，请重新核对' });
+    const filter = { _id: household._id, ...(conditional ? { nameRevision: version.revision } : {}) };
+    const updated = await Household.findOneAndUpdate(filter, { $set: { name, nameRevision: randomUUID() } }, { new: true, runValidators: true });
+    if (!updated) return res.status(409).json({ code: 'HOUSEHOLD_NAME_CONFLICT', error: '小家名称已变化，请核对最新名称' });
+    res.json({ household: householdPayload(await withCurrentMembers(updated, req.user.uid)) });
   } catch (err) { next(err); }
 };
 

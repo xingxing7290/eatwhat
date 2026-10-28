@@ -78,11 +78,15 @@ async function ensureUserHousehold(userId, attempt = 0, expected = undefined) {
 
 function householdPayload(household) {
   if (!household) return null;
+  const revision = household.nameRevision ?? null;
+  const validRevision = revision === null || (typeof revision === 'string' && revision.length > 0 && revision.length <= 128);
   return {
     id: household._id,
     name: cleanHouseholdName(household.name),
     inviteCode: household.inviteCode,
-    members: household.members || []
+    members: household.members || [],
+    supportsConditionalNameUpdate: validRevision,
+    nameVersion: validRevision ? { revision } : null
   };
 }
 

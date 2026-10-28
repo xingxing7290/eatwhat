@@ -18,6 +18,8 @@ The browser/database check also opens monthly and yearly reviews with a real aut
 
 `npm run test:session-expiry` checks a 401 during the capability probe and after a request is sent, failed login and a late 401 from a previous account. The isolated browser/database test also uses an expired test-only JWT and verifies that the draft is retained and login can be restored.
 
+`npm run test:household-name` checks name conflicts, uncertain and malformed responses, safe review, draft preservation and the legacy-server guard. The isolated database and browser test checks concurrent conditional name edits, legacy documents and writes, maintenance `save()`, invitation rotation and two real browser contexts.
+
 The isolated database test additionally checks the optional household request header against an actual changed account, rejects stale reads, writes and household joins, preserves legacy requests without the header, and exercises a second browser context with a stale household and an unsaved recipe draft.
 
 ## Docker-based application integration

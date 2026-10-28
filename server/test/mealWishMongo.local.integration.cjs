@@ -129,6 +129,7 @@ async function main() {
     app.put('/guest-public/:shareToken/orders/:accessToken', guestOrderController.updatePublicOrder);
     app.use(requireAuth());
     app.get('/household/me', householdController.me);
+    app.put('/household/me', householdController.update);
     app.post('/household/invite/refresh', householdController.refreshInvite);
     app.post('/household/join', householdController.join);
     app.get('/meals', mealController.getAllMeals);
@@ -191,6 +192,35 @@ async function main() {
       return result.data.token;
     }
     const [tokenA, tokenPartner, tokenB] = await Promise.all(['test-local-a', 'test-local-partner', 'test-local-b'].map(login));
+    const nameHome = await Household.create({ name: '初始小家', inviteCode: 'NAME-A' });
+    const [nameUserA, nameUserB] = await User.create([{ username: 'test-local-name-a', passwordHash: hash, householdId: nameHome._id }, { username: 'test-local-name-b', passwordHash: hash, householdId: nameHome._id }]);
+    const [nameTokenA, nameTokenB] = await Promise.all([login(nameUserA.username), login(nameUserB.username)]);
+    const initialName = (await request('/household/me', { token: nameTokenA })).data.household;
+    assert.equal(initialName.supportsConditionalNameUpdate, true);
+    assert.ok(initialName.nameVersion.revision);
+    const nameRace = await Promise.all([
+      request('/household/me', { method: 'PUT', token: nameTokenA, body: { name: '家庭名称甲', expectedNameVersion: initialName.nameVersion } }),
+      request('/household/me', { method: 'PUT', token: nameTokenB, body: { name: '家庭名称乙', expectedNameVersion: initialName.nameVersion } })
+    ]);
+    assert.deepEqual(nameRace.map(result => result.status).sort(), [200, 409]);
+    assert.equal(nameRace.find(result => result.status === 409).data.code, 'HOUSEHOLD_NAME_CONFLICT');
+    const afterRace = (await request('/household/me', { token: nameTokenA })).data.household;
+    assert.notEqual(afterRace.nameVersion.revision, initialName.nameVersion.revision);
+    assert.equal((await request('/household/me', { method: 'PUT', token: nameTokenA, body: { name: '错误版本', expectedNameVersion: { revision: 7 } } })).status, 400);
+    assert.equal((await request('/household/me', { method: 'PUT', token: nameTokenA, body: { name: '旧客户端名称' } })).status, 200);
+    assert.equal((await request('/household/me', { method: 'PUT', token: nameTokenB, body: { name: '不应覆盖旧客户端', expectedNameVersion: afterRace.nameVersion } })).status, 409);
+    const beforeMaintenance = (await request('/household/me', { token: nameTokenA })).data.household;
+    const maintainedHome = await Household.findById(nameHome._id); maintainedHome.name = '维护名称'; await maintainedHome.save();
+    assert.equal((await request('/household/me', { method: 'PUT', token: nameTokenA, body: { name: '不应覆盖维护', expectedNameVersion: beforeMaintenance.nameVersion } })).status, 409);
+    const beforeInvite = (await request('/household/me', { token: nameTokenA })).data.household;
+    assert.equal((await request('/household/invite/refresh', { method: 'POST', token: nameTokenA })).status, 200);
+    assert.equal((await request('/household/me', { method: 'PUT', token: nameTokenA, body: { name: '刷新邀请码不阻塞名称', expectedNameVersion: beforeInvite.nameVersion } })).status, 200);
+    const legacyNameHome = await Household.collection.insertOne({ name: '缺版本小家', inviteCode: 'NAME-LEGACY', members: [] });
+    const legacyNameUser = await User.create({ username: 'test-local-name-legacy', passwordHash: hash, householdId: legacyNameHome.insertedId });
+    const legacyNameToken = await login(legacyNameUser.username);
+    const legacyNameVersion = (await request('/household/me', { token: legacyNameToken })).data.household.nameVersion;
+    assert.deepEqual(legacyNameVersion, { revision: null });
+    assert.equal((await request('/household/me', { method: 'PUT', token: legacyNameToken, body: { name: '补版本名称', expectedNameVersion: legacyNameVersion } })).status, 200);
     const fenceHomeA = await Household.create({ name: 'Scope A', inviteCode: 'FENCE-A' });
     const fenceHomeB = await Household.create({ name: 'Scope B', inviteCode: 'FENCE-B' });
     const fenceUser = await User.create({ username: 'test-local-fence', passwordHash: hash, householdId: fenceHomeA._id });
@@ -869,6 +899,27 @@ async function main() {
       const webBase = `http://127.0.0.1:${webServer.address().port}`;
       const playwright = require('../../client/node_modules/playwright');
       browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined });
+      const nameContexts = await Promise.all([browser.newContext({ viewport: { width: 390, height: 844 } }), browser.newContext({ viewport: { width: 1280, height: 900 } })]);
+      await Promise.all(nameContexts.map((context, index) => context.addInitScript(({ token, id, householdId, username }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id, householdId, username })); }, { token: index ? nameTokenB : nameTokenA, id: String(index ? nameUserB._id : nameUserA._id), householdId: String(nameHome._id), username: index ? nameUserB.username : nameUserA.username })));
+      const [namePageA, namePageB] = await Promise.all(nameContexts.map(context => context.newPage()));
+      await Promise.all([namePageA.goto(`${webBase}/settings`), namePageB.goto(`${webBase}/settings`)]);
+      await Promise.all([namePageA.getByPlaceholder('给你们的小家取个名字').fill('真实并发名称甲'), namePageB.getByPlaceholder('给你们的小家取个名字').fill('真实并发名称乙')]);
+      await namePageB.getByPlaceholder('请输入昵称').fill('并发时保留昵称');
+      await namePageA.getByRole('button', { name: '保存小家' }).click();
+      await namePageA.getByText('小家已更新').waitFor();
+      await namePageB.getByRole('button', { name: '保存小家' }).click();
+      await namePageB.getByText('小家名称已被修改，本次没有保存。').waitFor();
+      assert.equal(await namePageB.getByPlaceholder('给你们的小家取个名字').inputValue(), '真实并发名称乙');
+      assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '并发时保留昵称');
+      await namePageB.getByRole('button', { name: '核对最新名称' }).click();
+      await namePageB.getByText('最新名称：真实并发名称甲').waitFor();
+      await namePageB.getByRole('button', { name: '保留我的名称' }).click();
+      await namePageB.getByRole('button', { name: '保留输入' }).click();
+      await namePageB.getByRole('button', { name: '保存小家' }).click();
+      await namePageB.getByText('小家已更新').waitFor();
+      assert.equal((await Household.findById(nameHome._id)).name, '真实并发名称乙');
+      assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '并发时保留昵称');
+      await Promise.all(nameContexts.map(context => context.close()));
       const reviewContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       await reviewContext.addInitScript(({ token, user, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id: user, householdId, username: 'test-local-review' })); }, { token: reviewToken, user: String(reviewUser._id), householdId: String(reviewHome._id) });
       const reviewPage = await reviewContext.newPage();

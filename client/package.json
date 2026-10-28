@@ -30,6 +30,7 @@
     "test:session-scope": "node test/session-scope-workflows.cjs",
     "test:scope-capability": "node test/scope-capability-workflows.cjs",
     "test:session-expiry": "node test/session-expiry-workflows.cjs",
+    "test:household-name": "node test/household-name-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
