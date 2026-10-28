@@ -1,5 +1,15 @@
 # Isolated MongoDB integration check
 
+## Local meal-wish concurrency check
+
+With a trusted local MongoDB 7 `mongod` executable and Node.js, set `EATWHAT_TEST_MONGOD` to its absolute path and run `node test/mealWishMongo.local.integration.cjs` from the server directory. Set the system temporary directory to a disk with free space first: each run can retain roughly 300 MB. The test starts its own process with a fresh temporary data directory, an ephemeral port and `127.0.0.1` binding; it verifies the process-reported directory, port, bind address and empty database before writing synthetic fixtures. It rejects an externally supplied database URI, stops its own MongoDB process on completion and prints the retained synthetic test directory for inspection and later manual cleanup. It does not connect to or clean up an existing database.
+
+The local check exercises the real unique index and HTTP endpoints using 16 parallel requests from two users in one household, a second household, migration-audit rejection, legacy conflicts, and re-adding a completed meal. The broader Docker-based integration below remains a separate check.
+
+To additionally exercise the built recipe page in desktop and mobile Chromium against these real endpoints and the temporary database, build `client/dist`, ensure the client Playwright dependency and Chromium are installed, and set `EATWHAT_TEST_BROWSER=1` (optionally `CHROME_PATH` for an existing browser). The test verifies real category and search queries plus simultaneous additions, starts a loopback-only static/proxy server, uses test-only accounts and data, and saves a mobile screenshot in the retained temporary directory.
+
+## Docker-based application integration
+
 Run `sh test/run-isolated-mongo.sh` from the server directory on a Linux host with Docker, `timeout`, MongoDB 7 and a locally available backend image containing dependencies at `/app/node_modules`. The default images are `mongo:7.0` and `eatwhat-backend-local:latest`; set `EATWHAT_TEST_MONGO_IMAGE` or `EATWHAT_TEST_BACKEND_IMAGE` to override them.
 
 The script creates a temporary internal Docker network, a fresh MongoDB container without host ports or persistent volumes, and a separate backend test container with the current server source mounted read-only. The test copies only the required source into the disposable container and writes test uploads there. It removes the containers and network on exit. No production database or credentials are used. The test refuses any MongoDB URI except the dedicated test address.
