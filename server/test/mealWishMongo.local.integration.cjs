@@ -20,6 +20,7 @@ const Household = require('../models/householdModel');
 const User = require('../models/userModel');
 const Meal = require('../models/mealModel');
 const MealMemory = require('../models/memoryModel');
+const GuestOrderSession = require('../models/guestOrderSessionModel');
 const MealImageIssue = require('../models/mealImageIssueModel');
 const AnniversaryMenu = require('../models/anniversaryMenuModel');
 const Schedule = require('../models/scheduleModel');
@@ -27,6 +28,7 @@ const ShoppingList = require('../models/shoppingListModel');
 const WishlistItem = require('../models/wishlistModel');
 const wishlist = require('../controllers/wishlistController');
 const mealController = require('../controllers/mealController');
+const guestOrderController = require('../controllers/guestOrderController');
 const dashboardController = require('../controllers/dashboardController');
 const scheduleController = require('../controllers/scheduleController');
 const weeklyPlanController = require('../controllers/weeklyPlanController');
@@ -116,6 +118,7 @@ async function main() {
     app.use(express.json());
     app.post('/auth/login', authController.login);
     app.post('/auth/register', authController.register);
+    app.get('/guest-public/:shareToken', guestOrderController.publicDetail);
     app.use(requireAuth());
     app.get('/auth/me', authController.me);
     app.get('/household/me', householdController.me);
@@ -124,7 +127,10 @@ async function main() {
     app.get('/meals', mealController.getAllMeals);
     app.get('/meals/categories', mealController.getMealCategories);
     app.get('/meals/tags', mealController.getMealTags);
+    app.get('/meals/archive-capabilities', mealController.archiveCapabilities);
     app.get('/meals/:id', mealController.getMealById);
+    app.put('/meals/:id', mealController.validateMeal, mealController.updateMeal);
+    app.put('/meals/:id/archive', mealController.setArchived);
     app.get('/schedules', scheduleController.validateSchedulesQuery, scheduleController.getSchedules);
     app.get('/schedules/day/:date', scheduleController.validateScheduleDate, scheduleController.getScheduleByDate);
     app.put('/schedules/:date/:mealType', scheduleController.validateScheduleUpdate, scheduleController.updateSchedule);
@@ -176,6 +182,47 @@ async function main() {
       return result.data.token;
     }
     const [tokenA, tokenPartner, tokenB] = await Promise.all(['test-local-a', 'test-local-partner', 'test-local-b'].map(login));
+    assert.equal((await request('/meals/archive-capabilities', { token: tokenA })).data.supportsMealArchive, true);
+    const archiveFixture = await Meal.create({ householdId: homeA._id, name: '保留历史的归档菜', category: '归档测试', tags: ['归档标签'] });
+    await GuestOrderSession.create({ householdId: homeA._id, createdBy: userA._id, shareToken: 'local-test-guest-token', expiresAt: new Date(Date.now() + 3600000) });
+    assert.equal((await request('/guest-public/local-test-guest-token')).data.meals.some(meal => String(meal._id) === String(archiveFixture._id)), true);
+    const archiveSchedule = await request('/schedules/2027-01-06/dinner', { method: 'PUT', token: tokenA, body: { mealIds: [String(archiveFixture._id)] } });
+    assert.equal(archiveSchedule.status, 200);
+    const archiveMemory = await MealMemory.create({ householdId: homeA._id, createdBy: userA._id, title: '归档菜历史', date: '2027-01-06', mealIds: [archiveFixture._id] });
+    const archiveBefore = (await request(`/meals/${archiveFixture._id}`, { token: tokenA })).data;
+    assert.equal(archiveBefore.supportsConditionalArchive, true);
+    assert.equal((await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenB, body: { archived: true, expectedEditVersion: archiveBefore.archiveVersion } })).status, 409);
+    assert.equal((await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: 'true', expectedEditVersion: archiveBefore.archiveVersion } })).status, 400);
+    const archivedResult = await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: true, expectedEditVersion: archiveBefore.archiveVersion } });
+    assert.equal(archivedResult.status, 200);
+    assert.equal(archivedResult.data.archived, true);
+    assert.equal((await request('/guest-public/local-test-guest-token')).data.meals.some(meal => String(meal._id) === String(archiveFixture._id)), false, 'fresh guest menus must exclude archived meals');
+    assert.equal((await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: false, expectedEditVersion: archiveBefore.archiveVersion } })).status, 409);
+    assert.equal((await request('/meals?search=保留历史的归档菜', { token: tokenA })).data.length, 0);
+    const archivedList = await request('/meals?archived=true&search=保留历史的归档菜&page=1&limit=24', { token: tokenA });
+    assert.equal(archivedList.data.total, 1);
+    assert.equal(archivedList.data.data[0].supportsConditionalArchive, true);
+    assert.equal((await request('/meals/categories', { token: tokenA })).data.some(item => item.category === '归档测试'), false);
+    assert.equal((await request('/meals/tags', { token: tokenA })).data.includes('归档标签'), false);
+    const generatedWithoutArchived = await request('/weekly-plans/generate', { method: 'POST', token: tokenA, body: { weekStart: '2027-01-04' } });
+    assert.equal(generatedWithoutArchived.status, 200);
+    assert.equal(generatedWithoutArchived.data.days.some(day => Object.values(day.meals).flat().includes(String(archiveFixture._id))), false, 'generated plans must exclude archived meals');
+    assert.equal((await request('/schedules/day/2027-01-06', { token: tokenA })).data.meals.dinner[0].meal.name, '保留历史的归档菜');
+    assert.equal((await request(`/memories/${archiveMemory._id}`, { token: tokenA })).data.mealIds[0].name, '保留历史的归档菜');
+    assert.equal((await request(`/meals/${archiveFixture._id}`, { token: tokenA })).data.archived, true);
+    const restoredResult = await request(`/meals/${archiveFixture._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: false, expectedEditVersion: archivedResult.data.archiveVersion } });
+    assert.equal(restoredResult.status, 200);
+    assert.equal((await request('/guest-public/local-test-guest-token')).data.meals.some(meal => String(meal._id) === String(archiveFixture._id)), true);
+    assert.equal((await request('/meals?search=保留历史的归档菜', { token: tokenA })).data.length, 1);
+    assert.equal((await request('/meals?archived=invalid', { token: tokenA })).status, 400);
+    assert.equal((await request(`/meals/${otherMeal._id}`, { token: tokenA })).data.code, 'MEAL_NOT_FOUND');
+    const raceMeal = await Meal.create({ householdId: homeA._id, name: '归档编辑并发测试', imageUrl: '/uploads/test-only.jpg' });
+    const raceVersion = (await request(`/meals/${raceMeal._id}`, { token: tokenA })).data.archiveVersion;
+    const raceResults = await Promise.all([
+      request(`/meals/${raceMeal._id}/archive`, { method: 'PUT', token: tokenA, body: { archived: true, expectedEditVersion: raceVersion } }),
+      request(`/meals/${raceMeal._id}`, { method: 'PUT', token: tokenPartner, body: { name: '并发更新后的菜', expectedEditVersion: raceVersion } })
+    ]);
+    assert.deepEqual(raceResults.map(result => result.status).sort(), [200, 409], 'competing edit and archive cannot both win with the same version');
     assert.equal((await request('/household/join', { method: 'POST', token: tokenA })).status, 400, 'a missing invitation is a validation error');
     await Household.updateOne({ _id: homeA._id }, { $addToSet: { members: userB._id } });
     const homeAProfile = await request('/auth/me', { token: tokenA });
@@ -605,6 +652,9 @@ async function main() {
       const webBase = `http://127.0.0.1:${webServer.address().port}`;
       const uiMeal = await Meal.create({ householdId: homeA._id, name: '浏览器并发菜', category: '家常菜' });
       const secondMeal = await Meal.create({ householdId: homeA._id, name: '浏览器排餐二', category: '家常菜' });
+      const browserArchive = await Meal.create({ householdId: homeA._id, name: '浏览器归档菜', category: '家常菜' });
+      await Schedule.create({ householdId: homeA._id, date: '2027-01-07', meals: { dinner: [{ meal: browserArchive._id, addedBy: userA._id }] } });
+      const browserArchiveMemory = await MealMemory.create({ householdId: homeA._id, createdBy: userA._id, title: '归档浏览器回忆', date: '2027-01-07', mealIds: [browserArchive._id] });
       const playwright = require('../../client/node_modules/playwright');
       browser = await playwright.chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined });
       const contexts = await Promise.all([
@@ -670,6 +720,23 @@ async function main() {
       await pages[0].getByRole('button', { name: '保存安排' }).click();
       await pages[0].waitForURL('**/calendar');
       assert.equal((await WishlistItem.findById(scheduledWish._id)).status, 'done', 'saving a schedule must not overwrite a later completion');
+      await pages[0].goto(`${webBase}/meals`);
+      await pages[0].getByRole('textbox', { name: '搜索菜品' }).fill('浏览器归档菜');
+      const archiveCard = pages[0].locator('.meal-card-wrapper').filter({ hasText: '浏览器归档菜' });
+      await archiveCard.getByRole('button', { name: '移入回收站：浏览器归档菜' }).click();
+      await pages[0].getByRole('button', { name: '确认移入' }).click();
+      await archiveCard.waitFor({ state: 'hidden' });
+      assert.equal((await Meal.findById(browserArchive._id)).archived, true);
+      assert.equal((await request('/schedules/day/2027-01-07', { token: tokenA })).data.meals.dinner[0].meal.name, '浏览器归档菜');
+      assert.equal((await request(`/memories/${browserArchiveMemory._id}`, { token: tokenA })).data.mealIds[0].name, '浏览器归档菜');
+      await pages[0].getByRole('button', { name: '菜品回收站' }).click();
+      const archiveDialog = pages[0].getByRole('dialog', { name: '菜品回收站' });
+      await archiveDialog.getByRole('textbox', { name: '搜索回收站菜品' }).fill('浏览器归档菜');
+      await archiveDialog.getByRole('button', { name: '恢复浏览器归档菜' }).click();
+      await archiveDialog.getByText('回收站里没有符合条件的菜品').waitFor();
+      await archiveDialog.getByRole('button', { name: '关闭', exact: true }).click();
+      await archiveCard.waitFor();
+      assert.equal((await Meal.findById(browserArchive._id)).archived, false);
       await Promise.all(pages.map(page => page.goto(`${webBase}/meals`)));
       await Promise.all([
         pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/meals' && new URL(response.url()).searchParams.get('search') === '浏览器并发菜'),

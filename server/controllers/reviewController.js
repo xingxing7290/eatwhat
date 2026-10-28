@@ -190,8 +190,8 @@ async function buildReview(req, type) {
       .populate('meals.dinner.meal')
       .sort({ date: 1 }),
     WishlistItem.countDocuments({ householdId: household._id, status: 'open' }),
-    Meal.countDocuments({ householdId: household._id }),
-    Meal.countDocuments({ householdId: household._id, favorite: true })
+    Meal.countDocuments({ householdId: household._id, archived: { $ne: true } }),
+    Meal.countDocuments({ householdId: household._id, favorite: true, archived: { $ne: true } })
   ]);
 
   const mealCounter = new Map();

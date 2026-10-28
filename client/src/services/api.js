@@ -267,6 +267,8 @@ export const mealApi = {
 		}
 		return api.get(`/meals/${id}`);
 	},
+	archiveCapabilities: () => api.get('/meals/archive-capabilities'),
+	setArchived: (id, archived, expectedEditVersion) => api.put(`/meals/${id}/archive`, { archived, expectedEditVersion }, { headers: { 'Content-Type': 'application/json' } }),
 	
 	// 创建菜品 - 现在接收 FormData
 	createMeal: (formData) => {

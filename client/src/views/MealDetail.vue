@@ -148,6 +148,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
       <template v-if="reportChecked"><p>{{ reportMatches ? `当前列表有 ${reportMatches} 条这道菜的图片不匹配反馈。` : '当前列表没有发现这道菜的图片不匹配反馈。' }}{{ reportListTruncated ? ' 列表仅显示最近 200 条，可能不完整。' : '' }}先前请求仍可能稍后完成。</p><el-button link type="primary" @click="allowReportRetry">已核对，允许重试</el-button><el-button link @click="finishReportReview">不再重试</el-button></template>
     </el-alert>
     <el-alert v-if="mealError" type="error" :closable="false" show-icon :title="`无法加载菜品：${mealError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
+    <el-alert v-if="meal?.archived" type="info" :closable="false" show-icon title="这道菜已移入回收站；历史记录仍然保留，可在菜品管理的回收站中恢复。" />
     <template v-if="meal && !mealError">
       <section class="hero">
         <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`)"><img :src="coverImage" :alt="meal.name" @error="fallbackImage" /></button>

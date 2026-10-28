@@ -61,8 +61,8 @@ exports.summary = async (req, res, next) => {
       _statusFor(household._id),
       MealImageIssue.countDocuments({ householdId: household._id, status: 'open' }),
       Promise.all([
-        Meal.countDocuments({ householdId: household._id }),
-        Meal.countDocuments({ householdId: household._id, favorite: true })
+        Meal.countDocuments({ householdId: household._id, archived: { $ne: true } }),
+        Meal.countDocuments({ householdId: household._id, favorite: true, archived: { $ne: true } })
       ])
     ]);
     res.json({

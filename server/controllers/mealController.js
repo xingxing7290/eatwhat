@@ -55,7 +55,12 @@ async function discardNewUploads(req) {
   }));
 }
 function editVersion(meal) {
-  return { revision: meal.editRevision || null, updatedAt: meal.updatedAt ? meal.updatedAt.toISOString() : null };
+  return { revision: meal.editRevision || null, updatedAt: meal.updatedAt ? new Date(meal.updatedAt).toISOString() : null };
+}
+function presentArchive(meal) {
+  const obj = meal?.toObject ? meal.toObject() : meal;
+  try { return { ...obj, supportsConditionalArchive: true, archiveVersion: editVersion(obj) }; }
+  catch (_) { return { ...obj, supportsConditionalArchive: false, archiveVersion: null }; }
 }
 function parseEditVersion(value) {
   const version = parseMaybeJson(value, null);
@@ -96,8 +101,9 @@ exports.validateMeal = [
 exports.getAllMeals = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const { search, tag, category, subcategory, difficulty, favorite, page, limit } = req.query;
-    const query = { householdId: household._id };
+    const { search, tag, category, subcategory, difficulty, favorite, page, limit, archived } = req.query;
+    if (archived !== undefined && archived !== 'true' && archived !== 'false') return res.status(400).json({ error: '归档筛选参数无效' });
+    const query = { householdId: household._id, archived: archived === 'true' ? true : { $ne: true } };
     if (search && String(search).trim()) {
       const rx = { $regex: escapeRegExp(String(search).trim()), $options: 'i' };
       query.$or = [{ name: rx }, { description: rx }, { tags: rx }, { tips: rx }, { 'ingredients.name': rx }, { 'steps.description': rx }];
@@ -111,7 +117,10 @@ exports.getAllMeals = async (req, res, next) => {
     const pageNum = Number.parseInt(page, 10);
     const limitNumRaw = Number.parseInt(limit, 10);
     const hasPagination = Number.isFinite(pageNum) || Number.isFinite(limitNumRaw);
-    if (!hasPagination) return res.status(200).json(await Meal.find(query).sort({ favorite: -1, createdAt: -1 }));
+    if (!hasPagination) {
+      const rows = await Meal.find(query).sort({ favorite: -1, createdAt: -1 });
+      return res.status(200).json(isMobileClient(req) ? rows : rows.map(presentArchive));
+    }
     const safePage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
     const mobile = isMobileClient(req);
     const safeLimit = Math.min(Number.isFinite(limitNumRaw) && limitNumRaw > 0 ? limitNumRaw : 20, mobile ? 12 : 200);
@@ -119,7 +128,7 @@ exports.getAllMeals = async (req, res, next) => {
     let mealQuery = Meal.find(query).sort({ favorite: -1, createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit);
     if (mobile) mealQuery = mealQuery.select('name imageUrl category tags healthTags ingredients cookTime difficulty rating favorite');
     const meals = await mealQuery.lean();
-    res.status(200).json({ data: mobile ? meals.map(compactMeal) : meals, total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1 });
+    res.status(200).json({ data: mobile ? meals.map(compactMeal) : meals.map(presentArchive), total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1 });
   } catch (error) { logger.error(`获取菜品失败: ${error.message}`); next(error); }
 };
 
@@ -127,7 +136,7 @@ exports.getMealCategories = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const rows = await Meal.aggregate([
-      { $match: { householdId: household._id } },
+      { $match: { householdId: household._id, archived: { $ne: true } } },
       { $group: { _id: { category: { $ifNull: ['$category', ''] }, subcategory: { $ifNull: ['$subcategory', ''] } }, count: { $sum: 1 } } },
       { $project: { _id: 0, category: '$_id.category', subcategory: '$_id.subcategory', count: 1 } },
       { $sort: { category: 1, subcategory: 1 } }
@@ -139,7 +148,7 @@ exports.getMealCategories = async (req, res, next) => {
 exports.getMealTags = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
-    const tags = await Meal.distinct('tags', { householdId: household._id });
+    const tags = await Meal.distinct('tags', { householdId: household._id, archived: { $ne: true } });
     res.status(200).json((tags || []).filter(t => t && String(t).trim()).map(t => String(t).trim()).sort((a, b) => a.localeCompare(b, 'zh')));
   } catch (error) { next(error); }
 };
@@ -148,10 +157,10 @@ exports.getMealStats = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid);
     const [total, favorites, memories, categories] = await Promise.all([
-      Meal.countDocuments({ householdId: household._id }),
-      Meal.countDocuments({ householdId: household._id, favorite: true }),
+      Meal.countDocuments({ householdId: household._id, archived: { $ne: true } }),
+      Meal.countDocuments({ householdId: household._id, favorite: true, archived: { $ne: true } }),
       MealMemory.countDocuments({ householdId: household._id }),
-      Meal.aggregate([{ $match: { householdId: household._id } }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1 } }])
+      Meal.aggregate([{ $match: { householdId: household._id, archived: { $ne: true } } }, { $group: { _id: '$category', count: { $sum: 1 } } }, { $sort: { count: -1 } }])
     ]);
     res.json({ total, favorites, memories, categories });
   } catch (error) { next(error); }
@@ -162,8 +171,23 @@ exports.getMealById = async (req, res, next) => {
     const { household } = await ensureUserHousehold(req.user.uid);
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) return res.status(400).json({ error: '无效的菜品ID' });
     const meal = await Meal.findOne({ _id: req.params.id, householdId: household._id });
-    if (!meal) return res.status(404).json({ error: '未找到指定菜品' });
-    res.status(200).json({ ...meal.toObject(), supportsConditionalEdit: true, editVersion: editVersion(meal) });
+    if (!meal) return res.status(404).json({ code: 'MEAL_NOT_FOUND', error: '未找到指定菜品' });
+    res.status(200).json({ ...presentArchive(meal), supportsConditionalEdit: true, editVersion: editVersion(meal) });
+  } catch (error) { next(error); }
+};
+
+exports.archiveCapabilities = (_req, res) => res.json({ supportsMealArchive: true });
+exports.setArchived = async (req, res, next) => {
+  try {
+    const { household } = await ensureUserHousehold(req.user.uid);
+    if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '无效的菜品ID' });
+    if (typeof req.body?.archived !== 'boolean') return res.status(400).json({ error: '归档状态无效' });
+    const version = parseEditVersion(req.body.expectedEditVersion);
+    if (!version) return res.status(400).json({ error: '菜品版本无效，请重新加载' });
+    const filter = { _id: req.params.id, householdId: household._id, archived: req.body.archived ? { $ne: true } : true, editRevision: version.revision, updatedAt: version.updatedAt === null ? null : new Date(version.updatedAt) };
+    const meal = await Meal.findOneAndUpdate(filter, { archived: req.body.archived }, { new: true, runValidators: true });
+    if (!meal) return res.status(409).json({ code: 'MEAL_ARCHIVE_CONFLICT', error: '菜品已变化或不属于当前家庭，请刷新核对' });
+    res.json(presentArchive(meal));
   } catch (error) { next(error); }
 };
 

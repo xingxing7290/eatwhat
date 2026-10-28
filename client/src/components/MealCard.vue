@@ -27,6 +27,10 @@ const props = defineProps({
   shareUncertain: {
     type: Boolean,
     default: false
+  },
+  archiveDisabled: {
+    type: Boolean,
+    default: false
   }
 });
 
@@ -173,7 +177,8 @@ const imageUrl = computed(() => {
             type="danger"
             size="small"
             circle
-            :aria-label="`删除${meal.name}`"
+            :aria-label="`移入回收站：${meal.name}`"
+            :disabled="archiveDisabled"
             @click.stop="emit('delete', meal)"
             class="mobile-delete-btn"
           >
@@ -229,7 +234,8 @@ const imageUrl = computed(() => {
               type="danger"
               size="small"
               circle
-              :aria-label="`删除${meal.name}`"
+              :aria-label="`移入回收站：${meal.name}`"
+              :disabled="archiveDisabled"
               @click.stop="emit('delete', meal)"
             >
               <el-icon><Delete /></el-icon>

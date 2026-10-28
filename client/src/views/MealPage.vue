@@ -27,6 +27,25 @@ const categoryLoadFailed = ref(false);
 const displayedMeals = ref([]);
 const totalMeals = ref(0);
 let fetchSequence = 0;
+const archiveDialog = ref(false);
+const archiveSupported = ref(false);
+const archiveLoading = ref(false);
+const archiveError = ref('');
+const archiveRows = ref([]);
+const archiveTotal = ref(0);
+const archivePage = ref(1);
+const archiveSearch = ref('');
+const archiveLimit = 24;
+const archiveActionId = ref('');
+const archiveProblem = ref(null);
+const archiveChecking = ref(false);
+let archiveSequence = 0;
+let archiveTimer = null;
+const archiveBusy = computed(() => !!archiveActionId.value || archiveChecking.value);
+const archiveLastPage = computed(() => Math.max(1, Math.ceil(archiveTotal.value / archiveLimit)));
+const canArchive = meal => meal?.supportsConditionalArchive === true && meal.archiveVersion &&
+  (meal.archiveVersion.revision === null || (typeof meal.archiveVersion.revision === 'string' && !!meal.archiveVersion.revision && meal.archiveVersion.revision.length <= 128)) &&
+  (meal.archiveVersion.updatedAt === null || (typeof meal.archiveVersion.updatedAt === 'string' && Number.isFinite(Date.parse(meal.archiveVersion.updatedAt))));
 
 // 状态 - 显示方式
 const currentView = ref('grid'); // 'grid', 'list', 'table'
@@ -226,7 +245,7 @@ const wishStorageKey = (() => {
     return identity ? `eatwhat-pending-meal-wishes:${identity}:${household}` : '';
   } catch (_) { return ''; }
 })();
-useDraftGuard({ dirty: computed(() => false), busy: computed(() => false), uncertain: computed(() => pendingWishes.value.length > 0 && !pendingStorageAvailable.value), label: '菜品添加' });
+useDraftGuard({ dirty: computed(() => false), busy: archiveBusy, uncertain: computed(() => !!archiveProblem.value || (pendingWishes.value.length > 0 && !pendingStorageAvailable.value)), label: '菜品操作' });
 const persistPendingWishes = () => {
   try {
     if (!wishStorageKey) throw new Error('用户标识不可用');
@@ -324,30 +343,102 @@ const handleImageIssue = async (meal) => {
   }
 };
 
-// 删除菜品
+// 归档而不删除，保留排餐、回忆和图片引用。
 const handleDeleteMeal = async (meal) => {
+  if (archiveBusy.value || archiveProblem.value || loading.value) return;
+  if (!canArchive(meal) || meal.archived === true) return ElMessage.warning('服务器未提供安全归档能力，请稍后重试');
+  const id = String(meal._id || meal.id || '');
+  if (!id) return;
+  archiveActionId.value = id;
   try {
     await ElMessageBox.confirm(
-      `确定要删除菜品"${meal.name}"吗？`,
-      '确认删除',
+      `将「${meal.name}」移入回收站？它会从菜谱和新推荐中隐藏，但历史排餐、回忆和图片会保留，可随时恢复。`,
+      '移入回收站',
       {
-        confirmButtonText: '确定',
+        confirmButtonText: '确认移入',
         cancelButtonText: '取消',
         type: 'warning',
       }
     );
-
-    const mealId = meal._id || meal.id;
-    await mealStore.deleteMeal(mealId);
-    ElMessage.success('删除成功');
-
-    // 重新获取菜品列表
+    const result = await api.meal.setArchived(id, true, meal.archiveVersion);
+    if (String(result?._id || result?.id || '') !== id || result?.archived !== true || !canArchive(result)) throw new Error('归档响应不完整');
+    ElMessage.success('已移入回收站，可随时恢复');
     await fetchMeals();
+    await Promise.allSettled([loadCategories(), mealStore.fetchMealTags()]);
   } catch (error) {
-    if (error !== 'cancel') {
-      ElMessage.error('删除失败');
+    if (error !== 'cancel' && error !== 'close') archiveProblem.value = { id, name: meal.name, target: true, conflict: error?.code === 'MEAL_ARCHIVE_CONFLICT', checked: false, state: null, error: '' };
+  } finally { archiveActionId.value = ''; }
+};
+
+const loadArchived = async () => {
+  if (!archiveDialog.value || !archiveSupported.value) return;
+  const sequence = ++archiveSequence;
+  const requestedPage = archivePage.value;
+  archiveLoading.value = true; archiveError.value = '';
+  try {
+    const params = { archived: 'true', page: requestedPage, limit: archiveLimit };
+    if (archiveSearch.value.trim()) params.search = archiveSearch.value.trim();
+    const result = await api.meal.getAllMeals(params);
+    if (sequence !== archiveSequence || !archiveDialog.value) return;
+    if (!Array.isArray(result.data) || !Number.isSafeInteger(result.total) || result.total < 0 || result.page !== requestedPage || result.limit !== archiveLimit || result.data.some(row => !row || !canArchive(row) || row.archived !== true || !(row._id || row.id) || typeof row.name !== 'string')) throw new Error('回收站数据不完整');
+    const last = Math.max(1, Math.ceil(result.total / archiveLimit));
+    if (requestedPage > last) { archivePage.value = last; return loadArchived(); }
+    if (result.data.length !== Math.min(archiveLimit, Math.max(0, result.total - (requestedPage - 1) * archiveLimit))) throw new Error('回收站分页数据不完整');
+    archiveRows.value = result.data; archiveTotal.value = result.total;
+  } catch (e) { if (sequence === archiveSequence && archiveDialog.value) { archiveRows.value = []; archiveTotal.value = 0; archiveError.value = e?.error || e?.message || '回收站加载失败'; } }
+  finally { if (sequence === archiveSequence) archiveLoading.value = false; }
+};
+const openArchive = async () => {
+  if (archiveBusy.value || archiveProblem.value) return;
+  archiveDialog.value = true; archiveSupported.value = false; archiveLoading.value = true; archiveError.value = ''; archiveRows.value = []; archiveTotal.value = 0; archivePage.value = 1; archiveSearch.value = '';
+  const sequence = ++archiveSequence;
+  try {
+    const capability = await api.meal.archiveCapabilities();
+    if (sequence !== archiveSequence || !archiveDialog.value) return;
+    if (capability?.supportsMealArchive !== true) throw new Error('服务器未提供安全回收站能力');
+    archiveSupported.value = true;
+    await loadArchived();
+  } catch (e) { if (sequence === archiveSequence && archiveDialog.value) archiveError.value = e?.message || '无法确认服务器是否支持安全回收站，请检查服务或稍后重试'; }
+  finally { if (sequence === archiveSequence) archiveLoading.value = false; }
+};
+const restoreMeal = async meal => {
+  if (archiveBusy.value || archiveProblem.value || archiveLoading.value || !canArchive(meal) || meal.archived !== true) return;
+  const id = String(meal._id || meal.id || ''); if (!id) return;
+  archiveActionId.value = id;
+  try {
+    const result = await api.meal.setArchived(id, false, meal.archiveVersion);
+    if (String(result?._id || result?.id || '') !== id || result?.archived !== false || !canArchive(result)) throw new Error('恢复响应不完整');
+    ElMessage.success('菜品已恢复');
+    await Promise.all([loadArchived(), fetchMeals()]);
+    await Promise.allSettled([loadCategories(), mealStore.fetchMealTags()]);
+  } catch (error) {
+    archiveDialog.value = false;
+    archiveProblem.value = { id, name: meal.name, target: false, conflict: error?.code === 'MEAL_ARCHIVE_CONFLICT', checked: false, state: null, error: '' };
+  } finally { archiveActionId.value = ''; }
+};
+const checkArchiveProblem = async () => {
+  const issue = archiveProblem.value; if (!issue || archiveChecking.value) return;
+  archiveChecking.value = true; issue.checked = false; issue.error = '';
+  try {
+    const item = await api.meal.getMealById(issue.id);
+    if (archiveProblem.value !== issue) return;
+    if (String(item?._id || item?.id || '') !== issue.id || !canArchive(item) || typeof item.archived !== 'boolean') throw new Error('菜品状态或版本不完整');
+    issue.state = item.archived; issue.checked = true;
+  } catch (e) {
+    if (archiveProblem.value === issue) {
+      if (e?.code === 'MEAL_NOT_FOUND') { issue.state = 'missing'; issue.checked = true; }
+      else issue.error = e?.error || e?.message || '无法读取最新菜品状态';
     }
   }
+  finally { archiveChecking.value = false; }
+};
+const finishArchiveReview = async () => {
+  const issue = archiveProblem.value; if (!issue?.checked || archiveChecking.value) return;
+  try { await ElMessageBox.confirm('先前请求仍可能稍后完成。确认已核对当前状态并继续？', '结束核对？', { type: 'warning', confirmButtonText: '已核对，继续', cancelButtonText: '继续核对' }); } catch (_) { return; }
+  if (archiveProblem.value !== issue) return;
+  archiveProblem.value = null;
+  await fetchMeals();
+  await Promise.allSettled([loadCategories(), mealStore.fetchMealTags()]);
 };
 
 // 添加菜品
@@ -438,6 +529,17 @@ watch(currentView, () => {
   currentPage.value = 1;
   scheduleFetch(0);
 });
+watch(archiveSearch, () => {
+  if (!archiveDialog.value || !archiveSupported.value) return;
+  archivePage.value = 1; archiveSequence++; archiveLoading.value = true;
+  if (archiveTimer) clearTimeout(archiveTimer);
+  archiveTimer = setTimeout(loadArchived, 180);
+});
+watch(archiveDialog, visible => {
+  if (visible) return;
+  archiveSequence++; archiveLoading.value = false;
+  if (archiveTimer) clearTimeout(archiveTimer);
+});
 
 const loadCategories = async () => {
   categoryLoadFailed.value = false;
@@ -459,7 +561,9 @@ onMounted(async () => {
 });
 onBeforeUnmount(() => {
   fetchSequence++;
+  archiveSequence++;
   if (fetchTimer) clearTimeout(fetchTimer);
+  if (archiveTimer) clearTimeout(archiveTimer);
   if (newMealImagePreviewUrl.value) URL.revokeObjectURL(newMealImagePreviewUrl.value);
 });
 </script>
@@ -474,6 +578,7 @@ onBeforeUnmount(() => {
           <p class="page-subtitle">两个人的小小菜谱手账，收藏每一顿日常的好味道</p>
         </div>
         <div class="header-actions">
+          <el-button :disabled="archiveBusy || !!archiveProblem" @click="openArchive">菜品回收站</el-button>
           <el-button
             type="primary"
             @click="router.push({ name: 'MealEditor' })"
@@ -485,6 +590,11 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <el-alert v-if="archiveProblem" type="warning" :closable="false" show-icon class="wish-recovery" :title="archiveProblem.conflict ? `「${archiveProblem.name}」已变化，本次操作未执行。` : `「${archiveProblem.name}」的操作结果未确认。`">
+      <p>请先核对当前菜品状态；先前请求仍可能稍后完成。</p><el-button link type="primary" :loading="archiveChecking" @click="checkArchiveProblem">读取最新状态</el-button><p v-if="archiveProblem.error">{{ archiveProblem.error }}</p><template v-if="archiveProblem.checked"><p>当前状态：{{ archiveProblem.state === 'missing' ? '未找到菜品，可能已被删除或不属于当前家庭' : archiveProblem.state ? '已在回收站' : '仍在菜谱中' }}。</p><el-button link type="primary" @click="finishArchiveReview">已核对，继续</el-button></template>
+    </el-alert>
+    <el-alert v-if="!loading && !loadError && displayedMeals.some(meal => !canArchive(meal))" type="info" :closable="false" show-icon title="服务器未提供安全回收站能力，暂不能移除部分菜品。" />
 
     <div class="couple-presence-card">
       <div class="presence-avatars">
@@ -656,6 +766,7 @@ onBeforeUnmount(() => {
                     v-for="meal in sub.meals"
                     :key="meal._id || meal.id"
                     :meal="meal"
+                    :archive-disabled="archiveBusy || !!archiveProblem || !canArchive(meal)"
                     :share-pending="!!sharingMealIds[String(meal._id || meal.id)]"
                     :share-uncertain="hasPendingWish(meal._id || meal.id)"
                     @view="handleViewMeal"
@@ -677,6 +788,7 @@ onBeforeUnmount(() => {
           v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
           :meal="meal"
+          :archive-disabled="archiveBusy || !!archiveProblem || !canArchive(meal)"
           :share-pending="!!sharingMealIds[String(meal._id || meal.id)]"
           :share-uncertain="hasPendingWish(meal._id || meal.id)"
           @view="handleViewMeal"
@@ -745,7 +857,8 @@ onBeforeUnmount(() => {
                   type="danger"
                   size="small"
                   circle
-                  :aria-label="`删除${meal.name}`"
+                  :aria-label="`移入回收站：${meal.name}`"
+                  :disabled="archiveBusy || !!archiveProblem || !canArchive(meal)"
                   @click.stop="handleDeleteMeal(meal)"
                 >
                   <el-icon><Delete /></el-icon>
@@ -869,7 +982,8 @@ onBeforeUnmount(() => {
                   type="danger"
                   size="small"
                   circle
-                  :aria-label="`删除${row.name}`"
+                  :aria-label="`移入回收站：${row.name}`"
+                  :disabled="archiveBusy || !!archiveProblem || !canArchive(row)"
                   @click="handleDeleteMeal(row)"
                 >
                   <el-icon><Delete /></el-icon>
@@ -1009,10 +1123,28 @@ onBeforeUnmount(() => {
         </div>
       </template>
     </el-dialog>
+    <el-dialog v-model="archiveDialog" title="菜品回收站" width="min(640px, 92vw)" :close-on-click-modal="!archiveBusy" :close-on-press-escape="!archiveBusy" :show-close="!archiveBusy">
+      <p class="archive-intro">回收站中的菜品不会出现在菜谱或新推荐里，历史排餐、回忆和图片仍会保留。</p>
+      <el-input v-if="archiveSupported" v-model="archiveSearch" clearable aria-label="搜索回收站菜品" placeholder="搜索菜名或食材" />
+      <el-alert v-if="archiveError" type="error" :closable="false" show-icon :title="`回收站暂不可用：${archiveError}`"><el-button link type="primary" @click="archiveSupported ? loadArchived() : openArchive()">重试</el-button></el-alert>
+      <p v-else-if="archiveLoading" class="archive-intro">正在加载回收站…</p>
+      <el-empty v-else-if="archiveSupported && !archiveRows.length" description="回收站里没有符合条件的菜品" />
+      <div v-else class="archive-list"><div v-for="meal in archiveRows" :key="meal._id || meal.id" class="archive-row"><img :src="getMealImage(meal)" :alt="meal.name" @error="handleImageError" /><div><strong>{{ meal.name }}</strong><p>{{ meal.category || '未分类' }}</p></div><el-button type="primary" plain :disabled="archiveBusy || archiveLoading" :aria-label="`恢复${meal.name}`" @click="restoreMeal(meal)">恢复</el-button></div></div>
+      <div v-if="archiveSupported && archiveTotal > archiveLimit && !archiveError" class="archive-pagination"><el-button :disabled="archiveLoading || archiveBusy || archivePage <= 1" @click="archivePage--; loadArchived()">上一页</el-button><span>第 {{ archivePage }} / {{ archiveLastPage }} 页</span><el-button :disabled="archiveLoading || archiveBusy || archivePage >= archiveLastPage" @click="archivePage++; loadArchived()">下一页</el-button></div>
+      <template #footer><el-button :disabled="archiveBusy" @click="archiveDialog = false">关闭</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.archive-intro { color: var(--text-secondary); line-height: 1.6; }
+.archive-list { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; }
+.archive-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); }
+.archive-row img { width: 56px; height: 48px; object-fit: cover; border-radius: 10px; }
+.archive-row strong { overflow-wrap: anywhere; }
+.archive-row p { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.archive-pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px; color: var(--text-secondary); }
+.archive-pagination .el-button + .el-button, .header-actions .el-button + .el-button { margin-left: 0; }
 .mobile-pagination { display:none; align-items:center; justify-content:center; gap:12px; margin-top:18px; color:var(--text-secondary); }
 @media (max-width:768px) { .mobile-pagination { display:flex; } }
 .meal-page {

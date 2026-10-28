@@ -74,7 +74,7 @@ function scoreMeal(meal, wishlistIds, recentIds) {
 }
 async function buildGeneratedPlan(householdId) {
   const [meals, wishlist, recentMemories] = await Promise.all([
-    Meal.find({ householdId }).sort({ favorite: -1, rating: -1, createdAt: -1 }).limit(300),
+    Meal.find({ householdId, archived: { $ne: true } }).sort({ favorite: -1, rating: -1, createdAt: -1 }).limit(300),
     WishlistItem.find({ householdId, status: 'open', mealId: { $ne: null } }).sort({ priority: -1, createdAt: -1 }).limit(80),
     MealMemory.find({ householdId }).sort({ date: -1, createdAt: -1 }).limit(20)
   ]);

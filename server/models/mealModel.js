@@ -37,6 +37,7 @@ const mealSchema = new mongoose.Schema({
   defaultKey: { type: String, trim: true, default: '', index: true },
   favorite: { type: Boolean, default: false },
   rating: { type: Number, default: 0, min: 0, max: 5 },
+  archived: { type: Boolean, default: false },
   editRevision: { type: String, default: null }
 }, { timestamps: true });
 

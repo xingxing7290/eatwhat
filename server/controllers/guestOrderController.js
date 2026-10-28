@@ -256,7 +256,7 @@ exports.publicDetail = async (req, res, next) => {
     const statusOnly = req.query.statusOnly === '1';
     let meals = [];
     if (!statusOnly && !['cancelled', 'expired'].includes(status)) {
-      meals = await Meal.find({ householdId: session.householdId })
+      meals = await Meal.find({ householdId: session.householdId, archived: { $ne: true } })
         .select('_id defaultKey name category subcategory imageUrl description tags servingSize prepTime cookTime taste spiceLevel isDefault')
         .sort({ isDefault: -1, category: 1, name: 1 })
         .limit(600)

@@ -959,7 +959,7 @@ async function main () {
   await page.locator('.mobile-pagination').getByText('第 2 / 2 页').waitFor()
   assert.equal(await page.locator('.meals-container').getByText('麻婆豆腐').count() > 0, true)
   assert.equal(await page.locator('.meal-card-wrapper').getByRole('button', { name: '编辑麻婆豆腐' }).isVisible(), true)
-  assert.equal(await page.locator('.meal-card-wrapper').getByRole('button', { name: '删除麻婆豆腐' }).isVisible(), true)
+  assert.equal(await page.locator('.meal-card-wrapper').getByRole('button', { name: '移入回收站：麻婆豆腐' }).isVisible(), true)
   await page.waitForTimeout(500)
   await page.screenshot({ path: path.join(os.tmpdir(), 'eatwhat-web-meals-pagination-mobile.png'), fullPage: true })
   await page.locator('.mobile-pagination').getByRole('button', { name: '上一页' }).click()

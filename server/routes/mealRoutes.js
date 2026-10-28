@@ -15,9 +15,11 @@ router.get('/', mealController.getAllMeals);
 router.get('/categories', mealController.getMealCategories);
 router.get('/tags', mealController.getMealTags);
 router.get('/stats', mealController.getMealStats);
+router.get('/archive-capabilities', mealController.archiveCapabilities);
 router.get('/:id', mealController.getMealById);
 router.post('/', mealUpload, mealController.validateMeal, mealController.createMeal);
 router.put('/:id', mealUpload, mealController.validateMeal, mealController.updateMeal);
+router.put('/:id/archive', mealController.setArchived);
 router.delete('/:id', mealController.deleteMeal);
 
 module.exports = router;
