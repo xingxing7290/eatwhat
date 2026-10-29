@@ -17,7 +17,7 @@ async function main () {
     const items = Array.from({ length: 41 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), householdId: home, title: i === 40 ? '延迟旧宴请' : `宴请${String(i).padStart(3, '0')}`, status: i % 2 ? 'completed' : 'open', storedStatus: i % 2 ? 'completed' : 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: `https://example.test/guest-order/token${i}`, supportsConditionalSession: true, editVersion: { revision: `v${i}`, updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: i, totalQuantity: i }))
     items[38].expiresAt = new Date(initialTime.getTime() + 5000).toISOString()
     let slowStarted; const slowRequest = new Promise(resolve => { slowStarted = resolve })
-    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false; let serverExpired = false
+    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false; let invalidStatus = ''; let serverExpired = false
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
@@ -31,6 +31,7 @@ async function main () {
         if (malformed) pagination.totalPages = 999
         const sessions = truncated ? [] : filtered.slice((pageNumber - 1) * limit, pageNumber * limit)
         if (invalidCounts && sessions.length) sessions[0] = { ...sessions[0], totalQuantity: undefined }
+        if (invalidStatus && sessions.length) sessions[0] = { ...sessions[0], status: invalidStatus }
         return route.fulfill({ json: { householdId: home, pagination, sessions } })
       }
       const selected = items.find(item => pathname.endsWith(item.id))
@@ -101,7 +102,14 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('宴请列表统计不完整').waitFor()
     assert.equal(await page.locator('.session-card').count(), 0, 'missing counts must not appear as zero')
-    invalidCounts = false; failCapabilities = true
+    invalidCounts = false
+    for (const status of ['constructor', '__proto__', 'unknown']) {
+      invalidStatus = status
+      await page.getByRole('button', { name: '重新加载' }).click()
+      await page.getByText('宴请数据不完整').waitFor()
+      assert.equal(await page.locator('.session-card').count(), 0, `invalid status ${status} must not render as a valid session`)
+    }
+    invalidStatus = ''; failCapabilities = true
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('无法确认宴请列表范围，请重试', { exact: false }).waitFor()
     assert.equal(await page.locator('.session-card').count(), 0, 'unconfirmed capability must not misrepresent a partial page as complete')

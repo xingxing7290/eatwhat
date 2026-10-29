@@ -64,7 +64,7 @@ function clearPending() {
   pending.value = null;
 }
 function acceptSession(item, withOrders = false, listItem = false) {
-  if (!item || typeof item.id !== 'string' || !item.id || typeof item.title !== 'string' || !statusLabels[item.status]) throw new Error('宴请数据不完整');
+  if (!item || typeof item.id !== 'string' || !item.id || typeof item.title !== 'string' || typeof item.status !== 'string' || !Object.prototype.hasOwnProperty.call(statusLabels, item.status)) throw new Error('宴请数据不完整');
   if (capabilities.value?.householdId && item.householdId !== capabilities.value.householdId) throw new Error('家庭已变化，请重新加载宴请');
   const count = value => Number.isSafeInteger(value) && value >= 0;
   const quantity = value => Number.isSafeInteger(value) && value > 0;
