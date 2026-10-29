@@ -32,6 +32,8 @@ async function main () {
       if (path === '/api/meal-image-issues/issue-1') { issueCalls++; issues = []; return issueSuccess ? route.fulfill({ json: { _id: 'issue-1', status: 'fixed' } }) : route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
       return route.fulfill({ json: {} })
     })
+    const imageRequests = []
+    await page.route('**/uploads/**', route => { imageRequests.push(new URL(route.request().url()).pathname); return route.fulfill({ status: 404, body: 'missing' }) })
     await page.goto(`${base}/settings`)
     await page.getByText('默认菜品状态加载失败，请重试后再操作。').waitFor()
     await page.getByText('图片反馈加载失败，请重试。').waitFor()
@@ -79,10 +81,27 @@ async function main () {
     await page.getByRole('button', { name: '确认继续' }).click()
     await page.getByText('菜品管理操作结果未确认').waitFor({ state: 'hidden' })
     assert.equal(restoreCalls, 1)
-    issues = [{ _id: 'issue-1', mealId: { name: '测试菜' }, note: '图片不符' }]
+    issues = [
+      { _id: 'issue-1', mealId: { name: '测试菜', imageUrl: '/uploads/missing.jpg' }, note: '图片不符' + '长内容'.repeat(100) },
+      { _id: 'issue-deleted', mealId: null, note: '已删除菜品' },
+      { _id: 'issue-invalid', mealId: { name: '地址异常', imageUrl: 'javascript:alert(1)' } }
+    ]
     await page.locator('.settings-card').filter({ hasText: '用户设置' }).getByRole('button', { name: '刷新', exact: true }).click()
-    await page.getByText('图片不符').waitFor()
-    await page.getByRole('button', { name: '标记已修正' }).click()
+    await page.getByText('已删除菜品').waitFor()
+    await page.locator('.issue-item').filter({ hasText: '测试菜' }).getByText('图片不可用').waitFor()
+    assert.equal(await page.getByText('未知菜品').isVisible(), true)
+    assert.equal(await page.getByText('无图片', { exact: true }).isVisible(), true)
+    assert.ok(imageRequests.includes('/uploads/missing.jpg') && imageRequests.includes('/api/uploads/missing.jpg'))
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      for (const selector of ['.issue-placeholder', '.issue-main strong', '.issue-main span']) {
+        const result = await contrast(page, selector)
+        assert.ok(result.ratio >= 4.5, `${width} ${selector}: ${result.ratio}`)
+      }
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.locator('.issue-item').filter({ hasText: '测试菜' }).getByRole('button', { name: '标记已修正' }).click()
     await page.getByText('图片反馈操作结果未确认').waitFor()
     assert.equal(issueCalls, 1)
     await page.getByRole('button', { name: '重新核对反馈' }).click()

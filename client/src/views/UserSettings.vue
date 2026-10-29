@@ -93,8 +93,8 @@
       <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
       <div v-else class="issue-list">
         <div v-for="issue in imageIssues" :key="issue._id" class="issue-item">
-          <img v-if="issue.mealId?.imageUrl" :src="issue.mealId.imageUrl" :alt="`${issue.mealId?.name || '菜品'}的图片`" />
-          <div v-else class="issue-placeholder">无图片</div>
+          <img v-if="issueImageSrc(issue) && !failedIssueImages.has(issueImageKey(issue))" :key="issueImageKey(issue)" :src="issueImageSrc(issue)" :alt="`${issue.mealId?.name || '菜品'}的图片`" @error="onIssueImageError($event, issue)" />
+          <div v-else class="issue-placeholder">{{ issue.mealId?.imageUrl ? '图片不可用' : '无图片' }}</div>
           <div class="issue-main">
             <strong>{{ issue.mealId?.name || '未知菜品' }}</strong>
             <span>{{ issue.note || '图片与菜名不匹配' }}</span>
@@ -136,7 +136,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, resolveRecipeImage, retryLocalUpload } from '@/utils/uploadedImage.mjs';
 import { currentSessionScope, replaceSessionUser, sessionIsCurrent } from '@/services/sessionScope';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -178,6 +178,7 @@ const avatarFile = ref(null);
 const avatarUploading = ref(false);
 const defaultStatus = ref(null);
 const imageIssues = ref(null);
+const failedIssueImages = ref(new Set());
 const defaultLoading = ref(false);
 const governanceLoading = ref(false);
 const defaultError = ref(false);
@@ -247,7 +248,7 @@ const loadGovernance = async () => {
     defaultError.value = status.status !== 'fulfilled' || !validDefaultStatus(status.value);
     issuesError.value = issues.status !== 'fulfilled' || !validIssues(issues.value);
     if (!defaultError.value) defaultStatus.value = status.value;
-    if (!issuesError.value) imageIssues.value = issues.value;
+    if (!issuesError.value) { imageIssues.value = issues.value; failedIssueImages.value = new Set(); }
     if (defaultUncertain.value) defaultReviewReady.value = !defaultError.value;
     if (issueUncertain.value) issueReviewReady.value = !issuesError.value;
     return true;
@@ -384,6 +385,12 @@ const selectTheme = (theme) => {
   ElMessage.success('\u4e3b\u9898\u5df2\u5207\u6362');
 };
 const chooseFile = () => fileInputRef.value?.click();
+const issueImageSrc = issue => resolveRecipeImage(issue?.mealId?.imageUrl, '');
+const issueImageKey = issue => `${issue._id}:${issueImageSrc(issue)}`;
+const onIssueImageError = (event, issue) => {
+  if (retryLocalUpload(event)) return;
+  failedIssueImages.value = new Set([...failedIssueImages.value, issueImageKey(issue)]);
+};
 const onFileChange = (e) => {
   const file = e.target?.files?.[0];
   clearAvatarFile();
@@ -483,10 +490,10 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .governance-metric span, .issue-main span { color: var(--text-secondary); font-size: 13px; }
 .governance-metric strong { font-size: 24px; color: var(--primary-color); }
 .issue-list { display: flex; flex-direction: column; gap: 10px; }
-.issue-item { display: grid; grid-template-columns: 64px 1fr auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
+.issue-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
 .issue-placeholder { width: 64px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: var(--bg-primary); color: var(--text-secondary); font-size: 12px; }
-.issue-main { display: flex; flex-direction: column; gap: 4px; }
+.issue-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .theme-settings-card { overflow: hidden; }
 .theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .theme-card {
@@ -513,5 +520,5 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .theme-desc { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .theme-swatches { display: flex; gap: 7px; margin-top: auto; }
 .theme-swatch { width: 24px; height: 24px; border-radius: 999px; border: 2px solid rgba(255, 255, 255, 0.78); box-shadow: 0 4px 10px rgba(74, 62, 61, 0.14); }
-@media (max-width: 640px) { .settings-intro { align-items: flex-start; flex-direction: column; } .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .issue-item { grid-template-columns: 1fr; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .settings-intro { align-items: flex-start; flex-direction: column; } .avatar-row, .avatar-actions, .invite-row { align-items: stretch; flex-direction: column; } .issue-item { grid-template-columns: 64px minmax(0, 1fr); } .issue-item .el-button { grid-column: span 2; min-height: 44px; margin-left: 0; } .invite-row .el-input { min-width: 0; width: 100%; } .theme-grid { grid-template-columns: 1fr; } }
 </style>
