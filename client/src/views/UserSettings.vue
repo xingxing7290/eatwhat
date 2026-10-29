@@ -194,7 +194,7 @@ const themeOptions = [
 const selectedTheme = ref(localStorage.getItem('colorTheme') || 'cream');
 const currentThemeLabel = computed(() => themeOptions.find(theme => theme.value === selectedTheme.value)?.label || themeOptions[0].label);
 const syncThemeFromStorage = event => {
-  if (event.storageArea === localStorage && (event.key === 'colorTheme' || event.key === null)) selectedTheme.value = event.key === null ? 'cream' : event.newValue || 'cream';
+  if (event.storageArea === localStorage && (event.key === 'colorTheme' || event.key === null)) selectedTheme.value = localStorage.getItem('colorTheme') || 'cream';
 };
 
 const user = ref({ id: '', username: '', displayName: '', avatarUrl: '' });

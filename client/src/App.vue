@@ -84,8 +84,9 @@ const handleColorThemeChange = (event) => {
 };
 const handleThemeStorage = event => {
   if (event.storageArea !== localStorage) return;
-  if (event.key === 'colorTheme' || event.key === null) selectedColorTheme.value = event.key === null ? 'cream' : event.newValue || 'cream';
-  if (event.key === 'darkMode' || event.key === null) isDarkMode.value = event.key === null ? false : event.newValue === 'true';
+  // A queued event can be older than a change made in this tab; read the current shared value.
+  if (event.key === 'colorTheme' || event.key === null) selectedColorTheme.value = localStorage.getItem('colorTheme') || 'cream';
+  if (event.key === 'darkMode' || event.key === null) isDarkMode.value = localStorage.getItem('darkMode') === 'true';
 };
 
 const toggleDarkMode = () => {
