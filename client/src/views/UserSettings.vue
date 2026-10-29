@@ -83,6 +83,10 @@
 
     <el-card ref="issuesSection" class="settings-card" role="region" aria-label="待修正图片" tabindex="-1">
       <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
+      <div v-if="profileReady && !profileError && !joinUncertain && !issueUncertain && !issuesError && imageIssues" class="issue-refresh">
+        <p>在新标签页修改菜谱后，可刷新反馈并核对图片；标记状态不会自动修改菜谱。</p>
+        <el-button :loading="governanceLoading" :disabled="!!resolvingIssue || defaultLoading || joining || profileLoading" @click="loadGovernance">刷新图片反馈</el-button>
+      </div>
       <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
       <el-alert v-else-if="issueUncertain" class="name-alert" title="图片反馈操作结果未确认" type="warning" :closable="false" show-icon>
         <p>请求可能仍在处理。重新加载只反映当时的反馈状态，请核对后再决定是否继续操作。</p>
@@ -105,8 +109,8 @@
             <router-link v-if="issueMealId(issue)" class="issue-recipe-link" :to="{ name: 'MealDetail', params: { id: issueMealId(issue) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页核对菜谱：${issue.mealId.name}`">核对菜谱 ↗</router-link>
             <span v-else>菜谱不可用，请核对后处理反馈。</span>
           </div>
-          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining || joinUncertain" :aria-label="`标记已修正：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'fixed', $event)">标记已修正</el-button>
-          <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain" :aria-label="`忽略图片反馈：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'ignored', $event)">忽略</el-button>
+          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining || joinUncertain || governanceLoading" :aria-label="`标记已修正：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'fixed', $event)">标记已修正</el-button>
+          <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain || governanceLoading" :aria-label="`忽略图片反馈：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'ignored', $event)">忽略</el-button>
         </div>
       </div>
     </el-card>
@@ -551,6 +555,9 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .governance-metric span, .issue-main span { color: var(--text-secondary); font-size: 13px; }
 .governance-metric strong { font-size: 24px; color: var(--primary-color); }
 .issue-list { display: flex; flex-direction: column; gap: 10px; }
+.issue-refresh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 12px; }
+.issue-refresh p { flex: 1 1 240px; margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.issue-refresh .el-button { min-height: 44px; margin: 0; }
 .issue-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
 .issue-placeholder { width: 64px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: var(--bg-primary); color: var(--text-secondary); font-size: 12px; }

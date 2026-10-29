@@ -14,6 +14,7 @@ async function main () {
     })
     let invalid = true
     let profileFailed = false
+    let profileReads = 0
     let missing = 1
     let issues = []
     let importCalls = 0
@@ -25,7 +26,7 @@ async function main () {
     await page.context().route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'home-a' } })
-      if (path === '/api/auth/me') return profileFailed ? route.fulfill({ status: 503, json: { error: '资料不可用' } }) : route.fulfill({ json: profile })
+      if (path === '/api/auth/me') { profileReads++; return profileFailed ? route.fulfill({ status: 503, json: { error: '资料不可用' } }) : route.fulfill({ json: profile }) }
       if (path === '/api/meals/0123456789abcdef01234567') return route.fulfill({ json: { _id: '0123456789abcdef01234567', name: '测试菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [] } })
       if (path === '/api/default-meals/status') return route.fulfill({ json: invalid ? { total: 3, imported: 2, missing: 2 } : { total: 3, imported: 3 - missing, missing } })
       if (path === '/api/meal-image-issues') return route.fulfill({ json: invalid ? { items: [] } : issues })
@@ -101,11 +102,20 @@ async function main () {
     const popupPromise = page.waitForEvent('popup'); await recipeLink.click(); const popup = await popupPromise
     await popup.getByRole('heading', { name: '测试菜' }).waitFor(); await popup.close()
     assert.equal(new URL(page.url()).pathname, '/settings', 'opening the recipe keeps settings available')
+    const nicknameDraft = page.getByPlaceholder('请输入昵称'); await nicknameDraft.fill('尚未保存的昵称')
+    const readsBeforeRefresh = profileReads
+    issues[0] = { ...issues[0], note: '刷新后可核对的反馈' }
+    await page.getByRole('button', { name: '刷新图片反馈' }).click()
+    await page.getByText('刷新后可核对的反馈').waitFor()
+    assert.equal(await nicknameDraft.inputValue(), '尚未保存的昵称', 'refreshing feedback preserves unsaved profile edits')
+    assert.equal(profileReads, readsBeforeRefresh, 'feedback refresh must not reload or overwrite the profile')
+    assert.equal(issueCalls, 0, 'refreshing feedback must not change issue status')
+    await nicknameDraft.fill('')
     assert.ok(imageRequests.includes('/uploads/missing.jpg') && imageRequests.includes('/api/uploads/missing.jpg'))
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 844 })
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-      for (const selector of ['.issue-placeholder', '.issue-main strong', '.issue-main span', '.issue-recipe-link']) {
+      for (const selector of ['.issue-placeholder', '.issue-main strong', '.issue-main span', '.issue-recipe-link', '.issue-refresh p']) {
         const result = await contrast(page, selector)
         assert.ok(result.ratio >= 4.5, `${width} ${selector}: ${result.ratio}`)
       }
