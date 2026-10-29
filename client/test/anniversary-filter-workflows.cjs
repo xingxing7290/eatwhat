@@ -26,6 +26,17 @@ async function main () {
     })
     await page.goto(`${base}/anniversaries`)
     await page.getByText('显示 4 / 4 份菜单').waitFor()
+    await page.getByText('菜单不会自动写入日历', { exact: false }).waitFor()
+    const birthday = page.locator('.menu-card').filter({ hasText: '生日晚餐' })
+    const calendarLink = birthday.getByRole('link', { name: '查看生日晚餐的2026-11-15日历安排' })
+    assert.equal(await calendarLink.getAttribute('href'), '/calendar?date=2026-11-15')
+    assert.ok((await calendarLink.boundingBox()).height >= 44)
+    assert.equal(await page.locator('.menu-card').filter({ hasText: '日期旧记录' }).getByRole('link', { name: /日历安排/ }).count(), 0)
+    await birthday.getByText('菜单未选菜').first().waitFor()
+    await calendarLink.click()
+    await page.waitForURL('**/calendar?date=2026-11-15')
+    await page.goBack()
+    await page.getByText('显示 4 / 4 份菜单').waitFor()
     const groups = page.locator('.menu-group')
     assert.deepEqual(await groups.locator('.group-heading h2').allTextContents(), ['即将到来', '往日菜单', '日期待核对'])
     assert.deepEqual(await groups.first().locator('.menu-card h2').allTextContents(), ['今日小聚', '生日晚餐'])
@@ -47,6 +58,9 @@ async function main () {
     await editor.getByRole('button', { name: '取消', exact: true }).click()
     await search.fill('去年')
     await page.getByText('当前筛选中未显示这份菜单。').waitFor()
+    await page.getByRole('link', { name: '查看去年晚餐的2025-10-28日历安排' }).click()
+    await page.getByRole('dialog', { name: '放弃未保存的内容？' }).getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(new URL(page.url()).pathname, '/anniversaries', 'navigation must preserve an unfinished menu draft')
     await page.locator('.anniversary-page > .el-alert').getByRole('button', { name: '继续编辑', exact: true }).click()
     assert.equal(await editor.getByPlaceholder('比如：三周年晚餐').inputValue(), '未保存的草稿')
     await editor.getByRole('button', { name: '取消', exact: true }).click()
@@ -77,7 +91,7 @@ async function main () {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.filter-kicker', '.filter-heading h2', '.filter-heading p', '.period-filters button.active', '.group-heading h2', '.day-badge']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`) }
+          for (const selector of ['.filter-kicker', '.filter-heading h2', '.filter-heading p', '.period-filters button.active', '.group-heading h2', '.day-badge', '.menu-calendar-link', '.calendar-explanation']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`) }
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
       }
