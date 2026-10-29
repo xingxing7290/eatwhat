@@ -600,6 +600,11 @@ const handlePageChange = (page) => {
   scheduleFetch(0);
   void syncCatalogUrl();
 };
+const returnToCatalogFirstPage = () => {
+  if (loading.value || currentPage.value <= 1) return;
+  restoreCatalogFocus = true;
+  handlePageChange(1);
+};
 
 let fetchTimer = null;
 const scheduleFetch = (delay = 160) => {
@@ -884,7 +889,7 @@ onBeforeUnmount(() => {
       </aside>
       <section ref="catalogContent" class="catalog-content" aria-label="菜品列表" tabindex="-1">
     <!-- 加载状态 -->
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="fetchMeals">重新加载</el-button></el-alert>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="fetchMeals">重新加载</el-button><el-button v-if="currentPage > 1" link type="primary" @click="returnToCatalogFirstPage">返回筛选结果第一页</el-button></el-alert>
     <div v-else-if="loading" class="loading-container" role="status" aria-live="polite">
       <span>正在加载菜品…</span>
       <el-skeleton :rows="3" animated />

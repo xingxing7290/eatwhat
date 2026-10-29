@@ -109,6 +109,17 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '菜品列表')
     await page.keyboard.press('Tab')
     assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), '重新加载')
+    await page.getByRole('button', { name: '返回筛选结果第一页' }).click()
+    await page.getByRole('button', { name: '查看家常菜01' }).first().waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '菜品列表')
+    await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return !q.has('page') && q.get('q') === '家常菜' && q.get('category') === '家常菜' })
+    mode = 'normal'
+    await page.getByLabel('菜品分页').getByRole('button', { name: '下一页' }).click()
+    await page.getByRole('button', { name: '查看家常菜09' }).first().waitFor()
+    mode = 'page-failure'
+    await page.getByLabel('菜品分页').getByRole('button', { name: '下一页' }).click()
+    await page.getByText('无法加载菜品：分页暂时不可用', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '重新加载' }).focus()
     mode = 'normal'; await page.keyboard.press('Enter')
     await page.getByRole('button', { name: '查看家常菜17' }).first().waitFor()
     await page.getByLabel('菜品分页').getByRole('button', { name: '上一页' }).click()
