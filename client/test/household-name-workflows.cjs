@@ -44,6 +44,15 @@ async function main () {
     await page.getByPlaceholder('给你们的小家取个名字').waitFor()
     await page.getByPlaceholder('给你们的小家取个名字').fill('我的小家名称')
     await page.getByPlaceholder('请输入昵称').fill('先保存的昵称')
+    const jump = page.getByRole('navigation', { name: '设置页面分区' })
+    for (const [button, region] of [['个人资料', '用户设置'], ['主题色', '主题色'], ['默认菜品', '默认菜品管理'], ['图片反馈', '待修正图片'], ['小家与成员', '小家与成员']]) {
+      await jump.getByRole('button', { name: button, exact: true }).focus(); await page.keyboard.press('Enter')
+      await page.waitForFunction(label => document.activeElement?.getAttribute('role') === 'region' && document.activeElement?.getAttribute('aria-label') === label, region)
+      assert.equal(await page.getByRole('region', { name: region }).count(), 1)
+    }
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
+    assert.equal(await page.getByPlaceholder('请输入昵称').inputValue(), '先保存的昵称')
+    assert.equal(writes, 0, 'jumping between sections must not save or discard drafts')
     name = '家人刚修改的名称'; revision = 'rev-other'
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.getByText('保存成功').waitFor()
@@ -69,11 +78,11 @@ async function main () {
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
-      for (const width of [390, 1280]) {
+      for (const width of [320, 390, 1280]) {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.name-alert .el-alert__title', '.name-alert .el-alert__description', '.name-alert .el-button']) {
+          for (const selector of ['.name-alert .el-alert__title', '.name-alert .el-alert__description', '.name-alert .el-button', '.settings-jump button']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${width} ${selector}: ${result.ratio}`)
           }

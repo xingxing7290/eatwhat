@@ -6,7 +6,11 @@
     <el-alert v-if="joinUncertain" title="家庭切换结果未确认" type="warning" :closable="false" show-icon>请先重新核对当前家庭，再决定是否重试；如果家庭已切换，请按提示重新登录。在确认前本页的家庭操作暂不可用。 <el-button link type="primary" :loading="profileLoading" @click="reload">重新核对家庭</el-button></el-alert>
     <el-alert v-if="inviteUncertain" title="邀请码刷新结果未确认" type="warning" :closable="false" show-icon>旧邀请码可能已经失效，请重新核对后再复制或分享。 <el-button link type="primary" :loading="profileLoading" @click="reload">重新核对邀请码</el-button></el-alert>
     <el-alert v-if="invalidInviteLink" title="邀请链接中的邀请码过长，请向家人重新确认。" type="warning" :closable="false" show-icon />
-    <el-card class="settings-card">
+    <nav class="settings-jump" aria-label="设置页面分区">
+      <span>快速前往</span>
+      <button v-for="section in settingsNavigation" :key="section.key" type="button" @click="jumpToSection(section.key)">{{ section.label }}</button>
+    </nav>
+    <el-card ref="profileSection" class="settings-card" role="region" aria-label="用户设置" tabindex="-1">
       <template #header><div class="card-header"><span>用户设置</span></div></template>
       <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="头像">
@@ -25,7 +29,7 @@
       </el-form>
     </el-card>
 
-    <el-card class="settings-card theme-settings-card">
+    <el-card ref="themeSection" class="settings-card theme-settings-card" role="region" aria-label="主题色" tabindex="-1">
       <template #header>
         <div class="card-header">
           <span>主题色</span>
@@ -58,7 +62,7 @@
 
 
 
-    <el-card class="settings-card">
+    <el-card ref="defaultsSection" class="settings-card" role="region" aria-label="默认菜品管理" tabindex="-1">
       <template #header><div class="card-header"><span>默认菜品管理</span><el-tag v-if="profileReady && !profileError && !joinUncertain && defaultStatus && !defaultError">{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
       <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
       <el-alert v-else-if="defaultUncertain" class="name-alert" title="菜品管理操作结果未确认" type="warning" :closable="false" show-icon>
@@ -77,7 +81,7 @@
       <p v-else class="status-note">正在加载菜品状态…</p>
     </el-card>
 
-    <el-card class="settings-card">
+    <el-card ref="issuesSection" class="settings-card" role="region" aria-label="待修正图片" tabindex="-1">
       <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
       <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
       <el-alert v-else-if="issueUncertain" class="name-alert" title="图片反馈操作结果未确认" type="warning" :closable="false" show-icon>
@@ -105,7 +109,7 @@
       </div>
     </el-card>
 
-    <el-card class="settings-card">
+    <el-card ref="householdSection" class="settings-card" role="region" aria-label="小家与成员" tabindex="-1">
       <template #header><div class="card-header"><span>小家与成员</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
       <el-alert v-if="profileReady && !nameVersionAvailable && !nameIssue" class="name-alert" title="服务器未提供安全的小家名称版本，暂时不能保存名称。" type="warning" :closable="false" show-icon />
       <el-alert v-if="nameIssue" class="name-alert" :title="nameIssue === 'conflict' ? '小家名称已被修改，本次没有保存。' : '小家名称保存结果未确认。'" type="warning" :closable="false" show-icon>
@@ -143,6 +147,17 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 const mealStore = useMealStore();
 const scheduleStore = useScheduleStore();
 const router = useRouter();
+const profileSection = ref(null); const themeSection = ref(null); const defaultsSection = ref(null); const issuesSection = ref(null); const householdSection = ref(null);
+const settingsNavigation = [
+  { key: 'profile', label: '个人资料' }, { key: 'theme', label: '主题色' },
+  { key: 'defaults', label: '默认菜品' }, { key: 'issues', label: '图片反馈' }, { key: 'household', label: '小家与成员' }
+];
+const jumpToSection = key => {
+  const target = ({ profile: profileSection, theme: themeSection, defaults: defaultsSection, issues: issuesSection, household: householdSection })[key]?.value?.$el;
+  if (!target) return;
+  target.focus({ preventScroll: true });
+  target.scrollIntoView({ block: 'start', behavior: 'auto' });
+};
 const route = useRoute();
 
 const themeOptions = [
@@ -478,6 +493,13 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .eyebrow { color: var(--secondary-color); font-size: 11px; letter-spacing: .14em; font-weight: 800; }
 .intro-badge { flex-shrink: 0; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: 12px; }
 .settings-card { border-radius: 20px; border-color: var(--border-color); background: var(--bg-primary); }
+.settings-card { scroll-margin-top: 90px; }
+.settings-card:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.settings-jump { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 14px 18px; border: 1px solid var(--border-color); border-radius: 18px; background: var(--bg-primary); }
+.settings-jump > span { color: var(--text-primary); font-size: 13px; font-weight: 700; margin-right: 4px; }
+.settings-jump button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); background: var(--bg-secondary); font: inherit; font-size: 13px; cursor: pointer; }
+.settings-jump button:hover { background: var(--bg-tertiary); }
+.settings-jump button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .card-header { display: flex; align-items: center; justify-content: space-between; font-size: 16px; font-weight: 700; }
 .avatar-row { display: flex; align-items: center; gap: 16px; }
 .avatar-preview, .member-avatar { border-radius: 999px; overflow: hidden; background: rgba(216, 95, 101, 0.14); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
