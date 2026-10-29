@@ -19,6 +19,7 @@ const generating = ref(false);
 const discarding = ref(false);
 const current = ref(null);
 const draft = ref(null);
+const draftNeedsRebase = ref(false);
 const slotEditor = ref(null);
 const editedDates = ref([]);
 const loadError = ref('');
@@ -128,7 +129,7 @@ const validateApplied = (result, expectedDays, requestedWeek) => {
   }
 };
 const editSlot = (date, type) => {
-  if (!draft.value || busy.value || loading.value) return;
+  if (!draft.value || draftNeedsRebase.value || busy.value || loading.value) return;
   const preview = draft.value.preview.find(day => day.date === date);
   if (!preview || !Array.isArray(preview.meals[type])) return;
   slotEditor.value = { date, type, meals: preview.meals[type].map(meal => ({ ...meal })) };
@@ -173,6 +174,7 @@ const generate = async () => {
     loading.value = true;
     const result = await api.weeklyPlan.generate(weekStart.value);
     draft.value = validateDraft(result, weekStart.value);
+    draftNeedsRebase.value = false;
     editedDates.value = [];
     ElMessage.success('已生成所选周的菜单草稿');
   } catch (e) { ElMessage.error(e?.error || e?.message || '生成失败'); }
@@ -183,12 +185,12 @@ const discardDraft = async () => {
   discarding.value = true;
   try {
     try { await ElMessageBox.confirm('放弃后，本次草稿和已调整的餐次会丢失；当前日历安排不会改变。', '放弃周计划草稿？', { type: 'warning', confirmButtonText: '放弃草稿', cancelButtonText: '继续编辑' }); } catch (_) { return; }
-    draft.value = null; editedDates.value = [];
+    draft.value = null; draftNeedsRebase.value = false; editedDates.value = [];
     ElMessage.success('已放弃草稿，日历未改变');
   } finally { discarding.value = false; }
 };
 const applyDraft = async () => {
-  if (!draft.value?.days?.length || loading.value || busy.value || loadError.value || applyIssue.value || !versionsAvailable.value || unavailableCount.value) return;
+  if (!draft.value?.days?.length || draftNeedsRebase.value || loading.value || busy.value || loadError.value || applyIssue.value || !versionsAvailable.value || unavailableCount.value) return;
   const currentDates = current.value.days.map(day => day.date);
   try { validateDraft(draft.value, weekStart.value); } catch (error) { return ElMessage.error(error.message || '草稿不完整，请重新检查'); }
   if (draft.value.days.length !== 7 || draft.value.days.some((day, index) => day.date !== currentDates[index])) return ElMessage.error('草稿与当前周不一致，请重新生成');
@@ -202,7 +204,7 @@ const applyDraft = async () => {
     const expectedVersions = Object.fromEntries(current.value.days.map(day => [day.date, day.scheduleVersion]));
     const result = await api.weeklyPlan.apply(draft.value.days, expectedVersions);
     validateApplied(result, draft.value.days, weekStart.value);
-    ElMessage.success('已应用到日历'); draft.value = null; editedDates.value = []; applyIssue.value = ''; await load();
+    ElMessage.success('已应用到日历'); draft.value = null; draftNeedsRebase.value = false; editedDates.value = []; applyIssue.value = ''; await load();
   }
   catch (e) {
     if (e?.code === 'WEEKLY_PLAN_INVALID' && Array.isArray(e.appliedDates) && e.appliedDates.length === 0) {
@@ -215,8 +217,7 @@ const applyDraft = async () => {
     } else {
       applyIssue.value = `${applied?.length ? `已确认写入：${applied.join('、')}。` : ''}${e?.uncertainDate ? `${e.uncertainDate} 的写入结果不确定。` : '可能有部分日期已写入。'}请核对最新日历后重新生成草稿。`;
     }
-    draft.value = null;
-    editedDates.value = [];
+    draftNeedsRebase.value = true;
     await load();
   }
   finally { applying.value = false; }
@@ -231,7 +232,7 @@ const changeWeek = async (updateUrl = true) => {
       try { await ElMessageBox.confirm('切换周会放弃当前草稿及未确认提示，请先核对。', '切换周计划？', { type: 'warning', confirmButtonText: '切换并放弃', cancelButtonText: '继续编辑' }); }
       catch (_) { weekChoice.value = weekStart.value; return false; }
     }
-    draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; weekLinkNotice.value = ''; await load(); if (updateUrl) syncWeekUrl(); return true;
+    draft.value = null; draftNeedsRebase.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; weekLinkNotice.value = ''; await load(); if (updateUrl) syncWeekUrl(); return true;
   } finally { changingWeek.value = false; }
 };
 const moveWeek = offset => {
@@ -258,7 +259,7 @@ watch(() => route.query.week, value => {
   if (route.name !== 'weeklyPlan' || (value !== undefined && !validWeekLink(value))) return;
   const next = value === undefined ? monday() : monday(value);
   if (next === monday(weekStart.value)) { weekLinkNotice.value = ''; return; }
-  draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
+  draft.value = null; draftNeedsRebase.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
 }, { flush: 'sync' });
 onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '周计划链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
 onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
@@ -268,18 +269,19 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
   <div class="weekly-page" v-loading="loading" element-loading-text="正在处理周计划" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header">
       <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>一周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
-      <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
+      <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || draftNeedsRebase || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
 
     <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
-    <div v-if="weekStart" class="shopping-context"><router-link class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link><p>购物清单不会随排餐变动自动更新，请在清单中点击“从排餐生成”。<span v-if="draft">草稿尚未写入日历，不会计入生成结果。</span></p></div>
+    <div v-if="weekStart" class="shopping-context"><router-link class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link><p>购物清单不会随排餐变动自动更新，请在清单中点击“从排餐生成”。<span v-if="draftNeedsRebase">部分日期可能已写入，请先核对日历。</span><span v-else-if="draft">草稿尚未写入日历，不会计入生成结果。</span></p></div>
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
     <el-alert v-if="unavailableCount" class="unavailable-alert" type="warning" :closable="false" show-icon :title="`当前周有 ${unavailableCount} 条菜品不可用的排餐，暂不能应用草稿，以免覆盖原有安排。`"><span>请先在日历中核对并清除相应餐次，再重新安排。</span><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: firstUnavailableDate } }">前往日历</router-link><nav v-if="unavailableDates.length > 1" class="affected-dates" aria-label="按日期核对周计划"><span>逐日核对：</span><router-link v-for="date in unavailableDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
-    <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><div><strong>规则生成草稿</strong><span>可逐餐调整，应用后才会写入日历</span></div><el-button :disabled="loading || busy" @click="discardDraft">放弃草稿</el-button></div></template>
-      <div v-if="draftImpact" class="impact-summary" aria-label="草稿对当前安排的影响"><div><span>新增</span><strong>{{ draftImpact.added }}</strong><small>餐</small></div><div><span>替换</span><strong>{{ draftImpact.replaced }}</strong><small>餐</small></div><div :class="{ caution: draftImpact.cleared > 0 }"><span>清空</span><strong>{{ draftImpact.cleared }}</strong><small>餐</small></div><div><span>菜品相同</span><strong>{{ draftImpact.same }}</strong><small>餐</small></div><p>按当前读取的菜品和顺序比较，“菜品相同”包括均为空的餐次；应用仍会写入全部七天，其他排餐信息也可能变化。</p></div>
-      <div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length && !slotChange(day.date, type)" class="muted">空</span><span v-if="slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
+    <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><div><strong>规则生成草稿</strong><span>{{ draftNeedsRebase ? '保留原草稿供核对，暂不可应用' : '可逐餐调整，应用后才会写入日历' }}</span></div><el-button :disabled="loading || busy" @click="discardDraft">放弃草稿</el-button></div></template>
+      <el-alert v-if="draftNeedsRebase" class="unavailable-alert" type="warning" :closable="false" show-icon title="这份草稿保留供参考，不能直接应用。请先核对日历并记录需要保留的菜品，再重新生成草稿。" />
+      <div v-if="draftImpact && !draftNeedsRebase" class="impact-summary" aria-label="草稿对当前安排的影响"><div><span>新增</span><strong>{{ draftImpact.added }}</strong><small>餐</small></div><div><span>替换</span><strong>{{ draftImpact.replaced }}</strong><small>餐</small></div><div :class="{ caution: draftImpact.cleared > 0 }"><span>清空</span><strong>{{ draftImpact.cleared }}</strong><small>餐</small></div><div><span>菜品相同</span><strong>{{ draftImpact.same }}</strong><small>餐</small></div><p>按当前读取的菜品和顺序比较，“菜品相同”包括均为空的餐次；应用仍会写入全部七天，其他排餐信息也可能变化。</p></div>
+      <div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length && (draftNeedsRebase || !slotChange(day.date, type))" class="muted">空</span><span v-if="!draftNeedsRebase && slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :disabled="draftNeedsRebase" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
 
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-card v-else><template #header>当前日历安排</template><div class="plan-grid"><div v-for="day in current?.days || []" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><router-link class="day-calendar-link" :to="{ name: 'calendar', query: { date: day.date } }" :aria-label="`查看 ${day.date} 的日历安排`">{{ day.date }} ↗</router-link></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="(item,index) in day.meals?.[type] || []" :key="item.meal?._id || item._id || index" effect="plain">{{ item.meal?.name || item.name || '菜品不可用' }}</el-tag><span v-if="!day.meals?.[type]?.length" class="muted">未安排</span></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div><el-empty v-if="current && !current.days?.length" description="这一周暂无安排" /></el-card>

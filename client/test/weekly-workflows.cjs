@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Weekly tests require a local test server')
 const dates = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']
@@ -176,12 +177,27 @@ async function main () {
     await page.getByRole('button', { name: '确认替换' }).click()
     await page.getByText('可能有部分日期已写入', { exact: false }).waitFor()
     assert.equal(await page.getByRole('button', { name: '生成草稿' }).isDisabled(), true)
-    assert.equal(await page.getByText('规则生成草稿').count(), 0)
+    assert.equal(await page.getByText('规则生成草稿').count(), 1, 'uncertain writes must retain the adjusted draft for reference')
+    await page.locator('.draft-card').getByText('麻婆豆腐', { exact: true }).waitFor()
+    await page.getByText('这份草稿保留供参考，不能直接应用', { exact: false }).waitFor()
+    for (const width of [320, 1280]) for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      assert.ok((await contrast(page, '.draft-card .unavailable-alert .el-alert__title')).ratio >= 4.5, `${width} ${dark} ${theme}`)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    assert.equal(await page.getByRole('button', { name: '调整2026-10-26晚餐' }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: '应用到日历' }).isDisabled(), true)
+    assert.equal(await page.getByText('草稿尚未写入日历，不会计入生成结果。').count(), 0, 'partial writes must not be described as entirely unapplied')
     await page.getByRole('button', { name: '已核对，继续' }).click()
+    assert.equal(await page.getByRole('button', { name: '应用到日历' }).isDisabled(), true, 'reviewing alone must not make an old draft safe to apply')
     draftMode = 'valid'
     applyMode = 'success'
     expectedPlan = planned()
     await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByRole('button', { name: '重新生成', exact: true }).click()
     await page.getByText('规则生成草稿').waitFor()
     await page.getByRole('button', { name: '应用到日历' }).click()
     await page.getByRole('button', { name: '确认替换' }).click()
