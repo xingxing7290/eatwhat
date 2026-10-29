@@ -135,7 +135,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
@@ -157,6 +157,11 @@ const jumpToSection = key => {
   if (!target) return;
   target.focus({ preventScroll: true });
   target.scrollIntoView({ block: 'start', behavior: 'auto' });
+};
+const jumpFromRoute = async key => {
+  if (typeof key !== 'string' || !settingsNavigation.some(section => section.key === key)) return;
+  await nextTick();
+  if (route.name === 'settings' && route.query.section === key) jumpToSection(key);
 };
 const route = useRoute();
 
@@ -481,7 +486,8 @@ onBeforeRouteLeave(async () => {
   const message = joinUncertain.value || inviteUncertain.value ? '家庭操作结果尚未确认，离开后邀请码和核对提示会丢失，请先核对。' : defaultUncertain.value || issueUncertain.value ? '菜品管理操作结果尚未确认，离开后核对提示会丢失；未保存的设置也会丢失。' : profileUncertain.value ? '个人资料更新结果尚未确认，离开后本页输入与核对提示会丢失。' : joinCode.value.trim() ? '离开后输入的邀请码以及未保存的设置会丢失，请保留原邀请链接或邀请码。' : '昵称、小家名称或头像尚未保存，离开后会丢失。';
   try { await ElMessageBox.confirm(message, '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
 });
-onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); reload(); });
+watch(() => route.query.section, jumpFromRoute);
+onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); void jumpFromRoute(route.query.section); reload(); });
 onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); clearAvatarFile(); });
 </script>
 

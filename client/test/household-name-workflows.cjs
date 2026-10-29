@@ -53,6 +53,10 @@ async function main () {
     assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
     assert.equal(await page.getByPlaceholder('请输入昵称').inputValue(), '先保存的昵称')
     assert.equal(writes, 0, 'jumping between sections must not save or discard drafts')
+    await page.evaluate(() => { void document.querySelector('#app').__vue_app__.config.globalProperties.$router.push({ name: 'settings', query: { section: 'issues' } }) })
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '待修正图片')
+    assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
+    assert.equal(await page.getByPlaceholder('请输入昵称').inputValue(), '先保存的昵称')
     name = '家人刚修改的名称'; revision = 'rev-other'
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.getByText('保存成功').waitFor()
