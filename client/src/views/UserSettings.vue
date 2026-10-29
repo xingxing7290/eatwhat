@@ -59,8 +59,8 @@
 
 
     <el-card class="settings-card">
-      <template #header><div class="card-header"><span>默认菜品管理</span><el-tag v-if="defaultStatus && !defaultError">{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
-      <p v-if="joinUncertain" class="status-note">请先核对当前小家。</p>
+      <template #header><div class="card-header"><span>默认菜品管理</span><el-tag v-if="profileReady && !profileError && !joinUncertain && defaultStatus && !defaultError">{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
+      <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
       <el-alert v-else-if="defaultError" title="默认菜品状态加载失败，请重试后再操作。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
       <div v-else-if="defaultStatus" class="governance-row">
         <div class="governance-metric"><span>缺失默认菜品</span><strong>{{ defaultStatus.missing }}</strong></div>
@@ -71,8 +71,8 @@
     </el-card>
 
     <el-card class="settings-card">
-      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
-      <p v-if="joinUncertain" class="status-note">请先核对当前小家。</p>
+      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
+      <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
       <el-alert v-else-if="issuesError" title="图片反馈加载失败，请重试。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
       <p v-else-if="!imageIssues" class="status-note">正在加载图片反馈…</p>
       <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
@@ -219,12 +219,14 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, a
   if (syncHouseholdName) householdName.value = household.value.name || '';
 };
 const loadGovernance = async () => {
-  if (governanceLoading.value) return;
+  if (governanceLoading.value || !profileReady.value || profileError.value || joinUncertain.value || !sessionIsCurrent()) return;
   governanceLoading.value = true;
   try {
     const [status, issues] = await Promise.allSettled([api.defaultMeal.status(), api.mealImageIssue.list({ status: 'open' })]);
-    defaultError.value = status.status !== 'fulfilled';
-    issuesError.value = issues.status !== 'fulfilled';
+    const validStatus = value => value && ['total', 'imported', 'missing'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0) && value.imported + value.missing === value.total;
+    const validIssues = value => Array.isArray(value) && value.every(issue => issue && typeof issue === 'object' && typeof issue._id === 'string' && !!issue._id);
+    defaultError.value = status.status !== 'fulfilled' || !validStatus(status.value);
+    issuesError.value = issues.status !== 'fulfilled' || !validIssues(issues.value);
     if (!defaultError.value) defaultStatus.value = status.value;
     if (!issuesError.value) imageIssues.value = issues.value;
   } finally { governanceLoading.value = false; }
