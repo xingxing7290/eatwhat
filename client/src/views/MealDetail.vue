@@ -41,6 +41,9 @@ const reportMatches = ref(0);
 const reportListTruncated = ref(false);
 const reportError = ref('');
 const viewedPhoto = ref(null);
+const scheduleDialog = ref(false);
+const scheduleDate = ref('');
+const scheduleType = ref('dinner');
 const photoGrid = ref(null);
 let photoFocus = null;
 let loadSequence = 0;
@@ -56,6 +59,22 @@ const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard:
 const imageFor = value => resolveUploadedImage(value) || defaultImage;
 const coverImage = computed(() => imageFor(meal.value?.imageUrl));
 const photos = computed(() => Array.isArray(meal.value?.photos) ? meal.value.photos.filter(photo => typeof photo === 'string' && photo) : []);
+const schedulableId = computed(() => {
+  const id = meal.value?._id || meal.value?.id;
+  return typeof id === 'string' && /^[a-z\d_-]{1,128}$/i.test(id) && !meal.value?.archived ? id : '';
+});
+const openSchedule = () => {
+  if (!schedulableId.value || loading.value) return;
+  const now = new Date();
+  scheduleDate.value = calendarDate.value || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  scheduleType.value = 'dinner';
+  scheduleDialog.value = true;
+};
+const continueSchedule = async () => {
+  if (!schedulableId.value || !validWeekLink(scheduleDate.value) || !['breakfast', 'lunch', 'dinner'].includes(scheduleType.value)) return ElMessage.warning('请选择有效日期和餐次');
+  const failure = await router.push({ name: 'MealSelection', query: { date: scheduleDate.value, mealType: scheduleType.value, suggestedMealId: schedulableId.value } });
+  if (!failure) scheduleDialog.value = false;
+};
 const doneOnce = () => {
   if (!meal.value) return;
   router.push({ name: 'memories', query: { new: '1', mealId: meal.value._id || meal.value.id } });
@@ -181,6 +200,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
     <div class="detail-toolbar">
       <el-button @click="router.push(detailBack)"><el-icon><ArrowLeft /></el-icon>{{ shoppingWeek ? '返回购物清单' : calendarDate ? '返回日历' : dashboardOrigin ? '返回首页' : '返回' }}</el-button>
       <div class="toolbar-actions">
+        <el-button :disabled="!schedulableId || loading" @click="openSchedule">安排到日历</el-button>
         <el-button type="success" :disabled="!meal || loading" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
         <el-button type="warning" :disabled="!meal || loading || reportUncertain || reportSubmitted || reportChecking" :loading="reporting" @click="reportImageIssue"><el-icon><Warning /></el-icon>{{ reportSubmitted ? '已反馈' : '图片不对' }}</el-button>
         <el-button type="primary" :disabled="!meal || loading" @click="router.push({ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery })">
@@ -188,6 +208,16 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
         </el-button>
       </div>
     </div>
+
+    <el-dialog v-model="scheduleDialog" title="安排这道菜" width="min(480px, 92vw)">
+      <p class="schedule-help">选择日期和餐次后，将先核对并保留已有菜品。进入下一步不会直接修改日历。</p>
+      <div class="schedule-fields">
+        <label for="recipe-schedule-date">日期</label>
+        <input id="recipe-schedule-date" v-model="scheduleDate" type="date" min="0100-01-01" max="9998-12-31" />
+        <fieldset><legend>餐次</legend><label v-for="option in [{ value: 'breakfast', label: '早餐' }, { value: 'lunch', label: '午餐' }, { value: 'dinner', label: '晚餐' }]" :key="option.value"><input v-model="scheduleType" type="radio" name="recipe-schedule-type" :value="option.value" />{{ option.label }}</label></fieldset>
+      </div>
+      <template #footer><el-button @click="scheduleDialog = false">取消</el-button><el-button type="primary" :disabled="!validWeekLink(scheduleDate) || !schedulableId" @click="continueSchedule">下一步：核对安排</el-button></template>
+    </el-dialog>
 
     <div v-if="route.query.report === '1' && meal && !loading && !reportAttempted" class="report-hint" role="status">进入详情不会自动提交反馈。请先核对菜品图片，确认不匹配后点击上方“图片不对”。</div>
     <el-alert v-if="reportUncertain" type="warning" :closable="false" show-icon title="图片反馈提交结果未确认，请先核对后再决定是否重试。">
@@ -285,6 +315,12 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 </template>
 
 <style scoped>
+.schedule-help { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
+.schedule-fields { display: grid; gap: 10px; color: var(--text-primary); }
+.schedule-fields input[type='date'] { min-height: 44px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.schedule-fields fieldset { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; }
+.schedule-fields fieldset label { display: inline-flex; align-items: center; min-height: 44px; gap: 6px; }
+.schedule-fields input:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .meal-detail { display: flex; flex-direction: column; gap: 18px; }
 .detail-toolbar { display: flex; justify-content: space-between; gap: 12px; }

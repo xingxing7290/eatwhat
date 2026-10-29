@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Meal detail tests require a local test server')
 const image = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%2280%22%3E%3Crect width=%22100%22 height=%2280%22 fill=%22%23d49a75%22/%3E%3C/svg%3E'
@@ -10,7 +11,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; let releaseMemories; let slowMemories = true; let failReports = true; let reportMode = 'unknown'; let reportWrites = 0; let malformed = false
+    const errors = []; let releaseMemories; let slowMemories = true; let failReports = true; let reportMode = 'unknown'; let reportWrites = 0; let malformed = false; let scheduleWrites = 0
     const meal = { _id: 'meal-a', name: '测试菜', imageUrl: 'http://127.0.0.1/uploads/old.jpg', ingredients: ['鸡蛋', { name: '番茄', amount: '2个' }], steps: [{ description: '切好', imageUrl: '/broken-step.png' }, '炒熟'], photos: [image, '/broken-wall.png'], tags: [], healthTags: [] }
     const memory = { _id: 'memory-a', date: '2026-10-28', mealType: 'dinner', title: '好吃的一餐', note: '很满足', mood: '开心', photos: [], mealIds: [meal], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: 'v1', updatedAt: '2026-10-28T12:00:00.000Z' } }
     page.on('pageerror', error => errors.push(error.message))
@@ -22,6 +23,10 @@ async function main () {
       if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       else if (req.method() === 'GET' && path === '/meals/meal-a') data = malformed ? { _id: 'other', name: '错误菜品' } : meal
       else if (req.method() === 'GET' && path === '/meals/meal-b') data = { _id: 'meal-b', name: '第二道菜' }
+      else if (path.startsWith('/schedules/day/')) data = { date: path.split('/').pop(), scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [{ meal: { _id: 'meal-b', name: '第二道菜' } }], dinner: [] } }
+      else if (path.startsWith('/schedules') && req.method() !== 'GET') { scheduleWrites++; data = {} }
+      else if (path === '/meals') data = { data: [meal], page: 1, limit: 8, total: 1 }
+      else if (path === '/meals/categories' || path === '/meals/tags' || path === '/wishlist') data = []
       else if (req.method() === 'GET' && path === '/memories') { if (slowMemories) await new Promise(resolve => { releaseMemories = resolve }); data = [memory] }
       else if (req.method() === 'GET' && path === '/memories/memory-a') data = memory
       else if (req.method() === 'POST' && path === '/meal-image-issues') {
@@ -94,8 +99,40 @@ async function main () {
     malformed = false
     await page.getByRole('button', { name: '重新加载', exact: true }).click()
     await page.getByRole('heading', { name: '测试菜' }).waitFor()
+    meal.archived = true
+    await page.reload()
+    await page.getByRole('heading', { name: '测试菜' }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '安排到日历' }).isDisabled(), true)
+    meal.archived = false
+    await page.goto(`${base}/meals/detail/meal-a?calendarDate=2026-12-31`)
+    await page.getByRole('heading', { name: '测试菜' }).waitFor()
+    await page.getByRole('button', { name: '安排到日历' }).click()
+    const scheduleDialog = page.getByRole('dialog', { name: '安排这道菜' })
+    assert.equal(await scheduleDialog.getByLabel('日期').inputValue(), '2026-12-31')
+    await page.setViewportSize({ width: 320, height: 844 })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.schedule-help', '.schedule-fields', '#recipe-schedule-date']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await scheduleDialog.getByLabel('日期').fill('')
+    assert.equal(await scheduleDialog.getByRole('button', { name: '下一步：核对安排' }).isDisabled(), true)
+    await scheduleDialog.getByLabel('日期').fill('2026-12-31')
+    await scheduleDialog.getByLabel('午餐').check()
+    await scheduleDialog.getByRole('button', { name: '下一步：核对安排' }).click()
+    await page.waitForURL('**/selection?date=2026-12-31&mealType=lunch&suggestedMealId=meal-a')
+    await page.getByRole('button', { name: '移除测试菜' }).waitFor()
+    await page.getByRole('button', { name: '移除第二道菜' }).waitFor()
+    assert.equal(scheduleWrites, 0, 'reviewing the suggested meal must not write a schedule')
     assert.deepEqual(errors, [])
-    console.log('Meal detail workflows passed: independent reads, previews, uncertain feedback and memory navigation')
+    console.log('Meal detail workflows passed: scheduling review, independent reads, previews, uncertain feedback and memory navigation')
   } finally { await browser.close() }
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
