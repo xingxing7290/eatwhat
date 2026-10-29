@@ -1814,6 +1814,10 @@ async function main() {
       await photoDialog.getByRole('link', { name: '编辑这条饭后回忆' }).click();
       const linkedMemory = pages[0].getByRole('dialog', { name: '编辑饭后回忆' });
       assert.equal(await linkedMemory.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '甲家庭相册');
+      await linkedMemory.getByRole('button', { name: '移除已有照片 1', exact: true }).click();
+      await linkedMemory.getByRole('button', { name: '撤销最近移除' }).click();
+      assert.equal(await linkedMemory.locator('.existing-photo').count(), 26);
+      assert.equal((await MealMemory.findById(albumMemory._id)).photos.length, 26, 'undo remains a local draft operation');
       await linkedMemory.getByRole('button', { name: '取消', exact: true }).click();
       assert.equal(await pages[0].getByLabel('按月份筛选回忆').inputValue(), '2026-10');
       await pages[0].getByRole('button', { name: '清除筛选' }).click();
@@ -1886,8 +1890,14 @@ async function main() {
       await pages[0].getByText('浏览器纪念日', { exact: true }).waitFor();
       const browserAnniversary = await AnniversaryMenu.findOne({ householdId: homeA._id, title: '浏览器纪念日' });
       assert.deepEqual(browserAnniversary.meals.dinner.map(String), [String(editableMeal._id)]);
+      await AnniversaryMenu.updateOne({ _id: browserAnniversary._id }, { $set: { photos: [imageData, imageData] } });
+      await pages[0].reload();
       await pages[0].getByRole('button', { name: '编辑浏览器纪念日' }).click();
       const editAnniversary = pages[0].getByRole('dialog', { name: '编辑纪念日菜单' });
+      await editAnniversary.getByRole('button', { name: '移除已有照片 1' }).click();
+      await editAnniversary.getByRole('button', { name: '撤销最近移除' }).click();
+      assert.equal(await editAnniversary.locator('.existing-photo').count(), 2);
+      assert.equal((await AnniversaryMenu.findById(browserAnniversary._id)).photos.length, 2);
       const anniversaryTitle = editAnniversary.getByPlaceholder('比如：三周年晚餐');
       await anniversaryTitle.fill('本页未保存草稿');
       assert.equal((await request(`/anniversaries/${browserAnniversary._id}`, { method: 'PUT', token: tokenA, body: { title: '另一位成员的修改' } })).status, 200);

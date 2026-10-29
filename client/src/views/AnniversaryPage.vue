@@ -6,6 +6,7 @@ import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
+import { usePhotoRemovalUndo } from '@/composables/usePhotoRemovalUndo';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
@@ -56,6 +57,7 @@ const filterGroup = ref(null);
 const addMenuButton = ref(null);
 let midnightTimer = null;
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
+const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
 const unavailableMeals = reactive({ breakfast: 0, lunch: 0, dinner: 0 });
 const clearedSlots = reactive({ breakfast: false, lunch: false, dinner: false });
 const originalSlotMeals = ref({ breakfast: [], lunch: [], dinner: [] });
@@ -217,6 +219,7 @@ const applyTemplate = async (tpl) => {
 };
 
 const reset = () => {
+  resetPhotoUndo();
   Object.assign(form, { title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
   photoFiles.value = [];
   selectedMeals.value = [];
@@ -231,6 +234,7 @@ const reset = () => {
 };
 const fillEdit = item => {
   if (!(item?._id || item?.id) || !validVersion(item) || typeof item.title !== 'string' || typeof item.date !== 'string' || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || Object.keys(mealTypeText).some(key => !Array.isArray(item.meals?.[key]) || item.meals[key].some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string')))) throw new Error('菜单数据或版本不完整，请刷新后重试');
+  resetPhotoUndo();
   originalSlotMeals.value = Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].filter(Boolean)]));
   Object.assign(unavailableMeals, Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].filter(meal => meal === null).length])));
   Object.assign(clearedSlots, { breakfast: false, lunch: false, dinner: false });
@@ -465,7 +469,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
           <el-select v-model="form.meals[key]" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" :disabled="!!editing && (!mealVisibilityVerified || (!!unavailableMeals[key] && !clearedSlots[key]))" :aria-label="`搜索${label}菜品`" placeholder="搜索菜名或食材" style="width: 100%;" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select>
           <small v-if="!mealError && mealTotal > 50" class="photo-hint">仅显示前 50 道，请输入菜名或食材缩小范围。</small><el-alert v-if="mealError" type="warning" :closable="false" :title="`菜品暂时无法加载：${mealError}`"><el-button link type="primary" @click="searchMealCatalog">重试</el-button></el-alert>
         </el-form-item>
-        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="form.existingPhotos.splice(index, 1)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">照片总数最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。移除后需保存才生效。</small></el-form-item>
+        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" ref="existingPhotoGrid" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">照片总数最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。移除后需保存才生效。</small></el-form-item>
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || !!confirmingSlot" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || !!confirmingSlot" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
@@ -510,6 +514,8 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .existing-photos { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; margin-bottom: 12px; }
 .existing-photo { display: grid; gap: 6px; width: 90px; }
 .existing-photo img { width: 90px; height: 72px; border-radius: 8px; object-fit: cover; }
+.photo-undo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 10px; color: var(--text-primary); font-size: 13px; }
+.photo-undo :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
 .photo-button { padding: 0; border: 0; border-radius: 8px; background: var(--bg-secondary); cursor: pointer; }
 .photo-button:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 3px; }

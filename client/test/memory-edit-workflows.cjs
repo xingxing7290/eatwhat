@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Memory edit tests require a local test server')
 const image = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%2280%22%3E%3Crect width=%22100%22 height=%2280%22 fill=%22%23d49a75%22/%3E%3C/svg%3E'
@@ -13,7 +14,7 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const errors = []; const writes = []; let mode = 'conflict'; let detailFailure = false; let listCapped = false; let compatible = true; let detailReads = 0
-    let memory = { _id: 'memory-a', title: '温馨回忆', date: '2026-10-28', mealType: 'dinner', mood: '开心', note: '原备注', rating: 4, actualCookTime: 15, nextImprovement: '少放盐', mealIds: [{ _id: 'meal-a', name: '原有菜品' }], participants: [{ _id: 'person-a', username: '家人' }], photos: [image, `${image}#2`], supportsConditionalEdit: true, supportsUnavailableMealVisibility: true, editVersion: version('v1') }
+    let memory = { _id: 'memory-a', title: '温馨回忆', date: '2026-10-28', mealType: 'dinner', mood: '开心', note: '原备注', rating: 4, actualCookTime: 15, nextImprovement: '少放盐', mealIds: [{ _id: 'meal-a', name: '原有菜品' }], participants: [{ _id: 'person-a', username: '家人' }], photos: [image, image], supportsConditionalEdit: true, supportsUnavailableMealVisibility: true, editVersion: version('v1') }
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
@@ -41,6 +42,19 @@ async function main () {
     const title = dialog.getByPlaceholder('比如：周五晚上的番茄牛腩')
     assert.equal(await title.inputValue(), '温馨回忆')
     assert.equal(await dialog.locator('.existing-photo').count(), 2)
+    assert.equal(await dialog.getByRole('button', { name: '撤销最近移除' }).count(), 0, 'loading the latest record clears the previous undo history')
+    await dialog.getByRole('button', { name: '移除已有照片 1' }).focus(); await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('撤销最近移除'))
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
+    for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      for (const selector of ['.photo-undo span', '.photo-undo button']) assert.ok((await contrast(page, selector)).ratio >= 4.5, `${dark} ${theme} ${selector}`)
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await page.keyboard.press('Enter')
+    assert.equal(await dialog.locator('.existing-photo').count(), 2)
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '移除已有照片 1')
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false)
     if (process.env.EATWHAT_MEMORY_EDIT_SHOT) await page.screenshot({ path: process.env.EATWHAT_MEMORY_EDIT_SHOT })
     await title.fill('我的草稿')
     await dialog.getByRole('button', { name: '移除已有照片 1' }).click()
@@ -61,6 +75,7 @@ async function main () {
     await page.getByRole('button', { name: '放弃草稿并载入', exact: true }).click()
     assert.equal(await title.inputValue(), '家人修改的回忆')
     assert.equal(await dialog.locator('.existing-photo').count(), 2)
+    assert.equal(await dialog.getByRole('button', { name: '撤销最近移除' }).count(), 0, 'replacing the draft must clear undo history')
     await title.fill('核对后回忆')
     await dialog.getByRole('button', { name: '移除已有照片 1' }).click()
     mode = 'unknown'

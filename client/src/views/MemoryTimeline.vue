@@ -7,6 +7,7 @@ import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
+import { usePhotoRemovalUndo } from '@/composables/usePhotoRemovalUndo';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
@@ -61,6 +62,7 @@ const photoFiles = ref([]);
 const viewedPhoto = ref(null);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
+const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
 const unavailableMealCount = ref(0);
 const clearedUnavailableMeals = ref(false);
 const originalAvailableMeals = ref([]);
@@ -207,6 +209,7 @@ const onPhotoKey = event => {
 };
 
 const resetForm = () => {
+  resetPhotoUndo();
   Object.assign(form, { date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
   photoFiles.value = [];
   selectedMeals.value = [];
@@ -216,6 +219,7 @@ const resetForm = () => {
 };
 const fillEdit = item => {
   if (!(item?._id || item?.id) || !validVersion(item) || typeof item.date !== 'string' || !Object.prototype.hasOwnProperty.call(mealTypeText, item.mealType) || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || !Array.isArray(item.mealIds) || item.mealIds.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string'))) throw new Error('回忆数据或版本不完整，请刷新后重试');
+  resetPhotoUndo();
   unavailableMealCount.value = item.mealIds.filter(meal => meal === null).length;
   clearedUnavailableMeals.value = false; mealVisibilityVerified.value = item.supportsUnavailableMealVisibility === true;
   originalAvailableMeals.value = item.mealIds.filter(Boolean);
@@ -508,7 +512,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
         <el-form-item label="实际烹饪时间（分钟）"><el-input-number v-model="form.actualCookTime" :min="0" :precision="0" /></el-form-item>
         <el-form-item label="下次改进"><el-input v-model="form.nextImprovement" type="textarea" rows="2" placeholder="下次想调整什么？" /></el-form-item>
-        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="form.existingPhotos.splice(index, 1)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload><small class="meal-help">每次最多上传 12 张 JPG、PNG、GIF 或 WebP，单张不超过 5MB。移除已有照片需保存才生效。</small></el-form-item>
+        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" ref="existingPhotoGrid" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload><small class="meal-help">每次最多上传 12 张 JPG、PNG、GIF 或 WebP，单张不超过 5MB。移除已有照片需保存才生效。</small></el-form-item>
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || confirmingMeals" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || confirmingMeals" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
@@ -534,6 +538,8 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .existing-photos { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; margin-bottom: 12px; }
 .existing-photo { display: grid; gap: 6px; width: 90px; }
 .existing-photo img { width: 90px; height: 72px; border-radius: 8px; object-fit: cover; }
+.photo-undo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 10px; color: var(--text-primary); font-size: 13px; }
+.photo-undo :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .memory-card p { color: var(--text-secondary); white-space: pre-wrap; }
 .photos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
 .memory-photo { padding: 0; border: 0; border-radius: 8px; background: var(--bg-secondary); cursor: pointer; }
