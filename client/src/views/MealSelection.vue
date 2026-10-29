@@ -83,7 +83,7 @@ let selectionSequence = 0;
 let metadataSequence = 0;
 let catalogTimer = null;
 
-const idsFor = meals => meals.map(meal => String(meal._id || meal.id)).sort();
+const idsFor = meals => meals.map(meal => String(meal._id || meal.id));
 const selectionDirty = computed(() => JSON.stringify(idsFor(selectedMeals.value)) !== JSON.stringify(initialIds.value));
 const selectionStatus = computed(() => {
   if (isInitializing.value) return '正在核对当前安排';
@@ -458,7 +458,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
       }
     }
     selectedMeals.value = resolved;
-    initialIds.value = [...new Set(existingIds)].sort();
+    initialIds.value = [...existingIds];
     conflict.value = false;
     saveUncertain.value = false;
   } catch (error) {

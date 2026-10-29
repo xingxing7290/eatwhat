@@ -89,6 +89,23 @@ async function main () {
       await route.fulfill({ status: 200, json: data })
     })
 
+    selected = [meals[18], meals[19]]
+    await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
+    await page.getByText('与当前安排一致', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '移除测试菜19' }).click()
+    await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('测试菜19')
+    await page.getByRole('button', { name: '选择测试菜19' }).click()
+    await page.getByText('选择有变更，尚未保存').waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    const orderWarning = page.getByRole('dialog', { name: '放弃未保存的内容？' })
+    await orderWarning.getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(new URL(page.url()).pathname, '/selection', 'reordering must be protected as an unsaved change')
+    saveMode = 'success'
+    await page.getByRole('button', { name: '保存安排' }).click()
+    await page.waitForURL('**/calendar?*')
+    assert.deepEqual(writes[0].mealIds, ['meal-20', 'meal-19'], 'saving must preserve the reviewed order')
+    writes.length = 0; version = '2026-10-29T08:00:00.000Z'; saveMode = 'uncertain'
+    selected = [meals[18]]
     suggestionFailure = 'unavailable'
     await page.goto(`${base}/selection?date=${date}&mealType=dinner&suggestedMealId=meal-20&wishlistId=wish-a`)
     await page.getByText('推荐菜品无法读取或已移入回收站', { exact: false }).waitFor()
