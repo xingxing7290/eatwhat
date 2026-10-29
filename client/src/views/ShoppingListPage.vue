@@ -233,8 +233,23 @@ const addItem = async () => {
   const payload = { ...form, name: form.name.trim(), amount: form.amount.trim() };
   const matches = item => item.manual && item.name === payload.name && (item.amount || '') === payload.amount && item.category === payload.category;
   const priorCount = list.value.items.filter(matches).length;
+  const origin = document.activeElement;
+  const fromAddRow = !!origin?.closest?.('.add-row');
+  let added = false;
   working.value = true;
-  try { await mutate((version, week) => api.shoppingList.addItem({ ...payload, weekStart: week, expectedVersion: version }), () => { clearForm(); if (filtersActive.value) ElMessage.success('已添加食材；如未显示，可清除筛选查看'); }, next => next.items.filter(matches).length > priorCount); } finally { working.value = false; }
+  try {
+    await mutate((version, week) => api.shoppingList.addItem({ ...payload, weekStart: week, expectedVersion: version }), () => {
+      clearForm(); added = true;
+      ElMessage.success(filtersActive.value ? '已添加食材；如未显示，可清除筛选查看' : '食材已添加');
+    }, next => next.items.filter(matches).length > priorCount);
+  } finally {
+    working.value = false;
+    if (added && fromAddRow) {
+      await nextTick();
+      const focused = document.activeElement;
+      if (active && (!focused || focused === document.body || focused === origin || !focused.isConnected)) addNameInput.value?.focus();
+    }
+  }
 };
 const beginEdit = item => {
   if (disabled.value) return;
