@@ -28,6 +28,25 @@ async function main () {
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2025-01')
     assert.equal(requests[0].month, '2025-01')
+    const related = page.getByRole('navigation', { name: '查看所选月份的其他内容' })
+    assert.equal(await related.getByRole('link', { name: '查看 2025-01 相册 →' }).getAttribute('href'), '/photo-album?month=2025-01')
+    assert.equal(await related.getByRole('link', { name: '查看 2025-01 饭桌回顾 →' }).getAttribute('href'), '/review?month=2025-01')
+    await related.getByText('仅保留月份', { exact: false }).waitFor()
+    await page.setViewportSize({ width: 320, height: 844 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    for (const link of await related.getByRole('link').all()) assert.ok((await link.boundingBox()).height >= 44)
+    await page.setViewportSize({ width: 390, height: 844 })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.related-period a', '.related-period p']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
+        }
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
     await page.reload()
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2025-01')
@@ -42,6 +61,10 @@ async function main () {
     await page.goto(`${base}/memories?month=2025-13`)
     await page.getByText('回忆链接中的月份无效', { exact: false }).waitFor()
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '')
+    await page.goto(`${base}/memories?month=1999-01`)
+    await page.getByText('饭桌回顾支持 2000 至 2100 年。').waitFor()
+    assert.equal(await page.getByRole('link', { name: '查看 1999-01 相册 →' }).getAttribute('href'), '/photo-album?month=1999-01')
+    assert.equal(await page.getByRole('link', { name: /1999-01 饭桌回顾/ }).count(), 0)
     await page.goto(`${base}/memories`)
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
     assert.equal(await page.locator('.memory-card').count(), 12)

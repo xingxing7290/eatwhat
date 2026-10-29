@@ -126,6 +126,8 @@ const handlePhotoChange = async (_uploadFile, uploadFiles) => {
 
 
 const filtersActive = computed(() => !!timelineSearch.value.trim() || !!timelineMonth.value || timelineMealType.value !== 'all' || timelinePhotos.value !== 'all');
+const relatedAlbumMonth = computed(() => validMonth(timelineMonth.value) && Number(timelineMonth.value.slice(0, 4)) >= 100 && Number(timelineMonth.value.slice(0, 4)) <= 9998 ? timelineMonth.value : '');
+const relatedReviewMonth = computed(() => relatedAlbumMonth.value && Number(relatedAlbumMonth.value.slice(0, 4)) >= 2000 && Number(relatedAlbumMonth.value.slice(0, 4)) <= 2100 ? relatedAlbumMonth.value : '');
 const visibleMemories = computed(() => {
   if (timelineCapable.value) return memories.value;
   const query = timelineSearch.value.trim().toLocaleLowerCase();
@@ -459,6 +461,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
     <section class="memory-filters" aria-label="查找饭后回忆">
       <div class="filter-heading"><div><span class="filter-kicker">YOUR TABLE JOURNAL</span><h2>寻找一段回忆</h2><p aria-live="polite">{{ loading ? '正在查找回忆…' : loadError ? '暂时无法获取结果' : timelineCapable ? `共 ${timelineTotal} 条回忆 · 第 ${timelinePage} / ${timelinePages} 页` : `显示 ${visibleMemories.length} 条回忆` }}</p></div><label class="search-field"><span class="sr-only">搜索回忆</span><input v-model="timelineSearch" type="search" maxlength="100" placeholder="搜索标题、心情或笔记" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label></div>
       <div class="filter-row"><label>月份<input v-model="timelineMonth" type="month" aria-label="按月份筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label><label>餐次<select v-model="timelineMealType" aria-label="按餐次筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部餐次</option><option v-for="(label, key) in mealTypeText" :key="key" :value="key">{{ label }}</option></select></label><label>照片<select v-model="timelinePhotos" aria-label="按照片筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部回忆</option><option value="yes">有照片</option><option value="no">无照片</option></select></label><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="resetFilters">清除筛选</button></div>
+      <nav v-if="timelineMonth" class="related-period" aria-label="查看所选月份的其他内容"><div><router-link v-if="relatedAlbumMonth" :to="{ name: 'photoAlbum', query: { month: relatedAlbumMonth } }">查看 {{ relatedAlbumMonth }} 相册 →</router-link><router-link v-if="relatedReviewMonth" :to="{ name: 'review', query: { month: relatedReviewMonth } }">查看 {{ relatedReviewMonth }} 饭桌回顾 →</router-link></div><p v-if="relatedAlbumMonth || relatedReviewMonth">仅保留月份；搜索、餐次和照片筛选不会随跳转保留。</p><p v-if="!relatedReviewMonth">饭桌回顾支持 2000 至 2100 年。</p></nav>
     </section>
     <div v-loading="loading" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
@@ -551,6 +554,11 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .search-field input { width: 100%; }
 .filter-row { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
 .filter-row label { display: grid; gap: 6px; color: var(--text-primary); font-size: 13px; }
+.related-period { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-light); }
+.related-period > div { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.related-period a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.related-period a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.related-period p { margin: 4px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .reset-filter { min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--memory-accent); font-weight: 700; text-decoration: underline; cursor: pointer; }
 .memory-filters input:focus-visible,.memory-filters select:focus-visible,.reset-filter:focus-visible { outline: 2px solid var(--memory-accent); outline-offset: 3px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
