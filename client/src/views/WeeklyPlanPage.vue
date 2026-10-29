@@ -17,9 +17,11 @@ const weekChoice = ref('');
 const changingWeek = ref(false);
 const generating = ref(false);
 const discarding = ref(false);
+const rebasing = ref(false);
 const current = ref(null);
 const draft = ref(null);
 const draftNeedsRebase = ref(false);
+const draftHadUncertainApply = ref(false);
 const slotEditor = ref(null);
 const editedDates = ref([]);
 const loadError = ref('');
@@ -27,7 +29,7 @@ const applyIssue = ref('');
 let loadSequence = 0;
 const mealTypes = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const draftDirty = computed(() => !!draft.value);
-const busy = computed(() => applying.value || generating.value || changingWeek.value || discarding.value);
+const busy = computed(() => applying.value || generating.value || changingWeek.value || discarding.value || rebasing.value);
 const uncertain = computed(() => !!applyIssue.value);
 useDraftGuard({ dirty: draftDirty, busy, uncertain, label: '周计划' });
 const scheduledSlots = computed(() => (current.value?.days || []).reduce((total, day) => total + Object.keys(mealTypes).filter(type => day.meals?.[type]?.length).length, 0));
@@ -175,6 +177,7 @@ const generate = async () => {
     const result = await api.weeklyPlan.generate(weekStart.value);
     draft.value = validateDraft(result, weekStart.value);
     draftNeedsRebase.value = false;
+    draftHadUncertainApply.value = false;
     editedDates.value = [];
     ElMessage.success('已生成所选周的菜单草稿');
   } catch (e) { ElMessage.error(e?.error || e?.message || '生成失败'); }
@@ -185,7 +188,7 @@ const discardDraft = async () => {
   discarding.value = true;
   try {
     try { await ElMessageBox.confirm('放弃后，本次草稿和已调整的餐次会丢失；当前日历安排不会改变。', '放弃周计划草稿？', { type: 'warning', confirmButtonText: '放弃草稿', cancelButtonText: '继续编辑' }); } catch (_) { return; }
-    draft.value = null; draftNeedsRebase.value = false; editedDates.value = [];
+    draft.value = null; draftNeedsRebase.value = false; draftHadUncertainApply.value = false; editedDates.value = [];
     ElMessage.success('已放弃草稿，日历未改变');
   } finally { discarding.value = false; }
 };
@@ -204,7 +207,7 @@ const applyDraft = async () => {
     const expectedVersions = Object.fromEntries(current.value.days.map(day => [day.date, day.scheduleVersion]));
     const result = await api.weeklyPlan.apply(draft.value.days, expectedVersions);
     validateApplied(result, draft.value.days, weekStart.value);
-    ElMessage.success('已应用到日历'); draft.value = null; draftNeedsRebase.value = false; editedDates.value = []; applyIssue.value = ''; await load();
+    ElMessage.success('已应用到日历'); draft.value = null; draftNeedsRebase.value = false; draftHadUncertainApply.value = false; editedDates.value = []; applyIssue.value = ''; await load();
   }
   catch (e) {
     if (e?.code === 'WEEKLY_PLAN_INVALID' && Array.isArray(e.appliedDates) && e.appliedDates.length === 0) {
@@ -213,14 +216,29 @@ const applyDraft = async () => {
     }
     const applied = Array.isArray(e?.appliedDates) ? e.appliedDates : null;
     if (e?.code === 'WEEKLY_PLAN_CONFLICT' && applied) {
-      applyIssue.value = `${e.conflictDate || '某天'}的安排已变化。${applied.length ? `已写入：${applied.join('、')}；其余日期未写入。` : '本次未写入任何日期。'}请核对最新日历后重新生成草稿。`;
+      applyIssue.value = `${e.conflictDate || '某天'}的安排已变化。${applied.length ? `已写入：${applied.join('、')}；其余日期未写入。` : '本次未写入任何日期。'}请核对最新日历后再处理草稿。`;
     } else {
-      applyIssue.value = `${applied?.length ? `已确认写入：${applied.join('、')}。` : ''}${e?.uncertainDate ? `${e.uncertainDate} 的写入结果不确定。` : '可能有部分日期已写入。'}请核对最新日历后重新生成草稿。`;
+      applyIssue.value = `${applied?.length ? `已确认写入：${applied.join('、')}。` : ''}${e?.uncertainDate ? `${e.uncertainDate} 的写入结果不确定。` : '可能有部分日期已写入。'}请核对最新日历后再处理草稿。`;
     }
     draftNeedsRebase.value = true;
+    draftHadUncertainApply.value = true;
     await load();
   }
   finally { applying.value = false; }
+};
+const rebaseDraft = async () => {
+  if (!draft.value || !draftNeedsRebase.value || applyIssue.value || loading.value || busy.value || loadError.value || !versionsAvailable.value || unavailableCount.value || !current.value || !draftImpact.value) return;
+  rebasing.value = true;
+  try {
+    const oldDraft = draft.value;
+    await load();
+    if (draft.value !== oldDraft || loadError.value || !versionsAvailable.value || unavailableCount.value || !current.value || !draftImpact.value) return ElMessage.warning('无法安全读取最新日历，请核对后再试');
+    const oldCurrent = current.value; const impact = { ...draftImpact.value };
+    try { await ElMessageBox.confirm(`对照当前读取的日历：新增 ${impact.added} 餐、替换 ${impact.replaced} 餐、清空 ${impact.cleared} 餐、菜品相同 ${impact.same} 餐。先前请求仍可能稍后完成；本操作不会写入日历。继续后请逐餐核对，正式应用时仍会再次确认并检查版本。`, '基于最新日历继续草稿？', { type: 'warning', confirmButtonText: '继续核对草稿', cancelButtonText: '保持只读' }); } catch (_) { return; }
+    if (draft.value !== oldDraft || current.value !== oldCurrent || applyIssue.value || !versionsAvailable.value || unavailableCount.value) return ElMessage.warning('日历或草稿已变化，请重新核对');
+    draftNeedsRebase.value = false;
+    ElMessage.success('草稿已保留，请逐餐核对后再决定是否应用');
+  } finally { rebasing.value = false; }
 };
 const syncWeekUrl = () => { const week = monday(weekStart.value); if (route.name === 'weeklyPlan' && route.query.week !== week) void router.replace({ name: 'weeklyPlan', query: { week } }); };
 const changeWeek = async (updateUrl = true) => {
@@ -232,7 +250,7 @@ const changeWeek = async (updateUrl = true) => {
       try { await ElMessageBox.confirm('切换周会放弃当前草稿及未确认提示，请先核对。', '切换周计划？', { type: 'warning', confirmButtonText: '切换并放弃', cancelButtonText: '继续编辑' }); }
       catch (_) { weekChoice.value = weekStart.value; return false; }
     }
-    draft.value = null; draftNeedsRebase.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; weekLinkNotice.value = ''; await load(); if (updateUrl) syncWeekUrl(); return true;
+    draft.value = null; draftNeedsRebase.value = false; draftHadUncertainApply.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; weekLinkNotice.value = ''; await load(); if (updateUrl) syncWeekUrl(); return true;
   } finally { changingWeek.value = false; }
 };
 const moveWeek = offset => {
@@ -259,7 +277,7 @@ watch(() => route.query.week, value => {
   if (route.name !== 'weeklyPlan' || (value !== undefined && !validWeekLink(value))) return;
   const next = value === undefined ? monday() : monday(value);
   if (next === monday(weekStart.value)) { weekLinkNotice.value = ''; return; }
-  draft.value = null; draftNeedsRebase.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
+  draft.value = null; draftNeedsRebase.value = false; draftHadUncertainApply.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
 }, { flush: 'sync' });
 onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '周计划链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
 onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
@@ -273,13 +291,13 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     </div>
 
     <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
-    <div v-if="weekStart" class="shopping-context"><router-link class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link><p>购物清单不会随排餐变动自动更新，请在清单中点击“从排餐生成”。<span v-if="draftNeedsRebase">部分日期可能已写入，请先核对日历。</span><span v-else-if="draft">草稿尚未写入日历，不会计入生成结果。</span></p></div>
+    <div v-if="weekStart" class="shopping-context"><router-link class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link><p>购物清单不会随排餐变动自动更新，请在清单中点击“从排餐生成”。<span v-if="draftHadUncertainApply">先前应用可能已写入部分日期，请核对日历。</span><span v-else-if="draft">草稿尚未写入日历，不会计入生成结果。</span></p></div>
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
     <el-alert v-if="unavailableCount" class="unavailable-alert" type="warning" :closable="false" show-icon :title="`当前周有 ${unavailableCount} 条菜品不可用的排餐，暂不能应用草稿，以免覆盖原有安排。`"><span>请先在日历中核对并清除相应餐次，再重新安排。</span><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: firstUnavailableDate } }">前往日历</router-link><nav v-if="unavailableDates.length > 1" class="affected-dates" aria-label="按日期核对周计划"><span>逐日核对：</span><router-link v-for="date in unavailableDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
     <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><div><strong>规则生成草稿</strong><span>{{ draftNeedsRebase ? '保留原草稿供核对，暂不可应用' : '可逐餐调整，应用后才会写入日历' }}</span></div><el-button :disabled="loading || busy" @click="discardDraft">放弃草稿</el-button></div></template>
-      <el-alert v-if="draftNeedsRebase" class="unavailable-alert" type="warning" :closable="false" show-icon title="这份草稿保留供参考，不能直接应用。请先核对日历并记录需要保留的菜品，再重新生成草稿。" />
+      <el-alert v-if="draftNeedsRebase" class="unavailable-alert" type="warning" :closable="false" show-icon title="这份草稿保留供参考，不能直接应用。请先核对日历，再基于最新安排继续草稿或重新生成。"><el-button link type="primary" :disabled="!!applyIssue || loading || busy || !!loadError || !versionsAvailable || !!unavailableCount" @click="rebaseDraft">基于最新日历继续草稿</el-button></el-alert>
       <div v-if="draftImpact && !draftNeedsRebase" class="impact-summary" aria-label="草稿对当前安排的影响"><div><span>新增</span><strong>{{ draftImpact.added }}</strong><small>餐</small></div><div><span>替换</span><strong>{{ draftImpact.replaced }}</strong><small>餐</small></div><div :class="{ caution: draftImpact.cleared > 0 }"><span>清空</span><strong>{{ draftImpact.cleared }}</strong><small>餐</small></div><div><span>菜品相同</span><strong>{{ draftImpact.same }}</strong><small>餐</small></div><p>按当前读取的菜品和顺序比较，“菜品相同”包括均为空的餐次；应用仍会写入全部七天，其他排餐信息也可能变化。</p></div>
       <div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length && (draftNeedsRebase || !slotChange(day.date, type))" class="muted">空</span><span v-if="!draftNeedsRebase && slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :disabled="draftNeedsRebase" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
 
@@ -317,6 +335,8 @@ h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-fam
 .change-note { color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .unavailable-alert { --notice-ink: #623a10; background: #fff1db; color: var(--notice-ink); }
 .unavailable-alert :deep(.el-alert__title), .unavailable-alert :deep(.el-alert__description), .unavailable-alert :deep(.el-alert__icon) { color: var(--notice-ink); }
+.unavailable-alert :deep(.el-button) { min-height: 44px; color: var(--notice-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.unavailable-alert :deep(.el-button:focus-visible) { outline: 2px solid currentColor; outline-offset: 2px; }
 .calendar-link { display: inline-flex; align-items: center; min-height: 44px; margin-left: 12px; color: var(--notice-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .affected-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--notice-ink); }.affected-dates a { display: inline-flex; align-items: center; min-height: 44px; color: var(--notice-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.affected-dates a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 :global(html.dark) .unavailable-alert { --notice-ink: #ffe4bd; background: #543b29; }

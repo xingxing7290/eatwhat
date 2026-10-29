@@ -1851,6 +1851,13 @@ async function main() {
       assert.equal(await pages[0].getByRole('button', { name: '应用到日历' }).isDisabled(), true);
       await pages[0].getByRole('button', { name: '已核对，继续' }).click();
       assert.equal(await pages[0].getByRole('button', { name: '应用到日历' }).isDisabled(), true, 'a stale draft remains blocked after review');
+      const beforeRebase = JSON.stringify(await Schedule.find({ householdId: homeA._id }).sort({ _id: 1 }).lean());
+      await pages[0].getByRole('button', { name: '基于最新日历继续草稿' }).click();
+      await pages[0].getByRole('dialog', { name: '基于最新日历继续草稿？' }).getByRole('button', { name: '继续核对草稿' }).click();
+      await pages[0].getByText('草稿已保留，请逐餐核对后再决定是否应用').waitFor();
+      assert.equal(await pages[0].getByRole('button', { name: '应用到日历' }).isEnabled(), true);
+      assert.deepEqual(await pages[0].locator('.draft-card .slot-meals .el-tag').allTextContents(), draftBeforeConflict);
+      assert.equal(JSON.stringify(await Schedule.find({ householdId: homeA._id }).sort({ _id: 1 }).lean()), beforeRebase, 'reviewing a retained draft must not write to the calendar');
       await pages[0].getByRole('button', { name: '放弃草稿', exact: true }).click();
       await pages[0].getByRole('dialog', { name: '放弃周计划草稿？' }).getByRole('button', { name: '放弃草稿', exact: true }).click();
       await pages[0].getByText('规则生成草稿').waitFor({ state: 'hidden' });
