@@ -96,6 +96,7 @@ async function main () {
     await page.waitForURL('**/meals/editor')
     assert.equal(await input.inputValue(), '')
     assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), false)
+    await page.getByRole('button', { name: '选择菜品封面' }).waitFor()
     failB = true
     await navigate('/meals/editor/b')
     await page.getByText('无法加载菜品：暂时无法读取菜品').waitFor()
@@ -106,7 +107,14 @@ async function main () {
     assert.equal(writes, 0)
     const photo = { name: 'preview.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKsAAAAASUVORK5CYII=', 'base64') }
     const cover = page.locator('.side-column .el-card').first()
-    await cover.locator('input[type="file"]').setInputFiles(photo)
+    const coverButton = cover.getByRole('button', { name: '更换菜品封面' })
+    await cover.getByText('更换封面').waitFor()
+    await page.keyboard.press('Tab'); await coverButton.focus()
+    assert.notEqual(await coverButton.evaluate(element => getComputedStyle(element).outlineStyle), 'none', 'keyboard focus on the cover control must be visible')
+    const chooserPromise = page.waitForEvent('filechooser')
+    await page.keyboard.press('Enter')
+    await (await chooserPromise).setFiles(photo)
+    await page.getByRole('button', { name: '撤销封面选择' }).waitFor()
     await page.getByRole('button', { name: '撤销封面选择' }).click()
     assert.equal(await cover.getByAltText('菜品封面预览').getAttribute('src'), originalCover, 'undo restores the existing cover')
     await cover.locator('input[type="file"]').setInputFiles(photo)
@@ -155,7 +163,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.ingredient-help', '.ingredient-item label span']) {
+        for (const selector of ['.ingredient-help', '.ingredient-item label span', '.cover-caption']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }
@@ -184,10 +192,12 @@ async function main () {
     await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '菜品乙')
     await page.getByRole('textbox', { name: '第 2 步描述' }).fill('保留文字')
     await page.getByRole('button', { name: '移除第 2 步图片' }).click()
+    await page.locator('.side-column .el-card').first().locator('input[type="file"]').setInputFiles(photo)
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.waitForURL('**/meals')
     assert.deepEqual(submittedSteps, [{ description: '炒熟', imageUrl: '' }, { description: '保留文字', imageUrl: '' }], 'saving a removed image must clear its stored URL')
     assert.equal(submittedBody.includes('name="stepImages"'), false)
+    assert.match(submittedBody, /name="image"; filename="preview\.png"/, 'selected cover is included in the save request')
     assert.equal(writes, 2)
     console.log('Meal editor checks passed: draft guard, route switching, stale responses and retry')
   } finally { await browser.close() }

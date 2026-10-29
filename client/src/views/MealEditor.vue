@@ -26,6 +26,7 @@ const editVersion = ref(null);
 const supportsConditionalEdit = ref(false);
 const saved = ref(false);
 const imageFile = ref(null);
+const coverInput = ref(null);
 const imagePreview = ref('');
 const photoFiles = ref([]);
 const removedPhotos = ref([]);
@@ -107,6 +108,11 @@ const moveStep = (index, delta) => {
   form.steps.splice(target, 0, item);
 };
 const onCoverChange = (file) => { const error = photoError(file); if (error) return ElMessage.warning(error); releasePreview(imagePreview.value); imageFile.value = file; imagePreview.value = makePreview(file); };
+const onCoverInputChange = event => {
+  const file = event.target.files?.[0];
+  event.target.value = '';
+  if (file && !loading.value && !submitting.value) onCoverChange({ raw: file });
+};
 const undoCoverChange = () => { releasePreview(imagePreview.value); imageFile.value = null; imagePreview.value = form.imageUrl; };
 const onPhotosChange = async (_file, files) => {
   let message = '';
@@ -302,7 +308,7 @@ watch(() => route.params.id, load, { immediate: true });
       </section>
 
       <aside class="side-column">
-        <el-card><template #header>封面照片</template><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onCoverChange"><div class="cover-box"><img v-if="imagePreview" :key="imagePreview" :src="imageFor(imagePreview)" alt="菜品封面预览" @error="imageError" /><div v-else><el-icon><Upload /></el-icon><p>上传封面</p></div></div></el-upload><el-button v-if="imageFile" link type="primary" @click="undoCoverChange">撤销封面选择</el-button><p class="photo-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30MB；实际以上传服务器设置为准。</p></el-card>
+        <el-card><template #header>封面照片</template><input ref="coverInput" type="file" :accept="photoAccept" :disabled="loading || submitting" hidden @change="onCoverInputChange" /><button type="button" class="cover-box" :disabled="loading || submitting" :aria-label="imagePreview ? '更换菜品封面' : '选择菜品封面'" @click="coverInput?.click()"><img v-if="imagePreview" :key="imagePreview" :src="imageFor(imagePreview)" alt="菜品封面预览" @error="imageError" /><span v-if="imagePreview" class="cover-caption">更换封面</span><span v-else class="cover-empty"><el-icon><Upload /></el-icon><span>选择封面</span></span></button><el-button v-if="imageFile" link type="primary" @click="undoCoverChange">撤销封面选择</el-button><p class="photo-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30MB；实际以上传服务器设置为准。</p></el-card>
         <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" ref="existingPhotoGrid" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
       </aside>
     </el-form>
@@ -324,7 +330,11 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .ingredient-item :deep(.el-input__wrapper) { min-height: 44px; }
 .ingredient-item .el-button { min-width: 44px; min-height: 44px; margin: 0; }
 @media (max-width: 480px) { .ingredient-item { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ingredient-item .el-button { grid-column: 1 / -1; justify-self: end; } }
-.cover-box { height: 260px; border: 1px dashed var(--border-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); overflow: hidden; background: var(--bg-secondary); cursor: pointer; }
+.cover-box { position: relative; width: 100%; height: 260px; padding: 0; border: 1px dashed var(--border-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--text-primary); overflow: hidden; background: var(--bg-secondary); cursor: pointer; font: inherit; }
+.cover-box:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 3px; }
+.cover-box:disabled { cursor: not-allowed; opacity: .65; }
+.cover-empty { display: grid; justify-items: center; gap: 8px; }
+.cover-caption { position: absolute; inset: auto 0 0; padding: 9px; color: #fff; background: rgba(45, 31, 25, .82); font-size: 13px; font-weight: 700; text-align: center; }
 .cover-box img { width: 100%; height: 100%; object-fit: cover; }
 .step-editor { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: start; margin-bottom: 14px; }
 .step-editor img { width: 90px; height: 64px; object-fit: cover; border-radius: 8px; }
