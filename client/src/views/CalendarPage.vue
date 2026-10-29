@@ -2,7 +2,6 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
-import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { format, addMonths, subMonths, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
@@ -12,7 +11,6 @@ import { ArrowLeft, ArrowRight, Edit, Delete, Plus, Sunrise, Sunny, Sunset } fro
 
 const router = useRouter();
 const scheduleStore = useScheduleStore();
-const mealStore = useMealStore();
 
 const currentDate = ref(new Date());
 const isLoading = ref(false);
@@ -27,6 +25,11 @@ useDraftGuard({ dirty: noDraft, busy: computed(() => deleting.value || checkingD
 let active = true;
 const meals = ref([]);
 const partnerWishlist = ref([]);
+const nameLoading = ref(false);
+const nameWarning = ref('');
+const wishlistError = ref('');
+let monthSequence = 0;
+let nameSequence = 0;
 
 // 记录是否需要在加载完成后滚动到今天
 const shouldScrollToToday = ref(false);
@@ -87,11 +90,14 @@ const getDateSchedule = (date) => {
 };
 
 // 获取该月所有日期的安排
-const loadPartnerWishlist = async () => {
+const loadPartnerWishlist = async (sequence = monthSequence) => {
+  wishlistError.value = '';
   try {
     const items = await api.wishlist.list({ status: 'open' });
-    partnerWishlist.value = (items || []).filter(item => item.partnerSignal).slice(0, 3);
-  } catch (_) {}
+    if (!active || sequence !== monthSequence) return;
+    if (!Array.isArray(items)) throw new Error('心愿提醒数据不完整');
+    partnerWishlist.value = items.filter(item => item?.partnerSignal).slice(0, 3);
+  } catch (_) { if (active && sequence === monthSequence) wishlistError.value = '暂时无法读取想吃提醒'; }
 };
 const arrangeWishlistDinner = (item) => {
   const id = item.mealId?._id || item.mealId?.id;
@@ -100,27 +106,71 @@ const arrangeWishlistDinner = (item) => {
     date: format(new Date(), 'yyyy-MM-dd'), mealType: 'dinner', suggestedMealId: id, wishlistId: item._id
   } });
 };
+const validateMonth = (rows, year, month) => {
+  if (!Array.isArray(rows)) throw new Error('月度安排数据不完整');
+  const prefix = `${year}-${String(month).padStart(2, '0')}-`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const dates = new Set();
+  for (const day of rows) {
+    const match = typeof day?.date === 'string' && day.date.startsWith(prefix) && /^\d{4}-\d{2}-(\d{2})$/.exec(day.date);
+    if (!match || Number(match[1]) < 1 || Number(match[1]) > lastDay || dates.has(day.date) || !day.meals ||
+        !mealTypes.every(type => Array.isArray(day.meals[type.key]) && day.meals[type.key].every(item => item && (typeof item === 'object' || (typeof item === 'string' && item.trim())))) ||
+        (day.scheduleExists === false && mealTypes.some(type => day.meals[type.key].length))) throw new Error('月度安排日期或餐次不完整');
+    dates.add(day.date);
+  }
+  return rows;
+};
+const resolveMealNames = async rows => {
+  const sequence = ++nameSequence;
+  const known = new Map(); const pending = new Set(); let missing = false;
+  for (const day of rows) for (const type of mealTypes) for (const item of day.meals[type.key]) {
+    const meal = item && typeof item === 'object' && 'meal' in item ? item.meal : item;
+    const id = typeof meal === 'string' ? meal : meal?._id || meal?.id;
+    if (!id) { missing = true; continue; }
+    if (typeof meal === 'object' && typeof meal.name === 'string' && meal.name.trim()) known.set(String(id), meal);
+    else pending.add(String(id));
+  }
+  const ids = [...pending].filter(id => !known.has(id));
+  meals.value = [...known.values()];
+  nameWarning.value = '';
+  nameLoading.value = ids.length > 0;
+  for (let offset = 0; offset < ids.length; offset += 6) {
+    const batch = ids.slice(offset, offset + 6);
+    const results = await Promise.allSettled(batch.map(id => api.meal.getMealById(id, { suppressErrorToast: true })));
+    if (!active || sequence !== nameSequence) return;
+    results.forEach((result, index) => {
+      const meal = result.status === 'fulfilled' ? result.value : null;
+      if (meal && String(meal._id || meal.id || '') === batch[index] && typeof meal.name === 'string' && meal.name.trim()) known.set(batch[index], meal);
+      else missing = true;
+    });
+    meals.value = [...known.values()];
+  }
+  if (active && sequence === nameSequence) {
+    nameLoading.value = false;
+    nameWarning.value = missing ? '部分菜品已不可用或名称暂时无法读取，原有排餐不会因此改变。' : '';
+  }
+};
 const fetchMonthSchedules = async () => {
+  const sequence = ++monthSequence;
+  nameSequence++;
   isLoading.value = true;
   loadError.value = '';
+  nameLoading.value = false; nameWarning.value = ''; meals.value = [];
+  wishlistError.value = '';
   partnerWishlist.value = [];
   
   try {
     const year = getYear(currentDate.value);
     const month = getMonth(currentDate.value) + 1; // date-fns的月份是0-11
-    await scheduleStore.fetchSchedulesByMonth(year, month);
-    
-    // 获取所有菜品数据，用于展示菜品名称
-    // 注意：其他页面可能使用分页请求覆盖了 mealStore.meals，导致日历查不到而显示“未知菜品”
-    if (!mealStore.allLoaded) {
-      await mealStore.fetchAllMeals();
-    }
-    meals.value = mealStore.meals;
-    await loadPartnerWishlist();
+    const rows = validateMonth(await api.schedule.getSchedulesByMonth(year, month), year, month);
+    if (!active || sequence !== monthSequence) return;
+    scheduleStore.schedules = rows;
+    void resolveMealNames(rows);
+    void loadPartnerWishlist(sequence);
   } catch (error) {
-    loadError.value = error?.error || error?.message || '获取月度安排失败';
+    if (active && sequence === monthSequence) loadError.value = error?.error || error?.message || '获取月度安排失败';
   } finally {
-    isLoading.value = false;
+    if (active && sequence === monthSequence) isLoading.value = false;
   }
 };
 
@@ -307,6 +357,7 @@ const checkDeleteIssue = async () => {
     const index = scheduleStore.schedules.findIndex(day => day.date === issue.date);
     if (index >= 0) scheduleStore.schedules[index] = result;
     else scheduleStore.schedules.push(result);
+    void resolveMealNames(scheduleStore.schedules);
     issue.count = result.meals[issue.type].length;
     issue.checked = true;
   } catch (error) { if (active && deleteIssue.value === issue) issue.error = error?.error || error?.message || '无法读取最新安排'; }
@@ -332,7 +383,7 @@ watch(
 onMounted(() => {
   fetchMonthSchedules();
 });
-onBeforeUnmount(() => { active = false; });
+onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
 </script>
 
 <template>
@@ -382,6 +433,12 @@ onBeforeUnmount(() => { active = false; });
       <el-button link type="primary" :loading="checkingDelete" @click="checkDeleteIssue">读取最新安排</el-button>
       <el-button v-if="deleteIssue.checked" link type="primary" :disabled="checkingDelete || confirmingReview" @click="finishDeleteReview">结束核对</el-button>
     </el-alert>
+
+    <div v-if="!isLoading && !loadError && (nameLoading || nameWarning)" class="calendar-notice" role="status">
+      <span>{{ nameLoading ? '正在补全旧版排餐中的菜品名称…' : nameWarning }}</span>
+      <el-button v-if="nameWarning && !nameLoading" link type="primary" @click="resolveMealNames(scheduleStore.schedules)">重试菜品名称</el-button>
+    </div>
+    <div v-if="!isLoading && !loadError && wishlistError" class="calendar-notice" role="status"><span>{{ wishlistError }}，不影响查看日历。</span><el-button link type="primary" @click="loadPartnerWishlist()">重试提醒</el-button></div>
 
     <div v-if="partnerWishlist.length" class="partner-wishlist-banner">
       <div><strong>TA 最近想吃</strong><span v-for="item in partnerWishlist" :key="item._id">{{ item.title }}</span></div>
@@ -656,6 +713,9 @@ onBeforeUnmount(() => { active = false; });
 .delete-review :deep(.el-button) { min-height: 44px; font-weight: 700; text-decoration: underline; }
 .delete-review :deep(.el-button:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .delete-review p { margin: 6px 0; overflow-wrap: anywhere; }
+.calendar-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
+.calendar-notice :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
+.calendar-notice :deep(.el-button:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
 .add-meal, .mobile-add-meal { width: 100%; font: inherit; }
 .partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }

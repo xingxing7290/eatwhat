@@ -223,12 +223,12 @@ api.interceptors.response.use(
 				});
 			}
 			
-			ElMessage.error(errorMsg);
+			if (!error.config?.suppressErrorToast) ElMessage.error(errorMsg);
 			return Promise.reject(response.data || '服务器错误');
 		} else {
 			// 网络错误或请求被取消
 			logAPI('error', '网络错误', error.message);
-			ElMessage.error('网络错误，请检查您的网络连接');
+			if (!error.config?.suppressErrorToast) ElMessage.error('网络错误，请检查您的网络连接');
 			return Promise.reject('网络错误，请检查您的网络连接');
 		}
 	}
@@ -328,12 +328,12 @@ export const mealApi = {
 	},
 	
 	// 获取菜品详情
-	getMealById: (id) => {
+	getMealById: (id, options = {}) => {
 		if (USE_MOCK) {
 			const meal = mockData.meals.find(m => m.id === parseInt(id)) || null;
 			return mockResponse(meal);
 		}
-		return api.get(`/meals/${id}`);
+		return api.get(`/meals/${encodeURIComponent(id)}`, options);
 	},
 	archiveCapabilities: () => api.get('/meals/archive-capabilities'),
 	setArchived: (id, archived, expectedEditVersion) => api.put(`/meals/${id}/archive`, { archived, expectedEditVersion }, { headers: { 'Content-Type': 'application/json' } }),

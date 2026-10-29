@@ -1328,10 +1328,15 @@ async function main() {
       const reviewDeleteDate = '2026-10-22';
       await Schedule.create({ householdId: homeA._id, date: reviewDeleteDate, meals: { dinner: [{ meal: uiMeal._id, addedBy: userA._id }] } });
       await pages[0].clock.setFixedTime(new Date(2026, 9, 29, 12));
+      let fullCatalogReads = 0;
+      const countCatalogReads = req => { if (req.method() === 'GET' && new URL(req.url()).pathname === '/api/meals') fullCatalogReads++; };
+      pages[0].on('request', countCatalogReads);
       await pages[0].goto(`${webBase}/calendar`);
       await pages[0].getByRole('img', { name: '添加者未知' }).first().waitFor();
       await pages[0].getByRole('img', { name: '由test-local-a添加' }).first().waitFor();
       await pages[0].getByRole('img', { name: '由test-local-partner添加' }).first().waitFor();
+      assert.equal(fullCatalogReads, 0, 'populated monthly schedules must not fetch the entire recipe catalog');
+      pages[0].off('request', countCatalogReads);
       let lostDeleteRequests = 0;
       const loseDeleteResponse = async route => {
         if (route.request().method() !== 'PUT') return route.continue();
