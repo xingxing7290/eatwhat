@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import api from '@/services/api';
@@ -27,6 +27,9 @@ const editedDates = ref([]);
 const loadError = ref('');
 const applyIssue = ref('');
 let loadSequence = 0;
+let active = true;
+const refreshButton = ref(null);
+const loadRetryButton = ref(null);
 const mealTypes = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const draftDirty = computed(() => !!draft.value);
 const busy = computed(() => applying.value || generating.value || changingWeek.value || discarding.value || rebasing.value);
@@ -171,6 +174,14 @@ const load = async () => {
     if (sequence === loadSequence && weekStart.value === requestedWeek) loadError.value = e?.error || e?.message || '加载周计划失败';
   } finally { if (sequence === loadSequence) loading.value = false; }
 };
+const refreshCurrentPlan = async () => {
+  if (loading.value || busy.value || slotEditor.value) return;
+  const origin = document.activeElement;
+  await load();
+  await nextTick();
+  const focused = document.activeElement;
+  if (active && (!focused || focused === document.body || focused === origin || !focused.isConnected)) (loadError.value ? loadRetryButton.value : refreshButton.value)?.$el?.focus();
+};
 const generate = async () => {
   if (!weekStart.value) return ElMessage.warning('请选择要安排的日期');
   if (loading.value || busy.value || loadError.value || applyIssue.value || !current.value) return;
@@ -286,7 +297,7 @@ watch(() => route.query.week, value => {
   draft.value = null; draftNeedsRebase.value = false; draftHadUncertainApply.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
 }, { flush: 'sync' });
 onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '周计划链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
-onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
+onBeforeUnmount(() => { active = false; loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
 <template>
@@ -310,8 +321,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
       <div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)" class="recipe-tag"><router-link v-if="recipeLinkId(meal)" class="recipe-link" :to="{ name: 'MealDetail', params: { id: recipeLinkId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看草稿中${day.date}${label}的${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal.name }}</span></el-tag><span v-if="!day.meals[type]?.length && (draftNeedsRebase || !slotChange(day.date, type))" class="muted">空</span><span v-if="!draftNeedsRebase && slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :disabled="draftNeedsRebase" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
 
     <div v-if="draft" class="draft-footer"><p>检查完七天的餐次后，可在这里确认应用；正式写入前仍会显示影响范围。</p><el-button type="primary" :disabled="draftNeedsRebase || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">确认并应用草稿</el-button></div>
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-    <el-card v-else-if="current"><template #header>当前日历安排</template><p class="recipe-context">点击菜名可在新标签页查看菜谱。</p><div class="plan-grid"><div v-for="day in current.days" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><router-link class="day-calendar-link" :to="{ name: 'calendar', query: { date: day.date } }" :aria-label="`查看 ${day.date} 的日历安排`">{{ day.date }} ↗</router-link></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="(item,index) in day.meals?.[type] || []" :key="item.meal?._id || item._id || index" effect="plain" class="recipe-tag"><router-link v-if="recipeLinkId(item)" class="recipe-link" :to="{ name: 'MealDetail', params: { id: recipeLinkId(item) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${day.date}${label}的${item.meal?.name || item.name}菜谱`">{{ item.meal?.name || item.name }}</router-link><span v-else>{{ item.meal?.name || item.name || '菜品不可用' }}</span></el-tag><span v-if="!day.meals?.[type]?.length" class="muted">未安排</span></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div></el-card>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button ref="loadRetryButton" link type="primary" @click="refreshCurrentPlan">重新加载</el-button></el-alert>
+<el-card v-else-if="current"><template #header><div class="current-heading"><strong>当前日历安排</strong><el-button ref="refreshButton" :disabled="loading || busy || !!slotEditor" @click="refreshCurrentPlan">刷新当前安排</el-button></div></template><p class="recipe-context">刷新可核对家人的最新排餐，不会修改日历或丢弃草稿；点击菜名可在新标签页查看菜谱。</p><div class="plan-grid"><div v-for="day in current.days" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><router-link class="day-calendar-link" :to="{ name: 'calendar', query: { date: day.date } }" :aria-label="`查看 ${day.date} 的日历安排`">{{ day.date }} ↗</router-link></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot"><strong>{{ label }}</strong><el-tag v-for="(item,index) in day.meals?.[type] || []" :key="item.meal?._id || item._id || index" effect="plain" class="recipe-tag"><router-link v-if="recipeLinkId(item)" class="recipe-link" :to="{ name: 'MealDetail', params: { id: recipeLinkId(item) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${day.date}${label}的${item.meal?.name || item.name}菜谱`">{{ item.meal?.name || item.name }}</router-link><span v-else>{{ item.meal?.name || item.name || '菜品不可用' }}</span></el-tag><span v-if="!day.meals?.[type]?.length" class="muted">未安排</span></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div></div></div></el-card>
     <div v-else-if="loading" class="calendar-loading" role="status">正在读取所选周的日历安排…</div>
     <WeeklyPlanMealPicker v-if="slotEditor" :date="slotEditor.date" :label="mealTypes[slotEditor.type]" :meals="slotEditor.meals" @cancel="slotEditor = null" @confirm="saveSlot" />
   </div>
@@ -319,6 +330,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 
 <style scoped>
 .recipe-context { color: var(--text-secondary); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
+.current-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.current-heading .el-button { min-height: 44px; }
 .recipe-tag { height: auto; max-width: 100%; padding: 0 8px; white-space: normal; }
 .recipe-link { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .recipe-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 2px; }

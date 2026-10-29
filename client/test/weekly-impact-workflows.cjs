@@ -14,14 +14,14 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let applications = 0
+    let applications = 0; let failRefresh = false
     const current = dates.map((date, index) => ({ date, scheduleExists: index === 0, scheduleVersion: index === 0 ? '2026-10-28T00:00:00.000Z' : null, meals: index === 0 ? { breakfast: [{ meal: mealA }], lunch: [{ meal: mealA }], dinner: [{ meal: mealA }] } : empty() }))
     const days = dates.map((date, index) => ({ date, meals: index === 0 ? { breakfast: [], lunch: ['b'], dinner: ['a'] } : index === 1 ? { ...empty(), dinner: ['b'] } : empty() }))
     const preview = days.map(day => ({ date: day.date, meals: Object.fromEntries(Object.entries(day.meals).map(([type, ids]) => [type, ids.map(id => id === 'a' ? mealA : mealB)])), hints: [] }))
     await page.context().route('**/api/**', route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === '/weekly-plans' && request.method() === 'GET') return route.fulfill({ json: { weekStart: dates[0], supportsConditionalApply: true, days: current } })
+      if (path === '/weekly-plans' && request.method() === 'GET') return failRefresh ? route.fulfill({ status: 503, json: { error: '暂时无法刷新' } }) : route.fulfill({ json: { weekStart: dates[0], supportsConditionalApply: true, days: current } })
       if (path === '/weekly-plans/generate') return route.fulfill({ json: { weekStart: dates[0], days, preview } })
       if (path === '/weekly-plans/apply') { applications++; return route.fulfill({ status: 500, json: { error: 'unexpected application' } }) }
       if (path === '/meals/categories') return route.fulfill({ json: [{ category: '家常菜' }, { category: '川菜' }] })
@@ -54,6 +54,27 @@ async function main () {
     assert.match(await impactText(), /替换\s*1\s*餐/)
     assert.match(await impactText(), /清空\s*1\s*餐/)
     assert.match(await impactText(), /菜品相同\s*18\s*餐/)
+    current[0].meals.breakfast = []
+    current[0].scheduleVersion = '2026-10-28T01:00:00.000Z'
+    await page.getByRole('button', { name: '刷新当前安排' }).click()
+    await page.waitForFunction(() => document.querySelector('[aria-label="草稿对当前安排的影响"]')?.textContent.match(/清空\s*0\s*餐/))
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('刷新当前安排'))
+    assert.equal(await draftLink.isVisible(), true, 'refresh must preserve the existing draft')
+    assert.equal(applications, 0, 'refresh must not write the calendar')
+    current[0].meals.breakfast = [{ meal: mealA }]
+    current[0].scheduleVersion = '2026-10-28T02:00:00.000Z'
+    await page.getByRole('button', { name: '刷新当前安排' }).click()
+    await page.waitForFunction(() => document.querySelector('[aria-label="草稿对当前安排的影响"]')?.textContent.match(/清空\s*1\s*餐/))
+    failRefresh = true
+    await page.getByRole('button', { name: '刷新当前安排' }).click()
+    await page.getByText('无法读取当前日历安排：暂时无法刷新').waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('重新加载'))
+    assert.equal(await draftLink.isVisible(), true, 'a failed refresh must retain the draft')
+    assert.equal(await page.getByRole('button', { name: '应用到日历' }).isDisabled(), true)
+    failRefresh = false
+    await page.getByRole('button', { name: '重新加载' }).click()
+    await impact.waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('刷新当前安排'))
     await page.getByText('将清空', { exact: true }).waitFor()
     assert.equal(await page.getByText('将替换', { exact: true }).count(), 1)
     assert.equal(await page.locator('.draft-slot').getByText('新增', { exact: true }).count(), 1)
