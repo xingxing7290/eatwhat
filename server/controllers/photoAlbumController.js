@@ -7,7 +7,7 @@ const { createHash } = require('crypto');
 exports.month = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
-    if (req.query.month !== undefined && (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month))) return res.status(400).json({ error: '相册月份无效' });
+    if (req.query.month !== undefined && (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month) || Number(req.query.month.slice(0, 4)) < 100 || Number(req.query.month.slice(0, 4)) > 9998)) return res.status(400).json({ error: '相册月份无效' });
     const range = monthRange(req.query.month);
     if (req.query.view === 'locate') {
       const { memoryId, photoIndex, fingerprint } = req.query;

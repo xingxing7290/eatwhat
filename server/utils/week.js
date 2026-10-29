@@ -1,5 +1,5 @@
 function pad(n) { return String(n).padStart(2, '0'); }
-function dateKey(date) { return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
+function dateKey(date) { return `${String(date.getFullYear()).padStart(4, '0')}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`; }
 function parseDateKey(value) {
   const raw = String(value || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
@@ -28,6 +28,6 @@ function monthRange(month) {
   const [year, monthNumber] = /^\d{4}-\d{2}$/.test(raw) ? raw.split('-').map(Number) : [now.getFullYear(), now.getMonth() + 1];
   const first = new Date(year, monthNumber - 1, 1);
   const last = new Date(year, monthNumber, 0);
-  return { month: `${year}-${pad(monthNumber)}`, start: dateKey(first), end: dateKey(last) };
+  return { month: `${String(year).padStart(4, '0')}-${pad(monthNumber)}`, start: dateKey(first), end: dateKey(last) };
 }
 module.exports = { dateKey, parseDateKey, startOfWeek, weekDates, monthRange };

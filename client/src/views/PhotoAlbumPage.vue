@@ -8,9 +8,19 @@ import placeholder from '@/assets/meal-placeholder.svg';
 const loading = ref(false);
 const route = useRoute();
 const router = useRouter();
-const now = new Date();
-const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-const month = ref(defaultMonth);
+const monthKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+const validAlbumMonth = value => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && Number(value.slice(0, 4)) >= 100 && Number(value.slice(0, 4)) <= 9998;
+const currentMonth = ref(monthKey(new Date()));
+const month = ref(currentMonth.value);
+let clockTimer = null;
+const refreshCurrentMonth = () => { currentMonth.value = monthKey(new Date()); };
+const canMoveMonth = offset => {
+  if (!validAlbumMonth(month.value)) return false;
+  const [year, part] = month.value.split('-').map(Number);
+  const index = year * 12 + part - 1 + offset;
+  return index >= 100 * 12 && index <= 9998 * 12 + 11;
+};
+const disabledMonth = date => date.getFullYear() < 100 || date.getFullYear() > 9998;
 const data = ref({ photos: [], total: 0 });
 const page = ref(1);
 const loadedPage = ref(1);
@@ -96,11 +106,16 @@ const load = async (openAt = null, viewerToken = null) => {
 const clearLocationLink = () => { locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; syncAlbumLocation(); };
 const changeMonth = () => { page.value = 1; clearLocationLink(); selectedIndex.value = null; data.value = { photos: [], total: 0 }; load(); };
 const moveMonth = offset => {
-  if (loading.value) return;
+  if (loading.value || !canMoveMonth(offset)) return;
   const [year, currentMonth] = month.value.split('-').map(Number);
-  const next = new Date(year, currentMonth - 1 + offset, 1);
-  month.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+  const next = year * 12 + currentMonth - 1 + offset;
+  month.value = `${String(Math.floor(next / 12)).padStart(4, '0')}-${String(next % 12 + 1).padStart(2, '0')}`;
   changeMonth();
+};
+const goCurrentMonth = () => {
+  refreshCurrentMonth();
+  if (loading.value || !validAlbumMonth(currentMonth.value) || month.value === currentMonth.value) return;
+  month.value = currentMonth.value; changeMonth();
 };
 const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; clearLocationLink(); selectedIndex.value = null; returnFocusIndex.value = 0; focusAfterLoad = true; load(); };
 const navigatePhoto = async direction => {
@@ -124,8 +139,8 @@ const loadLocation = async () => {
   const requestedMonth = route.query.month;
   const hasLocation = ['memoryId', 'photoIndex', 'fingerprint'].some(key => route.query[key] !== undefined);
   locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; viewerEpoch++; selectedIndex.value = null;
-  if (typeof requestedMonth !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth)) {
-    month.value = defaultMonth; page.value = 1; data.value = { photos: [], total: 0 };
+  if (!validAlbumMonth(requestedMonth)) {
+    refreshCurrentMonth(); month.value = currentMonth.value; page.value = 1; data.value = { photos: [], total: 0 };
     if (requestedMonth !== undefined || hasLocation) locateNotice.value = '相册链接中的月份无效，已打开当前月份。';
     await load(); return;
   }
@@ -160,13 +175,13 @@ watch(() => route.fullPath, () => {
   const matchesCurrent = route.query.month === month.value && (route.query.page === undefined ? page.value === 1 : route.query.page === String(page.value)) && Object.keys(route.query).every(key => key === 'month' || key === 'page');
   if (!initialized || hasLocation || !matchesCurrent) { initialized = true; loadLocation(); }
 }, { immediate: true });
-onMounted(() => window.addEventListener('keydown', onKey));
-onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', onKey); });
+onMounted(() => { window.addEventListener('keydown', onKey); window.addEventListener('focus', refreshCurrentMonth); document.addEventListener('visibilitychange', refreshCurrentMonth); clockTimer = setInterval(refreshCurrentMonth, 60000); });
+onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', onKey); window.removeEventListener('focus', refreshCurrentMonth); document.removeEventListener('visibilitychange', refreshCurrentMonth); if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
   <div class="album-page" v-loading="loading" element-loading-text="正在加载照片" :aria-busy="loading ? 'true' : 'false'">
-    <div class="page-header"><div><span class="eyebrow">TABLE STORIES · 饭桌故事</span><h1>饭桌相册</h1><p>把饭后回忆里的照片按月份收起来。</p><span v-if="!loading && !loadError" class="photo-count">{{ month }} · {{ data.total }} 张照片</span></div><div class="month-actions"><el-button ref="previousMonthButton" :disabled="loading" aria-label="上个月" @click="moveMonth(-1)">上个月</el-button><el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled="loading" aria-label="选择相册月份" @change="changeMonth" /><el-button :disabled="loading" aria-label="下个月" @click="moveMonth(1)">下个月</el-button></div></div>
+    <div class="page-header"><div><span class="eyebrow">TABLE STORIES · 饭桌故事</span><h1>饭桌相册</h1><p>把饭后回忆里的照片按月份收起来。</p><span v-if="!loading && !loadError" class="photo-count">{{ month }} · {{ data.total }} 张照片</span></div><div class="month-actions"><el-button ref="previousMonthButton" :disabled="loading || !canMoveMonth(-1)" aria-label="上个月" @click="moveMonth(-1)">上个月</el-button><el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled="loading" :disabled-date="disabledMonth" aria-label="选择相册月份" @change="changeMonth" /><el-button :disabled="loading || !validAlbumMonth(currentMonth) || month === currentMonth" @click="goCurrentMonth">回到本月</el-button><el-button :disabled="loading || !canMoveMonth(1)" aria-label="下个月" @click="moveMonth(1)">下个月</el-button></div></div>
     <p class="sr-only" role="status" aria-atomic="true">{{ loading ? '正在加载相册' : loadError ? '相册加载失败' : `${month}，共 ${data.total} 张照片，第 ${loadedPage} / ${lastPage} 页` }}</p>
     <nav v-if="!loading && month" class="related-period" aria-label="查看相册月份的其他内容"><router-link :to="{ name: 'memories', query: { month } }">查看 {{ month }} 回忆 →</router-link><router-link v-if="reviewMonth" :to="{ name: 'review', query: { month: reviewMonth } }">查看 {{ reviewMonth }} 饭桌回顾 →</router-link><span v-else>饭桌回顾支持 2000 至 2100 年。</span></nav>
     <el-alert v-if="locateNotice" type="warning" :closable="false" show-icon :title="locateNotice"><el-button v-if="locateRetry" link type="primary" :loading="loading" @click="loadLocation">重新定位</el-button></el-alert>

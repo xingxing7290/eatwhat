@@ -944,6 +944,11 @@ async function main() {
     assert.equal((await request('/photo-album?month=2026-10', { token: tokenA })).data.photos.length, 26, 'legacy unpaginated reads remain available');
     assert.equal((await request('/photo-album?month=2026-10&page=1&limit=24', { token: tokenB })).data.total, 1);
     assert.equal((await request('/photo-album?month=2026-13', { token: tokenA })).status, 400);
+    for (const month of ['0100-01', '9998-12']) {
+      const boundary = await request(`/photo-album?month=${month}&page=1&limit=24`, { token: tokenA });
+      assert.equal(boundary.status, 200); assert.equal(boundary.data.month, month); assert.equal(boundary.data.total, 0);
+    }
+    for (const month of ['0001-01', '9999-01']) assert.equal((await request(`/photo-album?month=${month}`, { token: tokenA })).status, 400);
     assert.equal((await request('/photo-album?month=2026-10&page=0', { token: tokenA })).status, 400);
     const photoFingerprint = createHash('sha256').update(`${imageData}#25`).digest('hex');
     const locator = `/photo-album?view=locate&month=2026-10&memoryId=${albumMemory._id}&photoIndex=25&fingerprint=${photoFingerprint}`;
