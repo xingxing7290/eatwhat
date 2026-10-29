@@ -26,7 +26,7 @@ async function main () {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.album-page .eyebrow', '.album-page h1', '.page-header p', '.photo-count', '.photo-card span', '.pagination > span']) {
+          for (const selector of ['.album-page .eyebrow', '.album-page h1', '.page-header p', '.photo-count', '.related-period a', '.photo-card span', '.pagination > span']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${result.ratio}`)
           }
