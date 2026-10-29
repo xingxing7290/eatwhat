@@ -492,11 +492,33 @@
         return { dishes: items.length, quantity: items.reduce((sum, item) => sum + item.quantity, 0) };
       }
 
+      function orderSnapshot(name, note, items) {
+        const clean = value => String(value || '').trim().replace(/\s+/g, ' ');
+        return JSON.stringify({
+          guestName: clean(name), note: clean(note),
+          items: items.map(item => ({ mealId: String(item.mealId?._id || item.mealId || ''), quantity: Number(item.quantity), note: clean(item.note) })).sort((a, b) => a.mealId.localeCompare(b.mealId))
+        });
+      }
+      function draftChanged() {
+        const items = [...state.cart.values()].map(item => ({ mealId: item.meal._id, quantity: item.quantity, note: item.note }));
+        const current = orderSnapshot($('guestName').value, $('orderNote').value, items);
+        if (!state.order) return items.length > 0 || !!$('guestName').value.trim() || !!$('orderNote').value.trim();
+        return current !== orderSnapshot(state.order.guestName, state.order.note, state.order.items || []);
+      }
+      function renderDraftStatus() {
+        const total = totals();
+        const needsReview = !!state.pending || state.uncertain || !!state.conflict;
+        const changed = draftChanged();
+        const status = state.busy ? '正在提交' : needsReview ? '结果待核对' : state.order ? (changed ? '修改尚未保存' : '已提交') : '尚未提交';
+        $('cartHint').textContent = total.dishes ? `合计 ${total.quantity} 份 · ${status}` : (changed || needsReview ? status : '看到喜欢的就点“想吃”');
+        $('success').textContent = changed ? '上次的点菜单已提交给主人；本页修改尚未保存，请再次提交。' : '上次的点菜单已提交给主人，当前内容与已提交版本一致。';
+      }
+
       function renderCartBar() {
         const total = totals();
         $('cartBadge').textContent = total.quantity;
         $('cartTitle').textContent = total.dishes ? `已选 ${total.dishes} 道菜` : '还没选菜';
-        $('cartHint').textContent = total.dishes ? `合计 ${total.quantity} 份${state.order ? ' · 已提交，可继续修改' : ''}` : '看到喜欢的就点“想吃”';
+        renderDraftStatus();
         $('openCart').disabled = !total.dishes && !state.order && !state.uncertain && !state.conflict && !state.pending;
         $('openCart').textContent = state.uncertain || state.conflict || state.pending ? '查看 / 核对' : state.order ? '查看 / 修改' : '查看菜单';
       }
@@ -521,7 +543,7 @@
           const itemNote = document.createElement('input'); itemNote.className = 'item-note'; itemNote.maxLength = 120; itemNote.placeholder = '这道菜备注：例如少辣、不要葱'; itemNote.value = item.note || ''; itemNote.disabled = state.busy || !!state.pending;
           minus.dataset.focusRole = 'minus'; plus.dataset.focusRole = 'plus'; itemNote.dataset.focusRole = 'note';
           itemNote.setAttribute('aria-label', `${item.meal.name}的备注`);
-          itemNote.addEventListener('input', event => { item.note = event.target.value; });
+          itemNote.addEventListener('input', event => { item.note = event.target.value; renderDraftStatus(); });
           stepper.append(minus, quantity, plus); row.append(copy, stepper, itemNote);
           if (unavailable) { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-unavailable'; remove.dataset.focusRole = 'remove'; remove.textContent = `移除${item.meal.name}`; remove.disabled = state.busy || !!state.pending; remove.addEventListener('click', () => setQuantity(item.meal, 0)); row.append(remove); }
           return row;
@@ -552,6 +574,7 @@
         $('guestName').disabled = state.busy || !!state.pending; $('orderNote').disabled = state.busy || !!state.pending;
         $('submitOrder').disabled = state.busy || !!state.pending || !!state.conflict || state.uncertain || !canOrder() || !state.cart.size;
         $('submitOrder').textContent = state.busy ? '正在提交…' : state.order ? '保存修改' : '提交给主人';
+        renderDraftStatus();
       }
 
       let cartReturnFocus = null;
@@ -780,6 +803,8 @@
       $('closeCart').addEventListener('click', closeCart);
       $('continue').addEventListener('click', closeCart);
       $('submitOrder').addEventListener('click', submitOrder);
+      $('guestName').addEventListener('input', renderDraftStatus);
+      $('orderNote').addEventListener('input', renderDraftStatus);
       $('loadLatestOrder').addEventListener('click', loadLatestOrder);
       $('retryPending').addEventListener('click', submitPending);
       $('abandonPending').addEventListener('click', () => {
@@ -789,6 +814,9 @@
       });
       $('acknowledgeUncertain').addEventListener('click', () => { if (!state.busy && confirm('请确认已经联系主人核对；先前请求仍可能稍后完成。确定继续吗？')) { setUncertainty(false); renderCartList(); } });
       $('overlay').addEventListener('click', event => { if (event.target === $('overlay')) closeCart(); });
+      addEventListener('beforeunload', event => {
+        if (state.busy || state.pending || state.uncertain || state.conflict || draftChanged()) { event.preventDefault(); event.returnValue = ''; }
+      });
       addEventListener('keydown', event => {
         if (!$('overlay').classList.contains('show')) return;
         if (event.key === 'Escape') { event.preventDefault(); closeCart(); return; }
