@@ -35,6 +35,8 @@ const reportMatches = ref(0);
 const reportListTruncated = ref(false);
 const reportError = ref('');
 const viewedPhoto = ref(null);
+const photoGrid = ref(null);
+let photoFocus = null;
 let loadSequence = 0;
 let memorySequence = 0;
 let reportSequence = 0;
@@ -141,6 +143,7 @@ const load = async () => {
   memoryPage.value = 1; memoryTotal.value = 0; memoryPagination.value = false; memoryFocus = '';
   reportSequence++; reporting.value = false; reportAttempted.value = false; reportUncertain.value = false; reportSubmitted.value = false; reportChecked.value = false; reportChecking.value = false; reportError.value = '';
   viewedPhoto.value = null;
+  photoFocus = null;
   loadMemories(id, sequence);
   try {
     const result = await api.meal.getMealById(id);
@@ -151,8 +154,10 @@ const load = async () => {
   finally { if (sequence === loadSequence) loading.value = false; }
 };
 const fallbackImage = event => handleUploadedImageError(event, defaultImage);
-const showPhoto = (images, index, title) => { if (images.length && index >= 0 && index < images.length) viewedPhoto.value = { images, index, title }; };
-const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.images.length) viewedPhoto.value.index = next; };
+const showPhoto = (images, index, title, event, gallery = false) => { if (images.length && index >= 0 && index < images.length) { photoFocus = { origin: event.currentTarget, index: gallery ? index : null }; viewedPhoto.value = { images, index, title }; } };
+const closePhoto = () => { viewedPhoto.value = null; };
+const restorePhotoFocus = async () => { const target = photoFocus; photoFocus = null; await new Promise(resolve => setTimeout(resolve, 0)); if (!target || photoFocus || !target.origin?.isConnected) return; const active = document.activeElement; if (active && active !== document.body && active !== target.origin && active.isConnected) return; (target.index === null ? target.origin : photoGrid.value?.querySelectorAll('button')[target.index] || target.origin).focus(); };
+const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.images.length) { viewedPhoto.value.index = next; if (photoFocus && photoFocus.index !== null) photoFocus.index = next; } };
 const onPhotoKey = event => { if (!viewedPhoto.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1); };
 onBeforeRouteUpdate(async (to, from) => {
   if (to.params.id === from.params.id) return true;
@@ -188,7 +193,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
     <el-alert v-if="meal?.archived" type="info" :closable="false" show-icon title="这道菜已移入回收站；历史记录仍然保留，可在菜品管理的回收站中恢复。" />
     <template v-if="meal && !mealError">
       <section class="hero">
-        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`)"><img :key="coverImage" :src="coverImage" :alt="meal.name" @error="fallbackImage" /></button>
+        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`, $event)"><img :key="coverImage" :src="coverImage" :alt="meal.name" @error="fallbackImage" /></button>
         <div class="hero-info">
           <div class="title-row">
             <h1>{{ meal.name }}</h1>
@@ -226,7 +231,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <div v-else class="steps-list">
             <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
-              <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`)" ><img :key="imageFor(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
+              <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`, $event)" ><img :key="imageFor(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
               <p>{{ typeof step === 'string' ? step : step?.description }}</p>
             </div>
           </div>
@@ -236,8 +241,8 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
       <section class="content-grid">
         <el-card>
           <template #header>照片墙</template>
-          <div v-if="photos.length" class="photo-grid">
-            <button v-for="(photo, index) in photos" :key="`${index}-${photo}`" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 张菜品照片`" @click="showPhoto(photos, index, meal.name)"><img :src="imageFor(photo)" :alt="`第 ${index + 1} 张菜品照片`" @error="fallbackImage" /></button>
+          <div v-if="photos.length" ref="photoGrid" class="photo-grid">
+            <button v-for="(photo, index) in photos" :key="`${index}-${photo}`" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 张菜品照片`" @click="showPhoto(photos, index, meal.name, $event, true)"><img :src="imageFor(photo)" :alt="`第 ${index + 1} 张菜品照片`" @error="fallbackImage" /></button>
           </div>
           <el-empty v-else description="暂无额外照片"><template #image><el-icon><Picture /></el-icon></template></el-empty>
         </el-card>
@@ -269,7 +274,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
         <p>{{ meal.tips }}</p>
       </el-card>
     </template>
-    <el-dialog :model-value="!!viewedPhoto" title="菜品照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img :key="`${viewedPhoto.index}-${viewedPhoto.images[viewedPhoto.index]}`" class="photo-preview" :src="imageFor(viewedPhoto.images[viewedPhoto.index])" :alt="viewedPhoto.title" @error="fallbackImage" /><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张菜品照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.images.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.images.length - 1" aria-label="下一张菜品照片" @click="movePhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
+    <el-dialog :model-value="!!viewedPhoto" title="菜品照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) closePhoto() }" @close="closePhoto" @close-auto-focus="restorePhotoFocus"><template v-if="viewedPhoto"><img :key="`${viewedPhoto.index}-${viewedPhoto.images[viewedPhoto.index]}`" class="photo-preview" :src="imageFor(viewedPhoto.images[viewedPhoto.index])" :alt="viewedPhoto.title" @error="fallbackImage" /><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张菜品照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.images.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.images.length - 1" aria-label="下一张菜品照片" @click="movePhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
 </template>
 
