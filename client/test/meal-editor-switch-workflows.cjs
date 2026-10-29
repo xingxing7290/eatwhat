@@ -11,7 +11,8 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
     let holdA = false; let releaseA; let foreign = false; let failB = false; let writes = 0; let submittedIngredients; let submittedSteps
-    const meal = id => ({ _id: id, name: id === 'a' ? '菜品甲' : '菜品乙', ingredients: id === 'b' ? [{ name: '鸡蛋', amount: '2个' }] : [], steps: id === 'b' ? [{ description: '炒熟', imageUrl: '' }, { description: '', imageUrl: '/uploads/step.jpg' }] : [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: `rev-${id}`, updatedAt: null } })
+    const originalCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E'
+    const meal = id => ({ _id: id, name: id === 'a' ? '菜品甲' : '菜品乙', imageUrl: originalCover, ingredients: id === 'b' ? [{ name: '鸡蛋', amount: '2个' }] : [], steps: id === 'b' ? [{ description: '炒熟', imageUrl: '' }, { description: '', imageUrl: '/uploads/step.jpg' }] : [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: `rev-${id}`, updatedAt: null } })
     await page.route('**/api/**', async route => {
       const request = route.request(); const path = new URL(request.url()).pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
@@ -84,6 +85,19 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '菜品乙')
     assert.equal(writes, 0)
+    const photo = { name: 'preview.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKsAAAAASUVORK5CYII=', 'base64') }
+    const cover = page.locator('.side-column .el-card').first()
+    await cover.locator('input[type="file"]').setInputFiles(photo)
+    await page.getByRole('button', { name: '撤销封面选择' }).click()
+    assert.equal(await cover.getByAltText('菜品封面预览').getAttribute('src'), originalCover, 'undo restores the existing cover')
+    await cover.locator('input[type="file"]').setInputFiles(photo)
+    await page.getByRole('button', { name: '撤销封面选择' }).click()
+    const stepUpload = page.locator('.step-editor input[type="file"]')
+    await stepUpload.setInputFiles(photo)
+    await page.getByRole('img', { name: '待添加步骤图' }).waitFor()
+    await page.getByRole('button', { name: '移除待添加步骤图' }).click()
+    assert.equal(await page.getByRole('img', { name: '待添加步骤图' }).count(), 0)
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false, 'undoing image selections leaves a clean draft')
     await page.getByText('已生成的购物清单不会自动更新', { exact: false }).waitFor()
     const ingredient = page.getByRole('textbox', { name: '第 1 项食材名称' })
     const amount = page.getByRole('textbox', { name: '第 1 项食材用量' })
