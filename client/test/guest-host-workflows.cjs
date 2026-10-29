@@ -14,7 +14,7 @@ async function main () {
     page.on('pageerror', error => errors.push(error.message))
     let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''; let rotateFails = true
     const version = value => ({ revision: `v${value}`, updatedAt: `2026-10-29T00:00:0${value}.000Z` })
-    const detail = () => ({ ...current, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, guestNames: ['测试客人'], notes: ['测试客人：少盐'] }] }, orders: [{ id: 'order-1', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ name: '客人想吃的菜', quantity: 2, note: '少盐' }], note: '整单备注' }] })
+    const detail = () => ({ ...current, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, guestNames: ['测试客人'], notes: ['测试客人：少盐'] }] }, orders: [{ id: 'order-1', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, note: '少盐' }], note: '整单备注' }] })
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
@@ -26,6 +26,9 @@ async function main () {
         if (badSummary === 'missing') delete session.summary.guestCount
         if (badSummary === 'mismatch') session.summary.totalQuantity = 3
         if (badSummary === 'fractional') session.orders[0].items[0].quantity = 1.5
+        if (badSummary === 'wrongDish') session.summary.dishes[0].mealId = 'other-meal'
+        if (badSummary === 'wrongQuantity') { session.orders[0].items = [{ mealId: 'meal', name: '菜一', quantity: 1 }, { mealId: 'meal-b', name: '菜二', quantity: 2 }]; session.summary.dishes = [{ mealId: 'meal', name: '菜一', quantity: 2, guestNames: [], notes: [] }, { mealId: 'meal-b', name: '菜二', quantity: 1, guestNames: [], notes: [] }]; session.summary.totalQuantity = 3 }
+        if (badSummary === 'legacy') delete session.orders[0].items[0].mealId
         return route.fulfill({ json: { session } })
       }
       if (req.method() === 'POST' && pathname === '/guest-orders/idempotent') {
@@ -72,16 +75,20 @@ async function main () {
     assert.equal(await page.evaluate(key => sessionStorage.getItem(key), `eatwhat.hostGuest.create.${home}`), null)
     await dialog.getByText('客人想吃的菜', { exact: true }).first().waitFor()
     await dialog.getByText('1 份点菜单 · 2 份菜').waitFor()
-    for (const fault of ['missing', 'mismatch', 'fractional']) {
+    for (const fault of ['missing', 'mismatch', 'fractional', 'wrongDish', 'wrongQuantity']) {
       badSummary = fault
       await dialog.getByRole('button', { name: '刷新点菜' }).click()
-      await dialog.getByText(fault === 'mismatch' ? '点菜汇总与客人点菜单不一致' : '点菜汇总数据不完整', { exact: false }).waitFor()
+      await dialog.getByText(['mismatch', 'wrongDish', 'wrongQuantity'].includes(fault) ? '点菜汇总与客人点菜单不一致' : '点菜汇总数据不完整', { exact: false }).waitFor()
       await dialog.getByText('以下是上次成功加载的内容，可能已过期', { exact: false }).waitFor()
       assert.equal(await dialog.getByRole('button', { name: '复制链接' }).isDisabled(), true)
       badSummary = ''
       await dialog.getByRole('button', { name: '重试', exact: true }).click()
       await dialog.getByText('以下是上次成功加载的内容，可能已过期', { exact: false }).waitFor({ state: 'hidden' })
     }
+    badSummary = 'legacy'; await dialog.getByRole('button', { name: '刷新点菜' }).click()
+    await dialog.getByText('部分旧点单缺少菜品标识', { exact: false }).waitFor()
+    badSummary = ''; await dialog.getByRole('button', { name: '刷新点菜' }).click()
+    await dialog.getByText('部分旧点单缺少菜品标识', { exact: false }).waitFor({ state: 'hidden' })
     await dialog.getByRole('button', { name: '编辑信息' }).click()
     const edit = dialog.locator('.edit-panel input').first()
     await edit.fill('本页的宴请草稿')

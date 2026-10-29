@@ -18,6 +18,9 @@ const editForm = reactive({ title: '', eventAt: null });
 let listSequence = 0; let detailSequence = 0; let alive = true; let clockTimer; let filterTimer;
 const statusLabels = { open: '正在点菜', locked: '已锁单', completed: '已完成', cancelled: '已取消', expired: '链接已过期' };
 const statusTypes = { open: 'success', locked: 'warning', completed: 'info', cancelled: 'info', expired: 'info' };
+const dishId = dish => typeof dish?.mealId === 'string' ? dish.mealId.trim() : '';
+const hasDishIdentifiers = item => item.orders.flatMap(order => order.items).every(dishId) && item.summary.dishes.every(dishId);
+const summaryNeedsManualReview = computed(() => !!detail.value?.orders?.length && !hasDishIdentifiers(detail.value));
 const visibleSessions = computed(() => paginationAvailable.value ? sessions.value : sessions.value.filter(item => (!statusFilter.value || effectiveStatus(item) === statusFilter.value) && (!search.value.trim() || item.title.toLowerCase().includes(search.value.trim().toLowerCase()))));
 const hasFilters = computed(() => !!(search.value.trim() || statusFilter.value));
 const safeCreate = computed(() => capabilities.value?.supportsIdempotentSessionCreate === true && /^[a-f0-9]{24}$/.test(capabilities.value?.householdId || ''));
@@ -74,6 +77,12 @@ function acceptSession(item, withOrders = false, listItem = false) {
     const orderTotal = item.orders.reduce((sum, order) => sum + order.items.reduce((subtotal, dish) => subtotal + dish.quantity, 0), 0);
     const summaryTotal = item.summary.dishes.reduce((sum, dish) => sum + dish.quantity, 0);
     if (new Set(item.orders.map(order => order.id)).size !== item.orders.length || item.summary.guestCount !== item.orders.length || !Number.isSafeInteger(orderTotal) || !Number.isSafeInteger(summaryTotal) || orderTotal !== item.summary.totalQuantity || summaryTotal !== item.summary.totalQuantity) throw new Error('点菜汇总与客人点菜单不一致');
+    const orderDishes = item.orders.flatMap(order => order.items);
+    if (hasDishIdentifiers(item)) {
+      const totals = dishes => dishes.reduce((map, dish) => map.set(dishId(dish), (map.get(dishId(dish)) || 0) + dish.quantity), new Map());
+      const expected = totals(orderDishes); const actual = totals(item.summary.dishes);
+      if (expected.size !== actual.size || [...expected].some(([key, value]) => actual.get(key) !== value)) throw new Error('点菜汇总与客人点菜单不一致');
+    }
   }
   return item;
 }
@@ -280,7 +289,7 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
         <el-alert v-if="!validVersion(detail)" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，详情暂时只能查看。" />
         <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
         <div class="status-actions"><el-button v-if="detailStatus === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detailStatus === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
-        <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
+        <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><p v-if="summaryNeedsManualReview" class="dialog-note" role="status">部分旧点单缺少菜品标识，无法逐菜自动核对，请对照下方客人点菜单确认。</p><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
         <section v-if="detail.orders.length" class="orders"><h3>客人点菜单</h3><el-collapse><el-collapse-item v-for="order in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
       </template>
     </el-dialog>
