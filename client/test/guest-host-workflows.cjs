@@ -12,7 +12,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const home = '111111111111111111111111'; const id = '222222222222222222222222'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false
+    let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''
     const version = value => ({ revision: `v${value}`, updatedAt: `2026-10-29T00:00:0${value}.000Z` })
     const detail = () => ({ ...current, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, guestNames: ['测试客人'], notes: ['测试客人：少盐'] }] }, orders: [{ id: 'order-1', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ name: '客人想吃的菜', quantity: 2, note: '少盐' }], note: '整单备注' }] })
     await page.route('**/api/**', async route => {
@@ -20,7 +20,14 @@ async function main () {
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
       if (req.method() === 'GET' && pathname === '/guest-orders/capabilities') return route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true } })
       if (req.method() === 'GET' && pathname === '/guest-orders') return route.fulfill({ json: { sessions: current ? [{ ...current, guestCount: 1, totalQuantity: 2 }] : [] } })
-      if (req.method() === 'GET' && pathname === `/guest-orders/${id}`) return detailMissing ? route.fulfill({ status: 404, json: { code: 'GUEST_SESSION_NOT_FOUND', error: '未找到宴请' } }) : route.fulfill({ json: { session: detail() } })
+      if (req.method() === 'GET' && pathname === `/guest-orders/${id}`) {
+        if (detailMissing) return route.fulfill({ status: 404, json: { code: 'GUEST_SESSION_NOT_FOUND', error: '未找到宴请' } })
+        const session = detail()
+        if (badSummary === 'missing') delete session.summary.guestCount
+        if (badSummary === 'mismatch') session.summary.totalQuantity = 3
+        if (badSummary === 'fractional') session.orders[0].items[0].quantity = 1.5
+        return route.fulfill({ json: { session } })
+      }
       if (req.method() === 'POST' && pathname === '/guest-orders/idempotent') {
         const payload = req.postDataJSON(); createRequests++
         assert.equal(payload.expectedHouseholdId, home); assert.match(payload.creationKey, /^[A-Za-z0-9_-]{43}$/)
@@ -64,6 +71,17 @@ async function main () {
     assert.equal(createRequests, 2); assert.equal(createCount, 1)
     assert.equal(await page.evaluate(key => sessionStorage.getItem(key), `eatwhat.hostGuest.create.${home}`), null)
     await dialog.getByText('客人想吃的菜', { exact: true }).first().waitFor()
+    await dialog.getByText('1 份点菜单 · 2 份菜').waitFor()
+    for (const fault of ['missing', 'mismatch', 'fractional']) {
+      badSummary = fault
+      await dialog.getByRole('button', { name: '刷新点菜' }).click()
+      await dialog.getByText(fault === 'mismatch' ? '点菜汇总与客人点菜单不一致' : '点菜汇总数据不完整', { exact: false }).waitFor()
+      await dialog.getByText('以下是上次成功加载的内容，可能已过期', { exact: false }).waitFor()
+      assert.equal(await dialog.getByRole('button', { name: '复制链接' }).isDisabled(), true)
+      badSummary = ''
+      await dialog.getByRole('button', { name: '重试', exact: true }).click()
+      await dialog.getByText('以下是上次成功加载的内容，可能已过期', { exact: false }).waitFor({ state: 'hidden' })
+    }
     await dialog.getByRole('button', { name: '编辑信息' }).click()
     const edit = dialog.locator('.edit-panel input').first()
     await edit.fill('本页的宴请草稿')

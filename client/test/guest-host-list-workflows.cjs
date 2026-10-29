@@ -13,7 +13,7 @@ async function main () {
     page.on('pageerror', error => errors.push(error.message))
     const items = Array.from({ length: 41 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), householdId: home, title: i === 40 ? '延迟旧宴请' : `宴请${String(i).padStart(3, '0')}`, status: i % 2 ? 'completed' : 'open', storedStatus: i % 2 ? 'completed' : 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: `https://example.test/guest-order/token${i}`, supportsConditionalSession: true, editVersion: { revision: `v${i}`, updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: i, totalQuantity: i }))
     let slowStarted; const slowRequest = new Promise(resolve => { slowStarted = resolve })
-    let malformed = false; let truncated = false; let failCapabilities = false
+    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
@@ -25,7 +25,9 @@ async function main () {
         const filtered = items.filter(item => item.title.includes(search) && (!status || item.status === status))
         const pagination = { page: pageNumber, limit, total: filtered.length, totalPages: Math.max(1, Math.ceil(filtered.length / limit)) }
         if (malformed) pagination.totalPages = 999
-        return route.fulfill({ json: { householdId: home, pagination, sessions: truncated ? [] : filtered.slice((pageNumber - 1) * limit, pageNumber * limit) } })
+        const sessions = truncated ? [] : filtered.slice((pageNumber - 1) * limit, pageNumber * limit)
+        if (invalidCounts && sessions.length) sessions[0] = { ...sessions[0], totalQuantity: undefined }
+        return route.fulfill({ json: { householdId: home, pagination, sessions } })
       }
       const selected = items.find(item => pathname.endsWith(item.id))
       return route.fulfill({ json: { session: { ...selected, summary: { guestCount: 0, totalQuantity: 0, dishes: [] }, orders: [] } } })
@@ -69,7 +71,11 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('宴请列表可能已变化，请重新加载', { exact: false }).waitFor()
     assert.equal(await page.locator('.session-card').count(), 0, 'a partial response must not masquerade as an empty result')
-    truncated = false; failCapabilities = true
+    truncated = false; invalidCounts = true
+    await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByText('宴请列表统计不完整').waitFor()
+    assert.equal(await page.locator('.session-card').count(), 0, 'missing counts must not appear as zero')
+    invalidCounts = false; failCapabilities = true
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('无法确认宴请列表范围，请重试', { exact: false }).waitFor()
     assert.equal(await page.locator('.session-card').count(), 0, 'unconfirmed capability must not misrepresent a partial page as complete')

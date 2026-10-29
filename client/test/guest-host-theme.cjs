@@ -16,7 +16,7 @@ async function main () {
       const pathname = new URL(route.request().url()).pathname
       if (pathname.endsWith('/capabilities')) return route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true } })
       if (pathname.endsWith('/guest-orders')) return route.fulfill({ json: { sessions: [session] } })
-      return route.fulfill({ json: { session: { ...session, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ name: '番茄炒蛋', mealId: 'meal', quantity: 2, guestNames: ['家人'], notes: ['少盐'] }] }, orders: [] } } })
+      return route.fulfill({ json: { session: { ...session, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ name: '番茄炒蛋', mealId: 'meal', quantity: 2, guestNames: ['家人'], notes: ['少盐'] }] }, orders: [{ id: 'order-1', guestName: '家人', items: [{ name: '番茄炒蛋', quantity: 2 }] }] } } })
     })
     await page.goto(`${base}/guest-orders`)
     await page.getByRole('button', { name: '查看详情' }).click()
