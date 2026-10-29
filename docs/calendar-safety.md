@@ -1,0 +1,5 @@
+# Calendar deletion and recovery
+
+The web calendar clears a meal slot with the version of the daily schedule it last read. A version conflict is reported as a rejected delete. A lost, malformed or otherwise ambiguous response is instead treated as an uncertain outcome; the page blocks further calendar edits and offers a read-only check of the latest day. The user must explicitly finish that review before continuing. Reviewing does not repeat the delete.
+
+A read is only a snapshot: a previously sent request can still complete after the check, and another household member can change the day again. The user is warned of this before continuing. A valid success response must identify the requested date, contain all meal arrays, show the deleted slot empty and carry a later version. Older clients or server instances and direct database writes may not provide equivalent protection. Deploy compatible web and server versions together, maintain a verified private backup, and test both conflict and response-loss scenarios before relying on the workflow.

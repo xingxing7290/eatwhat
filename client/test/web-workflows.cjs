@@ -527,11 +527,15 @@ async function main () {
   conflictSchedule = true
   await deleteDinner.click()
   await page.getByRole('button', { name: '确认', exact: true }).click()
-  await page.getByText('这天的安排已被更新').waitFor()
+  await page.getByText('安排已被其他成员修改，本次没有删除。').waitFor()
   const calendarDelete = writes.filter(item => item.path === `/schedules/${today}/dinner`).at(-1)
   assert.equal(calendarDelete.body.expectedVersion, schedule.scheduleVersion)
   assert.deepEqual(calendarDelete.body.mealIds, [])
   conflictSchedule = false
+  await page.getByRole('button', { name: '读取最新安排' }).click()
+  await page.getByText(`${today} 晚餐：当前有 2 道菜`).waitFor()
+  await page.getByRole('button', { name: '结束核对' }).click()
+  await page.getByRole('button', { name: '已核对，继续' }).click()
   await deleteDinner.waitFor()
   await deleteDinner.click()
   await page.getByRole('button', { name: '确认', exact: true }).click()

@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
 import { useMealStore } from '../stores/meal';
@@ -7,6 +7,7 @@ import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { format, addMonths, subMonths, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { useDraftGuard } from '@/composables/useDraftGuard';
 import { ArrowLeft, ArrowRight, Edit, Delete, Plus, Sunrise, Sunny, Sunset } from '@element-plus/icons-vue';
 
 const router = useRouter();
@@ -17,6 +18,13 @@ const currentDate = ref(new Date());
 const isLoading = ref(false);
 const loadError = ref('');
 const deleting = ref(false);
+const checkingDelete = ref(false);
+const confirmingReview = ref(false);
+const deleteIssue = ref(null);
+const blocked = computed(() => deleting.value || checkingDelete.value || confirmingReview.value || !!deleteIssue.value);
+const noDraft = ref(false);
+useDraftGuard({ dirty: noDraft, busy: computed(() => deleting.value || checkingDelete.value || confirmingReview.value), uncertain: computed(() => !!deleteIssue.value), label: '日历删除' });
+let active = true;
 const meals = ref([]);
 const partnerWishlist = ref([]);
 
@@ -118,7 +126,7 @@ const fetchMonthSchedules = async () => {
 
 // 新增：处理编辑日程的函数
 const handleEditSchedule = (date, mealType) => {
-  if (deleting.value || isLoading.value || loadError.value) return;
+  if (blocked.value || isLoading.value || loadError.value) return;
   const formattedDate = format(date, 'yyyy-MM-dd');
   const currentMealIds = scheduleStore.getMealIdsByDateAndType(formattedDate, mealType);
   
@@ -134,7 +142,7 @@ const handleEditSchedule = (date, mealType) => {
 
 // 跳转到菜品选择页面
 const navigateToMealSelection = (date, type) => {
-  if (deleting.value || isLoading.value || loadError.value) return;
+  if (blocked.value || isLoading.value || loadError.value) return;
   const formattedDate = format(date, 'yyyy-MM-dd');
   router.push({
     name: 'MealSelection',
@@ -255,7 +263,7 @@ const getAddedByLabel = (item) => {
 
 // 删除餐食安排
 const handleDeleteSchedule = async (date, mealType) => {
-  if (deleting.value || isLoading.value || loadError.value) return;
+  if (blocked.value || isLoading.value || loadError.value) return;
   const snapshot = getDateSchedule(date);
   if (!snapshot?.meals?.[mealType]?.length) return;
   if (snapshot.scheduleExists !== true || typeof snapshot.scheduleVersion !== 'string' || !Number.isFinite(Date.parse(snapshot.scheduleVersion))) {
@@ -279,13 +287,38 @@ const handleDeleteSchedule = async (date, mealType) => {
     }
   } catch (error) {
     // 用户取消删除操作或其他错误
-    if (error?.code === 'SCHEDULE_CONFLICT') {
-      ElMessage.warning('这天的安排已被更新，未执行删除；请查看最新安排');
-      await fetchMonthSchedules();
-    } else if (error !== 'cancel' && error !== 'close') {
-      ElMessage.error('删除餐食安排失败');
-    }
+    if (error === 'cancel' || error === 'close') return;
+    if ((error?.code === 'SESSION_CHANGED' || error?.code === 'SESSION_EXPIRED') && !error.requestSent) return ElMessage.warning(error.error || '登录状态已变化，删除请求未发送');
+    if (error?.code === 'HOUSEHOLD_SCOPE_UNVERIFIED' || error?.code === 'HOUSEHOLD_SCOPE_CHANGED') return ElMessage.warning(error.error || '家庭状态已变化，删除请求未发送');
+    deleteIssue.value = { date: format(date, 'yyyy-MM-dd'), type: mealType, conflict: error?.code === 'SCHEDULE_CONFLICT', checked: false, error: '', count: null };
   } finally { deleting.value = false; }
+};
+const checkDeleteIssue = async () => {
+  const issue = deleteIssue.value;
+  if (!issue || checkingDelete.value || deleting.value) return;
+  checkingDelete.value = true;
+  issue.checked = false; issue.error = '';
+  try {
+    const result = await api.schedule.getScheduleByDate(issue.date);
+    if (!active || deleteIssue.value !== issue) return;
+    if (!result || result.date !== issue.date || typeof result.scheduleExists !== 'boolean' || !result.meals ||
+        !mealTypes.every(type => Array.isArray(result.meals[type.key])) ||
+        (result.scheduleExists ? typeof result.scheduleVersion !== 'string' || !Number.isFinite(Date.parse(result.scheduleVersion)) : result.scheduleVersion !== null || mealTypes.some(type => result.meals[type.key].length))) throw new Error('最新安排或版本不完整');
+    const index = scheduleStore.schedules.findIndex(day => day.date === issue.date);
+    if (index >= 0) scheduleStore.schedules[index] = result;
+    else scheduleStore.schedules.push(result);
+    issue.count = result.meals[issue.type].length;
+    issue.checked = true;
+  } catch (error) { if (active && deleteIssue.value === issue) issue.error = error?.error || error?.message || '无法读取最新安排'; }
+  finally { checkingDelete.value = false; }
+};
+const finishDeleteReview = async () => {
+  if (!deleteIssue.value?.checked || checkingDelete.value || confirmingReview.value) return;
+  confirmingReview.value = true;
+  try {
+    await ElMessageBox.confirm('核对结果只代表读取时的状态；先前请求仍可能稍后完成。继续不会自动重试删除，请自行确认后再操作。', '结束核对？', { type: 'warning', confirmButtonText: '已核对，继续', cancelButtonText: '继续核对' });
+    deleteIssue.value = null;
+  } catch (_) {} finally { confirmingReview.value = false; }
 };
 
 // 监听当前日期变化，切换月份时获取该月安排
@@ -299,6 +332,7 @@ watch(
 onMounted(() => {
   fetchMonthSchedules();
 });
+onBeforeUnmount(() => { active = false; });
 </script>
 
 <template>
@@ -311,7 +345,7 @@ onMounted(() => {
           <div class="month-navigation">
             <el-button 
               @click="changeMonth(-1)" 
-              :disabled="isLoading || deleting"
+              :disabled="isLoading || blocked"
               aria-label="上个月"
               class="nav-btn"
             >
@@ -322,7 +356,7 @@ onMounted(() => {
             
             <el-button 
               @click="changeMonth(1)" 
-              :disabled="isLoading || deleting"
+              :disabled="isLoading || blocked"
               aria-label="下个月"
               class="nav-btn"
             >
@@ -332,7 +366,7 @@ onMounted(() => {
           
           <el-button 
             @click="goToToday" 
-            :disabled="isLoading || deleting"
+            :disabled="isLoading || blocked"
             class="today-btn"
           >
             今天
@@ -340,6 +374,14 @@ onMounted(() => {
         </div>
       </div>
     </div>
+
+    <el-alert v-if="deleteIssue" class="delete-review" type="warning" :closable="false" show-icon :title="deleteIssue.conflict ? '安排已被其他成员修改，本次没有删除。' : '删除结果未确认，请先核对最新安排。'">
+      <p>{{ deleteIssue.date }} {{ mealTypes.find(type => type.key === deleteIssue.type)?.label }}：{{ deleteIssue.checked ? (deleteIssue.count ? `当前有 ${deleteIssue.count} 道菜` : '当前没有安排') : '尚未核对' }}</p>
+      <p>核对不会自动重复删除；先前请求仍可能稍后完成。</p>
+      <p v-if="deleteIssue.error">{{ deleteIssue.error }}</p>
+      <el-button link type="primary" :loading="checkingDelete" @click="checkDeleteIssue">读取最新安排</el-button>
+      <el-button v-if="deleteIssue.checked" link type="primary" :disabled="checkingDelete || confirmingReview" @click="finishDeleteReview">结束核对</el-button>
+    </el-alert>
 
     <div v-if="partnerWishlist.length" class="partner-wishlist-banner">
       <div><strong>TA 最近想吃</strong><span v-for="item in partnerWishlist" :key="item._id">{{ item.title }}</span></div>
@@ -351,7 +393,7 @@ onMounted(() => {
       <div class="mobile-nav-controls">
         <el-button 
           @click="changeMonth(-1)" 
-          :disabled="isLoading || deleting"
+          :disabled="isLoading || blocked"
           aria-label="上个月"
           size="small"
           class="mobile-nav-btn"
@@ -363,7 +405,7 @@ onMounted(() => {
         
         <el-button 
           @click="changeMonth(1)" 
-          :disabled="isLoading || deleting"
+          :disabled="isLoading || blocked"
           aria-label="下个月"
           size="small"
           class="mobile-nav-btn"
@@ -373,7 +415,7 @@ onMounted(() => {
         
         <el-button 
           @click="goToToday" 
-          :disabled="isLoading || deleting"
+          :disabled="isLoading || blocked"
           size="small"
           class="mobile-today-btn inline"
         >
@@ -445,7 +487,7 @@ onMounted(() => {
                             type="primary"
                             size="small" 
                             circle
-                            :disabled="deleting"
+                            :disabled="blocked"
                             :aria-label="`编辑${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                             @click.stop="handleEditSchedule(day, mealType.key)"
                           >
@@ -456,7 +498,7 @@ onMounted(() => {
                             type="danger" 
                             size="small" 
                             circle
-                            :disabled="deleting"
+                            :disabled="blocked"
                             :aria-label="`删除${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                             @click.stop="handleDeleteSchedule(day, mealType.key)"
                           >
@@ -492,7 +534,7 @@ onMounted(() => {
                     v-else 
                     type="button"
                     class="add-meal" 
-                    :disabled="deleting"
+                    :disabled="blocked"
                     :aria-label="`安排${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                     @click="navigateToMealSelection(day, mealType.key)"
                     :style="{ 'border-color': `${mealType.color}50` }"
@@ -545,7 +587,7 @@ onMounted(() => {
                         type="primary" 
                         size="small" 
                         circle
-                        :disabled="deleting"
+                        :disabled="blocked"
                         :aria-label="`编辑${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                         @click="handleEditSchedule(day, mealType.key)"
                       >
@@ -556,7 +598,7 @@ onMounted(() => {
                         type="danger" 
                         size="small" 
                         circle
-                        :disabled="deleting"
+                        :disabled="blocked"
                         :aria-label="`删除${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                         @click="handleDeleteSchedule(day, mealType.key)"
                       >
@@ -590,7 +632,7 @@ onMounted(() => {
                     v-else 
                     type="button"
                     class="mobile-add-meal"
-                    :disabled="deleting"
+                    :disabled="blocked"
                     :aria-label="`安排${format(day, 'yyyy-MM-dd')}${mealType.label}`"
                     @click="navigateToMealSelection(day, mealType.key)"
                     :style="{ 'border-color': `${mealType.color}50` }"
@@ -609,6 +651,11 @@ onMounted(() => {
 </template>
 
 <style lang="scss" scoped>
+.delete-review { background: var(--bg-secondary); border: 1px solid var(--border-color); }
+.delete-review :deep(.el-alert__title), .delete-review :deep(.el-alert__description), .delete-review :deep(.el-alert__icon), .delete-review :deep(.el-button) { color: var(--text-primary); }
+.delete-review :deep(.el-button) { min-height: 44px; font-weight: 700; text-decoration: underline; }
+.delete-review :deep(.el-button:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.delete-review p { margin: 6px 0; overflow-wrap: anywhere; }
 .partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
 .add-meal, .mobile-add-meal { width: 100%; font: inherit; }
 .partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }

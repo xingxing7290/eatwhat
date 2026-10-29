@@ -122,6 +122,12 @@ export const useScheduleStore = defineStore('schedule', {
       
       try {
         const result = await scheduleApi.deleteMeal(date, mealType, options);
+        const previous = options.expectedVersion;
+        if (result?.date !== date || !result?.meals || !['breakfast', 'lunch', 'dinner'].every(type => Array.isArray(result.meals[type])) ||
+            result.meals[mealType].length !== 0 || !result.updatedAt || !Number.isFinite(Date.parse(result.updatedAt)) ||
+            (typeof previous === 'string' && Date.parse(result.updatedAt) <= Date.parse(previous))) {
+          throw new Error('删除结果未确认，请核对最新安排');
+        }
         
         // 更新本地状态
         const index = this.schedules.findIndex(s => s.date === date);
@@ -133,7 +139,6 @@ export const useScheduleStore = defineStore('schedule', {
         return true;
       } catch (err) {
         this.error = err?.error || err?.message || '删除餐食安排失败';
-        if (err?.code !== 'SCHEDULE_CONFLICT') ElMessage.error(this.error);
         throw err;
       } finally {
         this.loading = false;

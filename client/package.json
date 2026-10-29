@@ -8,6 +8,7 @@
     "preview": "vite preview --host",
     "test:workflows": "node test/web-workflows.cjs",
     "test:selection": "node test/selection-workflows.cjs",
+    "test:calendar-delete": "node test/calendar-delete-workflows.cjs",
     "test:shopping": "node test/shopping-workflows.cjs",
     "test:shopping-filter": "node test/shopping-filter-workflows.cjs",
     "test:shopping-theme": "node test/shopping-theme.cjs",
