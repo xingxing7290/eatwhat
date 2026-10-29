@@ -13,7 +13,7 @@ async function main () {
     let items = [
       { _id: 'egg', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: true },
       { _id: 'milk', name: '牛奶', amount: '1L', category: 'other', checked: true, manual: true },
-      { _id: 'spinach', name: '菠菜', amount: '1把', category: 'vegetable', checked: false, manual: false },
+      { _id: 'spinach', name: '菠菜', amount: '1把', category: 'vegetable', checked: false, manual: false, quantityComplete: false },
       { _id: 'rice', name: '大米', amount: '2斤', category: 'staple', checked: false, manual: true }
     ]
     const snapshot = () => ({ weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: version, items })
@@ -35,6 +35,7 @@ async function main () {
     holdInitial = false; releaseInitial()
     await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
     assert.match(await page.locator('.progress-card').innerText(), /2\s*\/\s*4/)
+    await page.locator('.item-row').filter({ hasText: '菠菜' }).getByText('用量待核对').waitFor()
     await page.getByRole('button', { name: '从排餐生成' }).click()
     await page.getByText('食材用量和已购状态可能变化', { exact: false }).waitFor()
     await page.getByRole('button', { name: '取消', exact: true }).click()

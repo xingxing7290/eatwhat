@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const shoppingListItemSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   amount: { type: String, trim: true, default: '' },
+  quantityComplete: { type: Boolean, default: null },
   category: { type: String, enum: ['vegetable', 'meat_egg', 'staple', 'seasoning', 'other'], default: 'other', index: true },
   checked: { type: Boolean, default: false },
   manual: { type: Boolean, default: false },
