@@ -15,6 +15,7 @@ async function main () {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const meals = Array.from({ length: 650 }, (_, i) => ({ _id: i.toString(16).padStart(24, '0'), name: i === 649 ? '末页特色菜' : i === 648 ? '延迟旧结果' : `菜品${String(i).padStart(4, '0')}`, category: i < 325 ? '热菜' : '素菜' }))
+    const longName = 'LongDishName'.repeat(8); meals[1].name = longName
     const session = { title: '测试菜单', householdName: '测试家庭', status: 'open', canOrder: true, supportsGuestMenuPagination: true }
     let slowStarted
     const slowRequest = new Promise(resolve => { slowStarted = resolve })
@@ -41,6 +42,21 @@ async function main () {
     await page.getByText('650 道菜', { exact: false }).waitFor()
     assert.equal(await page.locator('.meal').count(), 24)
     assert.equal(await page.getByText('第 1 / 28 页').count(), 2)
+    await page.setViewportSize({ width: 320, height: 844 })
+    const longCard = page.locator('.meal').filter({ hasText: longName })
+    assert.equal(await longCard.locator('h3').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'long menu names must remain readable')
+    await longCard.getByRole('button', { name: '＋ 想吃' }).click()
+    await page.getByRole('button', { name: '查看菜单' }).click()
+    const longRow = page.locator('.cart-row').filter({ hasText: longName })
+    assert.equal(await longRow.evaluate(node => node.scrollWidth <= node.clientWidth), true, 'long selected names must remain within the order sheet')
+    const rowBox = await longRow.boundingBox()
+    for (const button of await longRow.locator('.stepper button').all()) {
+      const box = await button.boundingBox()
+      assert.ok(box.width >= 44 && box.height >= 44 && box.x >= rowBox.x && box.x + box.width <= rowBox.x + rowBox.width, 'quantity controls must remain visible and tappable')
+    }
+    await longRow.getByRole('button', { name: `减少${longName}` }).click()
+    await page.getByRole('button', { name: '关闭', exact: true }).click()
+    await page.setViewportSize({ width: 390, height: 844 })
     if (process.env.EATWHAT_GUEST_MENU_SHOT) await page.screenshot({ path: process.env.EATWHAT_GUEST_MENU_SHOT })
     const firstMeal = page.locator('.meal').filter({ hasText: '菜品0000' })
     const addFirst = firstMeal.getByRole('button', { name: '＋ 想吃' })
