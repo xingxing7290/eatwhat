@@ -118,6 +118,12 @@
         <el-button :disabled="governanceLoading || !!resolvingIssue || defaultLoading || issuePagination.page <= 1" @click="changeIssuePage(issuePagination.page - 1)">上一页</el-button>
         <span aria-live="polite" aria-atomic="true">第 {{ issuePagination.page }} / {{ issuePagination.totalPages }} 页 · 共 {{ issuePagination.total }} 条</span>
         <el-button :disabled="governanceLoading || !!resolvingIssue || defaultLoading || issuePagination.page >= issuePagination.totalPages" @click="changeIssuePage(issuePagination.page + 1)">下一页</el-button>
+        <form v-if="issuePagination.totalPages > 2" class="issue-page-jump" @submit.prevent="jumpToIssuePage">
+          <label for="issue-page-number">跳至</label>
+          <input id="issue-page-number" v-model="issueJump" type="text" inputmode="numeric" autocomplete="off" :aria-invalid="issueJumpError ? 'true' : undefined" :aria-describedby="issueJumpError ? 'issue-page-error' : undefined" @input="issueJumpError = ''" />
+          <span>页</span><button type="submit" :disabled="!!resolvingIssue || defaultLoading">跳转</button>
+          <span v-if="issueJumpError" id="issue-page-error" class="issue-page-error" role="alert">{{ issueJumpError }}</span>
+        </form>
       </nav>
     </el-card>
 
@@ -212,6 +218,8 @@ const defaultStatus = ref(null);
 const imageIssues = ref(null);
 const issuePage = ref(1);
 const issuePagination = ref(null);
+const issueJump = ref('1');
+const issueJumpError = ref('');
 const issuePageSize = 20;
 const failedIssueImages = ref(new Set());
 const defaultLoading = ref(false);
@@ -316,6 +324,7 @@ const loadGovernance = async () => {
         imageIssues.value = data.items;
       }
       issuesError.value = false; failedIssueImages.value = new Set();
+      issueJump.value = String(issuePage.value); issueJumpError.value = '';
     } catch (_) { issuesError.value = true; issuePagination.value = null; }
     if (defaultUncertain.value) defaultReviewReady.value = !defaultError.value;
     if (issueUncertain.value) issueReviewReady.value = !issuesError.value;
@@ -327,6 +336,18 @@ const changeIssuePage = async page => {
   const source = document.activeElement; issuePage.value = page;
   await loadGovernance(); await nextTick();
   if ((!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) && source?.closest?.('.issue-pagination')) issuesSection.value?.$el?.focus();
+};
+const jumpToIssuePage = () => {
+  if (!issuePagination.value) return;
+  const input = issueJump.value.trim();
+  const page = Number(input);
+  if (!/^[0-9]+$/.test(input) || !Number.isSafeInteger(page) || page < 1 || page > issuePagination.value.totalPages) {
+    issueJumpError.value = `请输入 1 至 ${issuePagination.value.totalPages} 的页码`;
+    return;
+  }
+  issueJumpError.value = '';
+  if (page === issuePagination.value.page) { issueJump.value = String(page); return; }
+  void changeIssuePage(page);
 };
 const clearAvatarFile = () => {
   avatarFile.value = null;
@@ -598,6 +619,12 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .issue-refresh .el-button { min-height: 44px; margin: 0; }
 .issue-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 16px; color: var(--text-primary); font-size: 13px; }
 .issue-pagination .el-button { min-height: 44px; margin: 0; }
+.issue-page-jump { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; }
+.issue-page-jump input { box-sizing: border-box; width: 62px; min-height: 44px; padding: 6px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; text-align: center; }
+.issue-page-jump button { min-height: 44px; padding: 0 12px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; cursor: pointer; }
+.issue-page-jump input:focus-visible, .issue-page-jump button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.issue-page-jump button:disabled { opacity: .55; cursor: not-allowed; }
+.issue-page-error { flex-basis: 100%; color: var(--el-color-danger); text-align: center; }
 .issue-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
 .issue-placeholder { width: 64px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: var(--bg-primary); color: var(--text-secondary); font-size: 12px; }
