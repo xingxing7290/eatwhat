@@ -35,12 +35,12 @@ function flattenScheduleMeals(schedule) {
 function balanceHintsForDay(schedule) {
   const meals = flattenScheduleMeals(schedule);
   if (!meals.length) return [];
-  const text = meals.map(meal => `${meal.name || ''} ${meal.category || ''} ${(meal.tags || []).join(' ')} ${(meal.healthTags || []).join(' ')}`).join(' ');
+  const text = meals.map(meal => `${meal.name || ''} ${meal.category || ''} ${(meal.tags || []).join(' ')} ${(meal.healthTags || []).join(' ')} ${(meal.ingredients || []).map(item => item?.name || '').join(' ')}`).join(' ');
   const hints = [];
-  if (!/(菜|蔬|青|菠菜|白菜|生菜|油麦|西兰花|清淡|蔬菜多)/.test(text)) hints.push('今天蔬菜偏少');
+  if (!/(蔬菜|青菜|菠菜|白菜|生菜|油麦|西兰花|芹菜|芥蓝|茼蒿|番茄|西红柿|黄瓜|萝卜|茄子|青椒|西葫芦|豆角|冬瓜|南瓜|丝瓜|苦瓜|菌菇|蘑菇)/.test(text)) hints.push('未识别到蔬菜，请核对食材');
   const heavyCount = meals.filter(meal => Number(meal.spiceLevel || 0) >= 4 || (meal.healthTags || []).includes('重口') || /麻辣|烧烤|火锅|下饭/.test(`${meal.tags || []} ${meal.category || ''}`)).length;
-  if (heavyCount >= 2) hints.push('今天口味偏重');
-  if (meals.some(meal => (meal.healthTags || []).includes('快手') || Number(meal.cookTime || 0) <= 15)) hints.push('包含快手菜');
+  if (heavyCount >= 2) hints.push('口味可能偏重，请自行核对');
+  if (meals.some(meal => (meal.healthTags || []).includes('快手') || (Number(meal.cookTime) > 0 && Number(meal.cookTime) <= 15))) hints.push('包含快手菜');
   return hints;
 }
 async function weekSchedules(householdId, weekStart) {

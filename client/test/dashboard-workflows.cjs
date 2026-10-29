@@ -16,7 +16,7 @@ async function main () {
     const meals = { breakfast: [], lunch: [], dinner: [] }
     const summary = () => {
       const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals }))
-      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: [], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
+      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: ['未识别到蔬菜，请核对食材'], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
     }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -35,6 +35,7 @@ async function main () {
     })
     await page.goto(`${base}/dashboard`)
     await page.getByText('家人想吃的菜').waitFor()
+    await page.getByText('未识别到蔬菜，请核对食材').waitFor()
     await page.getByText('家人提出或支持的待完成心愿，最多显示 6 条。').waitFor()
     assert.equal(calls, 1)
     date = '2026-10-29'
