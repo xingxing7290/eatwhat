@@ -240,6 +240,7 @@ const navigateToMealSelection = (date, type) => {
 
 // 切换月份
 const changeMonth = (delta) => {
+  shouldScrollToToday.value = false;
   targetedDate.value = '';
   invalidDateLink.value = false;
   currentDate.value = delta > 0 
@@ -282,34 +283,32 @@ const jumpToMobileDate = event => {
   else void router.replace({ name: 'calendar', query: { date } });
 };
 
-// 重试查找今天元素
-const tryScrollToToday = (attempt = 0) => {
+// Only complete a still-current request after the month has loaded.
+const scrollToToday = () => {
+  if (!active || !shouldScrollToToday.value || isLoading.value) return;
+  shouldScrollToToday.value = false;
+  if (loadError.value) return;
   const mobileToday = document.querySelector('.mobile-date-card.today');
   if (mobileToday?.getClientRects().length) {
     scrollElementIntoView(mobileToday);
-    return true;
+    return;
   }
   const desktopToday = document.querySelector('.calendar-body .date-cell.today');
   if (desktopToday?.getClientRects().length) {
     scrollElementIntoView(desktopToday, { containerSelector: '.calendar-grid' });
-    return true;
+    return;
   }
-  if (attempt < 15) { // 增加到 ~2s 重试时间
-    setTimeout(() => tryScrollToToday(attempt + 1), 130);
-  }
-  return false;
 };
 
 // 切换到今天
 const goToToday = async () => {
+  shouldScrollToToday.value = true;
   targetedDate.value = '';
   invalidDateLink.value = false;
   currentDate.value = new Date();
   syncCalendarMonth();
-  shouldScrollToToday.value = true;
   await nextTick();
-  // 若无需等待加载，也尝试一次
-  tryScrollToToday();
+  scrollToToday();
 };
 
 // 当加载状态从 true -> false 时，如果需要则滚动
@@ -318,8 +317,7 @@ watch(
   async (newVal, oldVal) => {
     if (oldVal === true && newVal === false && shouldScrollToToday.value) {
       await nextTick();
-      tryScrollToToday();
-      shouldScrollToToday.value = false;
+      scrollToToday();
     }
   }
 );
@@ -453,6 +451,7 @@ watch(() => [route.query.date, route.query.month], async () => {
   if (route.name !== 'calendar') return;
   const location = parseLocation(route.query);
   if (location.invalid) return;
+  if (location.target) shouldScrollToToday.value = false;
   const sameMonth = format(location.date, 'yyyy-MM') === format(currentDate.value, 'yyyy-MM');
   targetedDate.value = location.target; invalidDateLink.value = false;
   if (!sameMonth) currentDate.value = location.date;

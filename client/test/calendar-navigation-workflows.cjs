@@ -18,13 +18,14 @@ async function main () {
       Element.prototype.scroll = function (...args) { if (args[0] && typeof args[0] === 'object') { window.__calendarScrolls.push(args[0].behavior); window.__calendarScrollTargets.push(this.classList.contains('calendar-grid') ? 'grid' : 'other') }; return elementScroll.apply(this, args) }
     })
     const errors = []; const reads = []; page.on('pageerror', error => errors.push(error.message))
-    let recipeWrites = 0
+    let recipeWrites = 0; let failToday = false
     const recipe = { _id: 'recipe-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } }
     await page.route('**/api/**', route => {
       const url = new URL(route.request().url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/schedules') {
         reads.push(`${url.searchParams.get('year')}-${url.searchParams.get('month')}`)
+        if (failToday && url.searchParams.get('year') === '2026' && url.searchParams.get('month') === '10') return route.fulfill({ status: 503, json: { error: '测试加载失败' } })
         const rows = url.searchParams.get('year') === '2026' && url.searchParams.get('month') === '12' ? [{ date: '2026-12-31', scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: { _id: 'recipe-a', name: '家常菜' } }, { meal: null }] } }] : []
         return route.fulfill({ json: rows })
       }
@@ -144,6 +145,17 @@ async function main () {
     await page.waitForFunction(() => window.__calendarScrollTargets.includes('window'))
     assert.equal(await page.evaluate(() => window.__calendarScrollTargets.includes('grid')), false, 'mobile today navigation must not scroll the hidden desktop grid')
     await page.waitForFunction(() => { const day = document.querySelector('.mobile-date-card.today').getBoundingClientRect(); return day.bottom > 0 && day.top < innerHeight })
+    await page.goto(`${base}/calendar?month=2026-12`)
+    await page.locator('.mobile-month-nav').getByText('2026年12月').waitFor()
+    failToday = true
+    await page.locator('.mobile-month-nav').getByRole('button', { name: '今天' }).click()
+    await page.getByText('无法加载月度安排：测试加载失败').waitFor()
+    failToday = false
+    await page.evaluate(() => { window.__calendarScrollTargets = [] })
+    await page.getByRole('button', { name: '重新加载' }).click()
+    await page.locator('.mobile-date-card.today').waitFor()
+    await page.waitForTimeout(500)
+    assert.deepEqual(await page.evaluate(() => window.__calendarScrollTargets), [], 'a failed today request must not scroll later after a retry')
     assert.deepEqual(errors, [])
     console.log('Calendar navigation checks passed: recipe details and editing, themes, dated selection, history and invalid links')
   } finally { await browser.close() }
