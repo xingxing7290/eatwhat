@@ -10,13 +10,18 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const rows = Array.from({ length: 29 }, (_, i) => ({ _id: `w${String(i).padStart(2, '0')}`, title: `心愿${String(i).padStart(2, '0')}`, note: '', category: '家常', status: i < 20 ? 'open' : i < 26 ? 'planned' : i < 28 ? 'done' : 'legacy', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked', createdAt: new Date(1700000000000 - i * 1000).toISOString() }))
-    const errors = []; const requests = []; let releaseSlow; let detailError = false
+    const errors = []; const requests = []; let releaseSlow; let detailError = false; let preflight = 'ok'; let createRequests = 0
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === '/meals' && request.method() === 'POST') return route.fulfill({ status: 503, json: { error: '模拟创建响应丢失' } })
-      if (path.startsWith('/wishlist/') && request.method() === 'GET') return detailError ? route.fulfill({ status: 404, json: { code: 'WISH_NOT_FOUND', error: '模拟记录暂时不可读' } }) : route.fulfill({ json: rows.find(row => row._id === path.split('/').pop()) || {} })
+      if (path === '/meals' && request.method() === 'POST') { createRequests++; return route.fulfill({ status: 503, json: { error: '模拟创建响应丢失' } }) }
+      if (path.startsWith('/wishlist/') && request.method() === 'GET') {
+        if (detailError || preflight === 'error') return route.fulfill({ status: 503, json: { error: '模拟记录暂时不可读' } })
+        const row = rows.find(row => row._id === path.split('/').pop())
+        if (preflight === 'changed' && row) row.mealLinkStatus = 'unavailable'
+        return route.fulfill({ json: row || {} })
+      }
       if (path === '/wishlist' && request.method() === 'GET') {
         const query = Object.fromEntries(url.searchParams); requests.push(query)
         if (query.search === '心愿01') await new Promise(resolve => { releaseSlow = resolve })
@@ -34,6 +39,19 @@ async function main () {
     await page.getByText('共 29 条匹配记录 · 第 1 / 3 页').waitFor()
     assert.equal(await page.locator('.wish-card').count(), 12)
     assert.equal(requests[0].view, 'board')
+    preflight = 'changed'
+    await page.locator('.wish-card').filter({ hasText: '心愿00' }).getByRole('button', { name: '转菜品' }).click()
+    await page.getByText('想吃记录或菜谱关联已变化', { exact: false }).waitFor()
+    assert.equal(createRequests, 0, 'a changed association must never create a recipe')
+    await page.locator('.wish-card').filter({ hasText: '心愿00' }).getByText('原关联菜谱不可用', { exact: false }).waitFor()
+    rows[0].mealLinkStatus = 'unlinked'; preflight = 'ok'
+    await page.reload(); await page.getByText('共 29 条匹配记录 · 第 1 / 3 页').waitFor()
+    preflight = 'error'
+    await page.locator('.wish-card').filter({ hasText: '心愿00' }).getByRole('button', { name: '转菜品' }).click()
+    await page.getByText('无法核对最新想吃记录，本次没有创建菜谱', { exact: false }).waitFor()
+    assert.equal(createRequests, 0, 'a failed preflight must not create or flag an uncertain write')
+    assert.equal(await page.getByText('创建结果不确定', { exact: false }).count(), 0)
+    preflight = 'ok'
     await page.locator('.wish-card').filter({ hasText: '心愿00' }).getByRole('button', { name: '转菜品' }).click()
     await page.locator('.wish-card').filter({ hasText: '心愿00' }).getByText('创建结果不确定', { exact: false }).waitFor()
     await page.getByRole('button', { name: '下一页' }).click()

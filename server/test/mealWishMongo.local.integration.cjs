@@ -138,6 +138,7 @@ async function main() {
     app.get('/meals/tags', mealController.getMealTags);
     app.get('/meals/archive-capabilities', mealController.archiveCapabilities);
     app.get('/meals/:id', mealController.getMealById);
+    app.post('/meals', multer().fields([{ name: 'image', maxCount: 1 }, { name: 'photos', maxCount: 12 }, { name: 'stepImages', maxCount: 20 }]), mealController.validateMeal, mealController.createMeal);
     app.put('/meals/:id', multer().fields([{ name: 'image', maxCount: 1 }, { name: 'photos', maxCount: 12 }, { name: 'stepImages', maxCount: 20 }]), mealController.validateMeal, mealController.updateMeal);
     app.put('/meals/:id/archive', mealController.setArchived);
     app.get('/schedules', scheduleController.validateSchedulesQuery, scheduleController.getSchedules);
@@ -1790,6 +1791,18 @@ async function main() {
       await pages[1].getByRole('dialog', { name: '删除食材' }).getByRole('button', { name: '删除', exact: true }).click();
       await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor({ state: 'hidden' });
       assert.equal((await request('/shopping-list?weekStart=2026-10-26', { token: tokenA })).data.items.length, 0);
+      const browserConvert = await WishlistItem.create({ householdId: homeA._id, createdBy: userA._id, title: '浏览器安全转菜', status: 'open', category: '汤' });
+      await pages[0].goto(`${webBase}/wishlist`);
+      await pages[0].getByRole('textbox', { name: '搜索想吃记录' }).fill('浏览器安全转菜');
+      const convertCard = pages[0].locator('.wish-card').filter({ hasText: '浏览器安全转菜' });
+      await convertCard.getByRole('button', { name: '转菜品' }).click();
+      try { await convertCard.getByRole('button', { name: '安排今天晚餐' }).waitFor({ timeout: 8000 }); }
+      catch (error) { console.error('Conversion state:', await convertCard.innerText(), 'messages:', await pages[0].locator('.el-message').allTextContents()); throw error; }
+      const convertedWish = await WishlistItem.findById(browserConvert._id);
+      assert.ok(convertedWish.mealId, 'the freshly checked wish is linked to the created recipe');
+      assert.equal((await Meal.findById(convertedWish.mealId)).name, '浏览器安全转菜');
+      await WishlistItem.deleteOne({ _id: browserConvert._id });
+      await Meal.deleteOne({ _id: convertedWish.mealId });
       await pages[0].goto(`${webBase}/weekly-plan`);
       await pages[0].getByRole('button', { name: '生成草稿' }).click();
       await pages[0].getByText('规则生成草稿').waitFor();

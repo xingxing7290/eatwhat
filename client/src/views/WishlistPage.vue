@@ -287,6 +287,13 @@ const convertToMeal = async (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
   convertingId.value = item._id;
   try {
+    let latest;
+    try { latest = await api.wishlist.get(item._id, { suppressErrorToast: true }); }
+    catch (_) { ElMessage.warning('无法核对最新想吃记录，本次没有创建菜谱，请稍后重试'); return; }
+    if (!alive) return;
+    const unchanged = latest?._id === item._id && canLinkMeal(latest) && latest.title === item.title &&
+      (latest.note || '') === (item.note || '') && (latest.category || '') === (item.category || '') && latest.status === item.status;
+    if (!unchanged) { ElMessage.warning('想吃记录或菜谱关联已变化，本次没有创建菜谱，请核对最新清单'); await load(); return; }
     const meal = await api.meal.createMeal({ name: item.title, description: item.note || '来自想吃清单', category: item.category || '想吃清单', tags: ['想吃清单'], favorite: true });
     if (!meal?._id && !meal?.id) throw new Error('创建结果缺少菜谱编号');
     pendingLinks[item._id] = meal._id || meal.id;
