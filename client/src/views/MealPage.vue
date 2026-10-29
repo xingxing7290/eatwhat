@@ -719,7 +719,8 @@ onBeforeUnmount(() => {
       <el-collapse-transition>
         <div id="catalog-advanced-filters" v-show="showAdvancedFilters" class="advanced-filters">
           <div class="filter-item">
-            <el-select v-model="selectedTag" placeholder="选择标签" clearable class="tag-select">
+            <span class="filter-field-label" aria-hidden="true">标签</span>
+            <el-select v-model="selectedTag" aria-label="标签" placeholder="选择标签" clearable class="tag-select">
               <el-option
                 v-for="tag in allTags"
                 :key="tag"
@@ -730,7 +731,8 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="filter-item">
-            <el-select v-model="selectedCategory" placeholder="选择分类" clearable class="tag-select">
+            <span class="filter-field-label" aria-hidden="true">分类</span>
+            <el-select v-model="selectedCategory" aria-label="分类" placeholder="选择分类" clearable class="tag-select">
               <el-option
                 v-for="c in categoryOptions"
                 :key="c"
@@ -741,8 +743,10 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="filter-item">
+            <span class="filter-field-label" aria-hidden="true">子类</span>
             <el-select
               v-model="selectedSubcategory"
+              aria-label="子类"
               placeholder="选择子类"
               clearable
               class="tag-select"
@@ -758,7 +762,8 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="filter-item">
-            <el-select v-model="selectedDifficulty" placeholder="选择难度" clearable class="tag-select">
+            <span class="filter-field-label" aria-hidden="true">难度</span>
+            <el-select v-model="selectedDifficulty" aria-label="难度" placeholder="选择难度" clearable class="tag-select">
               <el-option label="简单" value="easy" />
               <el-option label="中等" value="medium" />
               <el-option label="进阶" value="hard" />
@@ -781,7 +786,7 @@ onBeforeUnmount(() => {
       <aside class="category-sidebar" aria-label="菜品分类">
         <div class="category-heading">菜品分类</div>
         <nav class="category-list" aria-label="选择菜品分类">
-          <button type="button" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部菜品</button>
+          <button type="button" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部分类</button>
           <button type="button" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
           <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = category">{{ category }}</button>
         </nav>
@@ -1331,10 +1336,12 @@ onBeforeUnmount(() => {
 .filter-item {
   min-width: 0;
 }
+.filter-field-label { display: block; margin: 0 0 6px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
 
 .favorite-filter {
   display: flex;
-  align-items: center;
+  align-items: end;
+  padding-bottom: 4px;
   min-height: 32px;
 }
 

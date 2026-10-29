@@ -299,7 +299,7 @@ async function main () {
   await page.locator('.meals-container').getByText('麻婆豆腐').first().waitFor()
   assert.equal(await page.locator('.meals-container').getByText('番茄炒蛋').count(), 0)
   assert.equal(reads.some(item => item.includes('/meals?') && item.includes('category=')), true)
-  await page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '全部菜品' }).click()
+  await page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '全部分类' }).click()
   await page.locator('.meal-card-wrapper').filter({ hasText: '番茄炒蛋' }).first().focus()
   await page.keyboard.press('Enter')
   await page.waitForURL('**/meals/detail/meal-a')
