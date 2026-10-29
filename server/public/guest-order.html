@@ -106,7 +106,7 @@
       cursor: pointer;
     }
     .filter.active { color: white; background: var(--peach); border-color: var(--peach); }
-    .filter:focus-visible, .menu-pagination button:focus-visible, .menu-retry:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
+    .filter:focus-visible, .menu-pagination button:focus-visible, .menu-retry:focus-visible, #menuHeading:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
     .section-head { display: flex; align-items: end; justify-content: space-between; margin: 20px 2px 12px; }
     .section-head h2 { margin: 0; font-size: 21px; }
     .count { color: var(--muted); font-size: 13px; font-weight: 800; }
@@ -260,9 +260,9 @@
       <div class="filters" id="filters" role="group" aria-label="菜品分类"></div>
     </section>
 
-    <div class="section-head"><h2>今天想吃什么</h2><span class="count" id="count" aria-live="polite">加载中</span></div>
+    <div class="section-head"><h2 id="menuHeading" tabindex="-1">今天想吃什么</h2><span class="count" id="count" aria-live="polite">加载中</span></div>
     <p class="menu-note" id="legacyMenuNote" hidden>当前服务器仅提供前 600 道菜，搜索和分类可能不完整，请联系主人升级服务。</p>
-    <nav class="menu-pagination top" id="menuPaginationTop" aria-label="菜单顶部分页" hidden><button type="button" id="menuPreviousTop" aria-label="上一页（顶部）">上一页</button><span id="menuPageInfoTop"></span><button type="button" id="menuNextTop" aria-label="下一页（顶部）">下一页</button></nav>
+    <nav class="menu-pagination top" id="menuPaginationTop" aria-label="菜单顶部分页" hidden><button type="button" id="menuPreviousTop" aria-label="上一页（顶部）">上一页</button><span id="menuPageInfoTop" aria-live="polite"></span><button type="button" id="menuNextTop" aria-label="下一页（顶部）">下一页</button></nav>
     <section class="grid" id="mealGrid" aria-busy="true"><div class="empty">正在端上菜单…</div></section>
     <nav class="menu-pagination" id="menuPagination" aria-label="菜单分页" hidden><button type="button" id="menuPrevious">上一页</button><span id="menuPageInfo"></span><button type="button" id="menuNext">下一页</button></nav>
   </main>
@@ -468,7 +468,7 @@
         if (state.menuError) {
           $('count').textContent = '加载失败';
           const box = document.createElement('div'); box.className = 'error'; box.textContent = '菜单暂时无法加载，请检查网络后重试。';
-          const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'menu-retry'; retry.textContent = '重新加载菜单'; retry.addEventListener('click', () => loadMenu()); box.appendChild(retry); $('mealGrid').replaceChildren(box); return;
+          const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'menu-retry'; retry.textContent = '重新加载菜单'; retry.addEventListener('click', () => { menuFocusIntent = document.activeElement === retry ? { anchor: retry, sourceId: '' } : null; loadMenu(); }); box.appendChild(retry); $('mealGrid').replaceChildren(box); return;
         }
         $('count').textContent = `${state.menuSupported === true ? state.menu.total : meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
         if (!state.session) return;
@@ -629,7 +629,26 @@
         }
       }
 
-      function queueMenu(delay = 250) {
+      let menuFocusIntent = null;
+      document.addEventListener('focusin', event => {
+        if (menuFocusIntent && event.target !== menuFocusIntent.anchor && event.target !== document.body) menuFocusIntent = null;
+      });
+      function restoreMenuFocus() {
+        const intent = menuFocusIntent;
+        menuFocusIntent = null;
+        if (!intent || $('overlay').classList.contains('show')) return;
+        const active = document.activeElement;
+        if (active && active !== document.body && active !== intent.anchor && active.isConnected) return;
+        const usable = element => element && !element.disabled && element.getClientRects().length;
+        let target = state.menuError ? $('mealGrid').querySelector('.menu-retry') : $(intent.sourceId);
+        if (!usable(target) && !state.menuError && intent.sourceId) {
+          const alternate = intent.sourceId.startsWith('menuNext') ? intent.sourceId.replace('menuNext', 'menuPrevious') : intent.sourceId.replace('menuPrevious', 'menuNext');
+          target = $(alternate);
+        }
+        (usable(target) ? target : $('menuHeading')).focus({ preventScroll: true });
+      }
+      function queueMenu(delay = 250, preserveFocus = false) {
+        if (!preserveFocus) menuFocusIntent = null;
         clearTimeout(searchTimer);
         state.menuSequence++; state.menuLoading = true; state.menuError = '';
         renderMeals();
@@ -671,7 +690,7 @@
           state.menuError = error.message || '菜单加载失败';
           if (!state.menuInitialized && state.pending) { restorePendingDraft(); renderCartBar(); renderCartList(); }
         } finally {
-          if (sequence === state.menuSequence) { state.menuLoading = false; renderMeals(); }
+          if (sequence === state.menuSequence) { state.menuLoading = false; renderMeals(); restoreMenuFocus(); }
         }
       }
 
@@ -746,10 +765,17 @@
       }
 
       $('search').addEventListener('input', event => { state.search = event.target.value; state.menuPage = 1; if (state.menuSupported === false) renderMeals(); else queueMenu(); });
-      $('menuPrevious').addEventListener('click', () => { if (state.menuSupported === true && !state.menuLoading && state.menuPage > 1) { state.menuPage--; queueMenu(0); } });
-      $('menuNext').addEventListener('click', () => { if (state.menuSupported === true && !state.menuLoading && state.menuPage < state.menu.totalPages) { state.menuPage++; queueMenu(0); } });
-      $('menuPreviousTop').addEventListener('click', () => $('menuPrevious').click());
-      $('menuNextTop').addEventListener('click', () => $('menuNext').click());
+      function changeMenuPage(delta, sourceId) {
+        if (state.menuSupported !== true || state.menuLoading || !state.menu || state.menuPage + delta < 1 || state.menuPage + delta > state.menu.totalPages) return;
+        const source = $(sourceId);
+        menuFocusIntent = document.activeElement === source ? { anchor: source, sourceId } : null;
+        state.menuPage += delta;
+        queueMenu(0, true);
+      }
+      $('menuPrevious').addEventListener('click', () => changeMenuPage(-1, 'menuPrevious'));
+      $('menuNext').addEventListener('click', () => changeMenuPage(1, 'menuNext'));
+      $('menuPreviousTop').addEventListener('click', () => changeMenuPage(-1, 'menuPreviousTop'));
+      $('menuNextTop').addEventListener('click', () => changeMenuPage(1, 'menuNextTop'));
       $('openCart').addEventListener('click', openCart);
       $('closeCart').addEventListener('click', closeCart);
       $('continue').addEventListener('click', closeCart);

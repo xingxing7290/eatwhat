@@ -18,7 +18,7 @@ async function main () {
     const session = { title: '测试菜单', householdName: '测试家庭', status: 'open', canOrder: true, supportsGuestMenuPagination: true }
     let slowStarted
     const slowRequest = new Promise(resolve => { slowStarted = resolve })
-    let failedOnce = false
+    let failedOnce = false; let holdPage = false; let pageFail = false; let releasePage
     await page.route('**/guest-orders/public/**', async route => {
       const url = new URL(route.request().url())
       if (url.searchParams.has('statusOnly')) return route.fulfill({ json: { session } })
@@ -26,6 +26,8 @@ async function main () {
       const category = url.searchParams.get('category') || ''
       const number = Number(url.searchParams.get('page')); const limit = Number(url.searchParams.get('limit'))
       assert.equal(limit, 24)
+      if (holdPage && number === 2 && !query && !category) await new Promise(resolve => { releasePage = resolve })
+      if (pageFail && number === 3 && !query && !category) return route.fulfill({ status: 503, json: { error: '翻页断网' } })
       if (query === '延迟') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
       if (query === '出错' && !failedOnce) { failedOnce = true; return route.fulfill({ status: 503, json: { error: '测试断网' } }) }
       if (query === '异常响应') return route.fulfill({ json: { session, meals: [], menu: { page: number, limit, total: 500, totalPages: 1, categories: [] } } })
@@ -66,7 +68,32 @@ async function main () {
     const stepperBox = await firstMeal.locator('.stepper').boundingBox()
     assert.ok(stepperBox.x >= cardBox.x && stepperBox.x + stepperBox.width <= cardBox.x + cardBox.width, 'quantity controls must fit within the card')
     await page.setViewportSize({ width: 390, height: 844 })
+    holdPage = true
     await page.getByRole('button', { name: '下一页（顶部）' }).click()
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releasePage, 'function')
+    await page.getByRole('textbox', { name: '搜索菜品' }).focus()
+    const pageResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('page') === '2')
+    releasePage(); await pageResponse
+    await page.getByText('第 2 / 28 页').first().waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'search', 'late page results must not steal focus from search')
+    holdPage = false
+    await page.getByRole('button', { name: '上一页（顶部）' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('第 1 / 28 页').first().waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'menuNextTop', 'when previous becomes disabled, focus moves to the available page button')
+    await page.keyboard.press('Enter')
+    await page.getByText('第 2 / 28 页').first().waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'menuNextTop', 'pagination retains focus after loading')
+    pageFail = true
+    await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: '重新加载菜单' }).waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.textContent), '重新加载菜单', 'a failed page load moves focus to retry')
+    pageFail = false
+    await page.keyboard.press('Enter')
+    await page.getByText('第 3 / 28 页').first().waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'menuHeading')
+    await page.getByRole('button', { name: '上一页（顶部）' }).click()
     await page.getByText('第 2 / 28 页').first().waitFor()
     await page.locator('.meal').filter({ hasText: '菜品0024' }).getByRole('button', { name: '＋ 想吃' }).click()
     await page.getByRole('button', { name: '查看菜单' }).click()
@@ -109,8 +136,10 @@ async function main () {
     await page.getByRole('button', { name: /^全部 650$/ }).click()
     await search.fill('出错')
     await page.getByRole('button', { name: '重新加载菜单' }).waitFor()
-    await page.getByRole('button', { name: '重新加载菜单' }).click()
+    await page.getByRole('button', { name: '重新加载菜单' }).focus()
+    await page.keyboard.press('Enter')
     await page.getByText('没有找到匹配的菜', { exact: false }).waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'menuHeading', 'a successful retry restores focus to the results heading')
     await search.fill('异常响应')
     await page.getByRole('button', { name: '重新加载菜单' }).waitFor()
     assert.equal(await page.locator('.meal').count(), 0, 'malformed results must not display stale meals')
