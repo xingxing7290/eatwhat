@@ -7,6 +7,7 @@ const { startOfWeek, weekDates, dateKey, parseDateKey } = require('../utils/week
 const mongoose = require('mongoose');
 const { retainedMealAssignments, scheduleUpdatePipeline } = require('../utils/scheduleAssignments');
 const { schedulePopulation } = require('../utils/schedulePopulation');
+const { rankWithShuffledTies } = require('../utils/rankWithShuffledTies');
 
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
 const mealTypeLabels = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
@@ -92,7 +93,7 @@ async function buildGeneratedPlan(householdId) {
   const wishedMeals = missingWishIds.length ? await Meal.find({ householdId, archived: { $ne: true }, _id: { $in: missingWishIds } }) : [];
   const candidates = [...meals, ...wishedMeals];
   const recentIds = new Set(recentMemories.flatMap(item => (item.mealIds || []).map(mealIdOf)));
-  const pool = candidates.sort((a, b) => scoreMeal(b, wishlistScores, recentIds) - scoreMeal(a, wishlistScores, recentIds));
+  const pool = rankWithShuffledTies(candidates, meal => scoreMeal(meal, wishlistScores, recentIds));
   const used = new Set();
   const dates = weekDates(startOfWeek());
   const breakfastPred = meal => /早餐|主食|面食|饼|包|粥|粉|面|蛋|快手/.test(`${meal.category || ''} ${meal.subcategory || ''} ${(meal.tags || []).join(' ')} ${(meal.healthTags || []).join(' ')}`);
@@ -140,7 +141,7 @@ exports.generate = async (req, res, next) => {
       meals: Object.fromEntries(mealTypes.map(type => [type, day.meals[type].map(id => mealMap.get(id)).filter(Boolean)])),
       hints: balanceHintsForDay({ meals: Object.fromEntries(mealTypes.map(type => [type, day.meals[type].map(id => ({ meal: mealMap.get(id) })).filter(item => item.meal)])) })
     }));
-    res.json({ weekStart, days, preview, generationPolicy: 'priority-wishes-v2', note: '规则生成草稿，应用后才会写入日历。' });
+    res.json({ weekStart, days, preview, generationPolicy: 'priority-wishes-v3', note: '规则生成草稿，应用后才会写入日历。' });
   } catch (err) { next(err); }
 };
 

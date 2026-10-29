@@ -244,6 +244,11 @@ async function main () {
     await page.getByText('推荐从最多 300 道基础菜品及最多 80 条待完成心愿关联菜品中选取；心愿按优先级和时间筛选，结果仍需自行核对。').waitFor()
     await page.getByRole('button', { name: '放弃草稿' }).click()
     await page.getByRole('dialog', { name: '放弃周计划草稿？' }).getByRole('button', { name: '放弃草稿' }).click()
+    generationPolicy = 'priority-wishes-v3'
+    await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByText('推荐从最多 300 道基础菜品及最多 80 条待完成心愿关联菜品中选取；高优先级心愿权重更高，同分菜品随机排序，重新生成可能相同。请自行核对搭配。').waitFor()
+    await page.getByRole('button', { name: '放弃草稿' }).click()
+    await page.getByRole('dialog', { name: '放弃周计划草稿？' }).getByRole('button', { name: '放弃草稿' }).click()
     if (process.env.EATWHAT_WEEKLY_SHOT) {
       await page.locator('.el-overlay:visible').waitFor({ state: 'hidden' })
       await page.waitForTimeout(500)

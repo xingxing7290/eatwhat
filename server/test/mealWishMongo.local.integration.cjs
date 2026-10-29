@@ -658,7 +658,7 @@ async function main() {
     await WishlistItem.create([{ householdId: generatorHome._id, createdBy: generatorUser._id, title: '归档心愿', priority: 'high', mealId: archivedWishMeal._id }, { householdId: generatorHome._id, createdBy: generatorUser._id, title: '跨家庭心愿', priority: 'high', mealId: otherMeal._id }]);
     const rankedDraft = await request('/weekly-plans/generate', { method: 'POST', token: generatorToken, body: { weekStart: '2026-11-19' } });
     assert.equal(rankedDraft.status, 200);
-    assert.equal(rankedDraft.data.generationPolicy, 'priority-wishes-v2');
+    assert.equal(rankedDraft.data.generationPolicy, 'priority-wishes-v3');
     assert.ok(rankedDraft.data.days.flatMap(day => Object.values(day.meals).flat()).includes(String(wishedOutsideBase._id)), 'high-priority wishes outside the initial 300 recipes remain eligible');
     assert.equal(rankedDraft.data.days[0].meals.breakfast[0], String(wishedOutsideBase._id), 'a high-priority wish outranks otherwise higher-rated low-priority wishes');
     assert.equal(rankedDraft.data.days.flatMap(day => Object.values(day.meals).flat()).some(id => [String(archivedWishMeal._id), String(otherMeal._id)].includes(id)), false, 'archived and foreign-household wishes must not enter generated plans');
