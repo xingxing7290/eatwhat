@@ -692,6 +692,17 @@ async function main() {
     assert.ok(initialLists.every(result => result.status === 200 && result.data.supportsConditionalUpdates && result.data.listVersion === 0));
     assert.equal(await ShoppingList.countDocuments({ householdId: homeA._id, weekStart: shoppingWeek }), 1, 'concurrent reads create only one list');
     assert.equal((await request('/shopping-list?weekStart=2026-02-31', { token: tokenA })).status, 400);
+    const editWeek = '2027-03-01';
+    const editBase = await request(`/shopping-list?weekStart=${editWeek}`, { token: tokenA });
+    const editAdded = await request('/shopping-list/items', { method: 'POST', token: tokenA, body: { weekStart: editWeek, expectedVersion: editBase.data.listVersion, name: '鸡蛋', amount: '2个', category: 'meat_egg' } });
+    const editId = editAdded.data.items[0]._id;
+    const editChecked = await request(`/shopping-list/items/${editId}`, { method: 'PATCH', token: tokenA, body: { weekStart: editWeek, expectedVersion: editAdded.data.listVersion, checked: true } });
+    const editedItem = await request(`/shopping-list/items/${editId}`, { method: 'PATCH', token: tokenA, body: { weekStart: editWeek, expectedVersion: editChecked.data.listVersion, name: '土鸡蛋', amount: '6个', category: 'other' } });
+    assert.equal(editedItem.status, 200);
+    assert.deepEqual([editedItem.data.items[0].name, editedItem.data.items[0].amount, editedItem.data.items[0].category, editedItem.data.items[0].checked], ['土鸡蛋', '6个', 'other', true]);
+    const staleItemEdit = await request(`/shopping-list/items/${editId}`, { method: 'PATCH', token: tokenPartner, body: { weekStart: editWeek, expectedVersion: editChecked.data.listVersion, name: '过期修改' } });
+    assert.equal(staleItemEdit.status, 409);
+    assert.equal((await request(`/shopping-list?weekStart=${editWeek}`, { token: tokenA })).data.items[0].name, '土鸡蛋', 'stale edits must not overwrite the newer item');
     const firstShopping = await request('/shopping-list/items', { method: 'POST', token: tokenA, body: { weekStart: shoppingWeek, expectedVersion: 0, name: '鸡蛋', amount: '2个' } });
     assert.equal(firstShopping.status, 201);
     assert.equal(firstShopping.data.listVersion, 1);

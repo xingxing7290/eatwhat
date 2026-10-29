@@ -22,6 +22,9 @@ const generationNotice = ref('');
 const generationDates = ref([]);
 let loadSequence = 0;
 const form = reactive({ name: '', amount: '', category: 'other' });
+const editingItem = ref(null);
+const editForm = reactive({ name: '', amount: '', category: 'other' });
+const editInitial = ref('');
 const search = ref('');
 const statusFilter = ref('all');
 const groupGrid = ref(null);
@@ -59,12 +62,14 @@ const filteredItems = computed(() => {
 });
 const groups = computed(() => Object.keys(categoryText).map(key => ({ key, label: categoryText[key], items: filteredItems.value.filter(item => categoryKey(item) === key) })).filter(group => group.items.length));
 const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; await nextTick(); searchInput.value?.focus(); };
-const draftDirty = computed(() => !!(form.name.trim() || form.amount.trim() || form.category !== 'other'));
+const editDirty = computed(() => !!editingItem.value && JSON.stringify(editForm) !== editInitial.value);
+const editLatest = computed(() => editingItem.value ? (list.value.items || []).find(item => item._id === editingItem.value.id) : null);
+const draftDirty = computed(() => !!(form.name.trim() || form.amount.trim() || form.category !== 'other') || editDirty.value);
 const uncertain = computed(() => !!mutationIssue.value);
 const versionAvailable = computed(() => list.value.supportsConditionalUpdates === true && Number.isSafeInteger(list.value.listVersion) && list.value.listVersion >= 0);
 const disabled = computed(() => loading.value || working.value || changingWeek.value || !!loadError.value || !!mutationIssue.value || !versionAvailable.value);
 useDraftGuard({ dirty: draftDirty, busy: working, uncertain, label: '购物清单' });
-const clearForm = () => { form.name = ''; form.amount = ''; form.category = 'other'; };
+const clearForm = () => { form.name = ''; form.amount = ''; form.category = 'other'; editingItem.value = null; editInitial.value = ''; };
 const acceptList = (result, requestedWeek, previousVersion = null) => {
   if (!result || !Array.isArray(result.items) || result.weekStart !== monday(requestedWeek)) throw new Error('购物清单响应不完整');
   const ids = result.items.map(item => item?._id);
@@ -162,6 +167,34 @@ const addItem = async () => {
   working.value = true;
   try { await mutate((version, week) => api.shoppingList.addItem({ ...payload, weekStart: week, expectedVersion: version }), () => { clearForm(); if (filtersActive.value) ElMessage.success('已添加食材；如未显示，可清除筛选查看'); }, next => next.items.filter(matches).length > priorCount); } finally { working.value = false; }
 };
+const beginEdit = item => {
+  if (disabled.value) return;
+  editingItem.value = { id: item._id, manual: !!item.manual };
+  Object.assign(editForm, { name: item.name, amount: item.amount || '', category: categoryKey(item) });
+  editInitial.value = JSON.stringify(editForm);
+};
+const closeEdit = async () => {
+  if (working.value || loading.value) return;
+  if (editDirty.value) {
+    try { await ElMessageBox.confirm('修改尚未保存，关闭后会丢失。', '放弃食材修改？', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); } catch (_) { return; }
+  }
+  editingItem.value = null; editInitial.value = '';
+};
+const saveEdit = async () => {
+  if (!editingItem.value || disabled.value) return;
+  const name = editForm.name.trim();
+  if (!name) return ElMessage.warning('请输入食材名称');
+  const id = editingItem.value.id;
+  if (!list.value.items.some(item => item._id === id)) return ElMessage.warning('该食材已不存在，请关闭编辑并核对清单');
+  const fields = { name, amount: editForm.amount.trim(), category: editForm.category };
+  working.value = true;
+  try {
+    await mutate((version, week) => api.shoppingList.updateItem(id, { ...fields, weekStart: week, expectedVersion: version }), () => {
+      editingItem.value = null; editInitial.value = '';
+      ElMessage.success(filtersActive.value ? '食材已更新；如未显示，可清除筛选查看' : '食材已更新');
+    }, next => next.items.some(item => item._id === id && item.name === fields.name && (item.amount || '') === fields.amount && item.category === fields.category));
+  } finally { working.value = false; }
+};
 const toggle = async item => {
   if (disabled.value) return;
   const hadFocus = document.activeElement?.closest('.item-row')?.dataset.itemId === String(item._id);
@@ -219,8 +252,21 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     </section>
     <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加" />
     <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
-    <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
+    <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
     </template>
+    <el-dialog :model-value="!!editingItem" title="编辑购物食材" width="min(520px, 92vw)" :close-on-click-modal="false" :before-close="closeEdit">
+      <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法核对购物清单：${loadError}`"><el-button link type="primary" :disabled="loading || working" @click="load">重试</el-button></el-alert>
+      <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
+      <div v-if="!loading && !loadError && editLatest" class="edit-current"><strong>清单当前内容</strong><p>{{ editLatest.name }} · {{ editLatest.amount || '未填写数量' }} · {{ categoryText[categoryKey(editLatest)] }} · {{ editLatest.checked ? '已买' : '待买' }}</p></div>
+      <el-alert v-else-if="!loading && !loadError && editingItem" type="warning" :closable="false" show-icon title="该食材已不在当前清单中，请关闭编辑并核对。" />
+      <p v-if="editingItem && !editingItem.manual" class="edit-note">这项来自排餐；重新生成清单时，名称和数量可能被排餐数据覆盖，已购状态也可能变化。</p>
+      <el-form label-position="top" :disabled="disabled">
+        <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" /></el-form-item>
+        <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" maxlength="200" /></el-form-item>
+        <el-form-item label="分类"><el-select v-model="editForm.category" aria-label="编辑食材分类"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
+      </el-form>
+      <template #footer><el-button :disabled="working || loading" @click="closeEdit">取消</el-button><el-button type="primary" :loading="working" :disabled="disabled || !editLatest" @click="saveEdit">保存修改</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -232,6 +278,9 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 .filter-reset:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .generation-context { padding: 14px 20px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; }
 .generation-context p { margin: 5px 0 0; color: var(--text-secondary); line-height: 1.6; }
+.edit-note { color: var(--text-primary); line-height: 1.6; font-size: 13px; }
+.edit-current { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); overflow-wrap: anywhere; font-size: 13px; }
+.edit-current p { margin: 6px 0 0; line-height: 1.6; }
 .item-row :deep(.el-checkbox__label .quantity-notice) { display: inline-block; color: var(--text-primary); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }

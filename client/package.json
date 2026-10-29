@@ -14,6 +14,7 @@
     "test:schedule-unavailable": "node test/schedule-unavailable-workflows.cjs",
     "test:shopping": "node test/shopping-workflows.cjs",
     "test:shopping-filter": "node test/shopping-filter-workflows.cjs",
+    "test:shopping-edit": "node test/shopping-edit-workflows.cjs",
     "test:shopping-theme": "node test/shopping-theme.cjs",
     "test:weekly": "node test/weekly-workflows.cjs",
     "test:week-navigation": "node test/week-navigation-workflows.cjs",
