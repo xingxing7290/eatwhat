@@ -234,7 +234,12 @@ async function main () {
     assert.equal(applyCalls, 3)
     assert.equal(await page.getByText('规则生成草稿').count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-    generationPolicy = 'priority-wishes-v1'; draftMode = 'valid'
+    generationPolicy = 'priority-wishes-v2'; draftMode = 'valid'
+    await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByText('推荐从最多 300 道基础菜品及最多 80 条待完成心愿关联菜品中选取；高优先级心愿权重更高，结果仍需自行核对。').waitFor()
+    await page.getByRole('button', { name: '放弃草稿' }).click()
+    await page.getByRole('dialog', { name: '放弃周计划草稿？' }).getByRole('button', { name: '放弃草稿' }).click()
+    generationPolicy = 'priority-wishes-v1'
     await page.getByRole('button', { name: '生成草稿' }).click()
     await page.getByText('推荐从最多 300 道基础菜品及最多 80 条待完成心愿关联菜品中选取；心愿按优先级和时间筛选，结果仍需自行核对。').waitFor()
     await page.getByRole('button', { name: '放弃草稿' }).click()

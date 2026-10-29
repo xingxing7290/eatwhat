@@ -59,9 +59,9 @@ function pickMeal(pool, used, predicate = () => true) {
   if (found) used.add(mealIdOf(found));
   return found || null;
 }
-function scoreMeal(meal, wishlistIds, recentIds) {
+function scoreMeal(meal, wishlistScores, recentIds) {
   let score = 0;
-  if (wishlistIds.has(mealIdOf(meal))) score += 80;
+  score += wishlistScores.get(mealIdOf(meal)) || 0;
   if (meal.favorite) score += 30;
   score += Number(meal.rating || 0) * 8;
   if ((meal.healthTags || []).includes('快手')) score += 6;
@@ -76,22 +76,27 @@ async function buildGeneratedPlan(householdId) {
       { $set: { priorityRank: { $switch: { branches: [{ case: { $eq: ['$priority', 'high'] }, then: 2 }, { case: { $eq: ['$priority', 'normal'] }, then: 1 }], default: 0 } } } },
       { $sort: { priorityRank: -1, createdAt: -1, _id: -1 } },
       { $limit: 80 },
-      { $project: { mealId: 1 } }
+      { $project: { mealId: 1, priority: 1 } }
     ]),
     MealMemory.find({ householdId }).sort({ date: -1, createdAt: -1 }).limit(20)
   ]);
-  const wishlistIds = new Set(wishlist.map(item => mealIdOf(item.mealId)));
+  const wishlistScores = new Map();
+  for (const item of wishlist) {
+    const id = mealIdOf(item.mealId);
+    const score = item.priority === 'high' ? 120 : item.priority === 'low' ? 40 : 80;
+    wishlistScores.set(id, Math.max(wishlistScores.get(id) || 0, score));
+  }
   // Wishes must be included before scoring, even if they fall outside the base 300.
   const baseIds = new Set(meals.map(mealIdOf));
   const missingWishIds = wishlist.filter(item => !baseIds.has(mealIdOf(item.mealId))).map(item => item.mealId);
   const wishedMeals = missingWishIds.length ? await Meal.find({ householdId, archived: { $ne: true }, _id: { $in: missingWishIds } }) : [];
   const candidates = [...meals, ...wishedMeals];
   const recentIds = new Set(recentMemories.flatMap(item => (item.mealIds || []).map(mealIdOf)));
-  const pool = candidates.sort((a, b) => scoreMeal(b, wishlistIds, recentIds) - scoreMeal(a, wishlistIds, recentIds));
+  const pool = candidates.sort((a, b) => scoreMeal(b, wishlistScores, recentIds) - scoreMeal(a, wishlistScores, recentIds));
   const used = new Set();
   const dates = weekDates(startOfWeek());
   const breakfastPred = meal => /早餐|主食|面食|饼|包|粥|粉|面|蛋|快手/.test(`${meal.category || ''} ${meal.subcategory || ''} ${(meal.tags || []).join(' ')} ${(meal.healthTags || []).join(' ')}`);
-  const dinnerPred = meal => meal.favorite || Number(meal.rating || 0) >= 4 || wishlistIds.has(mealIdOf(meal));
+  const dinnerPred = meal => meal.favorite || Number(meal.rating || 0) >= 4 || wishlistScores.has(mealIdOf(meal));
   return dates.map((date, index) => {
     const breakfast = pickMeal(pool, used, breakfastPred) || pickMeal(pool, used) || pool[index % Math.max(pool.length, 1)];
     const lunch = pickMeal(pool, used, meal => mealIdOf(meal) !== mealIdOf(breakfast)) || breakfast;
@@ -135,7 +140,7 @@ exports.generate = async (req, res, next) => {
       meals: Object.fromEntries(mealTypes.map(type => [type, day.meals[type].map(id => mealMap.get(id)).filter(Boolean)])),
       hints: balanceHintsForDay({ meals: Object.fromEntries(mealTypes.map(type => [type, day.meals[type].map(id => ({ meal: mealMap.get(id) })).filter(item => item.meal)])) })
     }));
-    res.json({ weekStart, days, preview, generationPolicy: 'priority-wishes-v1', note: '规则生成草稿，应用后才会写入日历。' });
+    res.json({ weekStart, days, preview, generationPolicy: 'priority-wishes-v2', note: '规则生成草稿，应用后才会写入日历。' });
   } catch (err) { next(err); }
 };
 
