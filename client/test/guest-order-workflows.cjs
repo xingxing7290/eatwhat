@@ -33,6 +33,7 @@ async function main () {
       if (mode === 'uncertain') return route.fulfill({ status: 503, json: { error: '响应暂时不可用' } })
       if (mode === 'malformed') return route.fulfill({ json: {} })
       const body = req.postDataJSON()
+      if (['mismatch', 'stale-revision', 'wrong-meal', 'wrong-quantity'].includes(mode)) return route.fulfill({ json: { order: { revision: mode === 'stale-revision' ? body.revision : body.revision + 1, guestName: body.guestName, note: mode === 'mismatch' ? '不同的备注' : body.note, items: body.items.map(item => ({ ...item, ...(mode === 'wrong-meal' ? { mealId: 'other' } : {}), ...(mode === 'wrong-quantity' ? { quantity: item.quantity + 1 } : {}) })) } } })
       return route.fulfill({ status: 201, json: { accessToken: 'access', order: { revision: 1, guestName: body.guestName, note: body.note, items: body.items.map(item => ({ ...item, name: meals.find(meal => meal._id === item.mealId)?.name })) } } })
     })
     await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/local-test`)
@@ -66,6 +67,14 @@ async function main () {
     assert.equal(await unloadBlocked(), false, 'reverting to the submitted version clears the warning')
     await page.locator('#orderNote').fill('本页尚未保存的备注')
     await page.locator('.cart-row').filter({ hasText: '测试青菜' }).locator('.item-note').fill('本页菜品备注')
+    for (const fault of ['mismatch', 'stale-revision', 'wrong-meal', 'wrong-quantity']) {
+      mode = fault
+      await page.getByRole('button', { name: '保存修改' }).click()
+      await page.getByText('提交结果尚未确认', { exact: false }).waitFor()
+      assert.equal(await page.locator('#orderNote').inputValue(), '本页尚未保存的备注')
+      assert.equal(await page.getByRole('button', { name: '保存修改' }).isDisabled(), true)
+      await page.getByRole('button', { name: '已核对，继续' }).click()
+    }
     mode = 'conflict'
     await page.getByRole('button', { name: '保存修改' }).click()
     await page.getByText('订单已在其他设备更新，本页修改仍保留', { exact: false }).waitFor()
@@ -149,6 +158,7 @@ async function main () {
       if (!firstBody) { firstBody = body; logicalOrders++; return route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
       assert.deepEqual(body, firstBody, 'retry must use the exact original key and payload')
       if (safeRequests === 2) return route.fulfill({ status: 404, json: { error: '安全接口暂不可用' } })
+      if (safeRequests === 3) return route.fulfill({ json: { replayed: true, accessToken: 'safe-access', order: { revision: 1, guestName: body.guestName, note: '不同内容', items: body.items } } })
       return route.fulfill({ json: { replayed: true, accessToken: 'safe-access', order: { revision: 1, guestName: body.guestName, note: body.note, items: body.items } } })
     })
     await safePage.goto(`http://127.0.0.1:${server.address().port}/guest-order/safe-test`)
@@ -170,8 +180,12 @@ async function main () {
     await safePage.getByText('安全接口暂不可用', { exact: true }).waitFor()
     assert.equal(await safePage.getByRole('button', { name: '安全重试原提交' }).isEnabled(), true)
     await safePage.getByRole('button', { name: '安全重试原提交' }).click()
+    await safePage.getByText('提交回执与本次内容不一致', { exact: false }).waitFor()
+    assert.notEqual(await safePage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.safe-test.pendingCreate')), null, 'mismatched receipts must retain the safe retry key')
+    assert.equal(await safePage.getByRole('button', { name: '安全重试原提交' }).isEnabled(), true)
+    await safePage.getByRole('button', { name: '安全重试原提交' }).click()
     await safePage.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor()
-    assert.equal(safeRequests, 3)
+    assert.equal(safeRequests, 4)
     assert.equal(logicalOrders, 1)
     assert.equal(await safePage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.safe-test.pendingCreate')), null)
     assert.equal(await safePage.evaluate(() => localStorage.getItem('eatwhat.guestOrder.safe-test')), 'safe-access')

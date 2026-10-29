@@ -770,6 +770,7 @@
           const url = updating ? `${apiRoot}/orders/${encodeURIComponent(state.accessToken)}` : safeCreate ? `${apiRoot}/orders/idempotent` : `${apiRoot}/orders`;
           const data = await jsonRequest(url, { method: updating ? 'PUT' : 'POST', body: JSON.stringify(body) });
           if (!validOrder(data.order) || (!updating && (typeof data.accessToken !== 'string' || !data.accessToken))) throw new Error('提交响应不完整，请联系主人核对');
+          if ((updating && data.order.revision !== body.revision + 1) || orderSnapshot(data.order.guestName, data.order.note, data.order.items) !== orderSnapshot(body.guestName, body.note, body.items)) throw new Error('提交回执与本次内容不一致，请联系主人核对');
           if (safeCreate) restoreOrder(data.order); else state.order = data.order;
           let tokenSaved = !data.accessToken;
           if (data.accessToken) { state.accessToken = data.accessToken; try { localStorage.setItem(storageKey, state.accessToken); tokenSaved = localStorage.getItem(storageKey) === state.accessToken; state.storageFailed = !tokenSaved; } catch (_) { state.storageFailed = true; } }
