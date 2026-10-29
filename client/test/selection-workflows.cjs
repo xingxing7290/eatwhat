@@ -31,6 +31,7 @@ async function main () {
     let saveMode = 'uncertain'
     let releaseSlow
     let wishMode = 'done'
+    let suggestionFailure = false
     const wishWrites = []
     const reads = []
     const writes = []
@@ -57,7 +58,11 @@ async function main () {
           const limit = Number(url.searchParams.get('limit') || 8)
           data = { data: filtered.slice((current - 1) * limit, current * limit), total: filtered.length, page: current, limit }
         }
-      } else if (method === 'GET' && pathname.startsWith('/meals/')) data = meals.find(meal => pathname.endsWith(meal._id)) || {}
+      } else if (method === 'GET' && pathname.startsWith('/meals/')) {
+        if (suggestionFailure === 'unavailable' && pathname === '/meals/meal-20') return route.fulfill({ status: 503, json: { error: '菜品暂不可用' } })
+        data = meals.find(meal => pathname.endsWith(meal._id)) || {}
+        if (suggestionFailure === 'archived' && pathname === '/meals/meal-20') data = { ...data, archived: true }
+      }
       else if (method === 'GET' && pathname === '/wishlist/wish-a') data = { _id: 'wish-a', status: wishMode === 'done' ? 'done' : 'open', mealId: { _id: wishMode === 'mismatch' ? 'meal-01' : 'meal-20' }, supportsConditionalActions: wishMode !== 'old', editVersion: { revision: 'wish-v1', updatedAt: '2026-10-29T08:00:00.000Z' } }
       else if (method === 'PATCH' && pathname === '/wishlist/wish-a/status') { wishWrites.push(req.postDataJSON()); data = { _id: 'wish-a', status: 'planned', supportsConditionalActions: true, editVersion: { revision: 'wish-v2', updatedAt: '2026-10-29T09:00:00.000Z' } } }
       else if (method === 'GET' && pathname === `/schedules/day/${date}`) data = {
@@ -77,6 +82,26 @@ async function main () {
       await route.fulfill({ status: 200, json: data })
     })
 
+    suggestionFailure = 'unavailable'
+    await page.goto(`${base}/selection?date=${date}&mealType=dinner&suggestedMealId=meal-20&wishlistId=wish-a`)
+    await page.getByText('推荐菜品无法读取或已移入回收站', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '移除测试菜19' }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '移除测试菜20' }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), false)
+    assert.equal(writes.length, 0, 'a failed recommendation must not change the existing schedule')
+    assert.equal(wishWrites.length, 0, 'a failed recommendation must not change the wishlist')
+    saveMode = 'success'
+    await page.getByRole('button', { name: '保存安排' }).click()
+    await page.waitForURL('**/calendar?*')
+    assert.deepEqual(writes[0].mealIds, ['meal-19'], 'saving keeps the original meal when the suggestion failed')
+    assert.equal(wishWrites.length, 0, 'saving without the suggested meal must not mark the wish planned')
+    writes.length = 0
+    saveMode = 'uncertain'
+    suggestionFailure = 'archived'
+    await page.goto(`${base}/selection?date=${date}&mealType=dinner&suggestedMealId=meal-20&wishlistId=wish-a`)
+    await page.getByText('推荐菜品无法读取或已移入回收站', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '移除测试菜20' }).count(), 0)
+    suggestionFailure = false
     await page.goto(`${base}/selection?date=${date}&mealType=dinner&suggestedMealId=meal-20`)
     await page.getByRole('button', { name: '移除测试菜19' }).waitFor()
     await page.getByRole('button', { name: '移除测试菜20' }).waitFor()

@@ -31,6 +31,7 @@ const saveUncertain = ref(false);
 const expectedVersion = ref(null);
 const wishSnapshot = ref(null);
 const wishNotice = ref('');
+const suggestionNotice = ref('');
 const searchQuery = ref('');
 const selectedMeals = ref([]);
 const initialIds = ref([]);
@@ -358,6 +359,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
   selectionReadError.value = '';
   wishSnapshot.value = null;
   wishNotice.value = '';
+  suggestionNotice.value = '';
   try {
     const schedule = await api.schedule.getScheduleByDate(date.value);
     if (sequence !== selectionSequence) return;
@@ -381,11 +383,22 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
     }
     if (new Set(existingIds).size !== existingIds.length) throw new Error('现有安排包含重复菜品，请先在日历中检查');
     const suggestedId = includeSuggestion && typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
-    const ids = [...new Set([...existingIds, suggestedId].filter(Boolean))];
     const known = new Map(existingMeals.filter(meal => meal && typeof meal === 'object' && typeof meal.name === 'string' && (meal._id || meal.id)).map(meal => [String(meal._id || meal.id), meal]));
-    const resolved = await Promise.all(ids.map(async id => known.get(id) || api.meal.getMealById(id)));
+    const resolved = await Promise.all(existingIds.map(async id => known.get(id) || api.meal.getMealById(id)));
     if (sequence !== selectionSequence) return;
-    if (resolved.some((meal, index) => !meal || String(meal._id || meal.id || '') !== ids[index] || typeof meal.name !== 'string')) throw new Error('部分已安排的菜品无法读取，请刷新后重试');
+    if (resolved.some((meal, index) => !meal || String(meal._id || meal.id || '') !== existingIds[index] || typeof meal.name !== 'string')) throw new Error('部分已安排的菜品无法读取，请刷新后重试');
+    if (suggestedId && !existingIds.includes(suggestedId)) {
+      try {
+        const suggestion = await api.meal.getMealById(suggestedId);
+        if (sequence !== selectionSequence) return;
+        if (!suggestion || String(suggestion._id || suggestion.id || '') !== suggestedId || typeof suggestion.name !== 'string' || !suggestion.name || suggestion.archived === true) throw new Error('推荐菜品不可用');
+        resolved.push(suggestion);
+      } catch (e) {
+        if (sequence !== selectionSequence) return;
+        if (['SESSION_CHANGED', 'SESSION_EXPIRED', 'HOUSEHOLD_SCOPE_UNVERIFIED', 'HOUSEHOLD_SCOPE_CHANGED'].includes(e?.code)) throw e;
+        suggestionNotice.value = '推荐菜品无法读取或已移入回收站，未自动加入本次安排。原有安排已保留；请在菜品列表中核对并重新选择。';
+      }
+    }
     const wishlistId = typeof route.query.wishlistId === 'string' ? route.query.wishlistId : '';
     const linkedMealId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
     if (wishlistId && linkedMealId) {
@@ -472,6 +485,7 @@ onBeforeUnmount(() => {
       <el-button link type="primary" :disabled="isInitializing" @click="reloadSelection">{{ conflict || saveUncertain ? '重新加载最新安排' : '重新加载' }}</el-button>
     </el-alert>
     <el-alert v-if="wishNotice" type="info" :closable="false" show-icon :title="wishNotice" />
+    <el-alert v-if="suggestionNotice" type="warning" :closable="false" show-icon :title="suggestionNotice" />
     
     <div class="selection-info">
       <div class="selected-count">
