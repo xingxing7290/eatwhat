@@ -11,7 +11,10 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
     let date = '2026-10-28'; let suggested = 'meal-a'; let mode = 'valid'; let calls = 0; let release
     const meals = { breakfast: [], lunch: [], dinner: [] }
-    const summary = () => ({ today: date, todaySchedule: { meals }, todayHints: [], week: { days: mode === 'badweek' ? [] : Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals })) }, partnerWishlist: mode === 'removed' ? [] : [{ _id: 'wish-a', title: '家人想吃的菜', mealId: suggested ? { _id: suggested, name: '家常菜' } : null }], recentPhotos: [], defaultMeals: { imported: 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } })
+    const summary = () => {
+      const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals }))
+      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: [], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : [{ _id: 'wish-a', title: '家人想吃的菜', mealId: suggested ? { _id: suggested, name: '家常菜' } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
+    }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
@@ -62,6 +65,15 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('饭桌信息不完整，请重新加载').waitFor()
     assert.equal(await page.locator('.dashboard-grid').count(), 0, 'an incomplete week must not be shown as an empty plan')
+    for (const fault of ['badcount', 'wrongdate']) {
+      mode = fault
+      const response = page.waitForResponse(result => new URL(result.url()).pathname === '/api/dashboard/summary')
+      await page.getByRole('button', { name: '重新加载' }).click()
+      await response
+      await page.waitForFunction(() => document.querySelector('.dashboard-page')?.getAttribute('aria-busy') === 'false')
+      assert.equal(await page.locator('.dashboard-grid').count(), 0, `${fault} must not be displayed`)
+      assert.equal(await page.locator('.load-error').isVisible(), true)
+    }
     mode = 'valid'; suggested = ''
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByRole('button', { name: '查看心愿' }).waitFor()
@@ -82,6 +94,15 @@ async function main () {
     mode = 'valid'; release(); await response
     await page.waitForTimeout(150)
     assert.equal(new URL(page.url()).pathname, '/wishlist', 'a late refresh must not redirect after leaving the dashboard')
+    mode = 'reverse'
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('link', { name: /查看 2026-10-29 的日历安排/ }).waitFor()
+    const days = await page.locator('.week-day').evaluateAll(links => links.map(link => new URL(link.href).searchParams.get('date')))
+    assert.deepEqual(days, [...days].sort(), 'week dates must be displayed in chronological order')
+    assert.equal(await page.getByRole('link', { name: /查看 2026-10-29 的日历安排/ }).getAttribute('aria-current'), 'date')
+    for (const link of await page.locator('.week-day').all()) assert.ok((await link.boundingBox()).height >= 44)
+    await page.getByRole('link', { name: /查看 2026-10-30 的日历安排/ }).click()
+    await page.waitForURL('**/calendar?date=2026-10-30')
     assert.deepEqual(errors, [])
     console.log('Dashboard checks passed: refreshed date and wish, unavailable and malformed data, and retry')
   } finally { await browser.close() }

@@ -29,10 +29,11 @@ const validateSummary = value => {
       !Array.isArray(value.week?.days) || value.week.days.length !== 7 || value.week.days.some(day => !day || !validDate(day.date) || !validMeals(day.meals)) ||
       !Array.isArray(value.partnerWishlist) || value.partnerWishlist.some(item => !item || !(item._id || item.id) || typeof item.title !== 'string') ||
       !Array.isArray(value.recentPhotos) || value.recentPhotos.some(photo => !photo || typeof photo.photo !== 'string') ||
-      !validCount(value.defaultMeals?.imported) || !validCount(value.defaultMeals?.total) || !validCount(value.imageIssues?.open) || !validCount(value.meals?.favorites)) throw new Error('饭桌信息不完整，请重新加载');
+      !validCount(value.defaultMeals?.imported) || !validCount(value.defaultMeals?.total) || value.defaultMeals.imported > value.defaultMeals.total || !validCount(value.imageIssues?.open) || !validCount(value.meals?.favorites) ||
+      (value.todaySchedule.date != null && value.todaySchedule.date !== value.today)) throw new Error('饭桌信息不完整，请重新加载');
   const days = value.week.days.map(day => day.date).sort();
   if (!days.includes(value.today) || days.some((day, index) => index && Date.parse(`${day}T00:00:00Z`) - Date.parse(`${days[index - 1]}T00:00:00Z`) !== 86400000)) throw new Error('饭桌信息不完整，请重新加载');
-  return value;
+  return { ...value, week: { ...value.week, days: [...value.week.days].sort((a, b) => a.date.localeCompare(b.date)) } };
 };
 const load = () => {
   if (loadRequest) return loadRequest;
@@ -105,10 +106,10 @@ onBeforeUnmount(() => { active = false; });
         <template #header><div class="card-title"><el-icon><Calendar /></el-icon><span>本周饭桌计划</span></div></template>
         <div class="metric-row"><span>本周已安排</span><strong>{{ plannedSlots }}</strong><span>餐</span></div>
         <div class="week-mini">
-          <div v-for="day in summary.week?.days || []" :key="day.date" class="week-day">
+          <router-link v-for="day in summary.week?.days || []" :key="day.date" class="week-day" :to="{ name: 'calendar', query: { date: day.date } }" :aria-current="day.date === summary.today ? 'date' : undefined" :aria-label="`查看 ${day.date} 的日历安排，已安排 ${['breakfast','lunch','dinner'].filter(t => day.meals?.[t]?.length).length} 餐`">
             <strong>{{ day.date.slice(5) }}</strong>
             <span>{{ ['breakfast','lunch','dinner'].filter(t => day.meals?.[t]?.length).length }} 餐</span>
-          </div>
+          </router-link>
         </div>
         <el-button type="primary" plain @click="router.push('/weekly-plan')">查看周计划</el-button>
       </el-card>
@@ -173,7 +174,10 @@ h1 span { color: var(--dashboard-accent-ink); }
 .metric-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; color: var(--text-secondary); }
 .metric-row strong { font-size: 32px; color: var(--dashboard-accent-ink); }
 .week-mini { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-bottom: 14px; }
-.week-day { background: var(--bg-secondary); border-radius: 12px; padding: 8px; text-align: center; display: flex; flex-direction: column; gap: 4px; }
+.week-day { min-width: 0; min-height: 44px; background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 8px; color: var(--text-primary); text-decoration: none; text-align: center; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+.week-day:hover { background: var(--bg-tertiary); }
+.week-day:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.week-day[aria-current="date"] { box-shadow: inset 0 0 0 2px var(--text-primary); }
 .week-day span { color: var(--text-primary); }
 .photo-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
 .photo-tile { display: block; min-width: 0; height: 88px; border-radius: 12px; overflow: hidden; background: var(--bg-secondary); text-decoration: none; }
@@ -187,6 +191,7 @@ h1 span { color: var(--dashboard-accent-ink); }
 .quick-description { color: var(--text-secondary); font-size: 13px; margin-bottom: 12px; }.quick-links { display: grid; gap: 8px; }.quick-links a { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 14px; text-decoration: none; background: var(--bg-secondary); color: var(--text-primary); }.quick-links a:hover { color: var(--dashboard-accent-ink); }
 @media (max-width: 820px) { .wishlist-row { flex-direction: column; align-items: stretch; } .dashboard-grid { grid-template-columns: 1fr; } .week-mini { grid-template-columns: repeat(7, 1fr); } }
 @media (max-width: 600px) { .hero-panel { grid-template-columns: 1fr; }.hero-image { min-height: 150px; }.section-heading { align-items: start; flex-direction: column; gap: 8px; }.week-day { padding: 8px 2px; font-size: 10px; }.load-error { align-items: start; flex-direction: column; } }
+@media (max-width: 480px) { .week-mini { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week-day { font-size: 12px; } }
 :global(html:not(.dark) .dashboard-page .el-tag) { color: #8e4938; background: #fff8f4; border-color: #e8baaa; }
 :global(html:not(.dark) .dashboard-page .hint-list .el-tag) { color: #744016; background: #fff0db; border-color: #d8aa75; }
 :global(html.dark .dashboard-page .el-tag) { color: var(--text-primary); background: var(--bg-tertiary); border-color: var(--border-color); }

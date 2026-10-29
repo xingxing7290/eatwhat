@@ -56,7 +56,7 @@ async function main() {
       ['summary text', '.hero-panel > div:first-child > p:last-of-type'], ['section label', '.section-heading small'],
       ['section title', '.section-heading h2'], ['card title', '.today-card .card-title span'],
       ['meal tag', '.today-card .meal-tags .el-tag'], ['warning tag', '.today-card .hint-list .el-tag'],
-      ['metric number', '.metric-row strong'], ['week label', '.week-day span'],
+      ['metric number', '.metric-row strong'], ['week label', '.week-day span'], ['week date', '.week-day strong'],
       ['partner title', '.wishlist-row strong'], ['partner detail', '.wishlist-row p'],
       ['missing photo', '.photo-unavailable'], ['quick link', '.quick-links a']
     ];
@@ -66,7 +66,7 @@ async function main() {
         await page.getByRole('button', { name: '切换到暗色模式' }).click();
         await page.waitForFunction(() => document.documentElement.classList.contains('dark'));
       }
-      for (const [width, height] of [[1280, 900], [390, 844]]) {
+      for (const [width, height] of [[1280, 900], [390, 844], [320, 844]]) {
         await page.setViewportSize({ width, height });
         for (const theme of themes) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
