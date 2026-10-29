@@ -146,12 +146,13 @@
       cursor: pointer;
       font-weight: 900;
     }
-    .add { width: 100%; min-height: 40px; color: var(--peach-dark); background: #ffe8de; }
+    .add { width: 100%; min-height: 44px; color: var(--peach-dark); background: #ffe8de; }
     .add:disabled, button:disabled { opacity: .48; cursor: not-allowed; }
     .stepper { display: none; align-items: center; justify-content: space-between; gap: 7px; }
     .meal.selected .add { display: none; }
     .meal.selected .stepper { display: flex; }
-    .stepper button { width: 38px; height: 38px; color: var(--peach-dark); background: #ffe8de; font-size: 20px; }
+    .stepper button { width: 44px; height: 44px; color: var(--peach-dark); background: #ffe8de; font-size: 20px; }
+    .meal button:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
     .stepper strong { min-width: 25px; text-align: center; }
     .empty, .error {
       grid-column: 1 / -1;
@@ -227,6 +228,12 @@
     .cart-row.unavailable small { color: #803d2c; }
     .toast { position: fixed; z-index: 80; left: 50%; top: 24px; max-width: calc(100% - 32px); transform: translate(-50%, -20px); opacity: 0; pointer-events: none; padding: 12px 16px; border-radius: 15px; color: white; background: rgba(76,45,35,.96); box-shadow: var(--shadow); font-weight: 800; transition: .2s ease; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    @media (max-width: 360px) {
+      .meal-body { padding: 10px 8px; }
+      .meal .stepper { gap: 3px; }
+      .meal .stepper strong { min-width: 18px; }
+      .meal .stepper button { flex: 0 0 44px; }
+    }
     @media (min-width: 720px) {
       .shell { padding-top: 28px; }
       .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
@@ -415,6 +422,7 @@
         const item = state.cart.get(id);
         const card = document.createElement('article');
         card.className = `meal${item ? ' selected' : ''}`;
+        card.dataset.mealId = id;
         const photo = document.createElement('div');
         photo.className = 'photo';
         const fallback = document.createElement('div');
@@ -429,17 +437,23 @@
         const badge = document.createElement('span'); badge.className = 'selected-badge'; badge.textContent = item?.quantity || '';
         photo.appendChild(badge);
         const body = document.createElement('div'); body.className = 'meal-body';
-        const title = document.createElement('h3'); title.textContent = meal.name || '未命名菜品';
+        const title = document.createElement('h3'); title.id = `meal-name-${id}`; title.textContent = meal.name || '未命名菜品';
         const meta = document.createElement('div'); meta.className = 'meal-meta'; meta.textContent = mealMeta(meal);
         const add = document.createElement('button'); add.className = 'add'; add.textContent = canOrder() ? '＋ 想吃' : '已停止点菜'; add.disabled = state.busy || !!state.pending || !canOrder(); add.addEventListener('click', () => setQuantity(meal, 1));
         const stepper = document.createElement('div'); stepper.className = 'stepper';
         const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !!state.pending || !canOrder(); minus.setAttribute('aria-label', `减少${meal.name}`); minus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 1) - 1));
         const quantity = document.createElement('strong'); quantity.textContent = item?.quantity || 0;
         const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !!state.pending || !canOrder(); plus.setAttribute('aria-label', `增加${meal.name}`); plus.addEventListener('click', () => setQuantity(meal, (item?.quantity || 0) + 1));
+        add.dataset.focusRole = 'add'; minus.dataset.focusRole = 'minus'; plus.dataset.focusRole = 'plus';
+        add.setAttribute('aria-describedby', title.id);
+        quantity.setAttribute('aria-label', `已选${item?.quantity || 0}份`);
         stepper.append(minus, quantity, plus); body.append(title, meta, add, stepper); card.append(photo, body); return card;
       }
 
       function renderMeals() {
+        const focused = $('mealGrid').contains(document.activeElement) ? document.activeElement : null;
+        const focusMeal = focused?.closest('.meal')?.dataset.mealId;
+        const focusRole = focused?.dataset.focusRole;
         const meals = visibleMeals();
         $('mealGrid').setAttribute('aria-busy', String(state.menuLoading));
         $('legacyMenuNote').hidden = !(state.menuSupported === false && state.meals.length >= 600);
@@ -465,6 +479,12 @@
           const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '没有找到匹配的菜，换个关键词试试。'; $('mealGrid').replaceChildren(empty); return;
         }
         $('mealGrid').replaceChildren(...meals.map(mealCard));
+        if (focused && focusMeal && focusRole) {
+          const card = [...$('mealGrid').children].find(item => item.dataset.mealId === focusMeal);
+          const controls = card ? [...card.querySelectorAll('button[data-focus-role]')].filter(button => !button.disabled && button.getClientRects().length) : [];
+          const preferredRole = focusRole === 'add' && card?.classList.contains('selected') ? 'plus' : focusRole !== 'add' && !card?.classList.contains('selected') ? 'add' : focusRole;
+          (controls.find(button => button.dataset.focusRole === preferredRole) || controls[0])?.focus({ preventScroll: true });
+        }
       }
 
       function totals() {
