@@ -36,6 +36,7 @@ async function main () {
     })
     await page.goto(`${base}/meals/detail/meal-a`)
     await page.getByRole('heading', { name: '测试菜' }).waitFor()
+    assert.equal(await page.getByText('进入详情不会自动提交反馈', { exact: false }).count(), 0)
     await page.getByText('正在加载相关回忆').waitFor()
     assert.equal(await page.getByText('还没有相关回忆').count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)

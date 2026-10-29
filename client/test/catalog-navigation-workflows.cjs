@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Catalog checks require a local server')
 async function main () {
@@ -12,6 +13,7 @@ async function main () {
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/meal-image-issues' && req.method() === 'POST') { reports++; return route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
+      if (path === '/meal-image-issues' && req.method() === 'GET') return route.fulfill({ json: [] })
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/meals/categories') return route.fulfill({ json: [{ category: '家常菜', subcategory: '热菜' }] })
       if (path === '/meals/tags' || path === '/wishlist' || path === '/memories') return route.fulfill({ json: [] })
@@ -101,12 +103,35 @@ async function main () {
       await feedback.click()
       await page.waitForURL(/\/meals\/detail\/m1/)
       await page.getByRole('button', { name: '图片不对' }).waitFor()
+      await page.getByText('进入详情不会自动提交反馈', { exact: false }).waitFor()
+      assert.equal(new URL(page.url()).searchParams.get('report'), '1')
+      for (const dark of [false, true]) {
+        await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+        for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+          await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+          const result = await contrast(page, '.report-hint')
+          assert.ok(result.ratio >= 4.5, `${view} ${dark ? 'dark' : 'light'} ${theme}: ${result.ratio}`)
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+        }
+      }
       assert.equal(reports, 0, 'opening the feedback flow must not submit a report')
       await page.getByRole('button', { name: '返回', exact: true }).click()
       await page.getByRole('button', { name: '在详情反馈家常菜01图片问题' }).first().waitFor()
       assert.equal(new URL(page.url()).searchParams.get('q'), '家常菜01')
       assert.equal(new URL(page.url()).searchParams.get('view') || 'grid', view)
+      assert.equal(new URL(page.url()).searchParams.has('report'), false)
     }
+    await page.getByRole('button', { name: '在详情反馈家常菜01图片问题' }).first().click()
+    await page.getByText('进入详情不会自动提交反馈', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '图片不对' }).click()
+    await page.getByText('图片反馈提交结果未确认', { exact: false }).waitFor()
+    assert.equal(reports, 1)
+    assert.equal(await page.locator('.report-hint').count(), 0)
+    await page.getByRole('button', { name: '核对待修正反馈' }).click()
+    await page.getByText('当前列表没有发现这道菜的图片不匹配反馈', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '已核对，允许重试' }).click()
+    await page.getByRole('button', { name: '已核对，允许重试', exact: true }).last().click()
+    assert.equal(await page.locator('.report-hint').count(), 0, 'a prior uncertain submission must not be described as never attempted')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     console.log('Catalog navigation checks passed: filters, pagination, detail and editor returns, invalid links and stale searches')

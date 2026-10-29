@@ -360,8 +360,10 @@ const allowWishRetry = async (item) => {
 };
 
 const handleImageIssue = async (meal) => {
-  const failure = await handleViewMeal(meal);
-  if (!failure && route.name === 'MealDetail') ElMessage.info('请在菜品详情中选择“图片不对”提交反馈');
+  const mealId = meal._id || meal.id;
+  await syncCatalogUrl();
+  if (route.name !== 'meals') return;
+  return router.push({ name: 'MealDetail', params: { id: mealId }, query: { ...buildCatalogQuery(catalogState()), report: '1' } });
 };
 
 // 归档而不删除，保留排餐、回忆和图片引用。

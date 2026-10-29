@@ -26,6 +26,7 @@ const memoryLoading = ref(false);
 const mealError = ref('');
 const memoryError = ref('');
 const reporting = ref(false);
+const reportAttempted = ref(false);
 const reportUncertain = ref(false);
 const reportSubmitted = ref(false);
 const reportChecked = ref(false);
@@ -55,6 +56,7 @@ const reportImageIssue = async () => {
   if (!meal.value || reporting.value || reportUncertain.value || reportSubmitted.value || reportChecking.value) return;
   const id = String(meal.value._id || meal.value.id);
   const sequence = ++reportSequence;
+  reportAttempted.value = true;
   reporting.value = true;
   try {
     const result = await api.mealImageIssue.create({ mealId: id, issueType: 'wrong_image', note: '这张图片和菜名不匹配' });
@@ -137,7 +139,7 @@ const load = async () => {
   meal.value = null;
   memories.value = [];
   memoryPage.value = 1; memoryTotal.value = 0; memoryPagination.value = false; memoryFocus = '';
-  reportSequence++; reporting.value = false; reportUncertain.value = false; reportSubmitted.value = false; reportChecked.value = false; reportChecking.value = false; reportError.value = '';
+  reportSequence++; reporting.value = false; reportAttempted.value = false; reportUncertain.value = false; reportSubmitted.value = false; reportChecked.value = false; reportChecking.value = false; reportError.value = '';
   viewedPhoto.value = null;
   loadMemories(id, sequence);
   try {
@@ -176,6 +178,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
       </div>
     </div>
 
+    <div v-if="route.query.report === '1' && meal && !loading && !reportAttempted" class="report-hint" role="status">进入详情不会自动提交反馈。请先核对菜品图片，确认不匹配后点击上方“图片不对”。</div>
     <el-alert v-if="reportUncertain" type="warning" :closable="false" show-icon title="图片反馈提交结果未确认，请先核对后再决定是否重试。">
       <el-button link type="primary" :loading="reportChecking" @click="checkReports">核对待修正反馈</el-button>
       <p v-if="reportError">{{ reportError }}</p>
@@ -273,6 +276,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 .meal-detail { display: flex; flex-direction: column; gap: 18px; }
 .detail-toolbar { display: flex; justify-content: space-between; gap: 12px; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.report-hint { padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .hero { display: grid; grid-template-columns: minmax(280px, 460px) 1fr; gap: 24px; background: var(--bg-primary); border-radius: 12px; padding: 20px; box-shadow: 0 2px 12px var(--shadow-color); }
 .hero img { width: 100%; height: 320px; object-fit: cover; border-radius: 10px; background: var(--bg-secondary); }
 .cover-button, .detail-photo { border: 0; padding: 0; background: var(--bg-secondary); border-radius: 10px; cursor: pointer; }
