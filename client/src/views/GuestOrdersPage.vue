@@ -104,6 +104,7 @@ function clearPending() {
 }
 function acceptSession(item, withOrders = false, listItem = false) {
   if (!item || typeof item.id !== 'string' || !item.id || typeof item.title !== 'string' || typeof item.status !== 'string' || !Object.prototype.hasOwnProperty.call(statusLabels, item.status)) throw new Error('宴请数据不完整');
+  if (item.householdId != null && (typeof item.householdId !== 'string' || item.householdId.toLowerCase() !== String(currentSessionScope().householdId || '').toLowerCase())) throw new Error('宴请所属小家与当前会话不一致');
   if (capabilities.value?.householdId && item.householdId !== capabilities.value.householdId) throw new Error('家庭已变化，请重新加载宴请');
   const count = value => Number.isSafeInteger(value) && value >= 0;
   const quantity = value => Number.isSafeInteger(value) && value > 0;
@@ -131,6 +132,15 @@ async function load() {
   const sequence = ++listSequence; loading.value = true; listError.value = ''; capabilitiesError.value = '';
   const [caps, result] = await Promise.allSettled([api.guestOrder.capabilities(), api.guestOrder.list(params)]);
   if (!alive || sequence !== listSequence) return;
+  if (caps.status === 'fulfilled' && /^[a-f0-9]{24}$/.test(caps.value?.householdId || '') && String(currentSessionScope().householdId || '').toLowerCase() !== caps.value.householdId) {
+    capabilities.value = null;
+    capabilitiesError.value = '服务器返回的小家与当前会话不一致，宴请操作已暂停。';
+    listError.value = '无法确认宴请所属小家，请重新登录或联系管理员核对。';
+    sessions.value = []; listPagination.value = null; paginationAvailable.value = false;
+    if (detailOpen.value) detailError.value = '无法确认宴请所属小家，当前内容可能已过期。';
+    loading.value = false;
+    return;
+  }
   if (caps.status === 'fulfilled' && caps.value && /^[a-f0-9]{24}$/.test(caps.value.householdId || '')) {
     const oldHome = capabilities.value?.householdId;
     capabilities.value = caps.value;

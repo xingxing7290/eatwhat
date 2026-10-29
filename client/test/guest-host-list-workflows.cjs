@@ -11,7 +11,7 @@ async function main () {
     page.setDefaultTimeout(12000)
     const initialTime = new Date(2026, 9, 29, 12, 0, 0)
     await page.clock.setFixedTime(initialTime)
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: '111111111111111111111111' })) })
     const home = '111111111111111111111111'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const items = Array.from({ length: 41 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), householdId: home, title: i === 40 ? '延迟旧宴请' : `宴请${String(i).padStart(3, '0')}`, status: i % 2 ? 'completed' : 'open', storedStatus: i % 2 ? 'completed' : 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: `https://example.test/guest-order/token${i}`, supportsConditionalSession: true, editVersion: { revision: `v${i}`, updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: i, totalQuantity: i }))
@@ -118,7 +118,7 @@ async function main () {
     await page.close()
 
     const legacy = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' })) })
+    await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: '111111111111111111111111' })) })
     await legacy.route('**/api/**', route => route.request().url().includes('/capabilities') ? route.fulfill({ status: 404, json: { error: '旧服务' } }) : route.fulfill({ json: { sessions: items.slice(0, 30) } }))
     await legacy.route('**/api/auth/household-scope', route => route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } }))
     await legacy.goto(`${base}/guest-orders`)
@@ -126,6 +126,13 @@ async function main () {
     await legacy.getByRole('textbox', { name: '搜索宴请名称' }).fill('宴请029')
     await legacy.getByRole('heading', { name: '宴请029' }).waitFor()
     assert.equal(await legacy.locator('.session-card').count(), 1)
+    items[29].householdId = '333333333333333333333333'
+    await legacy.getByRole('button', { name: '刷新', exact: true }).click()
+    await legacy.getByText('宴请所属小家与当前会话不一致').waitFor()
+    assert.equal(await legacy.locator('.session-card').count(), 0, 'a foreign legacy record must not be displayed')
+    items[29].householdId = home
+    await legacy.getByRole('button', { name: '重新加载' }).click()
+    await legacy.getByRole('heading', { name: '宴请029' }).waitFor()
     assert.equal(await legacy.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await legacy.close()
     console.log('Guest host list workflows passed: pagination, filters, stale responses, malformed data and legacy guard')

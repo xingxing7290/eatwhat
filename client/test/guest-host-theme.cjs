@@ -8,7 +8,7 @@ async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await page.addInitScript(() => { localStorage.setItem('token', 'theme-token'); localStorage.setItem('user', JSON.stringify({ username: 'theme', householdId: 'home-a' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'theme-token'); localStorage.setItem('user', JSON.stringify({ username: 'theme', householdId: '111111111111111111111111' })) })
     const home = '111111111111111111111111'; const id = '222222222222222222222222'
     const longName = 'SpicyChicken'.repeat(8); const longNote = 'NoSalt'.repeat(20)
     const session = { id, householdId: home, title: '周末家庭聚餐', status: 'open', storedStatus: 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: 'https://example.test/guest-order/token', supportsConditionalSession: true, editVersion: { revision: 'test', updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: 1, totalQuantity: 2 }

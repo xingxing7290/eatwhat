@@ -18,7 +18,7 @@ async function main () {
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
-      if (req.method() === 'GET' && pathname === '/guest-orders/capabilities') return capabilitiesMode === 'error' ? route.fulfill({ status: 503, json: { error: '能力检查暂不可用' } }) : route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: capabilitiesMode === 'ok' } })
+      if (req.method() === 'GET' && pathname === '/guest-orders/capabilities') return capabilitiesMode === 'error' ? route.fulfill({ status: 503, json: { error: '能力检查暂不可用' } }) : route.fulfill({ json: { householdId: capabilitiesMode === 'foreign' ? '333333333333333333333333' : home, supportsConditionalSession: true, supportsIdempotentSessionCreate: capabilitiesMode === 'ok' || capabilitiesMode === 'foreign' } })
       if (req.method() === 'GET' && pathname === '/guest-orders') return route.fulfill({ json: { sessions: current ? [{ ...current, guestCount: 1, totalQuantity: 2 }] : [] } })
       if (req.method() === 'GET' && pathname === `/guest-orders/${id}`) {
         if (detailMissing) return route.fulfill({ status: 404, json: { code: 'GUEST_SESSION_NOT_FOUND', error: '未找到宴请' } })
@@ -102,6 +102,12 @@ async function main () {
     await page.getByText('有一份宴请的创建结果待核对', { exact: false }).waitFor()
     await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
     assert.equal(await page.getByRole('button', { name: '安全重试', exact: true }).isDisabled(), true)
+    capabilitiesMode = 'foreign'
+    await refreshCapabilities()
+    await page.getByText('服务器返回的小家与当前会话不一致', { exact: false }).waitFor()
+    assert.equal(await page.locator('.session-card').count(), 0, 'foreign capability data must not expose the list')
+    assert.equal(await page.getByRole('button', { name: '安全重试', exact: true }).isDisabled(), true)
+    assert.ok(await page.evaluate(key => sessionStorage.getItem(key), `eatwhat.hostGuest.create.${home}`), 'mismatch must preserve the original recovery credential')
     capabilitiesMode = 'unsupported'
     await refreshCapabilities()
     await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
@@ -257,7 +263,7 @@ async function main () {
     assert.equal(await legacy.getByRole('button', { name: '创建第一场宴请' }).isDisabled(), true)
     await legacy.close()
     const expiredPage = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await expiredPage.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' })) })
+    await expiredPage.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: '111111111111111111111111' })) })
     const expired = { ...current, title: '过期的锁单宴请', status: 'locked', storedStatus: 'locked', expiresAt: '2020-01-01T00:00:00.000Z' }
     await expiredPage.route('**/api/**', route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
@@ -279,7 +285,7 @@ async function main () {
     const initialTime = new Date(2026, 9, 29, 12, 0, 0)
     await livePage.clock.setFixedTime(initialTime)
     await livePage.addInitScript(() => {
-      localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' }))
+      localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: '111111111111111111111111' }))
       window.__copies = 0; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { window.__copies++ } } })
     })
     const expiring = { ...expired, title: '即将过期的宴请', status: 'open', storedStatus: 'open', expiresAt: new Date(initialTime.getTime() + 5000).toISOString() }
