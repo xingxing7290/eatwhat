@@ -211,6 +211,11 @@ async function main () {
     await page.goto(`${base}/dashboard`)
     await page.getByRole('link', { name: '查看想吃清单' }).click()
     await page.waitForURL('**/wishlist')
+    await page.goto(`${base}/dashboard`)
+    const favoritesLink = page.getByRole('link', { name: '查看收藏菜，当前 0 道' })
+    assert.ok((await favoritesLink.boundingBox()).height >= 44)
+    await favoritesLink.focus(); await page.keyboard.press('Enter')
+    await page.waitForURL('**/meals?favorite=1')
     await page.clock.setFixedTime(new Date(2026, 9, 28, 23, 59))
     mode = 'valid'; date = '2026-10-28'
     await page.goto(`${base}/dashboard`)

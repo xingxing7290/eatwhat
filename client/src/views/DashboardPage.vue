@@ -199,7 +199,7 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', refr
         <div class="status-grid">
           <div><span>默认菜品</span><strong>{{ summary.defaultMeals?.imported || 0 }}/{{ summary.defaultMeals?.total || 0 }}</strong></div>
           <div><span>待修图</span><strong>{{ summary.imageIssues?.open || 0 }}</strong></div>
-          <div><span>收藏菜</span><strong>{{ summary.meals?.favorites || 0 }}</strong></div>
+          <router-link :to="{ name: 'meals', query: { favorite: '1' } }" :aria-label="`查看收藏菜，当前 ${summary.meals.favorites} 道`"><span>收藏菜</span><strong>{{ summary.meals.favorites }}</strong><small>查看收藏 →</small></router-link>
         </div>
         <el-button plain @click="router.push('/settings')">去设置里管理</el-button>
       </el-card>
@@ -256,13 +256,17 @@ h1 span { color: var(--dashboard-accent-ink); }
 .card-links a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .card-links a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; border-radius: 2px; }
 .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
-.status-grid div { background: var(--bg-secondary); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
+.status-grid div, .status-grid a { background: var(--bg-secondary); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.status-grid a { color: var(--text-primary); text-decoration: none; }
+.status-grid a:hover { background: var(--bg-tertiary); }
+.status-grid a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.status-grid a small { color: var(--text-primary); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .status-grid span { color: var(--text-secondary); font-size: 13px; }
 .status-grid strong { color: var(--text-primary); font-size: 22px; }
 .quick-description { color: var(--text-secondary); font-size: 13px; margin-bottom: 12px; }.quick-links { display: grid; gap: 8px; }.quick-links a { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 14px; text-decoration: none; background: var(--bg-secondary); color: var(--text-primary); }.quick-links a:hover { color: var(--dashboard-accent-ink); }
 @media (max-width: 820px) { .wishlist-row { flex-direction: column; align-items: stretch; } .dashboard-grid { grid-template-columns: 1fr; } .week-mini { grid-template-columns: repeat(7, 1fr); } }
 @media (max-width: 600px) { .hero-panel { grid-template-columns: 1fr; }.hero-image { min-height: 150px; }.section-heading { align-items: start; flex-direction: column; gap: 8px; }.week-day { padding: 8px 2px; font-size: 10px; }.load-error { align-items: start; flex-direction: column; } }
-@media (max-width: 480px) { .week-mini { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week-day { font-size: 12px; } }
+@media (max-width: 480px) { .week-mini { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week-day { font-size: 12px; } .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .status-grid a { grid-column: 1 / -1; flex-direction: row; align-items: center; } .status-grid a small { margin-left: auto; } }
 :global(html:not(.dark) .dashboard-page .el-tag) { color: #8e4938; background: #fff8f4; border-color: #e8baaa; }
 :global(html:not(.dark) .dashboard-page .hint-list .el-tag) { color: #744016; background: #fff0db; border-color: #d8aa75; }
 :global(html.dark .dashboard-page .el-tag) { color: var(--text-primary); background: var(--bg-tertiary); border-color: var(--border-color); }
