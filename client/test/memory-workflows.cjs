@@ -109,11 +109,12 @@ async function main () {
     await page.getByText('服务器当前未找到这条回忆', { exact: false }).waitFor()
     await page.getByText('还没有饭后回忆').waitFor()
     const initialReads = reads.length
-    await page.goto(`${base}/memories?new=1&mealId=meal-75`)
+    await page.goto(`${base}/memories?new=1&mealId=meal-75&q=测试&mealType=dinner`)
     const deepDialog = page.getByRole('dialog', { name: '记录饭后回忆' })
     const title = deepDialog.getByPlaceholder('比如：周五晚上的番茄牛腩')
     await title.waitFor()
     assert.equal(await title.inputValue(), '做过一次：菜品75')
+    await page.waitForFunction(() => { const query = new URL(location.href).searchParams; return !query.has('new') && !query.has('mealId') && query.get('q') === '测试' && query.get('mealType') === 'dinner' })
     assert.equal(reads.length, initialReads, 'Deep link should fetch a single meal, not the catalog')
     assert.deepEqual(errors, [])
     console.log('Memory workflows passed: lazy search, selection, preview, uncertain deletion and deep link')

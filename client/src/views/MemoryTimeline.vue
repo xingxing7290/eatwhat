@@ -15,18 +15,45 @@ const memories = ref([]);
 const route = useRoute();
 const router = useRouter();
 const validMonth = value => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const readTimelineQuery = query => {
+  const page = typeof query.page === 'string' && /^[1-9]\d*$/.test(query.page) ? Number(query.page) : 1;
+  return {
+    search: typeof query.q === 'string' && query.q.length <= 100 ? query.q : '',
+    month: validMonth(query.month) ? query.month : '',
+    mealType: ['breakfast', 'lunch', 'dinner', 'snack', 'other'].includes(query.mealType) ? query.mealType : 'all',
+    photos: ['yes', 'no'].includes(query.photos) ? query.photos : 'all',
+    page: Number.isSafeInteger(page) && page <= 10000 ? page : 1
+  };
+};
+const initialTimeline = readTimelineQuery(route.query);
 const monthLinkNotice = ref(route.query.month !== undefined && !validMonth(route.query.month) ? '回忆链接中的月份无效，已显示全部月份。' : '');
-const timelinePage = ref(1);
+const timelinePage = ref(initialTimeline.page);
 const timelineLimit = 12;
 const timelineTotal = ref(0);
 const timelineCapable = ref(false);
-const timelineSearch = ref('');
-const timelineMonth = ref(validMonth(route.query.month) ? route.query.month : '');
-const timelineMealType = ref('all');
-const timelinePhotos = ref('all');
+const timelineSearch = ref(initialTimeline.search);
+const timelineMonth = ref(initialTimeline.month);
+const timelineMealType = ref(initialTimeline.mealType);
+const timelinePhotos = ref(initialTimeline.photos);
 let timelineTimer = null;
-let monthUrlTimer = null;
-const internalMonths = new Set();
+let timelineUrlTimer = null;
+let applyingTimelineRoute = false;
+const internalTimelineUrls = new Set();
+const timelineState = () => ({ search: timelineSearch.value, month: timelineMonth.value, mealType: timelineMealType.value, photos: timelinePhotos.value, page: timelinePage.value });
+const buildTimelineQuery = () => ({ ...(timelineSearch.value ? { q: timelineSearch.value } : {}), ...(timelineMonth.value ? { month: timelineMonth.value } : {}), ...(timelineMealType.value !== 'all' ? { mealType: timelineMealType.value } : {}), ...(timelinePhotos.value !== 'all' ? { photos: timelinePhotos.value } : {}), ...(timelinePage.value > 1 ? { page: String(timelinePage.value) } : {}) });
+const timelineUrlKey = query => JSON.stringify([readTimelineQuery(query), query.edit, query.new, query.mealId]);
+const scheduleTimelineUrl = () => {
+  if (timelineUrlTimer) clearTimeout(timelineUrlTimer);
+  timelineUrlTimer = setTimeout(async () => {
+    timelineUrlTimer = null;
+    if (!alive || route.name !== 'memories') return;
+    const query = { ...buildTimelineQuery(), ...(typeof route.query.edit === 'string' ? { edit: route.query.edit } : {}), ...(route.query.new === '1' && typeof route.query.mealId === 'string' ? { new: '1', mealId: route.query.mealId } : {}) };
+    if (JSON.stringify(readTimelineQuery(query)) === JSON.stringify(readTimelineQuery(route.query))) return;
+    const key = timelineUrlKey(query);
+    internalTimelineUrls.add(key);
+    try { await router.replace({ name: 'memories', query }); } finally { internalTimelineUrls.delete(key); }
+  }, 200);
+};
 const meals = ref([]);
 const selectedMeals = ref([]);
 const mealLoading = ref(false);
@@ -321,17 +348,18 @@ const load = async () => {
     if (memoryData?.supportsMemoryTimeline === true) {
       if (memoryData.page !== query.page || memoryData.limit !== timelineLimit || memoryData.search !== query.search || memoryData.month !== (query.month || '') || memoryData.mealType !== query.mealType || memoryData.photos !== query.photos || !Number.isSafeInteger(memoryData.total) || memoryData.total < 0 || !validItems(memoryData.items) || memoryData.items.length !== Math.min(timelineLimit, Math.max(0, memoryData.total - (query.page - 1) * timelineLimit))) throw new Error('回忆分页数据不完整');
       timelineCapable.value = true; timelineTotal.value = memoryData.total;
-      if (timelinePage.value > timelinePages.value) { timelinePage.value = timelinePages.value; return load(); }
+      if (timelinePage.value > timelinePages.value) { timelinePage.value = timelinePages.value; scheduleTimelineUrl(); return load(); }
       memories.value = memoryData.items;
     } else {
       if (!validItems(memoryData)) throw new Error('回忆列表数据不完整');
       timelineCapable.value = false; memories.value = memoryData;
+      if (timelinePage.value !== 1) { timelinePage.value = 1; scheduleTimelineUrl(); }
     }
     if (typeof route.query.edit === 'string' && route.query.edit) {
       const requestedId = route.query.edit;
       await openLinkedMemory(requestedId);
       if (!alive || sequence !== memorySequence) return;
-      await router.replace({ name: 'memories', query: timelineMonth.value ? { month: timelineMonth.value } : {} });
+      await router.replace({ name: 'memories', query: buildTimelineQuery() });
       return;
     }
     if (route.query.new === '1' && typeof route.query.mealId === 'string') {
@@ -348,35 +376,39 @@ const load = async () => {
         ElMessage.warning('未找到这道菜，请手动选择');
       }
       dialogVisible.value = true;
-      await router.replace({ name: 'memories', query: timelineMonth.value ? { month: timelineMonth.value } : {} });
+      await router.replace({ name: 'memories', query: buildTimelineQuery() });
     }
   } catch (e) { if (alive && sequence === memorySequence) loadError.value = e?.error || e?.message || '加载饭后回忆失败'; }
   finally { if (alive && sequence === memorySequence) loading.value = false; }
 };
 const changeTimelinePage = next => {
   if (loading.value || deleteIssue.value || deletingId.value || checkingDelete.value || next < 1 || next > timelinePages.value || next === timelinePage.value) return;
-  timelinePage.value = next; load();
+  timelinePage.value = next; scheduleTimelineUrl(); load();
 };
 watch([timelineSearch, timelineMonth, timelineMealType, timelinePhotos], () => {
+  if (applyingTimelineRoute) return;
+  monthLinkNotice.value = '';
   timelinePage.value = 1; memorySequence++; loading.value = true;
   if (timelineTimer) clearTimeout(timelineTimer);
   timelineTimer = setTimeout(load, 200);
+  scheduleTimelineUrl();
 }, { flush: 'sync' });
-watch(timelineMonth, value => {
-  monthLinkNotice.value = '';
-  if (monthUrlTimer) clearTimeout(monthUrlTimer);
-  monthUrlTimer = setTimeout(async () => {
-    monthUrlTimer = null;
-    if (!alive || route.name !== 'memories' || (route.query.month || '') === value) return;
-    internalMonths.add(value);
-    try { await router.replace({ name: 'memories', query: { ...route.query, month: value || undefined } }); } finally { internalMonths.delete(value); }
-  }, 200);
-}, { flush: 'sync' });
-watch(() => route.query.month, value => {
-  if (route.name !== 'memories' || internalMonths.has(value || '')) return;
-  if (monthUrlTimer) { clearTimeout(monthUrlTimer); monthUrlTimer = null; }
-  timelineMonth.value = validMonth(value) ? value : '';
-  monthLinkNotice.value = value !== undefined && !validMonth(value) ? '回忆链接中的月份无效，已显示全部月份。' : '';
+watch(() => route.fullPath, (path, previousPath) => {
+  if (route.name !== 'memories') return;
+  const next = readTimelineQuery(route.query);
+  if (internalTimelineUrls.has(timelineUrlKey(route.query))) return;
+  if (timelineUrlTimer) { clearTimeout(timelineUrlTimer); timelineUrlTimer = null; }
+  const previous = new URL(previousPath || '/', window.location.origin).searchParams;
+  const newAction = (typeof route.query.edit === 'string' && route.query.edit !== previous.get('edit')) || (route.query.new === '1' && typeof route.query.mealId === 'string' && (previous.get('new') !== '1' || previous.get('mealId') !== route.query.mealId));
+  const changed = JSON.stringify(next) !== JSON.stringify(timelineState());
+  monthLinkNotice.value = route.query.month !== undefined && !validMonth(route.query.month) ? '回忆链接中的月份无效，已显示全部月份。' : '';
+  if (!changed && !newAction) return;
+  applyingTimelineRoute = true;
+  timelineSearch.value = next.search; timelineMonth.value = next.month; timelineMealType.value = next.mealType; timelinePhotos.value = next.photos; timelinePage.value = next.page;
+  applyingTimelineRoute = false;
+  memorySequence++;
+  if (timelineTimer) clearTimeout(timelineTimer);
+  timelineTimer = setTimeout(load, 0);
 }, { flush: 'sync' });
 const save = async () => {
   if (!form.date) return ElMessage.warning('请选择日期');
@@ -448,7 +480,7 @@ const reviewDelete = async () => {
   checkingDelete.value = false;
 };
 onMounted(() => { window.addEventListener('keydown', onPhotoKey); load(); });
-onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); if (monthUrlTimer) clearTimeout(monthUrlTimer); window.removeEventListener('keydown', onPhotoKey); });
+onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); if (timelineUrlTimer) clearTimeout(timelineUrlTimer); window.removeEventListener('keydown', onPhotoKey); });
 </script>
 
 <template>
