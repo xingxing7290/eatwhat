@@ -340,6 +340,8 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
 .share-panel p,.dish-row small{color:var(--text-primary)}
 .dish-row > div { min-width: 0; overflow-wrap: anywhere; }
 .dish-row b { flex-shrink: 0; }
+.orders :deep(.el-collapse-item__header) { height: auto; min-height: 44px; padding: 8px 0; line-height: 1.5; }
+.orders :deep(.el-collapse-item__title) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .card-top :deep(.el-tag),.detail-head :deep(.el-tag){color:var(--text-primary);background:var(--bg-primary);border-color:var(--border-color)}
 .card-top :deep(.el-tag__content),.detail-head :deep(.el-tag__content){color:var(--text-primary)}
 .expiry-notice{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:12px 16px;border:1px solid var(--border-color);border-radius:14px;background:var(--bg-secondary);color:var(--text-primary);font-size:13px;line-height:1.5}.expiry-notice button{min-height:44px;padding:4px 0;border:0;background:transparent;color:var(--text-primary);font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.expiry-notice button:focus-visible{outline:2px solid var(--text-primary);outline-offset:3px}.expiry-notice button:disabled{opacity:.6;cursor:not-allowed}
