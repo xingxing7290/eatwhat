@@ -55,6 +55,15 @@ async function main () {
     await page.waitForTimeout(100)
     assert.equal(writes, 0, 'IME confirmation must not submit an incomplete ingredient')
     assert.equal(await addName.inputValue(), '输入中')
+    items = items.map(item => item._id === 'egg' ? { ...item, checked: false } : item); version++
+    await page.getByRole('button', { name: '刷新所选周清单' }).click()
+    await page.getByText('显示 4 / 4 项 · 本周待买 3 项').waitFor()
+    assert.equal(await addName.inputValue(), '输入中', 'refresh must preserve the add form draft')
+    assert.equal(writes, 0, 'refresh must not change the list')
+    items = items.map(item => item._id === 'egg' ? { ...item, checked: true } : item); version++
+    await page.getByRole('button', { name: '刷新所选周清单' }).click()
+    await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
+    assert.equal(await addName.inputValue(), '输入中')
     await addName.fill('')
     const statusFilters = page.getByRole('group', { name: '按购买状态筛选' })
     assert.equal((await statusFilters.getByRole('button', { name: '全部', exact: true }).innerText()).trim(), '全部 4')
