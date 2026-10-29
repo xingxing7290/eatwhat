@@ -75,6 +75,17 @@ async function main () {
     assert.equal(await page.evaluate(key => sessionStorage.getItem(key), `eatwhat.hostGuest.create.${home}`), null)
     await dialog.getByText('客人想吃的菜', { exact: true }).first().waitFor()
     await dialog.getByText('1 份点菜单 · 2 份菜').waitFor()
+    await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { throw new Error('denied') } } }) })
+    await dialog.getByRole('button', { name: '复制链接' }).click()
+    const linkInput = dialog.getByRole('textbox', { name: '客人点菜链接' })
+    await page.getByText('无法自动复制，请手动复制已选中的链接').waitFor()
+    assert.equal(await linkInput.evaluate(input => document.activeElement === input && input.selectionStart === 0 && input.selectionEnd === input.value.length), true)
+    await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: () => new Promise((_resolve, reject) => { window.__rejectClipboard = reject }) } }) })
+    await dialog.getByRole('button', { name: '复制链接' }).click()
+    await dialog.getByRole('button', { name: '刷新点菜' }).focus()
+    await page.evaluate(() => window.__rejectClipboard(new Error('denied')))
+    await page.getByText('无法自动复制，请手动选择链接', { exact: true }).waitFor()
+    assert.equal(await dialog.getByRole('button', { name: '刷新点菜' }).evaluate(button => document.activeElement === button), true, 'late clipboard failure must not steal focus')
     for (const fault of ['missing', 'mismatch', 'fractional', 'wrongDish', 'wrongQuantity']) {
       badSummary = fault
       await dialog.getByRole('button', { name: '刷新点菜' }).click()

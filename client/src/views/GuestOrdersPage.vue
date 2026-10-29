@@ -12,6 +12,7 @@ const createOpen = ref(false); const detailOpen = ref(false); const detailLoadin
 const selectedId = ref(''); const detail = ref(null); const detailError = ref('');
 const pending = ref(null); const mutationIssue = ref(null); const editing = ref(false);
 const headerRefresh = ref(null);
+const shareInput = ref(null);
 const now = ref(Date.now());
 const form = reactive({ title: '', eventAt: null, hours: 72 });
 const editForm = reactive({ title: '', eventAt: null });
@@ -257,8 +258,18 @@ async function finishReview() {
 async function copyLink() {
   now.value = Date.now();
   const url = safeShareUrl(detail.value?.shareUrl); if (!url || !canShare.value) return;
+  const source = document.activeElement;
   try { await navigator.clipboard.writeText(url); ElMessage.success('点菜链接已复制'); }
-  catch (_) { ElMessage.warning('无法自动复制，请手动选择下方链接'); }
+  catch (_) {
+    await nextTick();
+    now.value = Date.now();
+    if (!alive || !detailOpen.value || working.value || !canShare.value || safeShareUrl(detail.value?.shareUrl) !== url) return;
+    const input = shareInput.value?.input;
+    const focused = document.activeElement;
+    if (input && (!focused || focused === document.body || focused === source || !focused.isConnected)) {
+      input.focus(); input.select(); ElMessage.warning('无法自动复制，请手动复制已选中的链接');
+    } else ElMessage.warning('无法自动复制，请手动选择链接');
+  }
 }
 const refreshClock = () => { now.value = Date.now(); };
 onMounted(() => { load(); window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 30000); });
@@ -287,7 +298,7 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
       <template v-if="detail"><div class="detail-head"><div><el-tag :type="statusTypes[detailStatus]" round>{{ statusLabels[detailStatus] }}</el-tag><h2>{{ detail.title }}</h2><p>聚餐 {{ dateText(detail.eventAt) }} · 链接有效至 {{ dateText(detail.expiresAt) }}</p></div><div class="inline-actions"><el-button :loading="detailLoading" :disabled="working || editing || !!mutationIssue" @click="readDetail(selectedId)">刷新点菜</el-button><el-button v-if="!editing" :disabled="!canChange" @click="startEdit">编辑信息</el-button></div></div>
         <div v-if="editing" class="edit-panel"><el-form label-position="top"><el-form-item label="宴请名称"><el-input v-model="editForm.title" maxlength="80" show-word-limit :disabled="working" /></el-form-item><el-form-item label="聚餐时间"><el-date-picker v-model="editForm.eventAt" type="datetime" aria-label="编辑聚餐时间" :disabled="working" style="width:100%" /></el-form-item></el-form><div class="inline-actions"><el-button :disabled="working" @click="cancelEdit">取消</el-button><el-button type="primary" :disabled="!canChange || !editDirty" @click="saveEdit">保存信息</el-button></div></div>
         <el-alert v-if="!validVersion(detail)" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，详情暂时只能查看。" />
-        <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
+        <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input ref="shareInput" :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
         <div class="status-actions"><el-button v-if="detailStatus === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detailStatus === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
         <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><p v-if="summaryNeedsManualReview" class="dialog-note" role="status">部分旧点单缺少菜品标识，无法逐菜自动核对，请对照下方客人点菜单确认。</p><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
         <section v-if="detail.orders.length" class="orders"><h3>客人点菜单</h3><el-collapse><el-collapse-item v-for="order in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
