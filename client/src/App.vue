@@ -228,8 +228,10 @@ const handleKeyDown = (e) => {
 // 窗口大小变化处理
 const handleResize = () => {
   viewportWidth.value = window.innerWidth;
-  if (viewportWidth.value > 768) {
-    showMobileMenu.value = false;
+  if (viewportWidth.value > 768 && showMobileMenu.value) {
+    const focusWasInDrawer = document.getElementById('mobile-navigation')?.contains(document.activeElement);
+    closeMobileMenu();
+    if (focusWasInDrawer) nextTick(focusMain);
   }
 };
 
