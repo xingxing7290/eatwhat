@@ -500,7 +500,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss">
-.user-meta { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.15; }
+.user-meta { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; max-width: 120px; line-height: 1.15; }
 .user-household { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 10px; }
 .session-warning { position: relative; z-index: 2001; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 20px; padding: 12px 20px; background: #fff4d6; color: #33220d; border-bottom: 1px solid #aa773c; }
 .session-warning div { display: flex; flex-wrap: wrap; gap: 4px 12px; line-height: 1.5; }
@@ -748,6 +748,7 @@ body {
       }
 
       .user-name {
+        max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -869,6 +870,7 @@ body {
       flex-direction: column;
       gap: 2px;
       min-width: 0;
+      flex: 1;
 
       strong {
         color: var(--text-primary);
@@ -880,6 +882,7 @@ body {
       span {
         color: var(--text-secondary);
         font-size: 12px;
+        overflow-wrap: anywhere;
       }
     }
 
@@ -1397,6 +1400,7 @@ html.dark[data-theme] .el-message-box__title { color: var(--text-primary); }
   .app-header .header-left .logo { margin-right: 8px; font-size: 18px; }
   .app-header .header-left .main-nav .nav-link { padding-left: 7px; padding-right: 7px; font-size: 13px; }
   .app-header .header-right .desktop-actions .user-name { max-width: 65px; }
+  .app-header .header-right .desktop-actions .user-meta { max-width: 65px; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
