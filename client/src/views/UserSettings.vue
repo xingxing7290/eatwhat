@@ -186,7 +186,7 @@ if (rawInvitedCode) {
   router.replace({ path: route.path, query: route.query, hash: rest ? `#${rest}` : '' });
 }
 
-const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, allowHouseholdChange = false } = {}) => {
+const validateProfile = (res, { allowHouseholdChange = false } = {}) => {
   const nextUser = res?.user;
   const nextHousehold = res?.household || nextUser?.household;
   const scope = currentSessionScope();
@@ -198,6 +198,10 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, a
       (nextUser.household?.id && String(nextUser.household.id) !== householdId) ||
       typeof code !== 'string' || !code || code.length > 20 || code.trim() !== code ||
       !Array.isArray(nextHousehold.members) || !nextHousehold.members.some(member => String(member?._id || member?.id || member) === id)) throw new Error('家庭信息不完整，请重试');
+  return { nextUser, nextHousehold };
+};
+const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, allowHouseholdChange = false } = {}) => {
+  const { nextUser, nextHousehold } = validateProfile(res, { allowHouseholdChange });
   const previousHousehold = household.value;
   const nameDraftDirty = householdName.value !== (previousHousehold.name || '');
   replaceSessionUser(nextUser);
@@ -288,6 +292,7 @@ const reviewHouseholdName = async () => {
     const result = await api.household.me();
     const next = result?.household;
     if (!result?.user?.id || String(result.user.id) !== String(user.value.id) || !next?.id || String(next.id) !== String(household.value.id) || String(result.user.householdId || '') !== String(next.id) || typeof next.name !== 'string' || !next.name || next.supportsConditionalNameUpdate !== true || !validNameVersion(next.nameVersion) || typeof next.inviteCode !== 'string' || !Array.isArray(next.members)) throw new Error('最新小家信息不完整');
+    validateProfile(result);
     household.value = next;
     latestName.value = next.name;
   } catch (e) { latestName.value = null; ElMessage.error(e?.error || e?.message || '核对失败，请重试'); }

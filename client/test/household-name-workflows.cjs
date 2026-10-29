@@ -18,6 +18,9 @@ async function main () {
       if (path === '/auth/me' || (path === '/household/me' && req.method() === 'GET')) {
         const result = profile()
         if (mode === 'foreign' && path === '/household/me') result.household.id = 'other-home'
+        if (mode === 'not-member' && path === '/household/me') result.household.members = []
+        if (mode === 'long-code' && path === '/household/me') result.household.inviteCode = 'X'.repeat(21)
+        if (mode === 'nested-mismatch' && path === '/household/me') result.user.household = { id: 'other-home' }
         if (mode === 'legacy') delete result.household.supportsConditionalNameUpdate
         return route.fulfill({ json: result })
       }
@@ -83,6 +86,15 @@ async function main () {
     mode = 'foreign'; await page.getByRole('button', { name: '核对最新名称' }).click()
     await page.getByText('最新小家信息不完整').first().waitFor()
     assert.equal(await page.getByRole('button', { name: '保留我的名称' }).count(), 0)
+    for (const fault of ['not-member', 'long-code', 'nested-mismatch']) {
+      mode = fault
+      await page.getByRole('button', { name: '核对最新名称' }).click()
+      await page.getByText('家庭信息不完整，请重试').first().waitFor()
+      assert.equal(await page.getByRole('button', { name: '保留我的名称' }).count(), 0)
+      assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
+      assert.equal(await page.getByPlaceholder('请输入昵称').inputValue(), '需要保留的昵称')
+      assert.equal(await householdCard.locator('input[readonly]').inputValue(), 'CODE2')
+    }
     mode = 'normal'; await page.getByRole('button', { name: '核对最新名称' }).click()
     await page.getByText('最新名称：家人刚修改的名称').waitFor()
     await page.getByRole('button', { name: '保留我的名称' }).click()
