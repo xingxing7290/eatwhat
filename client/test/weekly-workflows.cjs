@@ -30,6 +30,7 @@ async function main () {
     let releaseSlow
     let legacyCatalog = false
     let failCatalog = false
+    let holdCurrent = true; let releaseCurrent
     const planned = () => dates.map(date => ({ date, meals: { ...emptyMeals(), dinner: [meal._id] } }))
     let expectedPlan = planned()
     await page.route('**/api/**', async route => {
@@ -52,6 +53,7 @@ async function main () {
         else if (search === '无分页') data = { data: [meal], total: 10 }
         else data = legacyCatalog ? catalog : { data: rows.slice((current - 1) * limit, current * limit), page: current, limit, total: rows.length }
       } else if (req.method() === 'GET' && pathname === '/weekly-plans') {
+        if (holdCurrent) await new Promise(resolve => { releaseCurrent = resolve })
         data = { weekStart: dates[0], supportsConditionalApply: true, days: malformedCurrent ? currentDays.map((day, i) => i === 0 ? { ...day, meals: {} } : day) : currentDays }
       } else if (req.method() === 'POST' && pathname === '/weekly-plans/generate') {
         generateCalls++
@@ -77,6 +79,11 @@ async function main () {
     })
 
     await page.goto(`${base}/weekly-plan`)
+    await page.getByRole('status').getByText('正在读取所选周的日历安排…').waitFor()
+    assert.equal(await page.getByText('当前日历安排', { exact: true }).count(), 0, 'loading must not present an empty calendar card as loaded data')
+    for (let i = 0; i < 100 && !releaseCurrent; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseCurrent, 'function')
+    holdCurrent = false; releaseCurrent()
     await page.getByRole('heading', { name: /周一.*2026-10-26/ }).waitFor()
     await page.getByText('购物清单不会随排餐变动自动更新', { exact: false }).waitFor()
     const dateLink = page.getByRole('link', { name: '查看 2026-11-01 的日历安排' })
