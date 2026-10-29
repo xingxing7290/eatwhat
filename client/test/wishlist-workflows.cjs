@@ -11,7 +11,7 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const version = revision => ({ revision, updatedAt: '2026-10-28T12:00:00.000Z' })
-    let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, mealId: null, supportsSetVote: true, supportsSafeMealLink: true, supportsConditionalActions: true, editVersion: version('v1') }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+    let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, mealId: null, supportsSetVote: true, supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked', supportsConditionalActions: true, editVersion: version('v1') }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
     let voteMode = 'unknown'; let statusMode = 'unknown'; let deleteMode = 'unknown'; let attachMode = 'lost'; let reviewFails = false; let releaseVote; let releaseSlow; const reads = []; const writes = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
@@ -147,6 +147,15 @@ async function main () {
     await page.getByText('删除结果未确认', { exact: false }).waitFor()
     await page.getByRole('button', { name: '刷新清单并核对' }).click()
     await page.getByText('想吃面条', { exact: true }).waitFor({ state: 'hidden' })
+    items.push({ _id: 'missing-link', title: '失效关联', status: 'open', priority: 'normal', votes: [], mealId: null, supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unavailable' })
+    await page.reload()
+    const missing = page.locator('.wish-card').filter({ hasText: '失效关联' })
+    await missing.getByText('原关联菜谱不可用', { exact: false }).waitFor()
+    assert.equal(await missing.getByRole('button', { name: '转菜品' }).isDisabled(), true)
+    assert.equal(await missing.getByRole('button', { name: '关联已有菜谱' }).isDisabled(), true)
+    const old = page.locator('.wish-card').filter({ hasText: '旧服务记录' })
+    await old.getByText('服务器无法确认该记录是否已有菜谱关联', { exact: false }).waitFor()
+    assert.equal(await old.getByRole('button', { name: '转菜品' }).isDisabled(), true)
     assert.deepEqual(errors, [])
     console.log('Wishlist workflows passed: atomic votes, uncertain actions, lazy search and mobile')
   } finally { await browser.close() }

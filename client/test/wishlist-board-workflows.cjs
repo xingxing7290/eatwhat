@@ -9,7 +9,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    const rows = Array.from({ length: 29 }, (_, i) => ({ _id: `w${String(i).padStart(2, '0')}`, title: `心愿${String(i).padStart(2, '0')}`, note: '', category: '家常', status: i < 20 ? 'open' : i < 26 ? 'planned' : i < 28 ? 'done' : 'legacy', priority: 'normal', votes: [], supportsSafeMealLink: true, createdAt: new Date(1700000000000 - i * 1000).toISOString() }))
+    const rows = Array.from({ length: 29 }, (_, i) => ({ _id: `w${String(i).padStart(2, '0')}`, title: `心愿${String(i).padStart(2, '0')}`, note: '', category: '家常', status: i < 20 ? 'open' : i < 26 ? 'planned' : i < 28 ? 'done' : 'legacy', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked', createdAt: new Date(1700000000000 - i * 1000).toISOString() }))
     const errors = []; const requests = []; let releaseSlow; let detailError = false
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {

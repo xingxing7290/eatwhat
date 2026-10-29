@@ -23,6 +23,10 @@ function addVersionFilter(filter, version) {
 function decorateItem(item, uid) {
   const obj = item?.toObject ? item.toObject() : item;
   if (!obj) return obj;
+  const storedMeal = typeof item?.populated === 'function' ? item.populated('mealId') : obj._hasStoredMealLink;
+  obj.mealLinkStatus = obj.mealId ? 'linked' : storedMeal ? 'unavailable' : 'unlinked';
+  obj.supportsMealLinkVisibility = true;
+  delete obj._hasStoredMealLink;
   const current = String(uid || '');
   obj.createdByPartner = !!obj.createdBy && String(obj.createdBy._id || obj.createdBy) !== current;
   obj.votedByMe = (obj.votes || []).some(v => String(v._id || v) === current);
@@ -73,6 +77,7 @@ async function listBoard(req, res, household) {
   const counts = rows => Object.fromEntries(boardStatuses.map(key => [key, rows.find(row => row._id === key)?.count || 0]));
   const matched = counts(result?.matched || []); const totals = counts(result?.totals || []);
   const rows = result?.rows || [];
+  for (const row of rows) row._hasStoredMealLink = !!row.mealId;
   await WishlistItem.populate(rows, [
     { path: 'mealId', match: { householdId: household._id } },
     { path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' },

@@ -13,7 +13,7 @@ async function main () {
     let writes = 0; let invalid = false
     let items = [
       { _id: 'a', title: '火锅', note: '香辣', category: '聚餐', priority: 'high', status: 'open', votes: [], votedByMe: false, supportsSetVote: true, supportsConditionalActions: true, editVersion: version, mealId: { _id: 'm1', name: '豆腐锅' } },
-      { _id: 'b', title: '番茄', note: '', category: '家常', priority: 'normal', status: 'open', votes: [], supportsSafeMealLink: true },
+      { _id: 'b', title: '番茄', note: '', category: '家常', priority: 'normal', status: 'open', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked' },
       { _id: 'c', title: '牛肉', note: '', category: '家常', priority: 'normal', status: 'planned', votes: [], mealId: { name: '信息不全' } },
       { _id: 'd', title: '面条', note: '', category: '主食', priority: 'low', status: 'done', votes: [], mealId: 'legacy-id' },
       { _id: 'e', title: '旧状态心愿', note: '', category: '', priority: 'legacy', status: 'unknown-old', votes: [] }

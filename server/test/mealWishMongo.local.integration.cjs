@@ -1135,6 +1135,21 @@ async function main() {
     const missingMenuVersion = (await request('/anniversaries', { token: tokenA })).data.find(item => item._id === String(missingVersionMenu.insertedId)).editVersion;
     assert.deepEqual(missingMenuVersion, { revision: null, updatedAt: null });
     assert.equal((await request(`/anniversaries/${missingVersionMenu.insertedId}?expectedEditVersion=${encodeURIComponent(JSON.stringify(missingMenuVersion))}`, { method: 'DELETE', token: tokenA })).status, 204);
+    const linkVisibilityFixtures = await WishlistItem.create([
+      { householdId: homeA._id, createdBy: userA._id, title: '关联状态无菜谱', status: 'done', mealId: null },
+      { householdId: homeA._id, createdBy: userA._id, title: '关联状态已失效', status: 'done', mealId: new mongoose.Types.ObjectId() },
+      { householdId: homeA._id, createdBy: userA._id, title: '关联状态外家庭', status: 'done', mealId: otherMeal._id },
+      { householdId: homeA._id, createdBy: userA._id, title: '关联状态正常', status: 'done', mealId: mealA._id }
+    ]);
+    for (const [fixture, expected] of linkVisibilityFixtures.map((item, index) => [item, ['unlinked', 'unavailable', 'unavailable', 'linked'][index]])) {
+      const detail = await request(`/wishlist/${fixture._id}`, { token: tokenA });
+      assert.equal(detail.status, 200); assert.equal(detail.data.supportsMealLinkVisibility, true); assert.equal(detail.data.mealLinkStatus, expected);
+      if (expected === 'linked') assert.equal(detail.data.mealId._id, String(mealA._id)); else assert.equal(detail.data.mealId, null);
+      const board = await request(`/wishlist?view=board&search=${encodeURIComponent(fixture.title)}`, { token: tokenA });
+      assert.equal(board.status, 200); assert.equal(board.data.items[0].mealLinkStatus, expected);
+      assert.equal(JSON.stringify(board.data.items[0]).includes(String(otherMeal._id)), false, 'foreign recipe IDs must not leak');
+    }
+    await WishlistItem.deleteMany({ _id: { $in: linkVisibilityFixtures.map(item => item._id) } });
     if (process.env.EATWHAT_TEST_BROWSER === '1') {
       const dist = path.resolve(__dirname, '../../client/dist');
       assert.ok(fs.existsSync(path.join(dist, 'index.html')), 'build client/dist before browser integration');

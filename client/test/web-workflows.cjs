@@ -410,7 +410,7 @@ async function main () {
   assert.equal(await page.locator('.desktop-only .el-pagination').isVisible(), true)
   simulateMealPagination = false
 
-  wishlist = [{ _id: 'convert-wish', title: '想吃的新菜', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+  wishlist = [{ _id: 'convert-wish', title: '想吃的新菜', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked' }]
   failAttach = true
   await page.goto(`${base}/wishlist`)
   await page.getByText('想吃的新菜').waitFor()
@@ -486,7 +486,7 @@ async function main () {
   await page.getByText('服务器未提供安全关联能力').waitFor()
   assert.equal(await page.getByRole('button', { name: '转菜品' }).isDisabled(), true)
 
-  wishlist = [{ _id: 'wish-uncertain', title: '创建状态不确定', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+  wishlist = [{ _id: 'wish-uncertain', title: '创建状态不确定', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked' }]
   failMealCreate = true
   await page.goto(`${base}/wishlist`)
   await page.getByRole('button', { name: '转菜品' }).click()
@@ -495,7 +495,7 @@ async function main () {
   assert.equal(await page.getByRole('button', { name: '关联已有菜谱' }).isEnabled(), true)
   failMealCreate = false
 
-  wishlist = [{ _id: 'wish-existing', title: '想吃鸡蛋', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+  wishlist = [{ _id: 'wish-existing', title: '想吃鸡蛋', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked' }]
   await page.goto(`${base}/wishlist`)
   await page.getByRole('button', { name: '关联已有菜谱' }).click()
   await page.getByRole('dialog', { name: '关联已有菜谱' }).locator('.el-select').click()
@@ -722,7 +722,7 @@ async function main () {
   await coverUpload.setInputFiles({ name: 'bad.txt', mimeType: 'text/plain', buffer: Buffer.from('bad') })
   await page.getByText('只支持 JPG、PNG').waitFor()
   assert.equal(await page.getByAltText('菜品封面预览').count(), 0)
-  await coverUpload.setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('cover') })
+  await coverUpload.setInputFiles({ name: 'cover.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKsAAAAASUVORK5CYII=', 'base64') })
   await page.getByAltText('菜品封面预览').waitFor()
   const galleryUpload = page.locator('.side-column .el-card').nth(1).locator('input[type=file]')
   await galleryUpload.setInputFiles([
@@ -793,7 +793,7 @@ async function main () {
   conflictMealEdit = true
   await page.goto(`${base}/meals/editor/meal-a`)
   await page.getByPlaceholder('给这道菜起个名字').fill('冲突时保留的菜名')
-  await page.locator('.side-column .el-card').first().locator('input[type=file]').setInputFiles({ name: 'conflict.png', mimeType: 'image/png', buffer: Buffer.from('image') })
+  await page.locator('.side-column .el-card').first().locator('input[type=file]').setInputFiles({ name: 'conflict.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKsAAAAASUVORK5CYII=', 'base64') })
   await page.getByAltText('菜品封面预览').waitFor()
   await page.getByRole('button', { name: '保存', exact: true }).click()
   await page.getByText('这道菜已被其他成员修改，本次未保存').waitFor()
