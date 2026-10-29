@@ -165,9 +165,11 @@ async function main () {
     await blockedStorage.locator('#guestName').fill('测试访客')
     await blockedStorage.getByRole('button', { name: '提交给主人' }).click()
     await blockedStorage.getByText('本浏览器无法保存订单凭证', { exact: false }).waitFor()
+    assert.equal(await blockedStorage.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true, 'an unsaved access credential must warn before leaving')
     await blockedStorage.getByRole('button', { name: '保存修改' }).click()
     await blockedStorage.waitForFunction(() => document.querySelector('#submitOrder').textContent === '保存修改' && !document.querySelector('#submitOrder').disabled)
     assert.deepEqual(methods.filter(method => method !== 'GET'), ['POST', 'PUT'], 'blocked local storage must not cause a duplicate create')
+    assert.equal(await blockedStorage.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true, 'the warning remains while the browser cannot retain the credential')
     await blockedStorage.close()
     const safePage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     const safeMeal = { _id: '123456789012345678901234', name: '安全提交测试菜', category: '家常菜' }

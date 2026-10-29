@@ -883,7 +883,7 @@
       $('acknowledgeUncertain').addEventListener('click', () => { if (!state.busy && confirm('请确认已经联系主人核对；先前请求仍可能稍后完成。确定继续吗？')) { setUncertainty(false); renderCartList(); } });
       $('overlay').addEventListener('click', event => { if (event.target === $('overlay')) closeCart(); });
       addEventListener('beforeunload', event => {
-        if (state.busy || state.pending || state.uncertain || state.conflict || draftChanged()) { event.preventDefault(); event.returnValue = ''; }
+        if (state.busy || state.pending || state.uncertain || state.conflict || state.storageFailed || draftChanged()) { event.preventDefault(); event.returnValue = ''; }
       });
       addEventListener('keydown', event => {
         if (!$('overlay').classList.contains('show')) return;
