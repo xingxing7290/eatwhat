@@ -170,6 +170,10 @@ const grouped = computed(() => visibleMemories.value.reduce((acc, item) => {
   return acc;
 }, {}));
 const mealId = meal => String(meal?._id || meal?.id || '');
+const linkedMealId = meal => {
+  const id = meal?._id || meal?.id;
+  return typeof id === 'string' && /^[a-z\d_-]{1,128}$/i.test(id) && typeof meal?.name === 'string' && meal.name.trim() ? id : '';
+};
 const validVersion = item => item?.supportsConditionalEdit === true && item.editVersion &&
   (item.editVersion.revision === null || (typeof item.editVersion.revision === 'string' && !!item.editVersion.revision && item.editVersion.revision.length <= 128)) &&
   (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
@@ -511,7 +515,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
             <p v-if="item.actualCookTime || item.nextImprovement" class="cooking-note"><span v-if="item.actualCookTime">用时 {{ item.actualCookTime }} 分钟</span><span v-if="item.nextImprovement">下次改进：{{ item.nextImprovement }}</span></p>
             <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="memory-photo" :aria-label="`查看${item.title || '回忆'}的第 ${index + 1} 张照片`" @click="openMemoryPhoto(item, index)"><img :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
             <p v-if="item.supportsUnavailableMealVisibility && item.mealIds?.some(meal => meal === null)" class="unavailable-note">部分相关菜品不可用，原有引用仍保留在回忆中。</p>
-            <div class="meal-names"><el-tag v-for="(meal, index) in item.mealIds || []" :key="meal?._id || `unavailable-${index}`" effect="plain">{{ meal?.name || '菜品不可用' }}</el-tag></div>
+            <div class="meal-names"><el-tag v-for="(meal, index) in item.mealIds || []" :key="meal?._id || `unavailable-${index}`" effect="plain" class="memory-meal-tag"><router-link v-if="linkedMealId(meal)" class="memory-meal-link" :to="{ name: 'MealDetail', params: { id: linkedMealId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${item.title || item.date + '的回忆'}关联的${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal?.name || '菜品不可用' }}</span></el-tag></div>
           </el-card>
         </div>
       </section>
@@ -602,6 +606,9 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .timeline-pagination :deep(.el-button) { min-height: 44px; }
 :global(html.dark .memory-filters) { --memory-accent: var(--secondary-color); }
 .meal-names { justify-content: flex-start; flex-wrap: wrap; margin-top: 10px; }
+.memory-meal-tag { max-width: 100%; height: auto; white-space: normal; padding: 0 8px; color: var(--text-primary); background: var(--bg-secondary); border-color: var(--border-color); }
+.memory-meal-link { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.memory-meal-link:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 2px; }
 .unavailable-note { color: var(--text-primary) !important; font-size: 13px; line-height: 1.5; }
 .unavailable-meals { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; }
 .unavailable-meals :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }

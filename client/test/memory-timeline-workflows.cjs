@@ -11,11 +11,15 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const rows = Array.from({ length: 205 }, (_, index) => ({ _id: `memory-${index}`, date: `2025-01-${String(28 - index % 28).padStart(2, '0')}`, title: `历史回忆${String(index).padStart(3, '0')}`, note: index === 204 ? '最后一条特别记号' : '', mood: '温馨', mealType: index % 2 ? 'lunch' : 'dinner', photos: index % 3 ? [] : ['/uploads/photo.png'], mealIds: [], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: `v${index}`, updatedAt: '2026-01-01T00:00:00.000Z' } }))
+    rows[0].mealIds = [{ _id: 'meal-a', name: '家常菜' }, null, { _id: 'bad/id', name: '异常菜品' }]
+    rows[0].supportsUnavailableMealVisibility = true
     let legacy = false; let releaseSlow; const requests = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
+      if (path === '/meals/meal-a') return route.fulfill({ json: { _id: 'meal-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [] } })
+      if (path === '/memories' && url.searchParams.has('mealId')) return route.fulfill({ json: [] })
       if (path !== '/memories' || req.method() !== 'GET') return route.fulfill({ json: {} })
       const query = Object.fromEntries(url.searchParams); requests.push(query)
       if (legacy) return route.fulfill({ json: rows.slice(0, 200) })
@@ -28,6 +32,20 @@ async function main () {
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2025-01')
     assert.equal(requests[0].month, '2025-01')
+    const linkedRecipe = page.getByRole('link', { name: '在新标签页查看历史回忆000关联的家常菜菜谱' })
+    assert.equal(await linkedRecipe.getAttribute('href'), '/meals/detail/meal-a')
+    assert.equal(await linkedRecipe.getAttribute('rel'), 'noopener noreferrer')
+    assert.ok((await linkedRecipe.boundingBox()).height >= 44)
+    assert.equal(await page.getByRole('link', { name: /菜品不可用/ }).count(), 0)
+    assert.equal(await page.getByRole('link', { name: /异常菜品/ }).count(), 0)
+    await page.getByText('部分相关菜品不可用', { exact: false }).waitFor()
+    const popupPromise = page.waitForEvent('popup')
+    await linkedRecipe.click()
+    const popup = await popupPromise
+    await popup.getByRole('heading', { name: '家常菜' }).waitFor()
+    await popup.close()
+    assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2025-01')
+    assert.equal(await page.getByText('共 205 条回忆 · 第 1 / 18 页').isVisible(), true)
     const related = page.getByRole('navigation', { name: '查看所选月份的其他内容' })
     assert.equal(await related.getByRole('link', { name: '查看 2025-01 相册 →' }).getAttribute('href'), '/photo-album?month=2025-01')
     assert.equal(await related.getByRole('link', { name: '查看 2025-01 饭桌回顾 →' }).getAttribute('href'), '/review?month=2025-01')
@@ -40,7 +58,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.related-period a', '.related-period p']) {
+        for (const selector of ['.related-period a', '.related-period p', '.memory-meal-link']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }
