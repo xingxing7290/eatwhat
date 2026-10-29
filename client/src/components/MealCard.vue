@@ -206,6 +206,7 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
           </div>
         </div>
 
+        <span v-if="selectable" class="selection-indicator" :class="{ 'is-selected': selected }" aria-hidden="true">{{ selected ? '✓ 已选' : '＋ 选择' }}</span>
         <p v-if="meal.description" class="meal-description">
           {{ meal.description }}
         </p>
@@ -453,6 +454,8 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
   border: 2px solid var(--primary-color);
   transform: translateY(-2px);
 }
+.selection-indicator { align-self: flex-start; display: inline-flex; align-items: center; padding: 4px 9px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; font-weight: 700; line-height: 1.4; }
+.selection-indicator.is-selected { border-color: var(--text-primary); background: var(--bg-tertiary); }
 
 /* 响应式设计 */
 @media (max-width: 768px) {

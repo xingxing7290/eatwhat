@@ -213,7 +213,23 @@ async function main () {
     await page.keyboard.press('Space')
     await page.getByRole('button', { name: '选择测试菜01' }).waitFor()
 
-    await page.getByRole('button', { name: '选择测试菜01' }).click()
+    const firstCard = page.getByRole('button', { name: '选择测试菜01' })
+    assert.equal(await firstCard.getAttribute('aria-pressed'), 'false')
+    assert.equal(await firstCard.locator('.selection-indicator').innerText(), '＋ 选择')
+    await firstCard.focus(); await page.keyboard.press('Space')
+    assert.equal(await firstCard.getAttribute('aria-pressed'), 'true')
+    assert.equal(await firstCard.locator('.selection-indicator').innerText(), '✓ 已选')
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.selection-indicator.is-selected', '.meal-card-wrapper:not(.selected) .selection-indicator']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
     await page.getByRole('button', { name: '移除测试菜01' }).click()
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), '移除测试菜20')
     await page.getByRole('button', { name: '选择测试菜01' }).click()

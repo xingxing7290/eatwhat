@@ -504,7 +504,7 @@ onBeforeUnmount(() => {
         <strong>已选择:</strong> {{ selectedMeals.length }} 个菜品
       </div>
       <p class="selection-status" role="status">{{ selectionStatus }}</p>
-      <p class="selection-hint">切换分类、搜索或翻页不会清除已选菜品；点击“保存安排”后才会更新日历。</p>
+      <p class="selection-hint">点击菜品卡片选择或取消；切换分类、搜索或翻页不会清除已选菜品。点击“保存安排”后才会更新日历。</p>
       
       <div class="selected-meals" ref="selectedMealContainer" v-if="selectedMeals.length > 0">
         <button
