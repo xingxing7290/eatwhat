@@ -92,6 +92,15 @@ async function main () {
     selected = [meals[18], meals[19]]
     await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
     await page.getByText('与当前安排一致', { exact: true }).waitFor()
+    await page.setViewportSize({ width: 320, height: 844 })
+    const longLayoutFits = await page.locator('.selected-meal-item').first().evaluate(row => {
+      const tag = row.querySelector('.selected-meal-tag')
+      const extra = document.createTextNode('x'.repeat(100)); tag.append(extra)
+      const fits = row.scrollWidth <= row.clientWidth && document.documentElement.scrollWidth <= innerWidth
+      extra.remove(); return fits
+    })
+    assert.equal(longLayoutFits, true, 'long meal names and reorder controls must fit narrow screens')
+    await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.getByRole('button', { name: '上移测试菜19' }).isDisabled(), true)
     assert.equal(await page.getByRole('button', { name: '下移测试菜20' }).isDisabled(), true)
     await page.getByRole('button', { name: '上移测试菜20' }).focus()
@@ -99,6 +108,15 @@ async function main () {
     await page.getByText('选择有变更，尚未保存').waitFor()
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '移除测试菜20', 'focus remains on the moved item at the boundary')
     assert.deepEqual(await page.locator('.selected-meal-item').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label'))), ['第1道：测试菜20', '第2道：测试菜19'])
+    await page.evaluate(() => {
+      const move = document.querySelector('[aria-label="下移测试菜20"]')
+      move.focus(); move.click()
+      document.querySelector('input[aria-label="搜索可选菜品"]').focus()
+    })
+    await page.waitForFunction(() => document.querySelector('.selected-meal-item')?.getAttribute('aria-label') === '第1道：测试菜19')
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '搜索可选菜品', 'a later user focus must not be stolen')
+    await page.getByRole('button', { name: '上移测试菜20' }).click()
+    await page.getByText('选择有变更，尚未保存').waitFor()
     await page.getByRole('button', { name: '取消', exact: true }).click()
     const orderWarning = page.getByRole('dialog', { name: '放弃未保存的内容？' })
     await orderWarning.getByRole('button', { name: '继续编辑' }).click()

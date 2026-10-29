@@ -226,9 +226,13 @@ const removeSelectedMeal = async meal => {
 const moveSelectedMeal = async (index, direction) => {
   const target = index + direction;
   if (isInitializing.value || isSaving.value || loadError.value || saveUncertain.value || target < 0 || target >= selectedMeals.value.length) return;
+  const source = document.activeElement;
+  const hadFocus = !!source?.closest('.selected-meal-item');
   const [meal] = selectedMeals.value.splice(index, 1);
   selectedMeals.value.splice(target, 0, meal);
   await nextTick();
+  const focused = document.activeElement;
+  if (!hadFocus || (focused && focused !== document.body && focused !== source && focused.isConnected)) return;
   const row = selectedMealContainer.value?.querySelectorAll('.selected-meal-item')[target];
   const requested = row?.querySelector(direction < 0 ? '.move-up' : '.move-down');
   (requested && !requested.disabled ? requested : row?.querySelector('.selected-meal-tag'))?.focus();
