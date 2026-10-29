@@ -51,6 +51,13 @@ async function main () {
     assert.equal((await search.inputValue()).length, 200, 'the full supported search survives reloading its link')
     await page.setViewportSize({ width: 320, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    const header = page.locator('.header-actions')
+    for (const button of [header.getByRole('button', { name: '菜品回收站' }), header.getByRole('button', { name: '查看想吃清单' }), header.getByRole('button', { name: '添加菜品' })]) {
+      const box = await button.boundingBox()
+      assert.ok(box && box.height >= 44 && box.x >= 0 && box.x + box.width <= 320, 'header actions must fit and remain touch-sized')
+      assert.equal(await button.evaluate(node => node.scrollWidth <= node.clientWidth), true, 'header action text must not overflow')
+    }
+    assert.ok((await search.boundingBox()).y < 844, 'search should be available in the first mobile viewport')
     await search.fill('')
     await page.getByRole('button', { name: '查看家常菜01' }).first().waitFor()
     badMetadata = false

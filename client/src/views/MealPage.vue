@@ -715,6 +715,7 @@ onBeforeUnmount(() => {
         </div>
         <div class="header-actions">
           <el-button :disabled="archiveBusy || !!archiveProblem" @click="openArchive">菜品回收站</el-button>
+          <el-button aria-label="查看想吃清单" @click="router.push({ name: 'wishlist' })">想吃清单</el-button>
           <el-button
             type="primary"
             @click="router.push({ name: 'MealEditor', query: buildCatalogQuery(catalogState()) })"
@@ -731,21 +732,6 @@ onBeforeUnmount(() => {
       <p>请先核对当前菜品状态；先前请求仍可能稍后完成。</p><el-button link type="primary" :loading="archiveChecking" @click="checkArchiveProblem">读取最新状态</el-button><p v-if="archiveProblem.error">{{ archiveProblem.error }}</p><template v-if="archiveProblem.checked"><p>当前状态：{{ archiveProblem.state === 'missing' ? '未找到菜品，可能已被删除或不属于当前家庭' : archiveProblem.state ? '已在回收站' : '仍在菜谱中' }}。</p><el-button link type="primary" @click="finishArchiveReview">已核对，继续</el-button></template>
     </el-alert>
     <el-alert v-if="!loading && !loadError && displayedMeals.some(meal => !canArchive(meal))" type="info" :closable="false" show-icon title="服务器未提供安全回收站能力，暂不能移除部分菜品。" />
-
-    <div class="couple-presence-card">
-      <div class="presence-avatars" aria-hidden="true">
-        <span>我</span>
-        <span>TA</span>
-      </div>
-      <div class="presence-copy">
-        <strong>把好味道留给家人</strong>
-        <p>在菜品卡片选择“加入想吃”，家人可以一起查看和安排。</p>
-      </div>
-      <el-button type="primary" class="feed-inspiration-btn" @click="router.push({ name: 'wishlist' })">
-        <el-icon><Present /></el-icon>
-        查看想吃清单
-      </el-button>
-    </div>
 
     <el-alert v-if="legacyWishlistServer" type="info" :closable="false" show-icon class="wish-recovery" title="当前服务器为旧版本">
       多个设备同时添加同一道菜时仍可能出现重复；升级并启用服务端安全点菜后可避免。
@@ -2155,8 +2141,7 @@ onBeforeUnmount(() => {
   font-size: 14px;
 }
 
-.add-meal-btn,
-.feed-inspiration-btn {
+.add-meal-btn {
   min-height: 44px;
   border: 0;
   border-radius: 999px;
@@ -2167,67 +2152,10 @@ onBeforeUnmount(() => {
 }
 
 .add-meal-btn:hover,
-.feed-inspiration-btn:hover,
-.add-meal-btn:focus-visible,
-.feed-inspiration-btn:focus-visible {
+.add-meal-btn:focus-visible {
   color: #4a2b20;
   transform: translateY(-2px);
   box-shadow: 0 18px 34px rgba(224, 159, 103, 0.3);
-}
-
-.couple-presence-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 18px;
-  padding: 18px 20px;
-  border: 1px solid rgba(255, 180, 162, 0.24);
-  border-radius: 26px;
-  background: rgba(253, 251, 247, 0.78);
-  box-shadow: 0 14px 36px rgba(117, 78, 58, 0.08);
-  backdrop-filter: blur(14px);
-}
-
-.presence-avatars {
-  display: flex;
-  flex-shrink: 0;
-}
-
-.presence-avatars span {
-  width: 42px;
-  height: 42px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin-left: -8px;
-  border: 3px solid #fdfbf7;
-  border-radius: 999px;
-  color: #fffaf3;
-  font-size: 12px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #ffb4a2, #e09f67);
-  box-shadow: 0 10px 20px rgba(117, 78, 58, 0.12);
-}
-
-.presence-avatars span:first-child {
-  margin-left: 0;
-  background: linear-gradient(135deg, #a8b8a0, #e09f67);
-}
-
-.presence-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.presence-copy strong {
-  color: #4a3e3d;
-  font-size: 15px;
-}
-
-.presence-copy p {
-  margin: 4px 0 0;
-  color: var(--text-secondary);
-  font-size: 13px;
 }
 
 .filter-section,
@@ -2351,26 +2279,7 @@ onBeforeUnmount(() => {
 
   .header-content { gap: 10px; }
   .header-actions { flex-direction: row; gap: 8px; }
-  .header-actions .el-button { flex: 1 1 0; min-width: 0; min-height: 44px; margin: 0; padding-inline: 8px; }
-
-  .couple-presence-card {
-    align-items: center;
-    flex-wrap: nowrap;
-    gap: 10px;
-    padding: 12px 14px;
-    border-radius: 22px;
-  }
-  .presence-avatars { display: none; }
-  .presence-copy strong { font-size: 13px; }
-
-  .feed-inspiration-btn {
-    width: auto;
-    flex: 0 0 auto;
-    max-width: 48%;
-    padding-inline: 8px;
-    font-size: 12px;
-    white-space: normal;
-  }
+  .header-actions .el-button { flex: 1 1 0; min-width: 0; min-height: 44px; margin: 0; padding-inline: 4px; font-size: 12px; }
 
   .meals-grid :deep(.meal-card-wrapper:nth-child(n)) {
     margin-top: 0;
@@ -2428,7 +2337,6 @@ onBeforeUnmount(() => {
 
 /* Component styles are scoped, so the dark-mode ancestor must be global. */
 :global(html.dark .meal-page .page-header),
-:global(html.dark .meal-page .couple-presence-card),
 :global(html.dark .meal-page .filter-section),
 :global(html.dark .meal-page .loading-container),
 :global(html.dark .meal-page .pagination-container),
@@ -2440,11 +2348,9 @@ onBeforeUnmount(() => {
   box-shadow: 0 14px 32px var(--shadow-color);
 }
 :global(html.dark .meal-page .page-title),
-:global(html.dark .meal-page .presence-copy strong),
 :global(html.dark .meal-page .meal-list-name),
 :global(html.dark .meal-page .table-name) { color: var(--text-primary); }
 :global(html.dark .meal-page .page-subtitle),
-:global(html.dark .meal-page .presence-copy p),
 :global(html.dark .meal-page .meal-list-description),
 :global(html.dark .meal-page .table-description) { color: var(--text-secondary); }
 :global(html.dark .meal-page .meal-list-tags .meal-tag),

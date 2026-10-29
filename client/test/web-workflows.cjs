@@ -291,7 +291,7 @@ async function main () {
   dailySchedule = schedule
 
   await page.goto(`${base}/meals`)
-  await page.getByText('把好味道留给家人').waitFor()
+  await page.getByRole('button', { name: '查看想吃清单', exact: true }).waitFor()
   await Promise.all([
     page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/meals') && new URL(request.url()).searchParams.get('category') === '川菜'),
     page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '川菜' }).click()
