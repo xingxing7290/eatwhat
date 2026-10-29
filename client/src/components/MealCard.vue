@@ -78,9 +78,9 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
   <el-card
     :class="cardClass"
     :shadow="selectable ? 'hover' : 'always'"
-    role="button"
-    tabindex="0"
-    :aria-label="`${selectable ? '选择' : '查看'}${meal.name}`"
+    :role="selectable || !showActions ? 'button' : 'group'"
+    :tabindex="selectable || !showActions ? '0' : undefined"
+    :aria-label="`${selectable ? '选择' : showActions ? '菜品：' : '查看'}${meal.name}`"
     :aria-pressed="selectable ? selected : undefined"
     @click="handleCardClick"
     @keydown="handleCardKeydown"
@@ -102,7 +102,7 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
         </div>
 
         <!-- 移动端操作按钮 -->
-        <div v-if="showActions" class="mobile-actions">
+        <div v-if="showActions && !selectable" class="mobile-actions">
           <el-button
             type="info"
             size="small"
@@ -152,11 +152,13 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
       <div class="meal-info">
         <div class="meal-header">
           <h3 class="meal-name">{{ meal.name }}</h3>
-          <div v-if="showActions" class="meal-actions desktop-actions">
+          <div v-if="showActions && !selectable" class="meal-actions desktop-actions">
             <el-button
               type="info"
               size="small"
               circle
+              data-card-view
+              :data-catalog-id="meal._id || meal.id"
               :aria-label="`查看${meal.name}`"
               @click.stop="emit('view', meal)"
             >

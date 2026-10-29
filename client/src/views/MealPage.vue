@@ -296,8 +296,9 @@ const fetchMeals = async () => {
         if (returnMealFocus) await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const focused = document.activeElement;
         if (sequence === fetchSequence && (!focused || focused === document.body || !focused.isConnected)) {
-          const target = returnMealFocus && [...(catalogContent.value?.querySelectorAll('[data-catalog-id]') || [])].find(node => node.dataset.catalogId === returnMealFocus && node.getClientRects().length);
-          (target || catalogContent.value)?.focus();
+          const target = returnMealFocus ? [...(catalogContent.value?.querySelectorAll('[data-catalog-id]') || [])].find(node => node.dataset.catalogId === returnMealFocus && node.getClientRects().length) : null;
+          const focusTarget = target?.matches('button, [tabindex="0"]') ? target : target?.querySelector('[data-card-view]');
+          (focusTarget || catalogContent.value)?.focus();
         }
         if (sequence === fetchSequence) returnMealFocus = '';
       }
@@ -321,12 +322,6 @@ const handleViewMeal = async (meal) => {
   await syncCatalogUrl();
   if (route.name !== 'meals') return;
   return router.push({ name: 'MealDetail', params: { id: mealId }, query: buildCatalogQuery(catalogState()) });
-};
-
-const handleMealKeydown = (event, meal) => {
-  if (event.target !== event.currentTarget || !['Enter', ' '].includes(event.key)) return;
-  event.preventDefault();
-  handleViewMeal(meal);
 };
 
 const sharingMealIds = reactive({});
@@ -969,11 +964,9 @@ onBeforeUnmount(() => {
           :key="meal._id || meal.id"
           class="meal-list-item"
           :data-catalog-id="meal._id || meal.id"
-          role="button"
-          tabindex="0"
-          :aria-label="`查看${meal.name}`"
+          role="group"
+          :aria-label="`菜品：${meal.name}`"
           @click="handleViewMeal(meal)"
-          @keydown="handleMealKeydown($event, meal)"
         >
           <div class="meal-list-image">
             <img
@@ -992,6 +985,8 @@ onBeforeUnmount(() => {
                   type="info"
                   size="small"
                   circle
+                  data-card-view
+                  :data-catalog-id="meal._id || meal.id"
                   :aria-label="`查看${meal.name}`"
                   @click.stop="handleViewMeal(meal)"
                 >
