@@ -399,7 +399,7 @@ export const authApi = {
 	},
 	// 注册
 	register: (payload) => {
-		return api.post('/auth/register', payload);
+		return api.post('/auth/register', payload, { suppressErrorToast: true });
 	},
 	// 获取当前用户
 	me: () => {

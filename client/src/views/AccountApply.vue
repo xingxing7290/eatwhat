@@ -18,22 +18,23 @@
         <div><el-button link type="primary" @click="goToLogin">前往登录</el-button><el-button link @click="uncertain = false">继续填写</el-button></div>
       </el-alert>
       <el-alert v-if="invalidInviteLink" class="uncertain-alert" title="邀请链接中的邀请码过长，请向家人重新确认。" type="warning" :closable="false" show-icon />
+      <el-alert v-if="registrationError" class="uncertain-alert registration-error" :title="registrationError" type="error" :closable="false" show-icon />
       <div v-if="hasExistingSession && hasLinkInvite" class="existing-account">
         <p>已经登录？可以使用当前账号加入邀请的小家，无需重新注册。</p>
         <el-button :disabled="loading || uncertain || !form.inviteCode.trim() || form.inviteCode.trim().length > 20" @click="useCurrentAccount">使用当前账号加入</el-button>
       </div>
       <el-form :model="form" :rules="rules" ref="formRef" label-position="top" class="apply-form" :disabled="loading || uncertain" @submit.prevent="onSubmit">
         <div class="mode-heading">选择小家</div>
-        <el-radio-group v-model="mode" class="mode-picker" aria-label="选择小家方式">
+        <el-radio-group v-model="mode" class="mode-picker" aria-label="选择小家方式" @change="registrationError = ''">
           <el-radio-button label="create">创建小家</el-radio-button>
           <el-radio-button label="join">加入已有小家</el-radio-button>
         </el-radio-group>
-        <p class="mode-hint">{{ mode === 'join' ? '输入家人分享的邀请码，注册后加入对应小家。' : '注册后会创建一个独立小家，之后可以邀请家人加入。' }}</p>
+        <p class="mode-hint">{{ mode === 'join' ? (inviteFromLink && form.inviteCode.trim() === inviteFromLink ? '邀请码来自邀请链接，请与家人核对；注册后加入对应小家。' : '输入家人分享的邀请码，注册后加入对应小家。') : '注册后会创建一个独立小家，之后可以邀请家人加入。' }}</p>
         <el-form-item v-if="mode === 'create'" label="小家名称（可选）" prop="householdName">
           <el-input v-model="form.householdName" placeholder="小家名称，可选" clearable size="large" :prefix-icon="HomeFilled" class="custom-input" maxlength="40" />
         </el-form-item>
         <el-form-item v-else label="邀请码" prop="inviteCode">
-          <el-input v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" @input="invalidInviteLink = false" />
+          <el-input v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" @input="invalidInviteLink = false; registrationError = ''" />
         </el-form-item>
         <el-form-item label="昵称（可选）" prop="displayName">
           <el-input
@@ -56,6 +57,7 @@
             :prefix-icon="User"
             class="custom-input"
             autocomplete="username"
+            @input="registrationError = ''"
           />
         </el-form-item>
 
@@ -116,6 +118,7 @@ const route = useRoute()
 const formRef = ref()
 const loading = ref(false)
 const uncertain = ref(false)
+const registrationError = ref('')
 const hasExistingSession = !!localStorage.getItem('token')
 const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '')
 const linkInvite = hashParams.get('invite') || (typeof route.query.invite === 'string' ? route.query.invite : '')
@@ -148,6 +151,7 @@ const useCurrentAccount = () => {
 }
 const onSubmit = async () => {
   if (loading.value || uncertain.value || !formRef.value) return
+  registrationError.value = ''
   loading.value = true
   try {
     let valid = false
@@ -169,7 +173,7 @@ const onSubmit = async () => {
       })
     } catch (e) {
       const message = e?.error || ''
-      if (message === '邀请码无效' || message === '用户名已存在') ElMessage.error(message)
+      if (message === '邀请码无效' || message === '用户名已存在') registrationError.value = message
       else uncertain.value = true
     }
   } finally { loading.value = false }
@@ -236,7 +240,7 @@ const rules = {
 .apply-card {
   width: 440px;
   padding: 36px 40px 40px;
-  background: rgba(255, 250, 243, 0.94);
+  background: var(--bg-primary);
   backdrop-filter: blur(20px);
   border-radius: 24px;
   box-shadow:
@@ -308,12 +312,18 @@ const rules = {
 .mode-picker { display: flex; width: 100%; }
 .mode-picker :deep(.el-radio-button) { flex: 1; }
 .mode-picker :deep(.el-radio-button__inner) { width: 100%; }
+.mode-picker :deep(.el-radio-button.is-active .el-radio-button__inner) { color: var(--text-primary); background: var(--bg-secondary); border-color: var(--text-primary); box-shadow: -1px 0 0 0 var(--text-primary); font-weight: 700; }
 .mode-hint { margin: 10px 0 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .uncertain-alert { margin-bottom: 20px; }
+.uncertain-alert { background: var(--bg-secondary); border: 1px solid var(--border-color); }
+.uncertain-alert :deep(.el-alert__title), .uncertain-alert :deep(.el-alert__description), .uncertain-alert :deep(.el-alert__icon), .uncertain-alert :deep(.el-button) { color: var(--text-primary); }
+.uncertain-alert :deep(.el-button) { min-height: 44px; font-weight: 700; text-decoration: underline; }
+.uncertain-alert :deep(.el-button:focus-visible), .back-link:focus-visible, .footer-tips a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .existing-account { margin-bottom: 20px; padding: 14px; border-radius: 14px; background: var(--bg-secondary); }
 .existing-account p { margin: 0 0 10px; font-size: 13px; line-height: 1.5; color: var(--text-secondary); }
 .uncertain-alert :deep(.el-alert__description) { line-height: 1.6; }
 .apply-form :deep(.el-form-item__label) { line-height: 1.4; padding-bottom: 6px; color: var(--text-primary); font-weight: 600; }
+.apply-form :deep(.el-form-item__error) { color: var(--text-primary); font-weight: 600; }
 
 .custom-input :deep(.el-input__wrapper) {
   border-radius: 12px;

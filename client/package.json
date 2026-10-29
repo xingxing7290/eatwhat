@@ -44,6 +44,7 @@
     "test:review-theme": "node test/review-theme.cjs",
     "test:navigation": "node test/navigation-workflows.cjs",
     "test:login": "node test/login-workflows.cjs",
+    "test:registration": "node test/registration-workflows.cjs",
     "test:desktop-navigation": "node test/desktop-navigation-workflows.cjs",
     "test:vite-proxy": "node test/vite-proxy.cjs",
     "test:session-scope": "node test/session-scope-workflows.cjs",
