@@ -30,7 +30,8 @@ async function main () {
       if (req.method() === 'GET') return route.fulfill({ json: url.searchParams.has('statusOnly') ? { session } : { session, meals: activeMeals } })
       writes++
       if (mode === 'unavailable') { activeMeals = [meals[1]]; return route.fulfill({ status: 409, json: { code: 'GUEST_MEAL_UNAVAILABLE', error: '部分菜品已下架或不可用，请核对点菜单', unavailableIds: ['a'] } }) }
-      if (mode === 'conflict') return route.fulfill({ status: 409, json: { error: '订单已在其他设备更新，请刷新后重试' } })
+      if (mode === 'conflict') return route.fulfill({ status: 409, json: { code: 'GUEST_ORDER_CONFLICT', error: '该订单版本已变化' } })
+      if (mode === 'legacy-conflict') return route.fulfill({ status: 409, json: { error: '订单已在其他设备更新，请刷新后重试' } })
       if (mode === 'uncertain') return route.fulfill({ status: 503, json: { error: '响应暂时不可用' } })
       if (mode === 'malformed') return route.fulfill({ json: {} })
       const body = req.postDataJSON()
@@ -120,6 +121,13 @@ async function main () {
     await page.getByRole('button', { name: '载入最新订单' }).click()
     await page.waitForFunction(() => document.querySelector('#orderNote').value === '服务端整单备注')
     assert.equal(await page.locator('.item-note').inputValue(), '服务端菜品备注')
+    await page.locator('#orderNote').fill('旧版服务冲突草稿')
+    mode = 'legacy-conflict'
+    await page.getByRole('button', { name: '保存修改' }).click()
+    await page.getByText('订单已在其他设备更新，本页修改仍保留', { exact: false }).waitFor()
+    assert.equal(await page.locator('#orderNote').inputValue(), '旧版服务冲突草稿')
+    await page.getByRole('button', { name: '载入最新订单' }).click()
+    await page.waitForFunction(() => document.querySelector('#orderNote').value === '服务端整单备注')
     await page.locator('#orderNote').fill('不确定结果时保留')
     mode = 'uncertain'
     await page.getByRole('button', { name: '保存修改' }).click()

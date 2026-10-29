@@ -155,6 +155,7 @@ async function mealMapForItems(session, rawItems) {
 
 function handlePublicOrderError(error, res, next) {
   if (error.code === 'GUEST_MEAL_UNAVAILABLE') return res.status(409).json({ code: error.code, error: error.message, unavailableIds: error.unavailableIds });
+  if (error.code === 'GUEST_ORDER_CONFLICT') return res.status(409).json({ code: error.code, error: error.message });
   return next(error);
 }
 
@@ -546,7 +547,7 @@ exports.updatePublicOrder = async (req, res, next) => {
     ).lean();
     if (!order) {
       const exists = await GuestOrder.exists({ sessionId: session._id, accessToken: token });
-      if (exists) throw httpError('订单已在其他设备更新，请刷新后重试', 409);
+      if (exists) { const error = httpError('订单已在其他设备更新，请刷新后重试', 409); error.code = 'GUEST_ORDER_CONFLICT'; throw error; }
       throw httpError('未找到你的点菜单', 404);
     }
     res.json({ order: orderPayload(order) });

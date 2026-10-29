@@ -1532,6 +1532,9 @@ async function main() {
       const guestUpdateUrl = `/guest-orders/public/browser-local-guest-token/orders/${guestAccess}`;
       const guestUpdate = { guestName: '另一设备', note: '另一设备更新', items: [{ mealId: String(guestBrowserMeal._id), quantity: 1 }], revision: 1 };
       assert.equal((await request(guestUpdateUrl, { method: 'PUT', body: guestUpdate })).status, 200);
+      const staleGuestUpdate = await request(guestUpdateUrl, { method: 'PUT', body: guestUpdate });
+      assert.equal(staleGuestUpdate.status, 409);
+      assert.equal(staleGuestUpdate.data.code, 'GUEST_ORDER_CONFLICT', 'stale guest updates must expose a stable conflict code');
       await guestPage.locator('#orderNote').fill('浏览器未保存备注');
       await guestPage.getByRole('button', { name: '保存修改' }).click();
       await guestPage.getByText('订单已在其他设备更新，本页修改仍保留', { exact: false }).waitFor();

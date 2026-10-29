@@ -850,7 +850,7 @@
           if (error.code === 'GUEST_MEAL_UNAVAILABLE') {
             state.unavailable = new Set((Array.isArray(error.unavailableIds) ? error.unavailableIds : []).map(String).filter(id => state.cart.has(id)));
             try { await refreshMenu(); } catch (_) { /* Keep the draft and the last known menu. */ }
-          } else if (/其他设备更新/.test(error.message)) state.conflict = 'changed';
+          } else if (error.code === 'GUEST_ORDER_CONFLICT' || /其他设备更新/.test(error.message)) state.conflict = 'changed';
           else if (!safeCreate && (!error.status || error.status === 408 || error.status >= 500)) setUncertainty(true);
           toast(error.message);
         } finally { state.busy = false; renderMeals(); renderCartBar(); renderCartList(); }
