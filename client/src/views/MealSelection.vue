@@ -12,6 +12,8 @@ import { validWeekLink } from '../utils/weekLink.mjs';
 import { normalizeMealSearch } from '../utils/mealSearch.mjs';
 import { filterCatalogQuery } from '../utils/catalogQuery.mjs';
 import { readReviewOrigin } from '../utils/reviewOrigin.mjs';
+import { readWishlistViewState } from '../utils/wishlistViewState.mjs';
+import { currentSessionScope } from '../services/sessionScope';
 
 const route = useRoute();
 const router = useRouter();
@@ -22,6 +24,10 @@ const mealType = computed(() => route.query.mealType);
 const calendarDestination = () => ({ name: 'calendar', ...(validWeekLink(date.value) ? { query: { date: date.value } } : {}) });
 const cancelDestination = () => {
   const id = route.query.suggestedMealId;
+  if (route.query.fromWishlist === '1' && typeof route.query.wishlistId === 'string' && /^[a-z\d_-]{1,128}$/i.test(route.query.wishlistId)) {
+    const view = readWishlistViewState(window.history.state?.eatwhatWishlistView, currentSessionScope());
+    return { name: 'wishlist', ...(view ? { state: { eatwhatWishlistView: view } } : {}) };
+  }
   if (route.query.fromRecipe !== '1' || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id)) return calendarDestination();
   const query = filterCatalogQuery(route.query);
   if (validWeekLink(route.query.shoppingWeek)) query.shoppingWeek = route.query.shoppingWeek;

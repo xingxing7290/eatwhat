@@ -10,6 +10,8 @@ import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 import { validWishVersion } from '@/utils/wishlistVersion.mjs';
 import { normalizeMealSearch } from '@/utils/mealSearch.mjs';
 import { validWeekLink } from '@/utils/weekLink.mjs';
+import { readWishlistViewState } from '@/utils/wishlistViewState.mjs';
+import { currentSessionScope } from '@/services/sessionScope';
 
 const items = ref([]);
 const router = useRouter();
@@ -49,18 +51,24 @@ let linkTimer = null;
 let listSequence = 0;
 let alive = true;
 const form = reactive({ title: '', note: '', category: '', priority: 'normal' });
-const search = ref('');
-const selectedStatus = ref('all');
-const selectedPriority = ref('all');
+const restoredView = readWishlistViewState(window.history.state?.eatwhatWishlistView, currentSessionScope());
+const search = ref(restoredView?.search || '');
+const selectedStatus = ref(restoredView?.status || 'all');
+const selectedPriority = ref(restoredView?.priority || 'all');
 const boardMode = ref(false);
-const boardPage = ref(1);
+const boardPage = ref(restoredView?.page || 1);
 const boardLimit = 12;
 const boardTotal = ref(0);
 const boardMatched = ref({});
 const boardTotals = ref({});
 const pendingView = ref(false);
+const currentViewState = () => { const { userId, householdId } = currentSessionScope(); return { search: search.value, status: selectedStatus.value, priority: selectedPriority.value, page: boardPage.value, userId, householdId }; };
+watch([search, selectedStatus, selectedPriority, boardPage], () => {
+  try { window.history.replaceState({ ...window.history.state, eatwhatWishlistView: currentViewState() }, ''); } catch (_) { /* The current page remains usable if history storage is unavailable. */ }
+}, { flush: 'sync' });
 let filterTimer = null;
 const statusFilterGroup = ref(null);
+const searchInput = ref(null);
 const addWishButton = ref(null);
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value);
@@ -108,7 +116,7 @@ const filteredItems = computed(() => {
     return !query || [item.title, item.note, item.category, linkedName].some(value => String(value || '').toLocaleLowerCase().includes(query));
   });
 });
-const resetFilters = () => { search.value = ''; selectedStatus.value = 'all'; selectedPriority.value = 'all'; };
+const resetFilters = async event => { search.value = ''; selectedStatus.value = 'all'; selectedPriority.value = 'all'; if (event instanceof Event) { await nextTick(); searchInput.value?.focus(); } };
 const hiddenPendingCount = computed(() => {
   if (pendingView.value) return 0;
   const visible = new Set(filteredItems.value.map(item => item._id));
@@ -399,10 +407,11 @@ const finishLinkReview = async item => {
   } catch (_) {} finally { confirmingId.value = ''; }
 };
 const localToday = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
+const selectionLocation = (item, date, mealType) => ({ name: 'MealSelection', query: { date, mealType, suggestedMealId: linkedMealId(item), wishlistId: item._id, fromWishlist: '1' }, state: { eatwhatWishlistView: currentViewState() } });
 const arrangeToday = (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
   if (!canSchedule(item)) return ElMessage.warning('请先核对关联菜谱');
-  router.push({ name: 'MealSelection', query: { date: localToday(), mealType: 'dinner', suggestedMealId: linkedMealId(item), wishlistId: item._id } });
+  router.push(selectionLocation(item, localToday(), 'dinner'));
 };
 const openSchedule = item => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value || !canSchedule(item)) return;
@@ -414,7 +423,7 @@ const continueSchedule = async () => {
   const current = items.value.find(item => item._id === selected?.id);
   if (!current || !canSchedule(current) || linkedMealId(current) !== selected.mealId || current.title !== selected.title) return ElMessage.warning('想吃记录已变化，请关闭后重新核对');
   if (!validWeekLink(scheduleDate.value) || !['breakfast', 'lunch', 'dinner'].includes(scheduleType.value)) return ElMessage.warning('请选择有效日期和餐次');
-  const failure = await router.push({ name: 'MealSelection', query: { date: scheduleDate.value, mealType: scheduleType.value, suggestedMealId: selected.mealId, wishlistId: selected.id } });
+  const failure = await router.push(selectionLocation(current, scheduleDate.value, scheduleType.value));
   if (!failure) scheduleDialog.value = false;
 };
 onMounted(load);
@@ -434,8 +443,9 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     <el-alert v-if="actionIssue" type="warning" :closable="false" show-icon :title="actionIssue"><el-button link type="primary" :loading="loading" @click="load">刷新清单并核对</el-button></el-alert>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button><el-button v-if="pendingView" link @click="showBoard">返回全部清单</el-button></el-alert>
     <section v-if="!loadError && !pendingView && (items.length || boardMode || filterActive)" class="wish-filters" aria-label="查找想吃记录">
-      <div class="filter-heading"><div><h2>查找心愿</h2><p aria-live="polite"><template v-if="boardMode">{{ loading ? '正在更新结果' : `共 ${boardTotal} 条匹配记录 · 第 ${boardPage} / ${totalPages} 页` }}</template><template v-else>显示 {{ filteredItems.length }} / {{ items.length }} 条记录</template></p></div><el-input v-model="search" clearable maxlength="100" placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
+      <div class="filter-heading"><div><h2>查找心愿</h2><p aria-live="polite"><template v-if="boardMode">{{ loading ? '正在更新结果' : `共 ${boardTotal} 条匹配记录 · 第 ${boardPage} / ${totalPages} 页` }}</template><template v-else>显示 {{ filteredItems.length }} / {{ items.length }} 条记录</template></p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
       <div class="filter-controls"><div ref="statusFilterGroup" class="status-filters" role="group" aria-label="按状态筛选"><button v-for="option in statusOptions" :key="option.key" type="button" :class="{ active: selectedStatus === option.key }" :aria-pressed="selectedStatus === option.key" @click="selectedStatus = option.key">{{ option.label }}</button></div><label class="priority-filter">优先级 <select v-model="selectedPriority" aria-label="按优先级筛选"><option value="all">全部优先级</option><option value="high">超想吃</option><option value="normal">普通</option><option value="low">随缘</option><option value="unset">未设置</option></select></label></div>
+      <button v-if="filterActive && filteredItems.length && !pendingView" type="button" class="reset-filter" @click="resetFilters">清除筛选</button>
     </section>
     <div v-if="pendingView && !loadError" class="hidden-pending" role="status"><span>正在查看关联或创建结果待核对的记录。</span><el-button link type="primary" @click="showBoard">返回全部清单</el-button></div>
     <div v-if="!loadError && !loading && hiddenPendingCount" class="hidden-pending" role="status"><span>有 {{ hiddenPendingCount }} 条关联或创建结果待核对的记录不在当前结果中。</span><el-button link type="primary" @click="showPending">查看待核对记录</el-button></div>
@@ -513,6 +523,8 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 </template>
 
 <style scoped>
+.reset-filter { min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.reset-filter:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .schedule-help { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
 .schedule-fields { display: grid; gap: 10px; color: var(--text-primary); }
 .schedule-fields input[type='date'] { min-height: 44px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
