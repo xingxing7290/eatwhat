@@ -75,7 +75,7 @@ exports.list = async (req, res, next) => {
       const [result] = await MealMemory.aggregate([{ $match: query }, { $facet: { items: [{ $sort: { date: -1, createdAt: -1, _id: -1 } }, { $skip: skip }, { $limit: limit }], count: [{ $count: 'total' }] } }]);
       const items = result?.items || [];
       await MealMemory.populate(items, [{ path: 'mealIds', match: { householdId: household._id } }, { path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' }, { path: 'participants', match: { householdId: household._id }, select: 'username displayName avatarUrl' }]);
-      return res.json({ supportsMemoryTimeline: true, page, limit, search: term, month: req.query.month || '', mealType, photos, total: result?.count?.[0]?.total || 0, items: items.map(present) });
+      return res.json({ supportsMemoryTimeline: true, page, limit, search: term, month: req.query.month || '', mealId: req.query.mealId || '', mealType, photos, total: result?.count?.[0]?.total || 0, items: items.map(present) });
     }
     const memories = await populateQuery(MealMemory.find(query).sort({ date: -1, createdAt: -1 }).limit(200), household._id);
     res.json(memories.map(present));

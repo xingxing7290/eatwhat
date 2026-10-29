@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Edit, Star, Clock, Bowl, Picture, Check, Warning } from '@element-plus/icons-vue';
@@ -12,6 +12,14 @@ const route = useRoute();
 const router = useRouter();
 const meal = ref(null);
 const memories = ref([]);
+const memoryPage = ref(1);
+const memoryPageSize = 6;
+const memoryTotal = ref(0);
+const memoryPagination = ref(false);
+const memoryNav = ref(null);
+const memoryRetry = ref(null);
+const memoryHeading = ref(null);
+let memoryFocus = '';
 const loading = ref(false);
 const memoryLoading = ref(false);
 const mealError = ref('');
@@ -33,6 +41,7 @@ const noDraft = ref(false);
 useDraftGuard({ dirty: noDraft, busy: reportBusy, uncertain: reportUncertain, label: '图片反馈' });
 
 const totalTime = computed(() => Number(meal.value?.prepTime || 0) + Number(meal.value?.cookTime || 0));
+const memoryPages = computed(() => Math.max(1, Math.ceil(memoryTotal.value / memoryPageSize)));
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
 const imageFor = value => resolveUploadedImage(value) || defaultImage;
 const coverImage = computed(() => imageFor(meal.value?.imageUrl));
@@ -84,16 +93,39 @@ const finishReportReview = async () => {
 };
 const loadMemories = async (id, sequence) => {
   const request = ++memorySequence;
+  const page = memoryPage.value;
   memoryLoading.value = true; memoryError.value = '';
   try {
-    const result = await api.memory.list({ mealId: id });
+    const result = await api.memory.list({ view: 'timeline', mealId: id, page, limit: memoryPageSize });
     if (sequence !== loadSequence || request !== memorySequence) return;
-    if (!Array.isArray(result) || result.some(item => !item || !(item._id || item.id) || typeof item.date !== 'string')) throw new Error('回忆列表数据不完整');
-    memories.value = result;
+    const validRows = rows => Array.isArray(rows) && rows.every(item => item && typeof (item._id || item.id) === 'string' && !!(item._id || item.id) && typeof item.date === 'string') && new Set(rows.map(item => item._id || item.id)).size === rows.length;
+    if (result?.supportsMemoryTimeline === true) {
+      if (result.mealId !== id || result.page !== page || result.limit !== memoryPageSize || result.search !== '' || result.month !== '' || result.mealType !== 'all' || result.photos !== 'all' || !Number.isSafeInteger(result.total) || result.total < 0 || !validRows(result.items) || result.items.length !== Math.min(memoryPageSize, Math.max(0, result.total - (page - 1) * memoryPageSize))) throw new Error('相关回忆分页数据不完整');
+      memoryPagination.value = true; memoryTotal.value = result.total;
+      if (page > memoryPages.value) { memoryPage.value = memoryPages.value; return await loadMemories(id, sequence); }
+      memories.value = result.items;
+    } else {
+      if (!validRows(result)) throw new Error('回忆列表数据不完整');
+      memoryPagination.value = false; memoryTotal.value = result.length; memories.value = result;
+    }
   } catch (e) { if (sequence === loadSequence && request === memorySequence) memoryError.value = e?.error || e?.message || '加载相关回忆失败'; }
-  finally { if (sequence === loadSequence && request === memorySequence) memoryLoading.value = false; }
+  finally {
+    if (sequence === loadSequence && request === memorySequence) {
+      memoryLoading.value = false;
+      const desiredFocus = memoryFocus; memoryFocus = '';
+      if (desiredFocus) {
+        await nextTick();
+        if (sequence === loadSequence && request === memorySequence && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) {
+          const buttons = [...(memoryNav.value?.querySelectorAll('button') || [])];
+          const target = buttons[desiredFocus === 'next' ? 1 : 0]?.disabled ? buttons.find(button => !button.disabled) : buttons[desiredFocus === 'next' ? 1 : 0];
+          (memoryError.value ? memoryRetry.value?.$el : target || memoryHeading.value)?.focus();
+        }
+      }
+    }
+  }
 };
 const reloadMemories = () => { if (typeof route.params.id === 'string') loadMemories(route.params.id, loadSequence); };
+const changeMemoryPage = page => { if (!memoryLoading.value && page >= 1 && page <= memoryPages.value && page !== memoryPage.value) { memoryFocus = memoryNav.value?.contains(document.activeElement) ? (page > memoryPage.value ? 'next' : 'previous') : ''; memoryPage.value = page; reloadMemories(); } };
 const load = async () => {
   const id = route.params.id;
   const sequence = ++loadSequence;
@@ -103,6 +135,7 @@ const load = async () => {
   memoryError.value = '';
   meal.value = null;
   memories.value = [];
+  memoryPage.value = 1; memoryTotal.value = 0; memoryPagination.value = false; memoryFocus = '';
   reportSequence++; reporting.value = false; reportUncertain.value = false; reportSubmitted.value = false; reportChecked.value = false; reportChecking.value = false; reportError.value = '';
   viewedPhoto.value = null;
   loadMemories(id, sequence);
@@ -206,12 +239,13 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
         </el-card>
 
         <el-card>
-          <template #header>饭后回忆</template>
-          <el-alert v-if="memoryError" type="error" :closable="false" show-icon :title="`无法加载相关回忆：${memoryError}`"><el-button link type="primary" :loading="memoryLoading" @click="reloadMemories">重新加载</el-button></el-alert>
+          <template #header><span ref="memoryHeading" tabindex="-1">饭后回忆</span></template>
+          <el-alert v-if="memoryError" type="error" :closable="false" show-icon :title="`无法加载相关回忆：${memoryError}`"><el-button ref="memoryRetry" link type="primary" :loading="memoryLoading" @click="reloadMemories">重新加载</el-button></el-alert>
           <p v-else-if="memoryLoading" class="memory-date">正在加载相关回忆…</p>
           <el-empty v-else-if="!memories.length" description="还没有相关回忆" />
           <div v-else class="memory-list">
-            <p v-if="memories.length >= 200" class="memory-date">显示最近 200 条相关回忆。</p>
+            <p v-if="memoryPagination" class="memory-date" aria-live="polite">共 {{ memoryTotal }} 条相关回忆 · 第 {{ memoryPage }} / {{ memoryPages }} 页</p>
+            <p v-else-if="memories.length >= 200" class="memory-date">旧服务器最多显示最近 200 条相关回忆，请升级服务器以查看全部历史。</p>
             <div v-for="item in memories" :key="item._id" class="memory-item">
               <div class="memory-date">{{ item.date }} · {{ item.mood || '日常一餐' }}</div>
               <strong>{{ item.title || meal.name }}</strong>
@@ -220,6 +254,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
               <el-rate :model-value="item.rating || 0" disabled size="small" />
               <router-link class="memory-link" :to="{ name: 'memories', query: { edit: item._id || item.id } }">查看并编辑回忆 →</router-link>
             </div>
+            <nav v-if="memoryPagination && memoryTotal > memoryPageSize" ref="memoryNav" class="memory-pagination" aria-label="相关回忆分页"><el-button :disabled="memoryLoading || memoryPage <= 1" @click="changeMemoryPage(memoryPage - 1)">上一页</el-button><span aria-live="polite">第 {{ memoryPage }} / {{ memoryPages }} 页</span><el-button :disabled="memoryLoading || memoryPage >= memoryPages" @click="changeMemoryPage(memoryPage + 1)">下一页</el-button></nav>
           </div>
         </el-card>
       </section>
@@ -256,9 +291,12 @@ h1 { margin: 0; color: var(--text-primary); }
 .step-index { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .step-item img, .photo-grid img { width: 100%; height: 82px; object-fit: cover; border-radius: 8px; }
 .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
-.memory-item { padding: 12px; background: var(--bg-secondary); border-radius: 8px; }
-.memory-date, .memory-extra { color: var(--text-muted); font-size: 13px; }
-.memory-link { display: block; margin-top: 8px; color: var(--secondary-color); font-weight: 700; }
+.memory-item { padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 14px; overflow-wrap: anywhere; }
+.memory-date, .memory-extra { color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.memory-link { display: inline-flex; align-items: center; min-height: 44px; margin-top: 4px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.memory-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.memory-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; color: var(--text-primary); font-size: 13px; }
+.memory-pagination :deep(.el-button) { min-height: 44px; margin: 0; }
 .photo-preview { display: block; width: 100%; max-height: 420px; object-fit: contain; border-radius: 16px; background: var(--bg-secondary); }
 .photo-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 12px 0; color: var(--text-secondary); font-size: 13px; }
 .photo-nav .el-button { margin: 0; min-height: 44px; }
