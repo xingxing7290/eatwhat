@@ -205,7 +205,8 @@ const onAvatarError = (event, key) => {
   if (retryLocalUpload(event)) return;
   failedAvatars.value = new Set([...failedAvatars.value, key]);
 };
-const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value || profileUncertain.value || defaultUncertain.value || issueUncertain.value));
+const reloadDirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value || profileUncertain.value || defaultUncertain.value || issueUncertain.value));
+const dirty = computed(() => reloadDirty.value || !!joinCode.value.trim() || joinUncertain.value || inviteUncertain.value || profileUncertain.value || defaultUncertain.value || issueUncertain.value);
 const validNameVersion = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && (value.revision === null || (typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128));
 const nameVersionAvailable = computed(() => household.value.supportsConditionalNameUpdate === true && validNameVersion(household.value.nameVersion));
 const mutationPending = computed(() => saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value || defaultLoading.value || !!resolvingIssue.value);
@@ -272,7 +273,7 @@ const clearAvatarFile = () => {
 };
 const reload = async () => {
   if (profileLoading.value || saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value) return;
-  if (dirty.value) {
+  if (reloadDirty.value) {
     try { await ElMessageBox.confirm('刷新会放弃未保存的昵称、小家名称和待上传头像。', '确认刷新', { type: 'warning', confirmButtonText: '放弃并刷新', cancelButtonText: '继续编辑' }); } catch (_) { return; }
   }
   try {
@@ -462,7 +463,7 @@ const warnBeforeUnload = event => {
 onBeforeRouteLeave(async () => {
   if (mutationPending.value) { ElMessage.warning('操作正在进行，请稍候'); return false; }
   if (!dirty.value) return true;
-  const message = defaultUncertain.value || issueUncertain.value ? '菜品管理操作结果尚未确认，离开后核对提示会丢失；未保存的设置也会丢失。' : profileUncertain.value ? '个人资料更新结果尚未确认，离开后本页输入与核对提示会丢失。' : '昵称、小家名称或头像尚未保存，离开后会丢失。';
+  const message = joinUncertain.value || inviteUncertain.value ? '家庭操作结果尚未确认，离开后邀请码和核对提示会丢失，请先核对。' : defaultUncertain.value || issueUncertain.value ? '菜品管理操作结果尚未确认，离开后核对提示会丢失；未保存的设置也会丢失。' : profileUncertain.value ? '个人资料更新结果尚未确认，离开后本页输入与核对提示会丢失。' : joinCode.value.trim() ? '离开后输入的邀请码以及未保存的设置会丢失，请保留原邀请链接或邀请码。' : '昵称、小家名称或头像尚未保存，离开后会丢失。';
   try { await ElMessageBox.confirm(message, '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
 });
 onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); reload(); });

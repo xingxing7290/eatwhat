@@ -29,7 +29,7 @@
           <el-radio-button label="create">创建小家</el-radio-button>
           <el-radio-button label="join">加入已有小家</el-radio-button>
         </el-radio-group>
-        <p class="mode-hint">{{ mode === 'join' ? (inviteFromLink && form.inviteCode.trim() === inviteFromLink ? '邀请码来自邀请链接，请与家人核对；注册后加入对应小家。' : '输入家人分享的邀请码，注册后加入对应小家。') : '注册后会创建一个独立小家，之后可以邀请家人加入。' }}</p>
+        <p class="mode-hint">{{ mode === 'join' ? (inviteFromLink && form.inviteCode.trim() === inviteFromLink ? '邀请码来自邀请链接，请与家人核对；注册后加入对应小家。刷新或离开页面会丢失邀请码，请保留原邀请链接。' : '输入家人分享的邀请码，注册后加入对应小家。') : '注册后会创建一个独立小家，之后可以邀请家人加入。' }}</p>
         <el-form-item v-if="mode === 'create'" label="小家名称（可选）" prop="householdName">
           <el-input v-model="form.householdName" placeholder="小家名称，可选" clearable size="large" :prefix-icon="HomeFilled" class="custom-input" maxlength="40" />
         </el-form-item>
@@ -136,7 +136,10 @@ const form = ref({
   confirmPassword: ''
 })
 const initialMode = mode.value
-const dirty = computed(() => uncertain.value || mode.value !== initialMode || form.value.inviteCode !== inviteFromLink || !!(form.value.displayName || form.value.householdName || form.value.username || form.value.password || form.value.confirmPassword))
+const enteredData = computed(() => mode.value !== initialMode || form.value.inviteCode !== inviteFromLink || !!(form.value.displayName || form.value.householdName || form.value.username || form.value.password || form.value.confirmPassword))
+const inviteAtRisk = computed(() => mode.value === 'join' && !!inviteFromLink && !!form.value.inviteCode.trim())
+const dirty = computed(() => uncertain.value || enteredData.value || inviteAtRisk.value)
+let transferringInvite = false
 
 // Remove the capability-like invite code from the visible address once read.
 if (linkInvite) {
@@ -151,10 +154,11 @@ const continueAfterUncertain = async () => {
   try { await ElMessageBox.confirm('上一次请求可能仍在处理或已成功。建议先尝试登录；继续填写后重复提交可能创建重复账号。', '确认继续填写？', { type: 'warning', confirmButtonText: '仍要继续', cancelButtonText: '返回核对' }) } catch (_) { return }
   uncertain.value = false
 }
-const useCurrentAccount = () => {
+const useCurrentAccount = async () => {
   const code = form.value.inviteCode.trim()
   if (!code || code.length > 20) return ElMessage.warning('请确认邀请码后再加入')
-  return router.push({ name: 'settings', hash: `#invite=${encodeURIComponent(code)}` })
+  transferringInvite = true
+  try { return await router.push({ name: 'settings', hash: `#invite=${encodeURIComponent(code)}` }) } finally { transferringInvite = false }
 }
 const onSubmit = async () => {
   if (loading.value || uncertain.value || !formRef.value) return
@@ -197,10 +201,11 @@ const warnBeforeUnload = event => {
 onBeforeRouteLeave(async to => {
   if (registrationComplete.value) return true
   if (loading.value) { ElMessage.warning('注册请求正在处理，请稍候。'); return false }
+  if (transferringInvite && !enteredData.value && !uncertain.value && to.name === 'settings') return true
   if (!dirty.value) return true
   const message = uncertain.value
     ? '注册请求可能已成功或仍在处理。请记住刚才填写的密码；离开后密码和本页输入不会保留。'
-    : to.name === 'login' ? '离开后未提交的信息会丢失，密码不会自动带入登录页。' : '离开后未提交的账号和小家信息会丢失。'
+    : inviteAtRisk.value && !enteredData.value ? '离开后邀请码不会保留，请保存原邀请链接或向家人重新获取。' : to.name === 'login' ? '离开后未提交的信息会丢失，密码不会自动带入登录页。' : '离开后未提交的账号和小家信息会丢失。'
   try { await ElMessageBox.confirm(message, '离开创建账号？', { type: 'warning', confirmButtonText: '确认离开', cancelButtonText: '继续填写' }); return true } catch (_) { return false }
 })
 onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
