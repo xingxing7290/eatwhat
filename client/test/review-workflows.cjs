@@ -61,6 +61,7 @@ async function main () {
     assert.equal(await navigation.getByRole('button', { name: '回到本月' }).isDisabled(), true)
     await navigation.getByRole('button', { name: '上个月' }).click()
     await page.getByText('2026 年 9 月 · OUR STORY', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: '打开本月相册 →' }).getAttribute('href'), '/photo-album?month=2026-09')
     await navigation.getByRole('button', { name: '下个月' }).click()
     await page.getByText('2026 年 10 月 · OUR STORY', { exact: true }).waitFor()
     await navigation.getByRole('button', { name: '下个月' }).click()

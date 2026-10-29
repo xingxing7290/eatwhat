@@ -31,6 +31,12 @@ const locateRetry = ref(false);
 let locatedTarget = null;
 let initialized = false;
 let loadSequence = 0;
+const syncAlbumLocation = () => {
+  if (route.name !== 'photoAlbum') return;
+  const query = { month: month.value, ...(page.value > 1 ? { page: String(page.value) } : {}) };
+  if (route.query.month === query.month && (route.query.page || undefined) === query.page && !['memoryId', 'photoIndex', 'fingerprint'].some(key => route.query[key] !== undefined) && Object.keys(route.query).every(key => key === 'month' || key === 'page')) return;
+  void router.replace({ name: 'photoAlbum', query });
+};
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
 const focusPhoto = (onlyIfUnfocused = false) => {
   if (loading.value || selectedIndex.value !== null || returnFocusIndex.value === null) return;
@@ -39,7 +45,7 @@ const focusPhoto = (onlyIfUnfocused = false) => {
   else (photoGrid.value?.querySelectorAll('.photo-card')[returnFocusIndex.value] || previousMonthButton.value?.$el)?.focus();
 };
 const schedulePhotoFocus = async () => { await nextTick(); focusPhoto(); };
-const openPhoto = index => { viewerEpoch++; returnFocusIndex.value = index; selectedIndex.value = index; };
+const openPhoto = index => { clearLocationLink(); viewerEpoch++; returnFocusIndex.value = index; selectedIndex.value = index; };
 const closeViewer = () => {
   if (selectedIndex.value === null) return;
   returnFocusIndex.value = selectedIndex.value;
@@ -65,7 +71,7 @@ const load = async (openAt = null, viewerToken = null) => {
       rows = rows.slice((requestedPage - 1) * pageSize, requestedPage * pageSize);
     } else if (!Number.isSafeInteger(total) || total < 0 || result.page !== requestedPage || result.limit !== pageSize || rows.length > pageSize || rows.length > total) throw new Error('相册分页数据不完整');
     const finalPage = Math.max(1, Math.ceil(total / pageSize));
-    if (requestedPage > finalPage) { page.value = finalPage; return load(openAt, viewerToken); }
+    if (requestedPage > finalPage) { page.value = finalPage; if (openAt !== 'located') syncAlbumLocation(); return load(openAt, viewerToken); }
     if (rows.length !== Math.min(pageSize, Math.max(0, total - (requestedPage - 1) * pageSize))) throw new Error('相册分页数据不完整');
     data.value = { photos: rows, total };
     loadedPage.value = requestedPage;
@@ -86,8 +92,8 @@ const load = async (openAt = null, viewerToken = null) => {
     }
   }
 };
-const clearLocationLink = () => { if (Object.keys(route.query).length) void router.replace({ name: 'photoAlbum' }); locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; };
-const changeMonth = () => { clearLocationLink(); page.value = 1; selectedIndex.value = null; data.value = { photos: [], total: 0 }; load(); };
+const clearLocationLink = () => { locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; syncAlbumLocation(); };
+const changeMonth = () => { page.value = 1; clearLocationLink(); selectedIndex.value = null; data.value = { photos: [], total: 0 }; load(); };
 const moveMonth = offset => {
   if (loading.value) return;
   const [year, currentMonth] = month.value.split('-').map(Number);
@@ -95,14 +101,15 @@ const moveMonth = offset => {
   month.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
   changeMonth();
 };
-const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; clearLocationLink(); page.value = next; selectedIndex.value = null; load(); };
+const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; clearLocationLink(); selectedIndex.value = null; load(); };
 const navigatePhoto = async direction => {
   if (loading.value || selectedIndex.value === null) return;
   const next = selectedIndex.value + direction;
-  if (next >= 0 && next < data.value.photos.length) { selectedIndex.value = next; return; }
+  if (next >= 0 && next < data.value.photos.length) { selectedIndex.value = next; clearLocationLink(); return; }
   const targetPage = page.value + direction;
   if (targetPage < 1 || targetPage > lastPage.value) return;
   page.value = targetPage;
+  clearLocationLink();
   await load(direction < 0 ? 'last' : 'first', viewerEpoch);
 };
 const onKey = event => {
@@ -121,7 +128,10 @@ const loadLocation = async () => {
     if (requestedMonth !== undefined || hasLocation) locateNotice.value = '相册链接中的月份无效，已打开当前月份。';
     await load(); return;
   }
-  month.value = requestedMonth; page.value = 1; data.value = { photos: [], total: 0 };
+  const requestedPage = route.query.page;
+  const validPage = requestedPage === undefined || (typeof requestedPage === 'string' && /^[1-9]\d*$/.test(requestedPage) && Number.isSafeInteger(Number(requestedPage)) && Number(requestedPage) <= 1000000);
+  month.value = requestedMonth; page.value = validPage && requestedPage !== undefined ? Number(requestedPage) : 1; data.value = { photos: [], total: 0 };
+  if (!validPage && !hasLocation) locateNotice.value = '相册链接中的页码无效，已打开第一页。';
   if (!hasLocation) { await load(); return; }
   const { memoryId, photoIndex, fingerprint } = route.query;
   if (typeof memoryId !== 'string' || !/^[a-f\d]{24}$/i.test(memoryId) || typeof photoIndex !== 'string' || !/^(0|[1-9]\d*)$/.test(photoIndex) || !Number.isSafeInteger(Number(photoIndex)) || typeof fingerprint !== 'string' || !/^[a-f\d]{64}$/i.test(fingerprint)) {
@@ -145,7 +155,9 @@ const loadLocation = async () => {
 };
 watch(() => route.fullPath, () => {
   if (route.name !== 'photoAlbum') return;
-  if (!initialized || Object.keys(route.query).length) { initialized = true; loadLocation(); }
+  const hasLocation = ['memoryId', 'photoIndex', 'fingerprint'].some(key => route.query[key] !== undefined);
+  const matchesCurrent = route.query.month === month.value && (route.query.page === undefined ? page.value === 1 : route.query.page === String(page.value)) && Object.keys(route.query).every(key => key === 'month' || key === 'page');
+  if (!initialized || hasLocation || !matchesCurrent) { initialized = true; loadLocation(); }
 }, { immediate: true });
 onMounted(() => window.addEventListener('keydown', onKey));
 onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', onKey); });

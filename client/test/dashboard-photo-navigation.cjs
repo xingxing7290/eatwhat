@@ -47,7 +47,7 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 26 张'))
     await page.getByRole('button', { name: '上个月' }).click()
     await page.getByText('这个月还没有饭桌照片').waitFor()
-    await page.waitForURL('**/photo-album')
+    await page.waitForURL('**/photo-album?month=2025-01')
     mode = 'moved'; await page.goto(`${base}${href}`)
     await page.getByText('照片位置或内容已发生变化', { exact: false }).waitFor()
     assert.equal(await viewer.isVisible(), false)
