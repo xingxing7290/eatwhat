@@ -68,6 +68,10 @@ const groups = computed(() => Object.keys(categoryText).map(key => ({ key, label
 const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; quantityOnly.value = false; await nextTick(); searchInput.value?.focus(); };
 const editDirty = computed(() => !!editingItem.value && JSON.stringify(editForm) !== editInitial.value);
 const editLatest = computed(() => editingItem.value ? (list.value.items || []).find(item => item._id === editingItem.value.id) : null);
+const editSourceMeals = computed(() => {
+  const ids = Array.isArray(editLatest.value?.sourceMealIds) ? editLatest.value.sourceMealIds : [];
+  return [...new Set(ids.map(value => typeof value === 'string' ? value.toLowerCase() : '').filter(value => /^[a-f\d]{24}$/.test(value)))];
+});
 const draftDirty = computed(() => !!(form.name.trim() || form.amount.trim() || form.category !== 'other') || editDirty.value);
 const uncertain = computed(() => !!mutationIssue.value);
 const versionAvailable = computed(() => list.value.supportsConditionalUpdates === true && Number.isSafeInteger(list.value.listVersion) && list.value.listVersion >= 0);
@@ -267,6 +271,11 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
       <div v-if="!loading && !loadError && editLatest" class="edit-current"><strong>清单当前内容</strong><p>{{ editLatest.name }} · {{ editLatest.amount || '未填写数量' }} · {{ categoryText[categoryKey(editLatest)] }} · {{ editLatest.checked ? '已买' : '待买' }}</p></div>
       <el-alert v-else-if="!loading && !loadError && editingItem" type="warning" :closable="false" show-icon title="该食材已不在当前清单中，请关闭编辑并核对。" />
       <p v-if="editingItem && !editingItem.manual" class="edit-note">这项来自排餐；重新生成清单时，名称和数量可能被排餐数据覆盖，已购状态也可能变化。清单中的修改不会改变菜谱；用量待核对的提示需在菜谱中补全后重新生成才会更新。</p>
+      <div v-if="editingItem && !editingItem.manual && !loading && !loadError" class="source-recipes">
+        <strong>来源菜谱</strong>
+        <p v-if="!editSourceMeals.length">没有可用的来源菜谱信息，请从菜谱列表查找。</p>
+        <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id } }" :aria-label="`查看来源菜谱 ${index + 1}`">查看来源菜谱 {{ index + 1 }} →</router-link></nav></template>
+      </div>
       <el-form label-position="top" :disabled="disabled">
         <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" /></el-form-item>
         <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" maxlength="200" /></el-form-item>
@@ -289,6 +298,11 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 .edit-note { color: var(--text-primary); line-height: 1.6; font-size: 13px; }
 .edit-current { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); overflow-wrap: anywhere; font-size: 13px; }
 .edit-current p { margin: 6px 0 0; line-height: 1.6; }
+.source-recipes { margin: 12px 0; color: var(--text-primary); font-size: 13px; }
+.source-recipes p { margin: 6px 0; line-height: 1.6; }
+.source-recipes nav { display: flex; flex-wrap: wrap; gap: 0 16px; }
+.source-recipes a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.source-recipes a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .item-row :deep(.el-checkbox__label .quantity-notice) { display: inline-block; color: var(--text-primary); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }

@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Shopping edit checks require a local server')
 
@@ -13,7 +14,7 @@ async function main () {
     let version = 1; let mode = 'ok'; let writes = 0; let reloadFails = false
     let items = [
       { _id: 'manual', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: true },
-      { _id: 'generated', name: '菠菜', amount: '1把', category: 'vegetable', checked: false, manual: false, quantityComplete: false }
+      { _id: 'generated', name: '菠菜', amount: '1把', category: 'vegetable', checked: false, manual: false, quantityComplete: false, sourceMealIds: ['0123456789abcdef01234567', 'invalid', '0123456789abcdef01234567'] }
     ]
     const snapshot = () => ({ weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: version, items })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
@@ -51,7 +52,22 @@ async function main () {
     assert.equal(items.find(item => item._id === 'manual').checked, false, 'marking pending in the editor must update purchase state')
     await page.getByRole('button', { name: '编辑菠菜' }).click()
     await dialog.getByText('重新生成清单时', { exact: false }).waitFor()
-    await amount.fill('两把'); mode = 'conflict'
+    const sourceLink = dialog.getByRole('link', { name: '查看来源菜谱 1' })
+    assert.equal(await sourceLink.getAttribute('href'), '/meals/detail/0123456789abcdef01234567')
+    assert.equal(await dialog.locator('.source-recipes a').count(), 1, 'duplicate and invalid source IDs must not produce links')
+    assert.ok((await sourceLink.boundingBox()).height >= 44)
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
+    for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      for (const selector of ['.source-recipes p', '.source-recipes a']) assert.ok((await contrast(page, selector)).ratio >= 4.5, `${dark} ${theme} ${selector}`)
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await amount.fill('两把')
+    await sourceLink.click()
+    await page.getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(new URL(page.url()).pathname, '/shopping-list', 'following a source link must protect the unsaved edit')
+    assert.equal(await amount.inputValue(), '两把')
+    mode = 'conflict'
     await dialog.getByRole('button', { name: '保存修改' }).click()
     await dialog.getByText('其他成员更新了购物清单', { exact: false }).waitFor()
     assert.equal(await amount.inputValue(), '两把')
@@ -69,6 +85,10 @@ async function main () {
     assert.equal(items.find(item => item._id === 'generated').amount, '两把')
     assert.equal(writes, 4)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.getByRole('button', { name: '编辑菠菜' }).click()
+    await dialog.getByRole('link', { name: '查看来源菜谱 1' }).focus()
+    await page.keyboard.press('Enter')
+    await page.waitForURL('**/meals/detail/0123456789abcdef01234567')
     assert.deepEqual(errors, [])
     console.log('Shopping edit checks passed: draft protection, versions, conflict recovery and generated-item warning')
   } finally { await browser.close() }

@@ -731,6 +731,7 @@ async function main() {
     assert.equal(generatedShopping.status, 200);
     assert.ok(generatedShopping.data.items.some(item => item.name === '番茄' && !item.manual));
     assert.equal(generatedShopping.data.items.find(item => item.name === '番茄').amount, '1个 + 1个', 'equal ingredient amounts from different meals must not disappear');
+    assert.deepEqual(generatedShopping.data.items.find(item => item.name === '番茄').sourceMealIds, [String(shoppingMeal._id)], 'generated ingredients expose their unique source recipes');
     assert.ok(generatedShopping.data.items.some(item => item.name === '鸡蛋' && item.checked && item.manual));
     const generatedTomato = generatedShopping.data.items.find(item => item.name === '番茄');
     const checkedTomato = await request(`/shopping-list/items/${generatedTomato._id}`, { method: 'PATCH', token: tokenA, body: { weekStart: shoppingWeek, expectedVersion: generatedShopping.data.listVersion, checked: true } });
