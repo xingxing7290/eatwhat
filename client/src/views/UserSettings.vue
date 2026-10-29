@@ -82,7 +82,7 @@
     </el-card>
 
     <el-card ref="issuesSection" class="settings-card" role="region" aria-label="待修正图片" tabindex="-1">
-      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length >= 200 ? `已显示 ${imageIssues.length}` : imageIssues.length }}</el-tag></div></template>
+      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && !governanceLoading && imageIssues && !issuesError" type="warning">{{ issuePagination ? `共 ${issuePagination.total}` : imageIssues.length >= 200 ? `已显示 ${imageIssues.length}` : imageIssues.length }}</el-tag></div></template>
       <div v-if="profileReady && !profileError && !joinUncertain && !issueUncertain && !issuesError && imageIssues" class="issue-refresh">
         <p>在新标签页修改菜谱后，可刷新反馈并核对图片；标记状态不会自动修改菜谱。</p>
         <el-button :loading="governanceLoading" :disabled="!!resolvingIssue || defaultLoading || joining || profileLoading" @click="loadGovernance">刷新图片反馈</el-button>
@@ -91,16 +91,16 @@
       <el-alert v-else-if="issueUncertain" class="name-alert" title="图片反馈操作结果未确认" type="warning" :closable="false" show-icon>
         <p>请求可能仍在处理。重新加载只反映当时的反馈状态，请核对后再决定是否继续操作。</p>
         <el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新核对反馈</el-button>
-        <span v-if="issueReviewReady">{{ imageIssues.length >= 200 ? `本次显示 ${imageIssues.length} 条待修正反馈，可能还有其他反馈。` : `当前有 ${imageIssues.length} 条待修正反馈。` }}</span>
+        <span v-if="issueReviewReady">{{ issuePagination ? `共 ${issuePagination.total} 条待修正反馈，本次显示第 ${issuePagination.page} / ${issuePagination.totalPages} 页。` : imageIssues.length >= 200 ? `本次显示 ${imageIssues.length} 条待修正反馈，可能还有其他反馈。` : `当前有 ${imageIssues.length} 条待修正反馈。` }}</span>
         <ul v-if="issueReviewReady && imageIssues.length" class="review-issues"><li v-for="issue in imageIssues" :key="issue._id">{{ issue.mealId?.name || '未知菜品' }}：{{ issue.note || '图片与菜名不匹配' }}</li></ul>
         <span v-else-if="issuesError">反馈加载失败，请重试。</span>
         <el-button v-if="issueReviewReady" link type="primary" @click="acknowledgeIssues">已核对，查看反馈</el-button>
       </el-alert>
       <el-alert v-else-if="issuesError" title="图片反馈加载失败，请重试。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
-      <p v-else-if="!imageIssues" class="status-note">正在加载图片反馈…</p>
+      <p v-else-if="governanceLoading || !imageIssues" class="status-note" role="status">正在加载图片反馈…</p>
       <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
       <div v-else class="issue-list">
-        <p v-if="imageIssues.length >= 200" class="issue-limit-note" role="status">列表最多显示 200 条，可能还有其他反馈；处理后请刷新查看。</p>
+        <p v-if="!issuePagination && imageIssues.length >= 200" class="issue-limit-note" role="status">旧版服务器最多显示 200 条，可能还有其他反馈；处理后请刷新查看。</p>
         <div v-for="issue in imageIssues" :key="issue._id" class="issue-item">
           <img v-if="issueImageSrc(issue) && !failedIssueImages.has(issueImageKey(issue))" :key="issueImageKey(issue)" :src="issueImageSrc(issue)" :alt="`${issue.mealId?.name || '菜品'}的图片`" @error="onIssueImageError($event, issue)" />
           <div v-else class="issue-placeholder">{{ issue.mealId?.imageUrl ? '图片不可用' : '无图片' }}</div>
@@ -114,6 +114,11 @@
           <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain || governanceLoading" :aria-label="`忽略图片反馈：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'ignored', $event)">忽略</el-button>
         </div>
       </div>
+      <nav v-if="profileReady && !profileError && !joinUncertain && !governanceLoading && issuePagination && issuePagination.totalPages > 1 && !issuesError && (!issueUncertain || issueReviewReady)" class="issue-pagination" aria-label="图片反馈分页">
+        <el-button :disabled="governanceLoading || !!resolvingIssue || defaultLoading || issuePagination.page <= 1" @click="changeIssuePage(issuePagination.page - 1)">上一页</el-button>
+        <span aria-live="polite" aria-atomic="true">第 {{ issuePagination.page }} / {{ issuePagination.totalPages }} 页 · 共 {{ issuePagination.total }} 条</span>
+        <el-button :disabled="governanceLoading || !!resolvingIssue || defaultLoading || issuePagination.page >= issuePagination.totalPages" @click="changeIssuePage(issuePagination.page + 1)">下一页</el-button>
+      </nav>
     </el-card>
 
     <el-card ref="householdSection" class="settings-card" role="region" aria-label="小家与成员" tabindex="-1">
@@ -205,6 +210,9 @@ const avatarFile = ref(null);
 const avatarUploading = ref(false);
 const defaultStatus = ref(null);
 const imageIssues = ref(null);
+const issuePage = ref(1);
+const issuePagination = ref(null);
+const issuePageSize = 20;
 const failedIssueImages = ref(new Set());
 const defaultLoading = ref(false);
 const governanceLoading = ref(false);
@@ -279,18 +287,46 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, a
 const validDefaultStatus = value => value && ['total', 'imported', 'missing'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0) && value.imported + value.missing === value.total;
 const loadGovernance = async () => {
   if (governanceLoading.value || !profileReady.value || profileError.value || joinUncertain.value || !sessionIsCurrent()) return;
+  const scope = currentSessionScope();
   governanceLoading.value = true;
+  if (issueUncertain.value) issueReviewReady.value = false;
   try {
-    const [status, issues] = await Promise.allSettled([api.defaultMeal.status(), api.mealImageIssue.list({ status: 'open' })]);
-    const validIssues = value => Array.isArray(value) && value.every(issue => issue && typeof issue === 'object' && typeof issue._id === 'string' && !!issue._id);
+    const readIssues = async page => api.mealImageIssue.list({ status: 'open', page, limit: issuePageSize });
+    const [status, issues] = await Promise.allSettled([api.defaultMeal.status(), readIssues(issuePage.value)]);
+    if (!sessionIsCurrent(scope)) return false;
+    const validIssues = value => Array.isArray(value) && value.every(issue => issue && typeof issue === 'object' && typeof issue._id === 'string' && !!issue._id) && new Set(value.map(issue => issue._id)).size === value.length;
     defaultError.value = status.status !== 'fulfilled' || !validDefaultStatus(status.value);
-    issuesError.value = issues.status !== 'fulfilled' || !validIssues(issues.value);
     if (!defaultError.value) defaultStatus.value = status.value;
-    if (!issuesError.value) { imageIssues.value = issues.value; failedIssueImages.value = new Set(); }
+    try {
+      if (issues.status !== 'fulfilled') throw new Error('图片反馈读取失败');
+      let data = issues.value;
+      if (Array.isArray(data)) {
+        if (!validIssues(data) || data.length > 200) throw new Error('旧版图片反馈数据不完整');
+        issuePage.value = 1; issuePagination.value = null; imageIssues.value = data;
+      } else {
+        const validatePage = (value, page) => value && value.supportsImageIssuePagination === true && String(value.householdId) === String(scope.householdId) && value.page === page && value.limit === issuePageSize && Number.isSafeInteger(value.total) && value.total >= 0 && value.totalPages === Math.max(1, Math.ceil(value.total / issuePageSize)) && validIssues(value.items) && value.items.length === Math.min(issuePageSize, Math.max(0, value.total - (page - 1) * issuePageSize));
+        if (!validatePage(data, issuePage.value)) throw new Error('图片反馈分页数据不完整');
+        if (issuePage.value > data.totalPages) {
+          const lastPage = data.totalPages; data = await readIssues(lastPage);
+          if (!sessionIsCurrent(scope)) return false;
+          if (!validatePage(data, lastPage)) throw new Error('图片反馈分页数据已变化');
+          issuePage.value = lastPage;
+        }
+        issuePagination.value = { page: data.page, total: data.total, totalPages: data.totalPages };
+        imageIssues.value = data.items;
+      }
+      issuesError.value = false; failedIssueImages.value = new Set();
+    } catch (_) { issuesError.value = true; issuePagination.value = null; }
     if (defaultUncertain.value) defaultReviewReady.value = !defaultError.value;
     if (issueUncertain.value) issueReviewReady.value = !issuesError.value;
     return true;
   } finally { governanceLoading.value = false; }
+};
+const changeIssuePage = async page => {
+  if (governanceLoading.value || resolvingIssue.value || defaultLoading.value || !issuePagination.value || page < 1 || page > issuePagination.value.totalPages) return;
+  const source = document.activeElement; issuePage.value = page;
+  await loadGovernance(); await nextTick();
+  if ((!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) && source?.closest?.('.issue-pagination')) issuesSection.value?.$el?.focus();
 };
 const clearAvatarFile = () => {
   avatarFile.value = null;
@@ -313,7 +349,7 @@ const reload = async () => {
     applyProfile(profile, { allowHouseholdChange: joinUncertain.value });
     profileReady.value = true;
     clearAvatarFile();
-    if (joinUncertain.value) { mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; }
+    if (joinUncertain.value) { mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; issuePage.value = 1; issuePagination.value = null; }
     joinUncertain.value = false;
     inviteUncertain.value = false;
     profileUncertain.value = false;
@@ -396,10 +432,10 @@ const joinHousehold = async () => {
     if (!result?.user?.id || String(result.user.id) !== String(user.value.id) || !result?.household?.id || String(result.user.householdId || '') !== String(result.household.id) ||
         typeof result.household.inviteCode !== 'string' || result.household.inviteCode.toUpperCase() !== requestedCode ||
         !Array.isArray(result.household.members) || !result.household.members.some(member => String(member?._id || member?.id || member) === String(result.user.id))) throw new Error('家庭切换响应不完整');
-    applyProfile(result, { allowHouseholdChange: true }); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; await loadGovernance(); ElMessage.success('已加入小家');
+    applyProfile(result, { allowHouseholdChange: true }); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; issuePage.value = 1; issuePagination.value = null; await loadGovernance(); ElMessage.success('已加入小家');
   } catch (e) {
     if (e?.error === '邀请码无效' || e?.error === '请输入邀请码') ElMessage.error(e.error);
-    else { joinUncertain.value = true; mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; }
+    else { joinUncertain.value = true; mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; issuePage.value = 1; issuePagination.value = null; }
   }
   finally { joining.value = false; }
 };
@@ -560,6 +596,8 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .issue-refresh p { flex: 1 1 240px; margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .issue-limit-note { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .issue-refresh .el-button { min-height: 44px; margin: 0; }
+.issue-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin-top: 16px; color: var(--text-primary); font-size: 13px; }
+.issue-pagination .el-button { min-height: 44px; margin: 0; }
 .issue-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
 .issue-placeholder { width: 64px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: var(--bg-primary); color: var(--text-secondary); font-size: 12px; }
