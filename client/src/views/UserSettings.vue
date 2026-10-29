@@ -193,6 +193,9 @@ const themeOptions = [
 ];
 const selectedTheme = ref(localStorage.getItem('colorTheme') || 'cream');
 const currentThemeLabel = computed(() => themeOptions.find(theme => theme.value === selectedTheme.value)?.label || themeOptions[0].label);
+const syncThemeFromStorage = event => {
+  if (event.storageArea === localStorage && (event.key === 'colorTheme' || event.key === null)) selectedTheme.value = event.key === null ? 'cream' : event.newValue || 'cream';
+};
 
 const user = ref({ id: '', username: '', displayName: '', avatarUrl: '' });
 const household = ref({ name: '', inviteCode: '', members: [] });
@@ -569,8 +572,8 @@ onBeforeRouteLeave(async () => {
   try { await ElMessageBox.confirm(message, '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
 });
 watch(() => route.query.section, jumpFromRoute);
-onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); void jumpFromRoute(route.query.section); reload(); });
-onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); clearAvatarFile(); });
+onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); window.addEventListener('storage', syncThemeFromStorage); void jumpFromRoute(route.query.section); reload(); });
+onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); window.removeEventListener('storage', syncThemeFromStorage); clearAvatarFile(); });
 </script>
 
 <style scoped>

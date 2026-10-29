@@ -82,6 +82,11 @@ const handleColorThemeChange = (event) => {
   selectedColorTheme.value = event?.detail || localStorage.getItem('colorTheme') || 'cream';
   applyColorTheme();
 };
+const handleThemeStorage = event => {
+  if (event.storageArea !== localStorage) return;
+  if (event.key === 'colorTheme' || event.key === null) selectedColorTheme.value = event.key === null ? 'cream' : event.newValue || 'cream';
+  if (event.key === 'darkMode' || event.key === null) isDarkMode.value = event.key === null ? false : event.newValue === 'true';
+};
 
 const toggleDarkMode = () => {
   isDarkMode.value = !isDarkMode.value;
@@ -194,6 +199,7 @@ onMounted(async () => {
   // 添加窗口大小变化监听
   window.addEventListener('resize', handleResize);
   window.addEventListener('eatwhat-theme-change', handleColorThemeChange);
+  window.addEventListener('storage', handleThemeStorage);
   window.addEventListener('eatwhat-session-changed', markSessionChanged);
   window.addEventListener('eatwhat-session-expired', markSessionExpired);
   window.addEventListener('eatwhat-session-adopted', markSessionAdopted);
@@ -248,6 +254,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeyDown);
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('eatwhat-theme-change', handleColorThemeChange);
+  window.removeEventListener('storage', handleThemeStorage);
   window.removeEventListener('eatwhat-session-changed', markSessionChanged);
   window.removeEventListener('eatwhat-session-expired', markSessionExpired);
   window.removeEventListener('eatwhat-session-adopted', markSessionAdopted);
