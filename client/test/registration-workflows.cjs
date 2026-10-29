@@ -25,6 +25,11 @@ async function main () {
     await page.getByLabel('用户名', { exact: true }).fill('tester')
     await page.getByLabel('密码', { exact: true }).fill('password123')
     await page.getByLabel('确认密码', { exact: true }).fill('password123')
+    assert.equal(await page.evaluate(() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented }), true)
+    await page.getByRole('link', { name: '返回登录' }).click()
+    await page.getByText('离开后未提交的信息会丢失', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '继续填写', exact: true }).click()
+    assert.equal(await page.getByLabel('密码', { exact: true }).inputValue(), 'password123')
     await page.getByLabel('确认密码', { exact: true }).press('Enter')
     await page.locator('.registration-error').getByText('邀请码无效').waitFor()
     assert.equal(calls, 1)
@@ -66,7 +71,12 @@ async function main () {
         }
       }
     }
+    await page.locator('.uncertain-alert').getByRole('button', { name: '继续填写' }).click()
+    await page.getByRole('button', { name: '返回核对' }).click()
+    assert.equal(await page.getByRole('button', { name: '创建账号', exact: true }).isDisabled(), true)
     await page.getByRole('button', { name: '前往登录' }).click()
+    await page.getByText('离开后密码和本页输入不会保留', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '确认离开' }).click()
     await page.waitForURL('**/login?username=another')
     assert.equal(await page.getByLabel('用户名', { exact: true }).inputValue(), 'another')
     assert.equal(await page.getByLabel('密码', { exact: true }).inputValue(), '')

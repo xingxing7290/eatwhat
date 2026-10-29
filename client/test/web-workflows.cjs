@@ -1088,6 +1088,9 @@ async function main () {
   assert.equal(registrations[0].username, 'join-user')
   assert.equal(registrations[0].inviteCode, 'ABC123')
   assert.equal(registrations[0].householdName, '')
+  await registerPage.getByRole('link', { name: '返回登录' }).click()
+  await registerPage.getByText('注册请求正在处理，请稍候。').waitFor()
+  assert.equal(new URL(registerPage.url()).pathname, '/apply-account')
   releaseRegister()
   await registerPage.waitForURL('**/login?username=join-user')
   holdRegistration = false
@@ -1104,6 +1107,7 @@ async function main () {
   assert.equal(await registerPage.getByRole('button', { name: '创建账号' }).isDisabled(), true)
   assert.equal(await registerPage.evaluate(() => window.__debugLogs.some(line => line.includes('e2e-only-password'))), false, 'registration password must not appear in debug logs')
   await registerPage.getByRole('button', { name: '前往登录' }).click()
+  await registerPage.getByRole('button', { name: '确认离开' }).click()
   await registerPage.waitForURL('**/login?username=create-user')
   await registerContext.close()
   console.log('Web workflows passed: dashboard, safe selection, wishlist, weekly plan, shopping and mobile navigation')

@@ -14,8 +14,8 @@
       </div>
 
       <el-alert v-if="uncertain" class="uncertain-alert" title="注册结果未确认" type="warning" :closable="false" show-icon>
-        请先用刚填写的用户名和密码尝试登录，避免重复创建账号。如果无法登录，再返回此页重新填写。
-        <div><el-button link type="primary" @click="goToLogin">前往登录</el-button><el-button link @click="uncertain = false">继续填写</el-button></div>
+        请先用刚填写的用户名和密码尝试登录，避免重复创建账号。密码不会自动带入登录页。如果无法登录，再返回此页重新填写。
+        <div><el-button link type="primary" @click="goToLogin">前往登录</el-button><el-button link @click="continueAfterUncertain">继续填写</el-button></div>
       </el-alert>
       <el-alert v-if="invalidInviteLink" class="uncertain-alert" title="邀请链接中的邀请码过长，请向家人重新确认。" type="warning" :closable="false" show-icon />
       <el-alert v-if="registrationError" class="uncertain-alert registration-error" :title="registrationError" type="error" :closable="false" show-icon />
@@ -107,9 +107,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditPen, HomeFilled, Key, Lock, User } from '@element-plus/icons-vue'
 import api from '@/services/api'
 
@@ -119,6 +119,7 @@ const formRef = ref()
 const loading = ref(false)
 const uncertain = ref(false)
 const registrationError = ref('')
+const registrationComplete = ref(false)
 const hasExistingSession = !!localStorage.getItem('token')
 const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '')
 const linkInvite = hashParams.get('invite') || (typeof route.query.invite === 'string' ? route.query.invite : '')
@@ -134,6 +135,8 @@ const form = ref({
   password: '',
   confirmPassword: ''
 })
+const initialMode = mode.value
+const dirty = computed(() => uncertain.value || mode.value !== initialMode || form.value.inviteCode !== inviteFromLink || !!(form.value.displayName || form.value.householdName || form.value.username || form.value.password || form.value.confirmPassword))
 
 // Remove the capability-like invite code from the visible address once read.
 if (linkInvite) {
@@ -144,6 +147,10 @@ if (linkInvite) {
 }
 
 const goToLogin = () => router.push({ name: 'login', query: { username: form.value.username.trim() } })
+const continueAfterUncertain = async () => {
+  try { await ElMessageBox.confirm('上一次请求可能仍在处理或已成功。建议先尝试登录；继续填写后重复提交可能创建重复账号。', '确认继续填写？', { type: 'warning', confirmButtonText: '仍要继续', cancelButtonText: '返回核对' }) } catch (_) { return }
+  uncertain.value = false
+}
 const useCurrentAccount = () => {
   const code = form.value.inviteCode.trim()
   if (!code || code.length > 20) return ElMessage.warning('请确认邀请码后再加入')
@@ -166,18 +173,38 @@ const onSubmit = async () => {
         password: form.value.password
       })
       if (!result?.user?.id) throw new Error('注册响应不完整')
+      registrationComplete.value = true
       ElMessage.success('账号已创建，请登录')
-      await router.replace({
+      const failure = await router.replace({
         name: 'login',
         query: { username: form.value.username.trim() }
       })
+      if (failure) { registrationComplete.value = false; uncertain.value = true }
     } catch (e) {
+      registrationComplete.value = false
       const message = e?.error || ''
       if (message === '邀请码无效' || message === '用户名已存在') registrationError.value = message
       else uncertain.value = true
     }
   } finally { loading.value = false }
 }
+
+const warnBeforeUnload = event => {
+  if (registrationComplete.value || (!loading.value && !dirty.value)) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onBeforeRouteLeave(async to => {
+  if (registrationComplete.value) return true
+  if (loading.value) { ElMessage.warning('注册请求正在处理，请稍候。'); return false }
+  if (!dirty.value) return true
+  const message = uncertain.value
+    ? '注册请求可能已成功或仍在处理。请记住刚才填写的密码；离开后密码和本页输入不会保留。'
+    : to.name === 'login' ? '离开后未提交的信息会丢失，密码不会自动带入登录页。' : '离开后未提交的账号和小家信息会丢失。'
+  try { await ElMessageBox.confirm(message, '离开创建账号？', { type: 'warning', confirmButtonText: '确认离开', cancelButtonText: '继续填写' }); return true } catch (_) { return false }
+})
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+onBeforeUnmount(() => window.removeEventListener('beforeunload', warnBeforeUnload))
 
 const rules = {
   displayName: [
