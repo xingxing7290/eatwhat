@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { Plus, Delete, Check, Star, Calendar, Edit } from '@element-plus/icons-vue';
@@ -44,6 +44,14 @@ const form = reactive({ title: '', note: '', category: '', priority: 'normal' })
 const search = ref('');
 const selectedStatus = ref('all');
 const selectedPriority = ref('all');
+const boardMode = ref(false);
+const boardPage = ref(1);
+const boardLimit = 12;
+const boardTotal = ref(0);
+const boardMatched = ref({});
+const boardTotals = ref({});
+const pendingView = ref(false);
+let filterTimer = null;
 const statusFilterGroup = ref(null);
 const addWishButton = ref(null);
 const initialForm = ref(JSON.stringify(form));
@@ -70,10 +78,11 @@ const statusBucket = item => ['open', 'planned', 'done'].includes(item.status) ?
 const statusOptions = computed(() => [
   { key: 'all', label: '全部' }, { key: 'open', label: '想吃' },
   { key: 'planned', label: '已安排' }, { key: 'done', label: '已完成' },
-  ...(items.value.some(item => statusBucket(item) === 'unknown') ? [{ key: 'unknown', label: '待核对' }] : [])
+  ...((boardMode.value ? boardTotals.value.unknown > 0 || selectedStatus.value === 'unknown' : items.value.some(item => statusBucket(item) === 'unknown')) ? [{ key: 'unknown', label: '待核对' }] : [])
 ]);
 const filterActive = computed(() => !!search.value.trim() || selectedStatus.value !== 'all' || selectedPriority.value !== 'all');
 const filteredItems = computed(() => {
+  if ((boardMode.value && !pendingView.value) || pendingView.value) return items.value;
   const query = search.value.trim().toLocaleLowerCase();
   return items.value.filter(item => {
     if (selectedStatus.value !== 'all' && statusBucket(item) !== selectedStatus.value) return false;
@@ -84,31 +93,70 @@ const filteredItems = computed(() => {
 });
 const resetFilters = () => { search.value = ''; selectedStatus.value = 'all'; selectedPriority.value = 'all'; };
 const hiddenPendingCount = computed(() => {
-  if (!filterActive.value) return 0;
+  if (pendingView.value) return 0;
   const visible = new Set(filteredItems.value.map(item => item._id));
-  return items.value.filter(item => !visible.has(item._id) && (pendingLinks[item._id] || uncertainCreates[item._id])).length;
+  return new Set([...Object.keys(pendingLinks), ...Object.keys(uncertainCreates)].filter(id => !visible.has(id))).size;
 });
-const grouped = computed(() => ['open', 'planned', 'done', 'unknown'].filter(status => (status !== 'unknown' || items.value.some(item => statusBucket(item) === 'unknown')) && (selectedStatus.value === 'all' || status === selectedStatus.value)).map(status => ({
+const grouped = computed(() => ['open', 'planned', 'done', 'unknown'].filter(status => (status !== 'unknown' || (boardMode.value && !pendingView.value ? boardTotals.value.unknown > 0 : items.value.some(item => statusBucket(item) === 'unknown'))) && (pendingView.value || selectedStatus.value === 'all' || status === selectedStatus.value)).map(status => ({
   status,
-  total: items.value.filter(item => statusBucket(item) === status).length,
+  total: boardMode.value && !pendingView.value ? (boardTotals.value[status] || 0) : items.value.filter(item => statusBucket(item) === status).length,
+  matched: boardMode.value && !pendingView.value ? (boardMatched.value[status] || 0) : filteredItems.value.filter(item => statusBucket(item) === status).length,
   items: filteredItems.value.filter(item => statusBucket(item) === status).sort((a, b) => rankOf(b) - rankOf(a) || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
 })));
+const totalPages = computed(() => Math.max(1, Math.ceil(boardTotal.value / boardLimit)));
+const pendingIds = () => [...new Set([...Object.keys(pendingLinks), ...Object.keys(uncertainCreates)])];
+const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && !!item._id && typeof item.title === 'string' && !!item.title.trim()) && new Set(rows.map(item => item._id)).size === rows.length;
+const validCounts = counts => counts && ['open', 'planned', 'done', 'unknown'].every(key => Number.isSafeInteger(counts[key]) && counts[key] >= 0);
 
 const load = async () => {
+  if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
   const sequence = ++listSequence;
   loading.value = true;
   loadError.value = '';
   try {
-    const result = await api.wishlist.list();
+    if (pendingView.value && !pendingIds().length) pendingView.value = false;
+    const query = { view: 'board', page: boardPage.value, limit: boardLimit, search: search.value.trim(), status: selectedStatus.value, priority: selectedPriority.value };
+    let result;
+    if (pendingView.value) {
+      const ids = pendingIds();
+      const rows = [];
+      for (const id of ids) {
+        const item = await api.wishlist.get(id, { suppressErrorToast: true });
+        if (!alive || sequence !== listSequence) return;
+        if (String(item?._id || '') !== id) throw new Error('待核对记录不完整，请重试或返回全部清单');
+        rows.push(item);
+      }
+      result = rows;
+    } else result = await api.wishlist.list(query);
     if (!alive || sequence !== listSequence) return;
-    if (!Array.isArray(result) || result.some(item => !item || typeof item._id !== 'string' || !item._id || typeof item.title !== 'string' || !item.title.trim()) || new Set(result.map(item => item._id)).size !== result.length) throw new Error('清单数据不完整');
-    items.value = result;
+    if (!pendingView.value && result?.supportsWishlistBoard === true) {
+      const sum = counts => Object.values(counts).reduce((a, b) => a + b, 0);
+      if (result.page !== query.page || result.limit !== boardLimit || result.search !== query.search || result.status !== query.status || result.priority !== query.priority || !validCounts(result.matched) || !validCounts(result.totals) || !Number.isSafeInteger(result.total) || result.total !== sum(result.matched) || sum(result.matched) > sum(result.totals) || !validItems(result.items) || result.items.length !== Math.min(boardLimit, Math.max(0, result.total - (query.page - 1) * boardLimit))) throw new Error('分页清单数据不完整');
+      boardMode.value = true; boardTotal.value = result.total; boardMatched.value = result.matched; boardTotals.value = result.totals;
+      if (boardPage.value > totalPages.value) { boardPage.value = totalPages.value; return load(); }
+      items.value = result.items;
+    } else {
+      if (!validItems(result)) throw new Error('清单数据不完整');
+      if (!pendingView.value) boardMode.value = false;
+      items.value = result;
+    }
     for (const item of items.value) if (item.mealId) { delete pendingLinks[item._id]; delete uncertainCreates[item._id]; }
     actionIssue.value = '';
   }
   catch (e) { if (alive && sequence === listSequence) loadError.value = e?.error || e?.message || '加载想吃清单失败'; }
   finally { if (alive && sequence === listSequence) loading.value = false; }
 };
+const showPending = () => { pendingView.value = true; load(); };
+const showBoard = () => { pendingView.value = false; load(); };
+const changePage = page => { if (!loading.value && page >= 1 && page <= totalPages.value && page !== boardPage.value) { boardPage.value = page; load(); } };
+watch([search, selectedStatus, selectedPriority], () => {
+  if (!boardMode.value || pendingView.value) return;
+  boardPage.value = 1;
+  listSequence++;
+  loading.value = true;
+  if (filterTimer) clearTimeout(filterTimer);
+  filterTimer = setTimeout(load, 200);
+}, { flush: 'sync' });
 const reset = () => {
   Object.assign(form, { title: '', note: '', category: '', priority: 'normal' });
   editing.value = null; editIssue.value = ''; editReviewed.value = false; latestEdit.value = null; latestError.value = '';
@@ -182,7 +230,8 @@ const save = async () => {
       if (String(result?._id || result?.id || '') !== editing.value.id || !canEdit(result)) throw new Error('保存响应不完整');
     } else result = await api.wishlist.create({ ...form, title: form.title.trim() });
     if (!result?._id && !result?.id) throw new Error('保存响应不完整');
-    ElMessage.success(editing.value ? '想吃记录已更新' : '已加入想吃清单');
+    const savedMessage = editing.value ? '想吃记录已更新' : '已加入想吃清单';
+    ElMessage.success(`${savedMessage}${boardMode.value && (filterActive.value || boardPage.value > 1 || pendingView.value) ? '；如未显示，请调整筛选或页码' : ''}`);
     dialogVisible.value = false;
     reset();
     await load();
@@ -214,6 +263,7 @@ const setStatus = (item, status) => {
 };
 const remove = async (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
+  if (pendingLinks[item._id] || uncertainCreates[item._id]) return ElMessage.warning('请先核对菜谱创建或关联结果，再删除记录');
   if (!validWishVersion(item)) return ElMessage.warning('服务器未提供有效的记录版本，暂时不能安全删除');
   confirmingId.value = item._id;
   try { await ElMessageBox.confirm('确定删除这个想吃项吗？', '删除确认'); } catch (_) { return; }
@@ -304,7 +354,7 @@ const arrangeToday = (item) => {
   router.push({ name: 'MealSelection', query: { date, mealType: 'dinner', suggestedMealId: id, wishlistId: item._id } });
 };
 onMounted(load);
-onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkTimer) clearTimeout(linkTimer); });
+onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkTimer) clearTimeout(linkTimer); if (filterTimer) clearTimeout(filterTimer); });
 </script>
 
 <template>
@@ -318,17 +368,18 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button><el-button v-if="!editIssue" link type="danger" @click="discardEditDraft">放弃草稿</el-button></el-alert>
 
     <el-alert v-if="actionIssue" type="warning" :closable="false" show-icon :title="actionIssue"><el-button link type="primary" :loading="loading" @click="load">刷新清单并核对</el-button></el-alert>
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-    <section v-if="!loadError && !loading && items.length" class="wish-filters" aria-label="查找想吃记录">
-      <div class="filter-heading"><div><h2>查找心愿</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ items.length }} 条记录</p></div><el-input v-model="search" clearable placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button><el-button v-if="pendingView" link @click="showBoard">返回全部清单</el-button></el-alert>
+    <section v-if="!loadError && !pendingView && (items.length || boardMode || filterActive)" class="wish-filters" aria-label="查找想吃记录">
+      <div class="filter-heading"><div><h2>查找心愿</h2><p aria-live="polite"><template v-if="boardMode">{{ loading ? '正在更新结果' : `共 ${boardTotal} 条匹配记录 · 第 ${boardPage} / ${totalPages} 页` }}</template><template v-else>显示 {{ filteredItems.length }} / {{ items.length }} 条记录</template></p></div><el-input v-model="search" clearable maxlength="100" placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
       <div class="filter-controls"><div ref="statusFilterGroup" class="status-filters" role="group" aria-label="按状态筛选"><button v-for="option in statusOptions" :key="option.key" type="button" :class="{ active: selectedStatus === option.key }" :aria-pressed="selectedStatus === option.key" @click="selectedStatus = option.key">{{ option.label }}</button></div><label class="priority-filter">优先级 <select v-model="selectedPriority" aria-label="按优先级筛选"><option value="all">全部优先级</option><option value="high">超想吃</option><option value="normal">普通</option><option value="low">随缘</option><option value="unset">未设置</option></select></label></div>
     </section>
-    <div v-if="!loadError && !loading && hiddenPendingCount" class="hidden-pending" role="status"><span>有 {{ hiddenPendingCount }} 条关联或创建结果待核对的记录被筛选隐藏。</span><el-button link type="primary" @click="resetFilters">清除筛选并查看</el-button></div>
-    <el-empty v-if="!loadError && !loading && items.length && !filteredItems.length" description="没有符合条件的想吃记录"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
+    <div v-if="pendingView && !loadError" class="hidden-pending" role="status"><span>正在查看关联或创建结果待核对的记录。</span><el-button link type="primary" @click="showBoard">返回全部清单</el-button></div>
+    <div v-if="!loadError && !loading && hiddenPendingCount" class="hidden-pending" role="status"><span>有 {{ hiddenPendingCount }} 条关联或创建结果待核对的记录不在当前结果中。</span><el-button link type="primary" @click="showPending">查看待核对记录</el-button></div>
+    <el-empty v-if="!loadError && !loading && !pendingView && filterActive && !filteredItems.length" description="没有符合条件的想吃记录"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
     <div v-else-if="!loadError" v-loading="loading" class="board" :class="{ 'single-column': selectedStatus !== 'all' }" :aria-busy="loading ? 'true' : 'false'">
       <section v-for="group in grouped" :key="group.status" class="status-column">
-        <h2>{{ statusText[group.status] }} <span>{{ filterActive ? `${group.items.length} / ${group.total}` : group.total }}</span></h2>
-        <p v-if="!group.items.length" class="empty-column">{{ filterActive && group.total ? '没有符合条件的记录' : `暂时没有${statusText[group.status]}的记录` }}</p>
+        <h2>{{ statusText[group.status] }} <span>{{ filterActive && !pendingView ? `${group.matched} / ${group.total}` : group.total }}</span></h2>
+        <p v-if="!group.items.length" class="empty-column">{{ boardMode && !pendingView && group.matched ? '本页没有记录，可翻页查看' : filterActive && group.total && !pendingView ? '没有符合条件的记录' : `暂时没有${statusText[group.status]}的记录` }}</p>
         <el-card v-for="item in group.items" :key="item._id" class="wish-card" :data-wish-id="item._id">
           <div class="wish-title"><strong>{{ item.title }}</strong><el-tag>{{ priorityText[priorityBucket(item)] || '未设置' }}</el-tag></div>
           <p>{{ item.note || '还没有备注' }}</p>
@@ -349,12 +400,13 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
             <el-button v-if="item.status === 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'planned')">标记已安排</el-button>
             <el-button v-if="item.status !== 'done'" size="small" type="success" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>
             <el-button v-if="item.status !== 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'open')">重新想吃</el-button>
-            <el-button size="small" type="danger" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button>
+            <el-button size="small" type="danger" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item) || !!pendingLinks[item._id] || !!uncertainCreates[item._id]" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button>
           </div>
           </template>
         </el-card>
       </section>
     </div>
+    <nav v-if="boardMode && !pendingView && !loadError && boardTotal > boardLimit" class="board-pagination" aria-label="想吃清单分页"><el-button :disabled="loading || boardPage <= 1" @click="changePage(boardPage - 1)">上一页</el-button><span aria-live="polite">第 {{ boardPage }} / {{ totalPages }} 页</span><el-button :disabled="loading || boardPage >= totalPages" @click="changePage(boardPage + 1)">下一页</el-button></nav>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑想吃记录' : '添加想吃'" width="min(520px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <CreateRecoveryNotice v-if="saveUncertain" label="想吃记录" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -403,6 +455,8 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .priority-filter { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 13px; }
 .hidden-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .hidden-pending :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
+.board-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); }
+.board-pagination :deep(.el-button) { min-height: 44px; }
 .status-column { background: var(--bg-primary); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px var(--shadow-color); display: flex; flex-direction: column; gap: 12px; }
 .status-column h2 { display: flex; justify-content: space-between; font-size: 18px; }
 .wish-card p { color: var(--text-secondary); }

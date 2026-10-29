@@ -498,7 +498,7 @@ export const memoryApi = {
 // 想吃清单API
 export const wishlistApi = {
 	list: (params = {}) => api.get('/wishlist', { params }),
-	get: (id) => api.get(`/wishlist/${id}`),
+	get: (id, options = {}) => api.get(`/wishlist/${encodeURIComponent(id)}`, options),
 	create: (payload) => api.post('/wishlist', payload, { headers: { 'Content-Type': 'application/json' } }),
 	createMealWish: (mealId) => api.post('/wishlist/meal', { mealId }, { headers: { 'Content-Type': 'application/json' } }),
 	vote: (id) => api.post(`/wishlist/${id}/vote`),

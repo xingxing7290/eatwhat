@@ -38,9 +38,53 @@ function decorateItem(item, uid) {
 }
 function decorateList(items, uid) { return (items || []).map(item => decorateItem(item, uid)); }
 
+const boardStatuses = ['open', 'planned', 'done', 'unknown'];
+const boardPriorities = ['high', 'normal', 'low', 'unset'];
+const literalRegex = value => new RegExp(value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+async function listBoard(req, res, household) {
+  const { page: pageInput = '1', limit: limitInput = '12', search: searchInput = '', status = 'all', priority = 'all' } = req.query;
+  if (typeof pageInput !== 'string' || !/^[1-9]\d*$/.test(pageInput) || typeof limitInput !== 'string' || !/^[1-9]\d*$/.test(limitInput) ||
+      typeof searchInput !== 'string' || searchInput.length > 100 || typeof status !== 'string' || !['all', ...boardStatuses].includes(status) ||
+      typeof priority !== 'string' || !['all', ...boardPriorities].includes(priority)) return res.status(400).json({ error: '想吃清单筛选或分页参数无效' });
+  const page = Number(pageInput); const limit = Number(limitInput); const skip = (page - 1) * limit; const search = searchInput.trim();
+  if (!Number.isSafeInteger(page) || !Number.isSafeInteger(limit) || limit > 30 || !Number.isSafeInteger(skip) || skip > 1000000) return res.status(400).json({ error: '想吃清单分页参数无效' });
+  const pipeline = [{ $match: { householdId: household._id } }];
+  if (search) pipeline.push({ $lookup: {
+    from: Meal.collection.name, let: { linkedId: '$mealId' },
+    pipeline: [{ $match: { $expr: { $and: [{ $eq: ['$_id', '$$linkedId'] }, { $eq: ['$householdId', household._id] }] } } }, { $project: { name: 1 } }],
+    as: '_searchMeal'
+  } });
+  pipeline.push({ $set: {
+    _boardStatus: { $cond: [{ $in: ['$status', ['open', 'planned', 'done']] }, '$status', 'unknown'] },
+    _boardPriority: { $cond: [{ $in: ['$priority', boardPriorities.slice(0, 3)] }, '$priority', 'unset'] },
+    _boardRank: { $switch: { branches: [{ case: { $eq: ['$priority', 'high'] }, then: 2 }, { case: { $eq: ['$priority', 'low'] }, then: 0 }], default: 1 } },
+    _boardOrder: { $switch: { branches: [{ case: { $eq: ['$status', 'open'] }, then: 0 }, { case: { $eq: ['$status', 'planned'] }, then: 1 }, { case: { $eq: ['$status', 'done'] }, then: 2 }], default: 3 } }
+  } });
+  const match = {};
+  if (status !== 'all') match._boardStatus = status;
+  if (priority !== 'all') match._boardPriority = priority;
+  if (search) { const regex = literalRegex(search); match.$or = [{ title: regex }, { note: regex }, { category: regex }, { '_searchMeal.name': regex }]; }
+  pipeline.push({ $facet: {
+    rows: [{ $match: match }, { $sort: { _boardOrder: 1, _boardRank: -1, createdAt: -1, _id: -1 } }, { $skip: skip }, { $limit: limit }, { $project: { _boardStatus: 0, _boardPriority: 0, _boardRank: 0, _boardOrder: 0, _searchMeal: 0 } }],
+    matched: [{ $match: match }, { $group: { _id: '$_boardStatus', count: { $sum: 1 } } }],
+    totals: [{ $group: { _id: '$_boardStatus', count: { $sum: 1 } } }]
+  } });
+  const [result] = await WishlistItem.aggregate(pipeline);
+  const counts = rows => Object.fromEntries(boardStatuses.map(key => [key, rows.find(row => row._id === key)?.count || 0]));
+  const matched = counts(result?.matched || []); const totals = counts(result?.totals || []);
+  const rows = result?.rows || [];
+  await WishlistItem.populate(rows, [
+    { path: 'mealId', match: { householdId: household._id } },
+    { path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' },
+    { path: 'votes', match: { householdId: household._id }, select: 'username displayName avatarUrl' }
+  ]);
+  return res.json({ supportsWishlistBoard: true, page, limit, search, status, priority, matched, totals, total: Object.values(matched).reduce((sum, count) => sum + count, 0), items: decorateList(rows, req.user.uid) });
+}
+
 exports.list = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
+    if (req.query.view === 'board') return await listBoard(req, res, household);
     const query = { householdId: household._id };
     if (req.query.status) query.status = req.query.status;
     const items = await populateQuery(WishlistItem.find(query).sort({ status: 1, priority: -1, createdAt: -1 }), household._id);

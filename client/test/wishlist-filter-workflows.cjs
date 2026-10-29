@@ -23,6 +23,7 @@ async function main () {
       const request = route.request(); const path = new URL(request.url()).pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/wishlist' && request.method() === 'GET') return route.fulfill({ json: invalid ? [items[0], items[0]] : items })
+      if (path.startsWith('/wishlist/') && request.method() === 'GET') return route.fulfill({ json: items.find(item => item._id === path.split('/').pop()) || {} })
       if (path === '/meals' && request.method() === 'POST') return route.fulfill({ status: 503, json: { error: '模拟菜谱创建响应丢失' } })
       if (path === '/wishlist/a/status' && request.method() === 'PATCH') {
         const body = request.postDataJSON(); assert.equal(body.status, 'planned'); writes++
@@ -85,7 +86,7 @@ async function main () {
     await pending.getByRole('button', { name: '转菜品' }).click()
     await pending.getByText('创建结果不确定', { exact: false }).waitFor()
     await search.fill('火锅')
-    await page.getByText('有 1 条关联或创建结果待核对的记录被筛选隐藏。').waitFor()
+    await page.getByText('有 1 条关联或创建结果待核对的记录不在当前结果中。').waitFor()
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
@@ -97,7 +98,7 @@ async function main () {
       }
     }
     await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
-    await page.getByRole('button', { name: '清除筛选并查看' }).click()
+    await page.getByRole('button', { name: '查看待核对记录' }).click()
     await pending.getByText('创建结果不确定', { exact: false }).waitFor()
     invalid = true
     page.on('dialog', dialog => dialog.accept())
