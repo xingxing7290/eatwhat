@@ -61,6 +61,13 @@
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>默认菜品管理</span><el-tag v-if="profileReady && !profileError && !joinUncertain && defaultStatus && !defaultError">{{ defaultStatus.imported }}/{{ defaultStatus.total }}</el-tag></div></template>
       <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
+      <el-alert v-else-if="defaultUncertain" class="name-alert" title="菜品管理操作结果未确认" type="warning" :closable="false" show-icon>
+        <p>请求可能仍在处理。请先核对当前菜品和图片；重新加载只反映当时的状态，不保证请求已经结束。</p>
+        <el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新核对状态</el-button>
+        <span v-if="defaultReviewReady">当前缺失 {{ defaultStatus.missing }} 道默认菜品。</span>
+        <span v-else-if="defaultError">状态加载失败，请重试。</span>
+        <el-button v-if="defaultReviewReady" link type="primary" @click="acknowledgeDefault">已核对，继续操作</el-button>
+      </el-alert>
       <el-alert v-else-if="defaultError" title="默认菜品状态加载失败，请重试后再操作。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
       <div v-else-if="defaultStatus" class="governance-row">
         <div class="governance-metric"><span>缺失默认菜品</span><strong>{{ defaultStatus.missing }}</strong></div>
@@ -73,6 +80,14 @@
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
       <p v-if="!profileReady || profileError || joinUncertain" class="status-note">请先加载并核对当前小家。</p>
+      <el-alert v-else-if="issueUncertain" class="name-alert" title="图片反馈操作结果未确认" type="warning" :closable="false" show-icon>
+        <p>请求可能仍在处理。重新加载只反映当时的反馈状态，请核对后再决定是否继续操作。</p>
+        <el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新核对反馈</el-button>
+        <span v-if="issueReviewReady">当前有 {{ imageIssues.length }} 条待修正反馈。</span>
+        <ul v-if="issueReviewReady && imageIssues.length" class="review-issues"><li v-for="issue in imageIssues" :key="issue._id">{{ issue.mealId?.name || '未知菜品' }}：{{ issue.note || '图片与菜名不匹配' }}</li></ul>
+        <span v-else-if="issuesError">反馈加载失败，请重试。</span>
+        <el-button v-if="issueReviewReady" link type="primary" @click="acknowledgeIssues">已核对，查看反馈</el-button>
+      </el-alert>
       <el-alert v-else-if="issuesError" title="图片反馈加载失败，请重试。" type="error" :closable="false" show-icon><el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新加载</el-button></el-alert>
       <p v-else-if="!imageIssues" class="status-note">正在加载图片反馈…</p>
       <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
@@ -104,7 +119,7 @@
           <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
         </el-form-item>
         <el-form-item label="加入小家">
-          <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue" :loading="joining" @click="joinHousehold">加入</el-button></div>
+          <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
         </el-form-item>
         <el-form-item label="成员">
           <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="member.avatarUrl" :src="resolveUploadedImage(member.avatarUrl)" :alt="`${member.displayName || member.username || '成员'}的头像`" /><span v-else>{{ memberInitial(member) }}</span></div><span>{{ member.displayName || member.username }}</span></div></div>
@@ -167,6 +182,10 @@ const defaultLoading = ref(false);
 const governanceLoading = ref(false);
 const defaultError = ref(false);
 const issuesError = ref(false);
+const defaultUncertain = ref(false);
+const issueUncertain = ref(false);
+const defaultReviewReady = ref(false);
+const issueReviewReady = ref(false);
 const resolvingIssue = ref('');
 const profileLoading = ref(false);
 const profileReady = ref(false);
@@ -176,7 +195,7 @@ const avatarPreview = ref('');
 const fileInputRef = ref(null);
 const initial = computed(() => memberInitial(user.value));
 const memberInitial = (member) => ((member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase());
-const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value || profileUncertain.value));
+const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value || profileUncertain.value || defaultUncertain.value || issueUncertain.value));
 const validNameVersion = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && (value.revision === null || (typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128));
 const nameVersionAvailable = computed(() => household.value.supportsConditionalNameUpdate === true && validNameVersion(household.value.nameVersion));
 const mutationPending = computed(() => saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value || defaultLoading.value || !!resolvingIssue.value);
@@ -218,17 +237,20 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, a
   if (syncDisplayName) displayName.value = user.value.displayName || '';
   if (syncHouseholdName) householdName.value = household.value.name || '';
 };
+const validDefaultStatus = value => value && ['total', 'imported', 'missing'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0) && value.imported + value.missing === value.total;
 const loadGovernance = async () => {
   if (governanceLoading.value || !profileReady.value || profileError.value || joinUncertain.value || !sessionIsCurrent()) return;
   governanceLoading.value = true;
   try {
     const [status, issues] = await Promise.allSettled([api.defaultMeal.status(), api.mealImageIssue.list({ status: 'open' })]);
-    const validStatus = value => value && ['total', 'imported', 'missing'].every(key => Number.isSafeInteger(value[key]) && value[key] >= 0) && value.imported + value.missing === value.total;
     const validIssues = value => Array.isArray(value) && value.every(issue => issue && typeof issue === 'object' && typeof issue._id === 'string' && !!issue._id);
-    defaultError.value = status.status !== 'fulfilled' || !validStatus(status.value);
+    defaultError.value = status.status !== 'fulfilled' || !validDefaultStatus(status.value);
     issuesError.value = issues.status !== 'fulfilled' || !validIssues(issues.value);
     if (!defaultError.value) defaultStatus.value = status.value;
     if (!issuesError.value) imageIssues.value = issues.value;
+    if (defaultUncertain.value) defaultReviewReady.value = !defaultError.value;
+    if (issueUncertain.value) issueReviewReady.value = !issuesError.value;
+    return true;
   } finally { governanceLoading.value = false; }
 };
 const clearAvatarFile = () => {
@@ -323,7 +345,7 @@ const refreshInvite = async () => {
   finally { refreshing.value = false; }
 };
 const joinHousehold = async () => {
-  if (joining.value || saving.value || avatarUploading.value || householdSaving.value || profileUncertain.value || nameIssue.value || nameChecking.value || refreshing.value || inviteUncertain.value || joinUncertain.value || defaultLoading.value || resolvingIssue.value || governanceLoading.value) return;
+  if (joining.value || saving.value || avatarUploading.value || householdSaving.value || profileUncertain.value || nameIssue.value || nameChecking.value || refreshing.value || inviteUncertain.value || joinUncertain.value || defaultLoading.value || resolvingIssue.value || governanceLoading.value || defaultUncertain.value || issueUncertain.value) return;
   if (!joinCode.value.trim()) return ElMessage.warning('请输入邀请码');
   const requestedCode = joinCode.value.trim().toUpperCase();
   if (requestedCode.length > 20) return ElMessage.warning('邀请码过长，请重新确认');
@@ -373,21 +395,34 @@ const onFileChange = (e) => {
   avatarPreview.value = URL.createObjectURL(file);
 };
 const importMissingDefaultMeals = async () => {
-  try { defaultLoading.value = true; const res = await api.defaultMeal.importMissing(); defaultStatus.value = res.after || res.status || defaultStatus.value; ElMessage.success('默认菜品已补齐'); }
-  catch (e) { ElMessage.error(e?.error || '导入失败'); }
+  if (defaultLoading.value || defaultUncertain.value || defaultError.value || !profileReady.value || profileError.value || joinUncertain.value || governanceLoading.value || !sessionIsCurrent()) return;
+  try { defaultLoading.value = true; const res = await api.defaultMeal.importMissing(); if (!validDefaultStatus(res?.after)) throw new Error('响应不完整'); defaultStatus.value = res.after; ElMessage.success('导入请求已处理，请核对缺失数量'); }
+  catch (_) { defaultUncertain.value = true; defaultReviewReady.value = false; }
   finally { defaultLoading.value = false; }
 };
 const restoreDefaultImages = async () => {
-  try { await ElMessageBox.confirm('将默认菜品图片恢复为系统图片，可能替换当前设置的图片。', '恢复默认图片', { type: 'warning', confirmButtonText: '确认恢复', cancelButtonText: '取消' }); } catch (_) { return; }
-  try { defaultLoading.value = true; const res = await api.defaultMeal.restoreImages(); defaultStatus.value = res.status || defaultStatus.value; ElMessage.success('默认菜品图片已恢复'); }
-  catch (e) { ElMessage.error(e?.error || '恢复失败'); }
+  if (defaultLoading.value || defaultUncertain.value || defaultError.value || !profileReady.value || profileError.value || joinUncertain.value || governanceLoading.value || !sessionIsCurrent()) return;
+  defaultLoading.value = true;
+  try { await ElMessageBox.confirm('将默认菜品图片恢复为系统图片，可能替换当前设置的图片。', '恢复默认图片', { type: 'warning', confirmButtonText: '确认恢复', cancelButtonText: '取消' }); } catch (_) { defaultLoading.value = false; return; }
+  try { const res = await api.defaultMeal.restoreImages(); if (!validDefaultStatus(res?.status) || !Number.isSafeInteger(res.updated) || res.updated < 0) throw new Error('响应不完整'); defaultStatus.value = res.status; ElMessage.success('默认菜品图片已恢复'); }
+  catch (_) { defaultUncertain.value = true; defaultReviewReady.value = false; }
   finally { defaultLoading.value = false; }
 };
 const resolveIssue = async (issue, status) => {
-  if (resolvingIssue.value) return;
-  try { resolvingIssue.value = issue._id; await api.mealImageIssue.update(issue._id, { status }); await loadGovernance(); ElMessage.success('已更新'); }
-  catch (e) { ElMessage.error(e?.error || '更新失败'); }
+  if (resolvingIssue.value || issueUncertain.value || issuesError.value || !profileReady.value || profileError.value || joinUncertain.value || governanceLoading.value || !sessionIsCurrent()) return;
+  try { resolvingIssue.value = issue._id; const result = await api.mealImageIssue.update(issue._id, { status }); if (result?._id !== issue._id || result?.status !== status) throw new Error('响应不完整'); if (!await loadGovernance() || issuesError.value) throw new Error('反馈重新加载失败'); ElMessage.success('已更新'); }
+  catch (_) { issueUncertain.value = true; issueReviewReady.value = false; }
   finally { resolvingIssue.value = ''; }
+};
+const acknowledgeDefault = async () => {
+  if (!defaultReviewReady.value || governanceLoading.value) return;
+  try { await ElMessageBox.confirm('之前的请求仍可能执行；请确认已检查菜品和图片后再继续。', '确认继续操作？', { type: 'warning', confirmButtonText: '确认继续', cancelButtonText: '再检查' }); } catch (_) { return; }
+  defaultUncertain.value = false; defaultReviewReady.value = false;
+};
+const acknowledgeIssues = async () => {
+  if (!issueReviewReady.value || governanceLoading.value) return;
+  try { await ElMessageBox.confirm('之前的请求仍可能执行，请核对反馈列表后再决定是否操作。', '确认查看反馈？', { type: 'warning', confirmButtonText: '确认查看', cancelButtonText: '再检查' }); } catch (_) { return; }
+  issueUncertain.value = false; issueReviewReady.value = false;
 };
 const uploadAvatar = async () => {
   if (!avatarFile.value || profileUncertain.value || nameIssue.value || nameChecking.value) return;
@@ -409,7 +444,8 @@ const warnBeforeUnload = event => {
 onBeforeRouteLeave(async () => {
   if (mutationPending.value) { ElMessage.warning('操作正在进行，请稍候'); return false; }
   if (!dirty.value) return true;
-  try { await ElMessageBox.confirm(profileUncertain.value ? '个人资料更新结果尚未确认，离开后本页输入与核对提示会丢失。' : '昵称、小家名称或头像尚未保存，离开后会丢失。', '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
+  const message = defaultUncertain.value || issueUncertain.value ? '菜品管理操作结果尚未确认，离开后核对提示会丢失；未保存的设置也会丢失。' : profileUncertain.value ? '个人资料更新结果尚未确认，离开后本页输入与核对提示会丢失。' : '昵称、小家名称或头像尚未保存，离开后会丢失。';
+  try { await ElMessageBox.confirm(message, '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
 });
 onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); reload(); });
 onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); clearAvatarFile(); });
@@ -438,6 +474,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .name-alert :deep(.el-alert__title), .name-alert :deep(.el-alert__description), .name-alert :deep(.el-alert__icon), .name-alert :deep(.el-button) { color: var(--text-primary); }
 .name-alert :deep(.el-button) { min-height: 44px; font-weight: 700; text-decoration: underline; }
 .name-alert :deep(.el-button:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.review-issues { max-height: 12rem; overflow: auto; padding-left: 1.25rem; }
 .member-list { gap: 12px; }
 .member-item { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border-radius: 999px; padding: 6px 12px 6px 6px; }
 .file-input { display: none; }
