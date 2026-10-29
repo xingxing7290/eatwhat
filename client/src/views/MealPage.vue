@@ -69,6 +69,15 @@ const canArchive = meal => meal?.supportsConditionalArchive === true && meal.arc
 // 状态 - 显示方式
 const currentView = ref(initialCatalog.view); // 'grid', 'list', 'table', 'grouped'
 const showAdvancedFilters = ref(!!(initialCatalog.tag || initialCatalog.subcategory || initialCatalog.difficulty));
+// An object value keeps the special choice distinct from any user-defined category name.
+const uncategorizedChoice = Object.freeze({ kind: 'uncategorized' });
+const categorySelection = computed({
+  get: () => uncategorized.value ? uncategorizedChoice : selectedCategory.value,
+  set: value => {
+    if (value === uncategorizedChoice) { selectedCategory.value = ''; uncategorized.value = true; }
+    else { uncategorized.value = false; selectedCategory.value = typeof value === 'string' ? value : ''; }
+  }
+});
 const catalogState = () => ({ search: searchQuery.value, category: selectedCategory.value, uncategorized: uncategorized.value, subcategory: selectedSubcategory.value, tag: selectedTag.value, difficulty: selectedDifficulty.value, favorite: favoriteOnly.value, page: currentPage.value, view: currentView.value });
 const catalogKey = value => JSON.stringify(readCatalogQuery(value));
 const syncCatalogUrl = async () => {
@@ -91,7 +100,7 @@ const searchInput = ref(null);
 const activeFilters = computed(() => [
   searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
   selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
-  uncategorized.value && { key: 'uncategorized', label: '分类：未分类' },
+  uncategorized.value && { key: 'uncategorized', label: '分类：未填写分类（空值）' },
   selectedSubcategory.value && { key: 'subcategory', label: `子类：${selectedSubcategory.value}` },
   selectedTag.value && { key: 'tag', label: `标签：${selectedTag.value}` },
   selectedDifficulty.value && { key: 'difficulty', label: `难度：${({ easy: '简单', medium: '中等', hard: '进阶' })[selectedDifficulty.value] || selectedDifficulty.value}` },
@@ -825,11 +834,12 @@ onBeforeUnmount(() => {
 
           <div class="filter-item">
             <span class="filter-field-label" aria-hidden="true">分类</span>
-            <el-select v-model="selectedCategory" aria-label="分类" placeholder="选择分类" clearable class="tag-select">
+            <el-select v-model="categorySelection" value-key="kind" aria-label="分类" placeholder="选择分类" clearable class="tag-select">
+              <el-option label="未填写分类" :value="uncategorizedChoice" />
               <el-option
                 v-for="c in categoryOptions"
                 :key="c"
-                :label="c"
+                :label="c === '未填写分类' ? '分类：未填写分类' : c"
                 :value="c"
               />
             </el-select>
@@ -882,8 +892,8 @@ onBeforeUnmount(() => {
         <nav class="category-list" aria-label="选择菜品分类">
           <button type="button" data-sidebar-kind="all" :class="{ active: !selectedCategory && !uncategorized && !favoriteOnly }" :aria-pressed="!selectedCategory && !uncategorized && !favoriteOnly" @click="selectedCategory = ''; uncategorized = false; favoriteOnly = false">全部分类</button>
           <button type="button" data-sidebar-kind="favorite" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; uncategorized = false; favoriteOnly = !favoriteOnly">我的收藏</button>
-          <button type="button" data-sidebar-kind="uncategorized" :class="{ active: uncategorized }" :aria-pressed="uncategorized" aria-label="未分类" :aria-description="categoryCounts ? `分类总数 ${categoryCounts.get('') || 0} 道` : undefined" @click="selectedCategory = ''; uncategorized = true; favoriteOnly = false"><span>未分类</span><small v-if="categoryCounts" aria-hidden="true">{{ categoryCounts.get('') || 0 }}</small></button>
-          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" :aria-label="category" :aria-description="categoryCounts && categoryCounts.has(category) ? `分类总数 ${categoryCounts.get(category)} 道` : undefined" @click="uncategorized = false; favoriteOnly = false; selectedCategory = category"><span>{{ category }}</span><small v-if="categoryCounts && categoryCounts.has(category)" aria-hidden="true">{{ categoryCounts.get(category) }}</small></button>
+          <button type="button" data-sidebar-kind="uncategorized" :class="{ active: uncategorized }" :aria-pressed="uncategorized" aria-label="未填写分类" :aria-description="categoryCounts ? `分类总数 ${categoryCounts.get('') || 0} 道` : undefined" @click="selectedCategory = ''; uncategorized = true; favoriteOnly = false"><span>未填写分类</span><small v-if="categoryCounts" aria-hidden="true">{{ categoryCounts.get('') || 0 }}</small></button>
+          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" :aria-label="category === '未填写分类' ? '分类：未填写分类' : category" :aria-description="categoryCounts && categoryCounts.has(category) ? `分类总数 ${categoryCounts.get(category)} 道` : undefined" @click="uncategorized = false; favoriteOnly = false; selectedCategory = category"><span>{{ category === '未填写分类' ? '分类：未填写分类' : category }}</span><small v-if="categoryCounts && categoryCounts.has(category)" aria-hidden="true">{{ categoryCounts.get(category) }}</small></button>
         </nav>
         <p v-if="categoryCounts" class="category-count-note">数字为上次更新时的分类总数，不随搜索和筛选变化。</p>
         <button v-if="!categoryLoadFailed" ref="categoryRefreshButton" class="category-refresh" type="button" :disabled="categoryLoading" @click="loadCategories">{{ categoryLoading ? '正在更新' : '更新分类' }}</button>
