@@ -24,6 +24,8 @@ const confirmingEmpty = ref(false);
 const catalogLoading = ref(false);
 const catalogError = ref('');
 const metadataError = ref(false);
+const metadataLoading = ref(false);
+const metadataRetryButton = ref(null);
 const loadError = ref(false);
 const selectionReadError = ref('');
 const conflict = ref(false);
@@ -48,6 +50,7 @@ const currentView = ref('grid');
 const showAdvancedFilters = ref(false);
 let catalogSequence = 0;
 let selectionSequence = 0;
+let metadataSequence = 0;
 let catalogTimer = null;
 
 const idsFor = meals => meals.map(meal => String(meal._id || meal.id)).sort();
@@ -339,10 +342,25 @@ const scheduleCatalogFetch = (delay = 160) => {
 };
 
 const loadMetadata = async () => {
-  const [categoryResult, tagResult] = await Promise.allSettled([api.meal.getMealCategories(), api.meal.getMealTags()]);
-  categories.value = categoryResult.status === 'fulfilled' ? categoryResult.value.data : [];
-  tags.value = tagResult.status === 'fulfilled' ? tagResult.value.data : [];
-  metadataError.value = categoryResult.status === 'rejected' || tagResult.status === 'rejected';
+  if (metadataLoading.value) return;
+  const sequence = ++metadataSequence;
+  const restoreFocus = document.activeElement === metadataRetryButton.value;
+  metadataLoading.value = true;
+  try {
+    const [categoryResult, tagResult] = await Promise.allSettled([api.meal.getMealCategories(), api.meal.getMealTags()]);
+    if (sequence !== metadataSequence) return;
+    if (categoryResult.status === 'fulfilled') categories.value = categoryResult.value.data;
+    if (tagResult.status === 'fulfilled') tags.value = tagResult.value.data;
+    metadataError.value = categoryResult.status === 'rejected' || tagResult.status === 'rejected';
+  } finally {
+    if (sequence === metadataSequence) {
+      metadataLoading.value = false;
+      if (restoreFocus) {
+        await nextTick();
+        if (sequence === metadataSequence && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) (metadataError.value ? metadataRetryButton.value : selectionSearch.value)?.focus();
+      }
+    }
+  }
 };
 
 const loadSelection = async ({ includeSuggestion = true } = {}) => {
@@ -458,6 +476,7 @@ onMounted(() => { loadSelection(); fetchCatalog(); loadMetadata(); });
 onBeforeUnmount(() => {
   selectionSequence++;
   catalogSequence++;
+  metadataSequence++;
   if (catalogTimer) clearTimeout(catalogTimer);
 });
 </script>
@@ -605,7 +624,7 @@ onBeforeUnmount(() => {
           <button type="button" :class="{ active: !selectedCategory }" :aria-pressed="!selectedCategory" @click="selectedCategory = ''">全部分类</button>
           <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="selectedCategory = category">{{ category }}</button>
         </nav>
-        <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button type="button" @click="loadMetadata">重试</button></div>
+        <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button ref="metadataRetryButton" type="button" :disabled="metadataLoading" @click="loadMetadata">{{ metadataLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
     <section class="meals-container" aria-label="可选菜品">
       <el-alert v-if="catalogError && !catalogLoading" type="error" :closable="false" show-icon :title="`无法加载菜品：${catalogError}`"><el-button link type="primary" @click="fetchCatalog">重新加载菜品</el-button></el-alert>

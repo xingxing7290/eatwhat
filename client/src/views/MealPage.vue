@@ -31,6 +31,11 @@ const pageSize = ref(8);
 const loading = ref(false);
 const loadError = ref('');
 const categoryLoadFailed = ref(false);
+const categoryLoading = ref(false);
+const tagLoadFailed = ref(false);
+const tagLoading = ref(false);
+const categoryRetryButton = ref(null);
+const tagRetryButton = ref(null);
 const displayedMeals = ref([]);
 const totalMeals = ref(0);
 let fetchSequence = 0;
@@ -478,7 +483,7 @@ const finishArchiveReview = async () => {
   if (archiveProblem.value !== issue) return;
   archiveProblem.value = null;
   await fetchMeals();
-  await Promise.allSettled([loadCategories(), mealStore.fetchMealTags()]);
+  await Promise.allSettled([loadCategories(), loadTags()]);
 };
 
 // 添加菜品
@@ -601,11 +606,34 @@ watch(archiveDialog, visible => {
 });
 
 const loadCategories = async () => {
-  categoryLoadFailed.value = false;
+  if (categoryLoading.value) return;
+  const restoreFocus = document.activeElement === categoryRetryButton.value;
+  categoryLoading.value = true;
   try {
     await mealStore.fetchMealCategories();
+    categoryLoadFailed.value = false;
   } catch (_) {
     categoryLoadFailed.value = true;
+  } finally {
+    categoryLoading.value = false;
+    if (restoreFocus) {
+      await nextTick();
+      if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) (categoryLoadFailed.value ? categoryRetryButton.value : filterToggleButton.value?.$el)?.focus();
+    }
+  }
+};
+const loadTags = async () => {
+  if (tagLoading.value) return;
+  const restoreFocus = document.activeElement === tagRetryButton.value;
+  tagLoading.value = true;
+  try { await mealStore.fetchMealTags(); tagLoadFailed.value = false; }
+  catch (_) { tagLoadFailed.value = true; }
+  finally {
+    tagLoading.value = false;
+    if (restoreFocus) {
+      await nextTick();
+      if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) (tagLoadFailed.value ? tagRetryButton.value : filterToggleButton.value?.$el)?.focus();
+    }
   }
 };
 
@@ -616,7 +644,7 @@ onMounted(async () => {
   } catch (_) { /* Storage is optional; keep the page usable. */ }
   await fetchMeals();
   await loadCategories();
-  try { await mealStore.fetchMealTags(); } catch (_) {}
+  await loadTags();
 });
 onBeforeUnmount(() => {
   fetchSequence++;
@@ -797,6 +825,7 @@ onBeforeUnmount(() => {
         <span class="active-filters-label">当前筛选</span>
         <button v-for="filter in activeFilters" :key="filter.key" type="button" class="active-filter-chip" :aria-label="`移除${filter.label}筛选`" @click="removeActiveFilter(filter.key)"><span>{{ filter.label }}</span><span aria-hidden="true">×</span></button>
       </div>
+      <div v-if="tagLoadFailed" class="tag-error" role="status">标签可能不完整，当前仅显示已加载的数据。<button ref="tagRetryButton" type="button" :disabled="tagLoading" @click="loadTags">{{ tagLoading ? '正在重试' : '重试标签' }}</button></div>
       <div v-if="!loading && !loadError" class="results-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
         </div>
 
@@ -808,7 +837,7 @@ onBeforeUnmount(() => {
           <button type="button" data-sidebar-kind="favorite" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
           <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = category">{{ category }}</button>
         </nav>
-        <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button type="button" @click="loadCategories">重试</button></div>
+        <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button ref="categoryRetryButton" type="button" :disabled="categoryLoading" @click="loadCategories">{{ categoryLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
       <section class="catalog-content" aria-label="菜品列表">
     <!-- 加载状态 -->
@@ -2290,6 +2319,9 @@ onBeforeUnmount(() => {
 .category-list button:focus-visible, .meal-list-item:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
 .category-error { padding: 12px 8px 0; color: var(--text-secondary); font-size: 12px; }
 .category-error button { display: block; padding: 6px 0; border: 0; background: none; color: var(--text-primary); text-decoration: underline; font: inherit; cursor: pointer; }
+.tag-error { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; color: var(--text-primary); font-size: 13px; line-height: 1.5; }
+.tag-error button { min-height: 44px; padding: 4px 6px; border: 0; background: none; color: var(--text-primary); text-decoration: underline; font: inherit; cursor: pointer; }
+.tag-error button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .catalog-content { min-width: 0; }
 .catalog-content .meals-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); }
 @media (max-width: 768px) {

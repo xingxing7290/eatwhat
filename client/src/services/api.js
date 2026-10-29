@@ -319,14 +319,20 @@ export const mealApi = {
 			return mockResponse({ data: [] });
 		}
 		return api.get('/meals/tags')
-			.then(data => ({ data: Array.isArray(data) ? data : [] }));
+			.then(data => {
+				if (!Array.isArray(data) || data.some(tag => typeof tag !== 'string' || !tag.trim())) throw new Error('菜品标签数据不完整');
+				return { data };
+			});
 	},
 	getMealCategories: () => {
 		if (USE_MOCK) {
 			return mockResponse({ data: [] });
 		}
 		return api.get('/meals/categories')
-			.then(data => ({ data: Array.isArray(data) ? data : [] }));
+			.then(data => {
+				if (!Array.isArray(data) || data.some(row => !row || typeof row.category !== 'string' || (row.subcategory != null && typeof row.subcategory !== 'string'))) throw new Error('菜品分类数据不完整');
+				return { data };
+			});
 	},
 	
 	// 获取菜品详情

@@ -26,6 +26,7 @@ async function main () {
     let selected = [meals[18]]
     let version = '2026-10-29T08:00:00.000Z'
     let failCategories = true
+    let malformedTags = true
     let legacy = false
     let malformedSchedule = false
     let saveMode = 'uncertain'
@@ -45,7 +46,7 @@ async function main () {
       if (method === 'GET' && pathname === '/meals/categories') {
         if (failCategories) return route.fulfill({ status: 503, json: { error: '分类暂不可用' } })
         data = [{ category: '肉类' }, { category: '蔬菜' }]
-      } else if (method === 'GET' && pathname === '/meals/tags') data = ['清淡']
+      } else if (method === 'GET' && pathname === '/meals/tags') data = malformedTags ? { tags: ['清淡'] } : ['清淡']
       else if (method === 'GET' && pathname === '/meals') {
         reads.push(url.searchParams.toString())
         if (legacy) data = meals
@@ -132,8 +133,15 @@ async function main () {
     await page.getByRole('button', { name: '移除测试菜20' }).waitFor()
     await page.getByText('分类或标签可能不完整').waitFor()
     failCategories = false
+    const malformedTagResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/meals/tags')
     await page.getByRole('button', { name: '重试', exact: true }).click()
+    await malformedTagResponse
+    await page.getByText('分类或标签可能不完整').waitFor()
+    malformedTags = false
+    await page.getByRole('button', { name: '重试', exact: true }).focus()
+    await page.keyboard.press('Enter')
     await page.getByText('分类或标签可能不完整').waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '搜索可选菜品')
     await page.waitForFunction(() => document.querySelectorAll('.meals-grid .meal-card-wrapper').length === 8)
     assert.equal(await page.locator('.meals-grid .meal-card-wrapper').count(), 8)
     const filterToggle = page.getByRole('button', { name: '筛选', exact: true })
