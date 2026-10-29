@@ -1,10 +1,15 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import WeeklyPlanMealPicker from '@/components/WeeklyPlanMealPicker.vue';
+import { validWeekLink } from '@/utils/weekLink.mjs';
 
+const route = useRoute();
+const router = useRouter();
+const weekLinkNotice = ref('');
 const loading = ref(false);
 const applying = ref(false);
 const weekStart = ref('');
@@ -215,16 +220,17 @@ const applyDraft = async () => {
   }
   finally { applying.value = false; }
 };
-const changeWeek = async () => {
-  if (!weekChoice.value || changingWeek.value) return;
-  if (monday(weekChoice.value) === monday(weekStart.value)) { weekStart.value = weekChoice.value; return; }
+const syncWeekUrl = () => { const week = monday(weekStart.value); if (route.name === 'weeklyPlan' && route.query.week !== week) void router.replace({ name: 'weeklyPlan', query: { week } }); };
+const changeWeek = async (updateUrl = true) => {
+  if (!weekChoice.value || changingWeek.value) return false;
+  if (monday(weekChoice.value) === monday(weekStart.value)) { weekStart.value = weekChoice.value; weekLinkNotice.value = ''; if (updateUrl) syncWeekUrl(); return true; }
   changingWeek.value = true;
   try {
     if (draft.value || applyIssue.value) {
       try { await ElMessageBox.confirm('切换周会放弃当前草稿及未确认提示，请先核对。', '切换周计划？', { type: 'warning', confirmButtonText: '切换并放弃', cancelButtonText: '继续编辑' }); }
-      catch (_) { weekChoice.value = weekStart.value; return; }
+      catch (_) { weekChoice.value = weekStart.value; return false; }
     }
-    draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; await load();
+    draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; weekLinkNotice.value = ''; await load(); if (updateUrl) syncWeekUrl(); return true;
   } finally { changingWeek.value = false; }
 };
 const moveWeek = offset => {
@@ -234,7 +240,26 @@ const moveWeek = offset => {
   changeWeek();
 };
 const returnToCurrentWeek = () => { if (!loading.value && !busy.value) { weekChoice.value = monday(); changeWeek(); } };
-onMounted(() => { weekStart.value = monday(); weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
+onBeforeRouteUpdate(async to => {
+  if (to.name !== 'weeklyPlan' || to.query.week === route.query.week) return true;
+  if (to.query.week !== undefined && !validWeekLink(to.query.week)) { ElMessage.warning('周计划链接中的日期无效'); return false; }
+  const next = to.query.week === undefined ? monday() : monday(to.query.week);
+  if (next === monday(weekStart.value)) return true;
+  if (loading.value || busy.value || slotEditor.value) { ElMessage.warning('请先完成当前操作'); return false; }
+  if (draft.value || applyIssue.value) {
+    changingWeek.value = true;
+    try { await ElMessageBox.confirm('切换周会放弃当前草稿及未确认提示，请先核对。', '切换周计划？', { type: 'warning', confirmButtonText: '切换并放弃', cancelButtonText: '继续编辑' }); }
+    catch (_) { return false; } finally { changingWeek.value = false; }
+  }
+  return true;
+});
+watch(() => route.query.week, value => {
+  if (route.name !== 'weeklyPlan' || (value !== undefined && !validWeekLink(value))) return;
+  const next = value === undefined ? monday() : monday(value);
+  if (next === monday(weekStart.value)) { weekLinkNotice.value = ''; return; }
+  draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
+}, { flush: 'sync' });
+onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '周计划链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
 onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
@@ -244,6 +269,9 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
       <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>一周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
       <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
+
+    <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
+    <router-link v-if="weekStart" class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link>
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
@@ -265,6 +293,7 @@ h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-fam
 .week-summary { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 13px; } .week-summary span { border: 1px solid var(--border-light); border-radius: 999px; padding: 5px 10px; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
+.week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 12px; }
 .day-card { background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 10px; } .day-card h3 { font-size: 15px; letter-spacing: .02em; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; } .day-card h3 small { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
 .slot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

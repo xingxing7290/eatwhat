@@ -47,7 +47,7 @@ async function main () {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.weekly-page .eyebrow', '.weekly-page h1', '.draft-heading strong', '.draft-heading span', '.impact-summary > div span', '.impact-summary > div strong', '.impact-summary p', '.change-note', '.day-card h3', '.draft-slot .el-tag', '.edit-slot']) {
+          for (const selector of ['.weekly-page .eyebrow', '.weekly-page h1', '.week-link', '.draft-heading strong', '.draft-heading span', '.impact-summary > div span', '.impact-summary > div strong', '.impact-summary p', '.change-note', '.day-card h3', '.draft-slot .el-tag', '.edit-slot']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`)
           }
