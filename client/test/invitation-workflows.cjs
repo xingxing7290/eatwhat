@@ -70,7 +70,10 @@ async function main () {
     }
     profileFault = ''
     await page.getByRole('button', { name: '重新加载', exact: true }).click()
-    await page.getByText('甲家庭', { exact: true }).waitFor()
+    await page.locator('#app-main').getByText('甲家庭', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '打开导航菜单' }).click()
+    await page.locator('.mobile-user-text').getByText('小家：甲家庭').waitFor()
+    await page.getByRole('button', { name: '关闭导航菜单' }).last().click()
     profileFault = 'save-foreign'
     await page.getByPlaceholder('请输入昵称').fill('未确认的昵称')
     await page.getByRole('button', { name: '保存', exact: true }).click()
@@ -179,9 +182,11 @@ async function main () {
     await page.getByRole('button', { name: '继续编辑' }).click()
     assert.equal(await page.getByRole('button', { name: '加入', exact: true }).isDisabled(), true)
     await page.getByRole('button', { name: '重新核对家庭' }).click()
-    await page.getByText('乙家庭', { exact: true }).waitFor()
+    await page.locator('#app-main').getByText('乙家庭', { exact: true }).waitFor()
     assert.equal(await page.getByText('家庭切换结果未确认').count(), 0)
     assert.equal(JSON.parse(await page.evaluate(() => localStorage.getItem('user'))).householdId, 'home-b')
+    await page.getByRole('button', { name: '打开导航菜单' }).click()
+    await page.locator('.mobile-user-text').getByText('小家：乙家庭').waitFor()
     assert.deepEqual(errors, [])
     console.log('Invitation workflows passed: rotated links, uncertain responses, session joining and mobile')
   } finally { await browser.close() }

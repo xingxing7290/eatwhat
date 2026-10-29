@@ -7,8 +7,9 @@ if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Navigati
 async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   try {
-    const page = await browser.newPage({ viewport: { width: 1280, height: 844 } })
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'home-a', displayName: '很长的家庭成员名字用于验证显示' })) })
+    const context = await browser.newContext({ viewport: { width: 1280, height: 844 } })
+    const page = await context.newPage()
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'home-a', household: { id: 'home-a', name: '星星的小家' }, displayName: '很长的家庭成员名字用于验证显示' })) })
     await page.route('**/api/**', route => {
       const path = new URL(route.request().url()).pathname
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'home-a' } })
@@ -23,6 +24,18 @@ async function main () {
     await page.goto(`${base}/guest-orders`)
     const more = page.getByRole('button', { name: '更多功能' })
     await more.waitFor()
+    await page.locator('.user-household').getByText('星星的小家').waitFor()
+    assert.match(await page.locator('.user-menu-btn').getAttribute('aria-label'), /星星的小家/)
+    await page.evaluate(async () => { const { replaceSessionUser } = await import('/src/services/sessionScope.js'); replaceSessionUser({ id: 'u1', householdId: 'home-a', household: { id: 'other-home', name: '错误家庭' }, displayName: '测试用户' }) })
+    await page.locator('.user-household').getByText('小家信息待确认').waitFor()
+    assert.equal(await page.locator('.user-household').getByText('错误家庭').count(), 0)
+    await page.evaluate(async () => { const { replaceSessionUser } = await import('/src/services/sessionScope.js'); replaceSessionUser({ id: 'u1', householdId: 'home-a', household: { id: 'home-a', name: '星星的小家' }, displayName: '很长的家庭成员名字用于验证显示' }) })
+    await page.locator('.user-household').getByText('星星的小家').waitFor()
+    const otherTab = await page.context().newPage()
+    await otherTab.goto(`${base}/login`)
+    await otherTab.evaluate(() => localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'home-a', household: { id: 'home-a', name: '更新后的小家' }, displayName: '测试用户' })))
+    await page.locator('.user-household').getByText('更新后的小家').waitFor()
+    await otherTab.close()
     await page.waitForFunction(() => document.querySelector('.nav-more')?.getAttribute('aria-current') === 'location')
     assert.equal(await more.getAttribute('aria-current'), 'location')
     assert.equal(await more.getAttribute('aria-description'), '当前：宴请点菜')
@@ -36,6 +49,8 @@ async function main () {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
           const result = await contrast(page, '.nav-more')
           assert.ok(result.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme}: ${result.ratio}`)
+          const householdContrast = await contrast(page, '.user-household')
+          assert.ok(householdContrast.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} household: ${householdContrast.ratio}`)
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
           const bounds = await page.evaluate(() => { const a = document.querySelector('.nav-more').getBoundingClientRect(); const b = document.querySelector('.header-right').getBoundingClientRect(); return { right: a.right, left: b.left } })
           assert.ok(bounds.right <= bounds.left, `${width}: header sections overlap ${JSON.stringify(bounds)}`)
@@ -70,6 +85,7 @@ async function main () {
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: '打开导航菜单' }).click()
     assert.equal(await page.locator('.mobile-nav').getByRole('link', { name: '日历' }).getAttribute('aria-current'), 'location')
+    await page.locator('.mobile-user-text').getByText('小家：小家').waitFor()
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {

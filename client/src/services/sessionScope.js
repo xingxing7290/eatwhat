@@ -47,6 +47,7 @@ export function replaceSessionUser(user) {
   if (!sessionIsCurrent()) throw sessionUnavailableError();
   localStorage.setItem('user', JSON.stringify(user));
   boundUser = userScope(localStorage.getItem('user'));
+  window.dispatchEvent(new CustomEvent('eatwhat-session-user-updated'));
 }
 export function sessionChangedError(requestSent = false) {
   return { code: 'SESSION_CHANGED', requestSent, error: requestSent ? '账号或小家已变化，此前发送的请求可能已完成，请核对结果。' : '账号或小家已变化，本次请求未发送；请保留草稿并重新加载。' };
@@ -64,6 +65,6 @@ window.addEventListener('storage', event => {
     const before = userScope(event.oldValue); const after = userScope(event.newValue);
     if ((before.userId && after.userId && before.userId !== after.userId) ||
         (before.householdId && after.householdId && before.householdId !== after.householdId)) lockSession();
-    else sessionIsCurrent();
+    else if (sessionIsCurrent()) window.dispatchEvent(new CustomEvent('eatwhat-session-user-updated'));
   } else if (event.key === null) sessionIsCurrent();
 });

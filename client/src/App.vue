@@ -127,6 +127,13 @@ const scheduleStore = useScheduleStore();
 const isLoggedIn = computed(() => !!authToken.value);
 const currentUserName = computed(() => authUser.value?.displayName || authUser.value?.username || '我的账号');
 const currentUserInitial = computed(() => currentUserName.value.slice(0, 1).toUpperCase());
+const currentHouseholdName = computed(() => {
+  if (sessionChanged.value || scopeUnverified.value) return '小家待确认';
+  const household = authUser.value?.household;
+  const id = authUser.value?.householdId;
+  if (!household || typeof household.name !== 'string' || !household.name.trim() || !id || String(household.id || household._id || '') !== String(id)) return '小家信息待确认';
+  return household.name.trim();
+});
 
 const loadAuthState = () => {
   authToken.value = localStorage.getItem('token') || '';
@@ -190,6 +197,7 @@ onMounted(async () => {
   window.addEventListener('eatwhat-session-changed', markSessionChanged);
   window.addEventListener('eatwhat-session-expired', markSessionExpired);
   window.addEventListener('eatwhat-session-adopted', markSessionAdopted);
+  window.addEventListener('eatwhat-session-user-updated', loadAuthState);
   window.addEventListener('eatwhat-scope-unverified', markScopeUnverified);
   window.addEventListener('eatwhat-scope-verified', markScopeVerified);
   sessionChanged.value = sessionIsLocked();
@@ -243,6 +251,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('eatwhat-session-changed', markSessionChanged);
   window.removeEventListener('eatwhat-session-expired', markSessionExpired);
   window.removeEventListener('eatwhat-session-adopted', markSessionAdopted);
+  window.removeEventListener('eatwhat-session-user-updated', loadAuthState);
   window.removeEventListener('eatwhat-scope-unverified', markScopeUnverified);
   window.removeEventListener('eatwhat-scope-verified', markScopeVerified);
 });
@@ -325,9 +334,9 @@ onBeforeUnmount(() => {
               class="user-dropdown"
               @command="handleUserCommand"
             >
-              <el-button class="user-menu-btn" :disabled="loggingOut">
+              <el-button class="user-menu-btn" :disabled="loggingOut" :aria-label="`${currentUserName}，小家：${currentHouseholdName}，账号菜单`">
                 <span class="user-avatar">{{ currentUserInitial }}</span>
-                <span class="user-name">{{ currentUserName }}</span>
+                <span class="user-meta"><span class="user-name">{{ currentUserName }}</span><span class="user-household" :title="`小家：${currentHouseholdName}（本地资料，可能需要刷新）`">小家：{{ currentHouseholdName }}</span></span>
                 <el-icon><ArrowDown /></el-icon>
               </el-button>
               <template #dropdown>
@@ -447,7 +456,7 @@ onBeforeUnmount(() => {
               <span class="mobile-user-avatar">{{ currentUserInitial }}</span>
               <div class="mobile-user-text">
                 <strong>{{ currentUserName }}</strong>
-                <span>当前账号</span>
+                <span>小家：{{ currentHouseholdName }}</span>
               </div>
             </div>
             <el-button type="danger" class="mobile-logout-btn" :loading="loggingOut" @click="handleLogout">
@@ -491,6 +500,8 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss">
+.user-meta { display: flex; flex-direction: column; align-items: flex-start; min-width: 0; line-height: 1.15; }
+.user-household { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); font-size: 10px; }
 .session-warning { position: relative; z-index: 2001; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 20px; padding: 12px 20px; background: #fff4d6; color: #33220d; border-bottom: 1px solid #aa773c; }
 .session-warning div { display: flex; flex-wrap: wrap; gap: 4px 12px; line-height: 1.5; }
 .session-warning button { min-height: 44px; padding: 8px 14px; border: 1px solid #523510; border-radius: 9px; color: #fff; background: #523510; cursor: pointer; font-weight: 700; }

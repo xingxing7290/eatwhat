@@ -234,7 +234,7 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, a
   const { nextUser, nextHousehold } = validateProfile(res, { allowHouseholdChange });
   const previousHousehold = household.value;
   const nameDraftDirty = householdName.value !== (previousHousehold.name || '');
-  replaceSessionUser(nextUser);
+  replaceSessionUser({ ...nextUser, household: nextHousehold });
   user.value = nextUser;
   failedAvatars.value = new Set();
   const sameHousehold = !!previousHousehold.id && String(previousHousehold.id) === String(nextHousehold?.id || '');
