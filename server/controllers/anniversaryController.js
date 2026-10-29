@@ -37,9 +37,9 @@ function normalizePhotos(value) {
 function allMealIds(meals) {
   return ['breakfast', 'lunch', 'dinner'].flatMap(key => meals[key] || []);
 }
-function populateQuery(q, householdId) {
-  for (const type of ['breakfast', 'lunch', 'dinner']) q = q.populate({ path: `meals.${type}`, match: { householdId } });
-  return q.populate('createdBy', 'username displayName avatarUrl');
+function populateQuery(q, householdId, preserveMissing = false) {
+  for (const type of ['breakfast', 'lunch', 'dinner']) q = q.populate({ path: `meals.${type}`, match: { householdId }, retainNullValues: preserveMissing });
+  return q.populate({ path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' });
 }
 async function assertMealsInHousehold(meals, householdId) {
   const ids = [...new Set(allMealIds(meals).map(String))];
@@ -49,8 +49,8 @@ async function assertMealsInHousehold(meals, householdId) {
   return count === ids.length;
 }
 function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
-function present(item) {
-  return { ...item.toObject(), supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
+function present(item, preserveMissing = false) {
+  return { ...item.toObject(), supportsConditionalEdit: true, supportsConditionalDelete: true, ...(preserveMissing ? { supportsUnavailableMealVisibility: true } : {}), editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
 }
 function parseEditVersion(value) {
   const version = parseJson(value, null);
@@ -73,8 +73,9 @@ async function discardNewUploads(req) {
 exports.list = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
-    const items = await populateQuery(AnniversaryMenu.find({ householdId: household._id }).sort({ date: 1, createdAt: -1 }), household._id);
-    res.json(items.map(present));
+    const preserveMissing = req.query.view === 'editor';
+    const items = await populateQuery(AnniversaryMenu.find({ householdId: household._id }).sort({ date: 1, createdAt: -1 }), household._id, preserveMissing);
+    res.json(items.map(item => present(item, preserveMissing)));
   } catch (err) { next(err); }
 };
 

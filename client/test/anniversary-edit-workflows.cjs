@@ -13,7 +13,7 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const errors = []; const writes = []; let mode = 'conflict'; let compatible = true
-    let menu = { _id: 'ann-a', title: '纪念晚餐', date: '2026-10-28', theme: '初始主题', description: '原备注', meals: { breakfast: [], lunch: [], dinner: [{ _id: 'meal-a', name: '原有菜品' }] }, photos: [image, `${image}#2`], supportsConditionalEdit: true, editVersion: version('v1') }
+    let menu = { _id: 'ann-a', title: '纪念晚餐', date: '2026-10-28', theme: '初始主题', description: '原备注', meals: { breakfast: [], lunch: [], dinner: [{ _id: 'meal-a', name: '原有菜品' }] }, photos: [image, `${image}#2`], supportsConditionalEdit: true, supportsUnavailableMealVisibility: true, editVersion: version('v1') }
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })

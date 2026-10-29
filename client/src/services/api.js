@@ -512,7 +512,7 @@ export const wishlistApi = {
 
 // 纪念日菜单API
 export const anniversaryApi = {
-	list: () => api.get('/anniversaries'),
+	list: (params = {}) => api.get('/anniversaries', { params }),
 	create: (payload) => api.post('/anniversaries', payload),
 	update: (id, payload) => api.put(`/anniversaries/${id}`, payload),
 	delete: (id, expectedEditVersion) => api.delete(`/anniversaries/${id}`, { params: expectedEditVersion === undefined ? {} : { expectedEditVersion: JSON.stringify(expectedEditVersion) } })

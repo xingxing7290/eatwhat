@@ -33,16 +33,21 @@ const editing = ref(null);
 const editIssue = ref('');
 const editReviewed = ref(false);
 const checkingEdit = ref(false);
+const confirmingSlot = ref('');
 const latestEdit = ref(null);
 const viewedPhoto = ref(null);
 const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
+const unavailableMeals = reactive({ breakfast: 0, lunch: 0, dinner: 0 });
+const clearedSlots = reactive({ breakfast: false, lunch: false, dinner: false });
+const originalSlotMeals = ref({ breakfast: [], lunch: [], dinner: [] });
+const mealVisibilityVerified = ref(false);
 const initialForm = ref(JSON.stringify(form));
-const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
+const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0 || Object.values(clearedSlots).some(Boolean));
 const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '纪念日菜单' });
 const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
-const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || !!deletingId.value);
+const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || !!deletingId.value || !!confirmingSlot.value);
 const uncertain = computed(() => saveUncertain.value || !!editIssue.value);
 useDraftGuard({ dirty, busy, uncertain, label: '纪念日菜单' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
@@ -141,6 +146,9 @@ const reset = () => {
   Object.assign(form, { title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
   photoFiles.value = [];
   selectedMeals.value = [];
+  Object.assign(unavailableMeals, { breakfast: 0, lunch: 0, dinner: 0 });
+  Object.assign(clearedSlots, { breakfast: false, lunch: false, dinner: false });
+  originalSlotMeals.value = { breakfast: [], lunch: [], dinner: [] }; mealVisibilityVerified.value = false;
   editing.value = null;
   editIssue.value = '';
   editReviewed.value = false;
@@ -148,13 +156,36 @@ const reset = () => {
   initialForm.value = JSON.stringify(form);
 };
 const fillEdit = item => {
-  if (!(item?._id || item?.id) || !validVersion(item) || typeof item.title !== 'string' || typeof item.date !== 'string' || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || Object.keys(mealTypeText).some(key => !Array.isArray(item.meals?.[key]) || item.meals[key].some(meal => !mealId(meal) || typeof meal.name !== 'string'))) throw new Error('菜单数据或版本不完整，请刷新后重试');
-  Object.assign(form, { title: item.title, date: item.date, theme: item.theme || '', description: item.description || '', meals: Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].map(mealId)])), existingPhotos: [...item.photos] });
-  selectedMeals.value = Object.values(item.meals).flat().filter(meal => mealId(meal));
+  if (!(item?._id || item?.id) || !validVersion(item) || typeof item.title !== 'string' || typeof item.date !== 'string' || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || Object.keys(mealTypeText).some(key => !Array.isArray(item.meals?.[key]) || item.meals[key].some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string')))) throw new Error('菜单数据或版本不完整，请刷新后重试');
+  originalSlotMeals.value = Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].filter(Boolean)]));
+  Object.assign(unavailableMeals, Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].filter(meal => meal === null).length])));
+  Object.assign(clearedSlots, { breakfast: false, lunch: false, dinner: false });
+  mealVisibilityVerified.value = item.supportsUnavailableMealVisibility === true;
+  Object.assign(form, { title: item.title, date: item.date, theme: item.theme || '', description: item.description || '', meals: Object.fromEntries(Object.keys(mealTypeText).map(key => [key, originalSlotMeals.value[key].map(mealId)])), existingPhotos: [...item.photos] });
+  selectedMeals.value = Object.values(originalSlotMeals.value).flat();
   photoFiles.value = [];
   editing.value = { id: String(item._id || item.id), version: { ...item.editVersion } };
   editIssue.value = ''; editReviewed.value = false; latestEdit.value = null;
   initialForm.value = JSON.stringify(form);
+};
+const clearUnavailable = async key => {
+  if (!editing.value || !mealVisibilityVerified.value || !unavailableMeals[key] || clearedSlots[key] || busy.value) return;
+  confirmingSlot.value = key;
+  try { await ElMessageBox.confirm(`保存后会从${mealTypeText[key]}中移除 ${unavailableMeals[key]} 条不可用菜品引用，其他餐次不受影响；不会删除菜谱。`, '清除不可用菜品？', { type: 'warning', confirmButtonText: '确认清除并编辑', cancelButtonText: '保留原记录' }); }
+  catch (_) { return; } finally { confirmingSlot.value = ''; }
+  clearedSlots[key] = true;
+};
+const undoClearUnavailable = async key => {
+  if (!clearedSlots[key] || busy.value) return;
+  const original = JSON.parse(initialForm.value).meals[key];
+  if (JSON.stringify(form.meals[key]) !== JSON.stringify(original)) {
+    confirmingSlot.value = key;
+    try { await ElMessageBox.confirm(`撤销清除会放弃当前${mealTypeText[key]}的菜品调整。`, '撤销清除？', { type: 'warning', confirmButtonText: '放弃调整并撤销', cancelButtonText: '继续编辑' }); } catch (_) { return; } finally { confirmingSlot.value = ''; }
+  }
+  form.meals[key] = [...original];
+  selectedMeals.value = [...selectedMeals.value, ...originalSlotMeals.value[key]];
+  rememberMeals();
+  clearedSlots[key] = false;
 };
 const confirmReplaceDraft = async () => {
   if (!dirty.value) return true;
@@ -203,7 +234,7 @@ const load = async () => {
   loading.value = true;
   loadError.value = '';
   try {
-    const menuData = await api.anniversary.list();
+    const menuData = await api.anniversary.list({ view: 'editor' });
     if (!alive || sequence !== menuSequence) return;
     if (!Array.isArray(menuData)) throw new Error('菜单列表不完整');
     menus.value = menuData;
@@ -213,7 +244,11 @@ const load = async () => {
 };
 const save = async () => {
   if (!form.title.trim() || !form.date) return ElMessage.warning('请填写标题和日期');
-  if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value) return;
+  if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value || confirmingSlot.value) return;
+  if (editing.value) {
+    const original = JSON.parse(initialForm.value);
+    if (Object.keys(mealTypeText).some(key => (!mealVisibilityVerified.value || (unavailableMeals[key] && !clearedSlots[key])) && (clearedSlots[key] || JSON.stringify(form.meals[key]) !== JSON.stringify(original.meals[key])))) return ElMessage.warning('请先核对菜品完整性，再修改对应餐次');
+  }
   const invalid = photoFiles.value.map(photoError).find(Boolean);
   if (invalid) return ElMessage.warning(invalid);
   if (photoFiles.value.length && form.existingPhotos.length + photoFiles.value.length > 12) return ElMessage.warning('菜单照片总数最多 12 张，请先移除多余照片');
@@ -226,7 +261,7 @@ const save = async () => {
     fd.append('description', form.description);
     if (editing.value) {
       const original = JSON.parse(initialForm.value);
-      const changedMeals = Object.fromEntries(Object.keys(mealTypeText).filter(key => JSON.stringify(form.meals[key]) !== JSON.stringify(original.meals[key])).map(key => [key, form.meals[key]]));
+      const changedMeals = Object.fromEntries(Object.keys(mealTypeText).filter(key => clearedSlots[key] || JSON.stringify(form.meals[key]) !== JSON.stringify(original.meals[key])).map(key => [key, form.meals[key]]));
       if (Object.keys(changedMeals).length) fd.append('meals', JSON.stringify(changedMeals));
       if (JSON.stringify(form.existingPhotos) !== JSON.stringify(original.existingPhotos)) fd.append('existingPhotos', JSON.stringify(form.existingPhotos));
       fd.append('expectedEditVersion', JSON.stringify(editing.value.version));
@@ -275,28 +310,30 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
       <el-card v-for="item in menus" :key="item._id" class="menu-card">
         <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
         <p class="desc">{{ item.description || '没有备注，也可以是一份默契。' }}</p>
+        <p v-if="item.supportsUnavailableMealVisibility && Object.keys(mealTypeText).some(key => item.meals?.[key]?.some(meal => meal === null))" class="unavailable-note">部分菜品不可用，原有引用仍保留在菜单中。</p>
         <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="photo-button" :aria-label="`查看${item.title || '纪念日'}的第 ${index + 1} 张照片`" @click="openPhoto(item, index)"><img :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
         <div class="meal-blocks">
           <div v-for="(label, key) in mealTypeText" :key="key" class="meal-block">
             <strong>{{ label }}</strong>
-            <el-tag v-for="meal in item.meals?.[key] || []" :key="meal._id" effect="plain">{{ meal.name }}</el-tag>
+            <el-tag v-for="(meal, index) in item.meals?.[key] || []" :key="meal?._id || `unavailable-${index}`" effect="plain">{{ meal?.name || '菜品不可用' }}</el-tag>
             <span v-if="!item.meals?.[key]?.length" class="empty">未安排</span>
           </div>
         </div>
       </el-card>
     </div>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑纪念日菜单' : '新增纪念日菜单'" width="min(620px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑纪念日菜单' : '新增纪念日菜单'" width="min(620px, 92vw)" :close-on-click-modal="!saving && !confirmingSlot" :close-on-press-escape="!saving && !confirmingSlot" :show-close="!saving && !confirmingSlot">
       <CreateRecoveryNotice v-if="saveUncertain" label="纪念日菜单" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
       <el-alert v-if="editIssue" type="warning" :closable="false" show-icon :title="editIssue === 'conflict' ? '菜单已被修改或删除，本次未保存。' : '编辑结果未确认，请先核对最新菜单。'">
         <p>你的草稿和所选照片仍在本页。核对后可载入最新内容；载入会放弃当前草稿。</p>
         <el-button link type="primary" :loading="checkingEdit" @click="checkLatest">刷新最新菜单并核对</el-button>
         <div v-if="editReviewed" class="latest-summary">
-          <template v-if="latestEdit"><strong>{{ latestEdit.title }} · {{ latestEdit.date }}</strong><p>{{ latestEdit.theme || '无主题' }} · {{ latestEdit.photos?.length || 0 }} 张照片</p><p>{{ latestEdit.description || '无备注' }}</p><p v-for="(label, key) in mealTypeText" :key="key">{{ label }}：{{ (latestEdit.meals?.[key] || []).map(meal => meal.name).join('、') || '未安排' }}</p><el-button link type="primary" :disabled="!validVersion(latestEdit)" @click="reloadLatest">放弃草稿并载入最新</el-button><el-button v-if="editIssue === 'unknown' && validVersion(latestEdit) && sameVersion(editing?.version, latestEdit.editVersion)" link type="primary" @click="retryEdit">已核对，允许重试</el-button></template>
+          <template v-if="latestEdit"><strong>{{ latestEdit.title }} · {{ latestEdit.date }}</strong><p>{{ latestEdit.theme || '无主题' }} · {{ latestEdit.photos?.length || 0 }} 张照片</p><p>{{ latestEdit.description || '无备注' }}</p><p v-for="(label, key) in mealTypeText" :key="key">{{ label }}：{{ (latestEdit.meals?.[key] || []).map(meal => meal?.name || '菜品不可用').join('、') || '未安排' }}</p><el-button link type="primary" :disabled="!validVersion(latestEdit)" @click="reloadLatest">放弃草稿并载入最新</el-button><el-button v-if="editIssue === 'unknown' && validVersion(latestEdit) && sameVersion(editing?.version, latestEdit.editVersion)" link type="primary" @click="retryEdit">已核对，允许重试</el-button></template>
           <p v-else>最新列表中已没有这份菜单，可能已被删除。</p>
           <el-button link type="danger" @click="discardEditDraft">放弃编辑草稿</el-button>
         </div>
       </el-alert>
+      <el-alert v-if="editing && !mealVisibilityVerified" class="meal-integrity-alert" type="warning" :closable="false" show-icon title="当前服务器未提供菜品完整性核验，暂不能修改餐次；标题、日期和照片仍可编辑。" />
       <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="菜单模板"><div class="template-list"><el-button v-for="tpl in templates" :key="tpl.key" size="small" @click="applyTemplate(tpl)">{{ tpl.title }}</el-button><span v-if="templateLoading" class="photo-hint">正在加载模板…</span><span v-else-if="!templateError && !templates.length" class="photo-hint">暂无模板，可以直接填写菜单。</span><el-alert v-if="templateError" type="warning" :closable="false" :title="`模板暂不可用：${templateError}`"><el-button link type="primary" @click="loadTemplates">重试</el-button></el-alert></div></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" maxlength="100" show-word-limit placeholder="比如：三周年晚餐" /></el-form-item>
@@ -304,12 +341,13 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
         <el-form-item label="主题"><el-input v-model="form.theme" placeholder="家常、烛光、火锅、露营..." /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.description" type="textarea" rows="3" /></el-form-item>
         <el-form-item v-for="(label, key) in mealTypeText" :key="key" :label="label">
-          <el-select v-model="form.meals[key]" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" :aria-label="`搜索${label}菜品`" placeholder="搜索菜名或食材" style="width: 100%;" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select>
+          <div v-if="editing && unavailableMeals[key]" class="unavailable-slot" role="status"><span v-if="!clearedSlots[key]">{{ label }}有 {{ unavailableMeals[key] }} 条菜品不可用；原引用将保留。</span><span v-else>保存后将清除此餐次的不可用引用。</span><el-button v-if="mealVisibilityVerified && !clearedSlots[key]" link type="primary" :disabled="busy" @click="clearUnavailable(key)">清除并编辑{{ label }}</el-button><el-button v-else-if="clearedSlots[key]" link :disabled="busy" @click="undoClearUnavailable(key)">撤销清除{{ label }}</el-button></div>
+          <el-select v-model="form.meals[key]" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" :disabled="!!editing && (!mealVisibilityVerified || (!!unavailableMeals[key] && !clearedSlots[key]))" :aria-label="`搜索${label}菜品`" placeholder="搜索菜名或食材" style="width: 100%;" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select>
           <small v-if="!mealError && mealTotal > 50" class="photo-hint">仅显示前 50 道，请输入菜名或食材缩小范围。</small><el-alert v-if="mealError" type="warning" :closable="false" :title="`菜品暂时无法加载：${mealError}`"><el-button link type="primary" @click="searchMealCatalog">重试</el-button></el-alert>
         </el-form-item>
         <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="form.existingPhotos.splice(index, 1)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint">照片总数最多 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。移除后需保存才生效。</small></el-form-item>
       </el-form>
-      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || !!confirmingSlot" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || !!confirmingSlot" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
     <el-dialog :model-value="!!viewedPhoto" title="纪念日照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img :key="`${viewedPhoto.index}-${viewedPhoto.photos[viewedPhoto.index]}`" class="photo-preview" :src="imageFor(viewedPhoto.photos[viewedPhoto.index])" :alt="viewedPhoto.title" @error="imageError" /><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张纪念日照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.photos.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.photos.length - 1" aria-label="下一张纪念日照片" @click="movePhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
@@ -340,6 +378,12 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .photo-nav .el-button { margin: 0; min-height: 44px; }
 .meal-blocks { display: flex; flex-direction: column; gap: 10px; }
 .meal-block { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px; background: var(--bg-secondary); border-radius: 8px; }
+.unavailable-note { color: var(--text-primary); font-size: 13px; line-height: 1.5; }
+.unavailable-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; }
+.unavailable-slot :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.meal-integrity-alert { --notice-ink: #623a10; margin-bottom: 14px; background: #fff1db; color: var(--notice-ink); }
+.meal-integrity-alert :deep(.el-alert__title), .meal-integrity-alert :deep(.el-alert__icon) { color: var(--notice-ink); }
+:global(html.dark) .meal-integrity-alert { --notice-ink: #ffe4bd; background: #543b29; }
 .template-list { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 640px) { .page-header { flex-direction: column; align-items: stretch; } }
 </style>
