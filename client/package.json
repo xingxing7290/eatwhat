@@ -49,6 +49,7 @@
     "test:session-expiry": "node test/session-expiry-workflows.cjs",
     "test:household-name": "node test/household-name-workflows.cjs",
     "test:settings-governance": "node test/settings-governance-workflows.cjs",
+    "test:settings-avatar": "node test/settings-avatar-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-filter": "node test/anniversary-filter-workflows.cjs",
     "test:anniversary-board": "node test/anniversary-board-workflows.cjs",

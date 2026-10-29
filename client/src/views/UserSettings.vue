@@ -11,7 +11,7 @@
       <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="头像">
           <div class="avatar-row">
-            <div class="avatar-preview"><img v-if="avatarPreview || user.avatarUrl" :src="avatarPreview || resolveUploadedImage(user.avatarUrl)" alt="头像预览" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
+            <div class="avatar-preview"><img v-if="profileAvatar && !failedAvatars.has(profileAvatarKey)" :key="profileAvatarKey" :src="profileAvatar" alt="头像预览" @error="onAvatarError($event, profileAvatarKey)" /><div v-else class="avatar-placeholder" :aria-label="avatarFile ? '头像预览不可用' : '头像不可用'">{{ initial }}</div></div>
             <div class="avatar-actions">
               <input ref="fileInputRef" type="file" accept="image/*" class="file-input" @change="onFileChange" />
               <el-button :disabled="saving || avatarUploading" @click="chooseFile">选择图片</el-button>
@@ -122,7 +122,7 @@
           <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
         </el-form-item>
         <el-form-item label="成员">
-          <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="member.avatarUrl" :src="resolveUploadedImage(member.avatarUrl)" :alt="`${member.displayName || member.username || '成员'}的头像`" /><span v-else>{{ memberInitial(member) }}</span></div><span>{{ member.displayName || member.username }}</span></div></div>
+          <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="avatarSource(member) && !failedAvatars.has(memberAvatarKey(member))" :key="memberAvatarKey(member)" :src="avatarSource(member)" :alt="`${member.displayName || member.username || '成员'}的头像`" @error="onAvatarError($event, memberAvatarKey(member))" /><span v-else aria-label="头像不可用">{{ memberInitial(member) }}</span></div><span class="member-name">{{ member.displayName || member.username || '家庭成员' }}</span></div></div>
         </el-form-item>
         <el-form-item><el-button type="primary" :disabled="!nameVersionAvailable || !!nameIssue" :loading="householdSaving" @click="saveHousehold">保存小家</el-button></el-form-item>
       </el-form>
@@ -136,7 +136,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
-import { resolveUploadedImage, resolveRecipeImage, retryLocalUpload } from '@/utils/uploadedImage.mjs';
+import { resolveRecipeImage, retryLocalUpload } from '@/utils/uploadedImage.mjs';
 import { currentSessionScope, replaceSessionUser, sessionIsCurrent } from '@/services/sessionScope';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
@@ -193,9 +193,18 @@ const profileReady = ref(false);
 const profileError = ref('');
 const profileUncertain = ref(false);
 const avatarPreview = ref('');
+const failedAvatars = ref(new Set());
 const fileInputRef = ref(null);
 const initial = computed(() => memberInitial(user.value));
-const memberInitial = (member) => ((member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase());
+const memberInitial = member => String(member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase() || '家';
+const avatarSource = member => resolveRecipeImage(member?.avatarUrl, '');
+const profileAvatar = computed(() => avatarPreview.value || avatarSource(user.value));
+const profileAvatarKey = computed(() => `profile:${profileAvatar.value}`);
+const memberAvatarKey = member => `member:${member._id || member.id}:${avatarSource(member)}`;
+const onAvatarError = (event, key) => {
+  if (retryLocalUpload(event)) return;
+  failedAvatars.value = new Set([...failedAvatars.value, key]);
+};
 const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value || profileUncertain.value || defaultUncertain.value || issueUncertain.value));
 const validNameVersion = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && (value.revision === null || (typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128));
 const nameVersionAvailable = computed(() => household.value.supportsConditionalNameUpdate === true && validNameVersion(household.value.nameVersion));
@@ -226,6 +235,7 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, a
   const nameDraftDirty = householdName.value !== (previousHousehold.name || '');
   replaceSessionUser(nextUser);
   user.value = nextUser;
+  failedAvatars.value = new Set();
   const sameHousehold = !!previousHousehold.id && String(previousHousehold.id) === String(nextHousehold?.id || '');
   if (!syncHouseholdName && sameHousehold && nameDraftDirty) {
     // Keep the version that the unsaved name was based on, even if an
@@ -319,6 +329,7 @@ const reviewHouseholdName = async () => {
     if (!result?.user?.id || String(result.user.id) !== String(user.value.id) || !next?.id || String(next.id) !== String(household.value.id) || String(result.user.householdId || '') !== String(next.id) || typeof next.name !== 'string' || !next.name || next.supportsConditionalNameUpdate !== true || !validNameVersion(next.nameVersion) || typeof next.inviteCode !== 'string' || !Array.isArray(next.members)) throw new Error('最新小家信息不完整');
     validateProfile(result);
     household.value = next;
+    failedAvatars.value = new Set();
     latestName.value = next.name;
   } catch (e) { latestName.value = null; ElMessage.error(e?.error || e?.message || '核对失败，请重试'); }
   finally { nameChecking.value = false; }
@@ -470,9 +481,9 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .avatar-row { display: flex; align-items: center; gap: 16px; }
 .avatar-preview, .member-avatar { border-radius: 999px; overflow: hidden; background: rgba(216, 95, 101, 0.14); display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
 .avatar-preview { width: 56px; height: 56px; }
-.member-avatar { width: 36px; height: 36px; color: rgba(141, 90, 80, 0.95); font-weight: 700; }
+.member-avatar { width: 36px; height: 36px; color: var(--text-primary); font-weight: 700; }
 .avatar-preview img, .member-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.avatar-placeholder { font-weight: 700; color: rgba(141, 90, 80, 0.95); }
+.avatar-placeholder { font-weight: 700; color: var(--text-primary); }
 .avatar-actions, .invite-row, .member-list { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .invite-row .el-input { flex: 1; min-width: 220px; }
 .invite-row small { width: 100%; }
@@ -483,7 +494,8 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .name-alert :deep(.el-button:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .review-issues { max-height: 12rem; overflow: auto; padding-left: 1.25rem; }
 .member-list { gap: 12px; }
-.member-item { display: flex; align-items: center; gap: 8px; background: var(--bg-secondary); border-radius: 999px; padding: 6px 12px 6px 6px; }
+.member-item { display: flex; align-items: center; gap: 8px; max-width: 100%; background: var(--bg-secondary); border-radius: 18px; padding: 6px 12px 6px 6px; }
+.member-name { min-width: 0; overflow-wrap: anywhere; }
 .file-input { display: none; }
 .governance-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .governance-metric { min-width: 140px; background: var(--bg-secondary); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
