@@ -146,7 +146,7 @@ async function main () {
       writes.push({ path, body: request.postDataJSON() })
       if (blockWishSave) await new Promise(resolve => { releaseWishSave = resolve })
       if (failWishSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试想吃保存未确认' }) })
-      data = { _id: 'new-wish' }
+      data = { _id: 'new-wish', ...request.postDataJSON(), status: 'open' }
     }
     else if (method === 'POST' && path === '/wishlist/meal') {
       writes.push({ path, body: request.postDataJSON() })

@@ -253,7 +253,11 @@ const save = async () => {
       if (!Object.keys(changes).length) { dialogVisible.value = false; reset(); return; }
       result = await api.wishlist.updateDetails(editing.value.id, changes, editing.value.version);
       if (String(result?._id || result?.id || '') !== editing.value.id || !canEdit(result) || Object.entries(changes).some(([key, value]) => typeof result[key] !== 'string' || result[key] !== value.trim())) throw new Error('保存响应不完整或内容不一致');
-    } else result = await api.wishlist.create({ ...form, title: form.title.trim() });
+    } else {
+      const expected = Object.fromEntries(Object.entries(form).map(([key, value]) => [key, value.trim()]));
+      result = await api.wishlist.create(expected);
+      if (Object.entries(expected).some(([key, value]) => typeof result?.[key] !== 'string' || result[key] !== value) || result?.status !== 'open') throw new Error('创建响应不完整或内容不一致');
+    }
     if (!result?._id && !result?.id) throw new Error('保存响应不完整');
     const savedMessage = editing.value ? '想吃记录已更新' : '已加入想吃清单';
     ElMessage.success(`${savedMessage}${boardMode.value && (filterActive.value || boardPage.value > 1 || pendingView.value) ? '；如未显示，请调整筛选或页码' : ''}`);

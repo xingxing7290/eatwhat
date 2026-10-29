@@ -2123,6 +2123,9 @@ async function main() {
     const limitedDashboard = await request('/dashboard/summary', { token: tokenA });
     assert.equal(limitedDashboard.data.partnerWishlist.length, 6);
     assert.ok(limitedDashboard.data.partnerWishlist.every(item => item.title.startsWith('priority-burst-')), 'the six newest high-priority partner wishes must win over lower-priority items');
+    const createdReceipt = await request('/wishlist', { method: 'POST', token: tokenA, body: { title: '  新建回执测试  ', note: '  少辣  ', category: '  家常  ', priority: 'high' } });
+    assert.equal(createdReceipt.status, 201);
+    assert.deepEqual(Object.fromEntries(['title', 'note', 'category', 'priority', 'status'].map(key => [key, createdReceipt.data[key]])), { title: '新建回执测试', note: '少辣', category: '家常', priority: 'high', status: 'open' });
     console.log('Isolated MongoDB integration passed: invitation rotation, concurrent household switches, migration audits, household isolation, scheduling and shopping.');
     console.log(`Synthetic database directory retained for inspection: ${root}`);
   } finally {
