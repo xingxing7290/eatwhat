@@ -75,6 +75,7 @@ const hasActiveFilters = computed(() => {
 });
 const activeFilterContainer = ref(null);
 const filterToggleButton = ref(null);
+const searchInput = ref(null);
 const activeFilters = computed(() => [
   searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
   selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
@@ -510,7 +511,7 @@ const handleImageChange = (file) => {
 };
 
 // 清除筛选
-const clearFilters = () => {
+const clearFilters = async () => {
   searchQuery.value = '';
   selectedTag.value = '';
   selectedCategory.value = '';
@@ -519,6 +520,8 @@ const clearFilters = () => {
   favoriteOnly.value = false;
   showAdvancedFilters.value = false;
   currentPage.value = 1;
+  await nextTick();
+  searchInput.value?.focus();
 };
 
 // 分页变化
@@ -670,6 +673,7 @@ onBeforeUnmount(() => {
       <div class="filter-row">
         <div class="search-box">
           <el-input
+            ref="searchInput"
             v-model="searchQuery"
             placeholder="搜索菜名、描述、食材或做法..."
             aria-label="搜索菜品"

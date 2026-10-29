@@ -66,6 +66,16 @@ async function main () {
     assert.equal(await toggle.evaluate(node => document.activeElement === node), true, 'removing last chip restores focus to filter control')
     await page.waitForFunction(() => location.search === '')
     assert.equal(await page.getByRole('textbox', { name: '搜索菜品' }).inputValue(), '')
+    const search = page.getByRole('textbox', { name: '搜索菜品' })
+    await search.fill('没有匹配')
+    await page.getByRole('heading', { name: '没有找到匹配的菜品' }).waitFor()
+    await page.getByRole('button', { name: '清除筛选', exact: true }).click()
+    assert.equal(await search.inputValue(), '')
+    assert.equal(await search.evaluate(node => document.activeElement === node), true, 'clearing from empty results focuses search')
+    await search.fill('鸡蛋')
+    await page.getByRole('button', { name: '清除', exact: true }).click()
+    assert.equal(await search.inputValue(), '')
+    assert.equal(await search.evaluate(node => document.activeElement === node), true, 'clearing from toolbar focuses search')
     console.log('Catalog chips passed: visible filters, individual removal, URL, keyboard focus and themes')
   } finally { await browser.close() }
 }
