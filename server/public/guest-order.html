@@ -92,20 +92,23 @@
     .search span { font-size: 19px; }
     .search input { flex: 1; min-width: 0; border: 0; outline: 0; color: var(--cocoa); background: transparent; font-weight: 750; }
     .search:focus-within { border-color: var(--peach-dark); box-shadow: 0 0 0 3px rgba(214, 77, 53, .16); }
-    .filters { display: flex; gap: 8px; overflow-x: auto; padding: 10px 1px 3px; scrollbar-width: none; }
-    .filters::-webkit-scrollbar { display: none; }
+    .filters { display: flex; gap: 8px; overflow-x: auto; padding: 10px 1px 5px; scrollbar-width: thin; scrollbar-color: #b99382 transparent; }
+    .filters::-webkit-scrollbar { height: 5px; }
+    .filters::-webkit-scrollbar-thumb { background: #b99382; border-radius: 999px; }
+    .filter-scroll-hint { margin: 3px 2px 0; color: #70564b; font-size: 12px; line-height: 1.4; }
     .filter {
       flex: 0 0 auto;
       border: 1px solid var(--line);
       border-radius: 999px;
       padding: 8px 13px;
+      min-height: 44px;
       color: var(--muted);
       background: var(--paper);
       font-size: 13px;
       font-weight: 850;
       cursor: pointer;
     }
-    .filter.active { color: white; background: var(--peach); border-color: var(--peach); }
+    .filter.active { color: white; background: #ad3c29; border-color: #ad3c29; }
     .filter:focus-visible, .menu-pagination button:focus-visible, .menu-retry:focus-visible, #menuHeading:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
     .section-head { display: flex; align-items: end; justify-content: space-between; margin: 20px 2px 12px; }
     .section-head h2 { margin: 0; font-size: 21px; }
@@ -261,7 +264,8 @@
 
     <section class="toolbar">
       <div class="search"><span aria-hidden="true">⌕</span><input id="search" aria-label="搜索菜品" maxlength="100" autocomplete="off" placeholder="搜索菜名、分类或口味"></div>
-      <div class="filters" id="filters" role="group" aria-label="菜品分类"></div>
+      <div class="filters" id="filters" role="group" aria-label="菜品分类" aria-describedby="filterScrollHint"></div>
+      <p class="filter-scroll-hint" id="filterScrollHint" hidden>左右滑动或使用 Tab 查看更多分类</p>
     </section>
 
     <p class="menu-note">分类数字表示当前搜索条件下的菜品数量。</p>
@@ -407,8 +411,13 @@
         return `主人暂不接收新点单。${hasContent ? '可在下方点菜单中核对已有选择及提交状态。' : ''}`;
       }
 
+      function updateFilterOverflow() {
+        const filters = $('filters');
+        $('filterScrollHint').hidden = filters.scrollWidth <= filters.clientWidth + 1;
+      }
       function renderFilters() {
         const focused = $('filters').contains(document.activeElement) ? document.activeElement.dataset.category : null;
+        const previousScroll = $('filters').scrollLeft;
         $('filters').replaceChildren(...categories().map(category => {
           const button = document.createElement('button');
           button.type = 'button';
@@ -420,8 +429,17 @@
           button.addEventListener('click', () => { if (state.category === category.value) return; state.category = category.value; state.menuPage = 1; renderFilters(); if (state.menuSupported === false) renderMeals(); else queueMenu(0); });
           return button;
         }));
-        if (focused !== null) [...$('filters').children].find(button => button.dataset.category === focused)?.focus({ preventScroll: true });
+        $('filters').scrollLeft = previousScroll;
+        const target = [...$('filters').children].find(button => button.dataset.category === (focused !== null ? focused : state.category));
+        if (focused !== null) target?.focus({ preventScroll: true });
+        if (target) {
+          const box = $('filters').getBoundingClientRect(); const bounds = target.getBoundingClientRect();
+          if (bounds.left < box.left) $('filters').scrollLeft += bounds.left - box.left;
+          else if (bounds.right > box.right) $('filters').scrollLeft += bounds.right - box.right;
+        }
+        requestAnimationFrame(updateFilterOverflow);
       }
+      window.addEventListener('resize', updateFilterOverflow);
 
       function setQuantity(meal, next) {
         if (state.busy || state.pending) return;

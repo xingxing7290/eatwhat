@@ -40,6 +40,7 @@ async function main () {
     await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/local-test`)
     assert.ok(await page.locator('#toast').evaluate(node => parseFloat(getComputedStyle(node).transitionDuration)) < 0.001, 'guest page should respect reduced motion')
     const card = name => page.locator('.meal').filter({ hasText: name })
+    assert.equal(await page.getByText('左右滑动或使用 Tab 查看更多分类').isVisible(), false, 'short category lists do not need a scroll hint')
     const unloadBlocked = () => page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))
     assert.equal(await unloadBlocked(), false, 'an untouched page should not warn on exit')
     await card('测试面条').getByRole('button', { name: '＋ 想吃' }).click()

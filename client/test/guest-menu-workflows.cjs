@@ -3,6 +3,7 @@ const http = require('node:http')
 const fs = require('node:fs')
 const path = require('node:path')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 
 async function main () {
   const html = fs.readFileSync(path.join(__dirname, '../../server/public/guest-order.html'))
@@ -187,6 +188,32 @@ async function main () {
     await legacy.getByRole('button', { name: '素菜 1', exact: true }).waitFor()
     assert.equal(await legacy.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await legacy.close()
+    const many = await browser.newPage({ viewport: { width: 320, height: 844 } })
+    const varied = Array.from({ length: 25 }, (_, index) => ({ _id: index.toString(16).padStart(24, '0'), name: `菜品${index}`, category: `分类${String(index).padStart(2, '0')}` }))
+    await many.route('**/guest-orders/public/**', route => {
+      const url = new URL(route.request().url()); const category = url.searchParams.get('category') || ''
+      const shown = varied.filter(item => !category || item.category === category)
+      return route.fulfill({ json: { session, meals: shown.slice(0, 24), menu: { page: 1, limit: 24, total: shown.length, totalPages: Math.max(1, Math.ceil(shown.length / 24)), categories: varied.map(item => ({ name: item.category, count: 1 })) } } })
+    })
+    await many.goto(`http://127.0.0.1:${server.address().port}/guest-order/many-categories`)
+    await many.getByText('左右滑动或使用 Tab 查看更多分类').waitFor()
+    const categoryBar = many.getByRole('group', { name: '菜品分类' })
+    assert.equal(await categoryBar.getAttribute('aria-describedby'), 'filterScrollHint')
+    for (const button of await categoryBar.getByRole('button').all()) assert.ok((await button.boundingBox()).height >= 44)
+    await categoryBar.evaluate(node => { node.scrollLeft = node.scrollWidth })
+    const lastCategory = categoryBar.getByRole('button', { name: '分类24 1', exact: true })
+    await lastCategory.focus(); const scrollBeforeCategory = await many.evaluate(() => window.scrollY); await many.keyboard.press('Enter')
+    await many.getByText('菜品24', { exact: true }).waitFor()
+    await many.waitForFunction(() => {
+      const bar = document.querySelector('#filters'); const button = [...bar.children].find(item => item.dataset.category === '分类24')
+      const outer = bar.getBoundingClientRect(); const inner = button.getBoundingClientRect()
+      return bar.scrollLeft > 0 && inner.left >= outer.left - 1 && inner.right <= outer.right + 1 && document.activeElement === button
+    })
+    assert.equal(await many.evaluate(() => window.scrollY), scrollBeforeCategory, 'revealing a category must not move the page vertically')
+    assert.ok((await contrast(many, '.filter.active')).ratio >= 4.5, 'the selected category must have readable contrast')
+    assert.ok((await contrast(many, '.filter-scroll-hint')).ratio >= 4.5, 'the scroll hint must have readable contrast')
+    assert.equal(await many.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await many.close()
     console.log('Guest menu workflows passed: pagination, complete search, categories, stale responses, cart and legacy guard')
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }
 }
