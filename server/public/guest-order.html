@@ -264,6 +264,7 @@
       <div class="filters" id="filters" role="group" aria-label="菜品分类"></div>
     </section>
 
+    <p class="menu-note">分类数字表示当前搜索条件下的菜品数量。</p>
     <div class="section-head"><h2 id="menuHeading" tabindex="-1">今天想吃什么</h2><span class="count" id="count" aria-live="polite">加载中</span></div>
     <p class="menu-note">每道菜最多选择 20 份；提交前可以修改数量和备注。</p>
     <p class="menu-note" id="legacyMenuNote" hidden>当前服务器仅提供前 600 道菜，搜索和分类可能不完整，请联系主人升级服务。</p>
@@ -360,6 +361,11 @@
         return [meal.category, meal.subcategory, ...(Array.isArray(meal.taste) ? meal.taste.slice(0, 1) : [])].filter(Boolean).join(' · ') || '主人家的私房菜';
       }
 
+      function matchesMenuSearch(meal) {
+        const query = state.search.trim().toLowerCase();
+        if (!query) return true;
+        return [meal.name, meal.category, meal.subcategory, meal.description, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.taste) ? meal.taste : [])].join(' ').toLowerCase().includes(query);
+      }
       function categories() {
         if (state.menuSupported === true) {
           const rows = (state.menu?.categories || []).map(item => ({ value: item.name, count: item.count }));
@@ -367,21 +373,20 @@
           return [{ value: '', count: rows.reduce((sum, item) => sum + item.count, 0) }, ...rows];
         }
         const counts = new Map();
-        state.meals.forEach(meal => {
+        state.meals.filter(matchesMenuSearch).forEach(meal => {
           const category = String(meal.category || '其他');
           counts.set(category, (counts.get(category) || 0) + 1);
         });
-        return [{ value: '', count: state.meals.length }, ...[...counts.keys()].sort((a, b) => a.localeCompare(b, 'zh-CN')).map(value => ({ value, count: counts.get(value) }))];
+        if (state.category && !counts.has(state.category)) counts.set(state.category, 0);
+        return [{ value: '', count: [...counts.values()].reduce((sum, count) => sum + count, 0) }, ...[...counts.keys()].sort((a, b) => a.localeCompare(b, 'zh-CN')).map(value => ({ value, count: counts.get(value) }))];
       }
 
       function visibleMeals() {
         if (state.menuSupported === true) return state.meals;
-        const query = state.search.trim().toLowerCase();
         return state.meals.filter(meal => {
           const category = String(meal.category || '其他');
           if (state.category && category !== state.category) return false;
-          if (!query) return true;
-          return [meal.name, meal.category, meal.subcategory, meal.description, ...(meal.tags || []), ...(meal.taste || [])].join(' ').toLowerCase().includes(query);
+          return matchesMenuSearch(meal);
         });
       }
 
@@ -409,7 +414,8 @@
           button.type = 'button';
           button.className = `filter${state.category === category.value ? ' active' : ''}`;
           button.dataset.category = category.value;
-          button.textContent = `${category.value || '全部'} ${category.count}`;
+          const countLabel = state.menuLoading ? '更新中' : state.menuError ? '未更新' : String(category.count);
+          button.textContent = `${category.value || '全部'} ${countLabel}`;
           button.setAttribute('aria-pressed', String(state.category === category.value));
           button.addEventListener('click', () => { if (state.category === category.value) return; state.category = category.value; state.menuPage = 1; renderFilters(); if (state.menuSupported === false) renderMeals(); else queueMenu(0); });
           return button;
@@ -689,7 +695,7 @@
         if (!preserveFocus) menuFocusIntent = null;
         clearTimeout(searchTimer);
         state.menuSequence++; state.menuLoading = true; state.menuError = '';
-        renderMeals();
+        renderFilters(); renderMeals();
         searchTimer = setTimeout(() => loadMenu(), delay);
       }
 
@@ -700,7 +706,7 @@
         const params = new URLSearchParams({ page: String(page), limit: '24' });
         if (state.search.trim()) params.set('search', state.search.trim());
         if (state.category) params.set('category', state.category);
-        state.menuLoading = true; state.menuError = ''; renderMeals();
+        state.menuLoading = true; state.menuError = ''; renderFilters(); renderMeals();
         try {
           const data = await jsonRequest(`${apiRoot}?${params}`);
           if (sequence !== state.menuSequence) return;
@@ -728,7 +734,7 @@
           state.menuError = error.message || '菜单加载失败';
           if (!state.menuInitialized && state.pending) { restorePendingDraft(); renderCartBar(); renderCartList(); }
         } finally {
-          if (sequence === state.menuSequence) { state.menuLoading = false; renderMeals(); restoreMenuFocus(); }
+          if (sequence === state.menuSequence) { state.menuLoading = false; renderFilters(); renderMeals(); restoreMenuFocus(); }
         }
       }
 
@@ -803,7 +809,7 @@
         } finally { state.busy = false; renderMeals(); renderCartBar(); renderCartList(); }
       }
 
-      $('search').addEventListener('input', event => { state.search = event.target.value; state.menuPage = 1; if (state.menuSupported === false) renderMeals(); else queueMenu(); });
+      $('search').addEventListener('input', event => { state.search = event.target.value; state.menuPage = 1; if (state.menuSupported === false) { renderFilters(); renderMeals(); } else queueMenu(); });
       function changeMenuPage(delta, sourceId) {
         if (state.menuSupported !== true || state.menuLoading || !state.menu || state.menuPage + delta < 1 || state.menuPage + delta > state.menu.totalPages) return;
         const source = $(sourceId);
