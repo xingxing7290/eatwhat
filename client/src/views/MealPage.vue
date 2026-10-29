@@ -28,6 +28,8 @@ const selectedDifficulty = ref(initialCatalog.difficulty);
 const favoriteOnly = ref(initialCatalog.favorite);
 const currentPage = ref(initialCatalog.page);
 const pageSize = ref(8);
+const catalogContent = ref(null);
+let restoreCatalogFocus = false;
 const loading = ref(false);
 const loadError = ref('');
 const categoryLoadFailed = ref(false);
@@ -252,7 +254,16 @@ const fetchMeals = async () => {
   } catch (error) {
     if (sequence === fetchSequence) loadError.value = error?.error || error?.message || '获取菜品列表失败';
   } finally {
-    if (sequence === fetchSequence) loading.value = false;
+    if (sequence === fetchSequence) {
+      loading.value = false;
+      const restore = restoreCatalogFocus;
+      restoreCatalogFocus = false;
+      if (restore) {
+        await nextTick();
+        const focused = document.activeElement;
+        if (sequence === fetchSequence && (!focused || focused === document.body || !focused.isConnected)) catalogContent.value?.focus();
+      }
+    }
   }
 };
 
@@ -547,6 +558,7 @@ const clearFilters = async () => {
 
 // 分页变化
 const handlePageChange = (page) => {
+  restoreCatalogFocus = restoreCatalogFocus || !!document.activeElement?.closest?.('.pagination-container, .mobile-pagination');
   currentPage.value = page;
   scheduleFetch(0);
   scheduleCatalogUrl();
@@ -839,10 +851,11 @@ onBeforeUnmount(() => {
         </nav>
         <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button ref="categoryRetryButton" type="button" :disabled="categoryLoading" @click="loadCategories">{{ categoryLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
-      <section class="catalog-content" aria-label="菜品列表">
+      <section ref="catalogContent" class="catalog-content" aria-label="菜品列表" tabindex="-1">
     <!-- 加载状态 -->
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="fetchMeals">重新加载</el-button></el-alert>
-    <div v-else-if="loading" class="loading-container">
+    <div v-else-if="loading" class="loading-container" role="status" aria-live="polite">
+      <span>正在加载菜品…</span>
       <el-skeleton :rows="3" animated />
     </div>
 
