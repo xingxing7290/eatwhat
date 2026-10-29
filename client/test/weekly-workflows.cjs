@@ -23,6 +23,7 @@ async function main () {
     page.on('pageerror', error => errors.push(error.message))
     let currentDays = dates.map(date => ({ date, meals: emptyMeals(), scheduleExists: false, scheduleVersion: null }))
     let draftMode = 'valid'
+    let generationPolicy = ''
     let applyMode = 'invalid'
     let malformedCurrent = false
     let generateCalls = 0
@@ -60,7 +61,7 @@ async function main () {
         const days = planned()
         const preview = days.map(day => ({ date: day.date, meals: { ...emptyMeals(), dinner: [meal] }, hints: [] }))
         if (draftMode === 'mismatch') preview[0].meals.dinner = [{ _id: 'meal-b', name: '另一道菜' }]
-        data = { weekStart: dates[0], days, preview }
+        data = { weekStart: dates[0], days, preview, generationPolicy }
       } else if (req.method() === 'POST' && pathname === '/weekly-plans/apply') {
         applyCalls++
         const body = req.postDataJSON()
@@ -94,6 +95,7 @@ async function main () {
     await page.getByRole('heading', { name: /周一.*2026-10-26/ }).waitFor()
     await page.getByRole('button', { name: '生成草稿' }).click()
     await page.getByText('规则生成草稿').waitFor()
+    await page.getByText('推荐范围由服务器决定，可能不包含全部菜品或心愿；请自行核对并调整。').waitFor()
     await page.getByText('草稿尚未写入日历，不会计入生成结果。').waitFor()
     assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
     await page.getByRole('link', { name: '查看 2026-11-01 的日历安排' }).click()
@@ -232,6 +234,11 @@ async function main () {
     assert.equal(applyCalls, 3)
     assert.equal(await page.getByText('规则生成草稿').count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    generationPolicy = 'priority-wishes-v1'; draftMode = 'valid'
+    await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByText('推荐从最多 300 道基础菜品及最多 80 条待完成心愿关联菜品中选取；心愿按优先级和时间筛选，结果仍需自行核对。').waitFor()
+    await page.getByRole('button', { name: '放弃草稿' }).click()
+    await page.getByRole('dialog', { name: '放弃周计划草稿？' }).getByRole('button', { name: '放弃草稿' }).click()
     if (process.env.EATWHAT_WEEKLY_SHOT) {
       await page.locator('.el-overlay:visible').waitFor({ state: 'hidden' })
       await page.waitForTimeout(500)

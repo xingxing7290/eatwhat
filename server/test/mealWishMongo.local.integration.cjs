@@ -647,6 +647,17 @@ async function main() {
     assert.equal(oldHomeAfterSwitch.data.household.members.some(member => String(member._id) === String(switchUser._id)), false);
     assert.equal((await request('/weekly-plans?weekStart=2026-02-31', { token: tokenA })).status, 400);
     assert.equal((await request('/weekly-plans/generate', { method: 'POST', token: tokenA, body: { weekStart: 'not-a-date' } })).status, 400);
+    const generatorHome = await Household.create({ name: '推荐候选测试', inviteCode: 'GENERATOR-TEST' });
+    const generatorUser = await User.create({ username: 'generator-test-user', passwordHash: hash, householdId: generatorHome._id });
+    const generatorToken = await login('generator-test-user');
+    const wishedOutsideBase = await Meal.create({ householdId: generatorHome._id, name: '较早创建的高优先心愿菜', favorite: false });
+    await Meal.insertMany(Array.from({ length: 300 }, (_, index) => ({ householdId: generatorHome._id, name: `候选菜${index}`, favorite: true })));
+    await WishlistItem.create({ householdId: generatorHome._id, createdBy: generatorUser._id, title: '高优先心愿', priority: 'high', mealId: wishedOutsideBase._id });
+    await WishlistItem.insertMany(Array.from({ length: 80 }, (_, index) => ({ householdId: generatorHome._id, createdBy: generatorUser._id, title: `无效低优先心愿${index}`, priority: 'low', mealId: new mongoose.Types.ObjectId() })));
+    const rankedDraft = await request('/weekly-plans/generate', { method: 'POST', token: generatorToken, body: { weekStart: '2026-11-19' } });
+    assert.equal(rankedDraft.status, 200);
+    assert.equal(rankedDraft.data.generationPolicy, 'priority-wishes-v1');
+    assert.ok(rankedDraft.data.days.flatMap(day => Object.values(day.meals).flat()).includes(String(wishedOutsideBase._id)), 'high-priority wishes outside the initial 300 recipes remain eligible');
     const futureDraft = await request('/weekly-plans/generate', { method: 'POST', token: tokenA, body: { weekStart: '2026-11-19' } });
     assert.equal(futureDraft.status, 200);
     assert.equal(futureDraft.data.weekStart, '2026-11-16');

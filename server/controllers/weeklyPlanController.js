@@ -71,12 +71,23 @@ function scoreMeal(meal, wishlistIds, recentIds) {
 async function buildGeneratedPlan(householdId) {
   const [meals, wishlist, recentMemories] = await Promise.all([
     Meal.find({ householdId, archived: { $ne: true } }).sort({ favorite: -1, rating: -1, createdAt: -1 }).limit(300),
-    WishlistItem.find({ householdId, status: 'open', mealId: { $ne: null } }).sort({ priority: -1, createdAt: -1 }).limit(80),
+    WishlistItem.aggregate([
+      { $match: { householdId, status: 'open', mealId: { $ne: null } } },
+      { $set: { priorityRank: { $switch: { branches: [{ case: { $eq: ['$priority', 'high'] }, then: 2 }, { case: { $eq: ['$priority', 'normal'] }, then: 1 }], default: 0 } } } },
+      { $sort: { priorityRank: -1, createdAt: -1, _id: -1 } },
+      { $limit: 80 },
+      { $project: { mealId: 1 } }
+    ]),
     MealMemory.find({ householdId }).sort({ date: -1, createdAt: -1 }).limit(20)
   ]);
   const wishlistIds = new Set(wishlist.map(item => mealIdOf(item.mealId)));
+  // Wishes must be included before scoring, even if they fall outside the base 300.
+  const baseIds = new Set(meals.map(mealIdOf));
+  const missingWishIds = wishlist.filter(item => !baseIds.has(mealIdOf(item.mealId))).map(item => item.mealId);
+  const wishedMeals = missingWishIds.length ? await Meal.find({ householdId, archived: { $ne: true }, _id: { $in: missingWishIds } }) : [];
+  const candidates = [...meals, ...wishedMeals];
   const recentIds = new Set(recentMemories.flatMap(item => (item.mealIds || []).map(mealIdOf)));
-  const pool = meals.sort((a, b) => scoreMeal(b, wishlistIds, recentIds) - scoreMeal(a, wishlistIds, recentIds));
+  const pool = candidates.sort((a, b) => scoreMeal(b, wishlistIds, recentIds) - scoreMeal(a, wishlistIds, recentIds));
   const used = new Set();
   const dates = weekDates(startOfWeek());
   const breakfastPred = meal => /早餐|主食|面食|饼|包|粥|粉|面|蛋|快手/.test(`${meal.category || ''} ${meal.subcategory || ''} ${(meal.tags || []).join(' ')} ${(meal.healthTags || []).join(' ')}`);
@@ -124,7 +135,7 @@ exports.generate = async (req, res, next) => {
       meals: Object.fromEntries(mealTypes.map(type => [type, day.meals[type].map(id => mealMap.get(id)).filter(Boolean)])),
       hints: balanceHintsForDay({ meals: Object.fromEntries(mealTypes.map(type => [type, day.meals[type].map(id => ({ meal: mealMap.get(id) })).filter(item => item.meal)])) })
     }));
-    res.json({ weekStart, days, preview, note: '规则生成草稿，应用后才会写入日历。' });
+    res.json({ weekStart, days, preview, generationPolicy: 'priority-wishes-v1', note: '规则生成草稿，应用后才会写入日历。' });
   } catch (err) { next(err); }
 };
 
