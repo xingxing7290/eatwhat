@@ -61,6 +61,8 @@ const totalMeals = ref(0);
 const categories = ref([]);
 const tags = ref([]);
 const currentPage = ref(1);
+const catalogContent = ref(null);
+let restoreCatalogFocus = false;
 const pageSize = ref(8);
 const selectedTag = ref('');
 const selectedCategory = ref('');
@@ -287,11 +289,13 @@ const clearFilters = () => {
 
 // 页码变化处理
 const handlePageChange = (page) => {
+  restoreCatalogFocus = true;
   currentPage.value = page;
   scheduleCatalogFetch(0);
 };
 
 watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory], () => {
+  restoreCatalogFocus = false;
   currentPage.value = 1;
   scheduleCatalogFetch();
 });
@@ -328,7 +332,15 @@ const fetchCatalog = async () => {
   } catch (error) {
     if (sequence === catalogSequence) catalogError.value = error?.error || error?.message || '菜品列表加载失败';
   } finally {
-    if (sequence === catalogSequence) catalogLoading.value = false;
+    if (sequence === catalogSequence) {
+      catalogLoading.value = false;
+      const restore = restoreCatalogFocus; restoreCatalogFocus = false;
+      if (restore) {
+        await nextTick();
+        const focused = document.activeElement;
+        if (sequence === catalogSequence && (!focused || focused === document.body || !focused.isConnected)) catalogContent.value?.focus();
+      }
+    }
   }
 };
 
@@ -625,7 +637,7 @@ onBeforeUnmount(() => {
         </nav>
         <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button ref="metadataRetryButton" type="button" :disabled="metadataLoading" @click="loadMetadata">{{ metadataLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
-    <section class="meals-container" aria-label="可选菜品">
+    <section ref="catalogContent" class="meals-container" aria-label="可选菜品" tabindex="-1">
       <el-alert v-if="catalogError && !catalogLoading" type="error" :closable="false" show-icon :title="`无法加载菜品：${catalogError}`"><el-button link type="primary" @click="fetchCatalog">重新加载菜品</el-button></el-alert>
       <el-skeleton v-else :loading="catalogLoading || isInitializing" animated :count="4" :throttle="500">
         <template #default>

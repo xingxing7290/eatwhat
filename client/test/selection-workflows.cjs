@@ -31,6 +31,7 @@ async function main () {
     let malformedSchedule = false
     let saveMode = 'uncertain'
     let releaseSlow
+    let holdPage = false; let releasePage
     let wishMode = 'done'
     let suggestionFailure = false
     const wishWrites = []
@@ -57,6 +58,7 @@ async function main () {
             (!query || meal.name.includes(query)) && (!url.searchParams.get('category') || meal.category === url.searchParams.get('category')))
           const current = Number(url.searchParams.get('page') || 1)
           const limit = Number(url.searchParams.get('limit') || 8)
+          if (holdPage && current === 3) await new Promise(resolve => { releasePage = resolve })
           if (query === '坏页') data = { data: [meals[0]], total: 1, page: 2, limit }
           else if (query === '重复') data = { data: [meals[0], meals[0]], total: 2, page: 1, limit }
           else if (query === '缺项') data = { data: [meals[0]], total: 2, page: 1, limit }
@@ -233,7 +235,17 @@ async function main () {
     await page.getByRole('button', { name: '移除测试菜01' }).click()
     assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), '移除测试菜20')
     await page.getByRole('button', { name: '选择测试菜01' }).click()
-    await page.getByRole('button', { name: '下一页', exact: true }).click()
+    await page.getByRole('button', { name: '下一页', exact: true }).focus(); await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: '选择测试菜09' }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '可选菜品')
+    holdPage = true; releasePage = null
+    await page.getByRole('button', { name: '下一页', exact: true }).focus(); await page.keyboard.press('Enter')
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releasePage, 'function')
+    await catalogSearch.focus(); holdPage = false; releasePage()
+    await page.getByRole('button', { name: '选择测试菜17' }).waitFor()
+    assert.equal(await catalogSearch.evaluate(node => document.activeElement === node), true, 'late page results must not steal focus')
+    await page.getByRole('button', { name: '上一页', exact: true }).click()
     await page.getByRole('button', { name: '选择测试菜09' }).waitFor()
     await page.getByRole('button', { name: '选择测试菜09' }).click()
     await page.getByRole('button', { name: '移除测试菜01' }).waitFor()
