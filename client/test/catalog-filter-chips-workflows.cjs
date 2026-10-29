@@ -41,6 +41,8 @@ async function main () {
           assert.ok(result.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme}: ${result.ratio}`)
           const label = await contrast(page, '.filter-field-label')
           assert.ok(label.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} filter label: ${label.ratio}`)
+          const hint = await contrast(page, '.search-hint')
+          assert.ok(hint.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} search hint: ${hint.ratio}`)
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
       }

@@ -738,11 +738,14 @@ onBeforeUnmount(() => {
             v-model="searchQuery"
             placeholder="搜索菜名、描述、食材或做法..."
             aria-label="搜索菜品"
+            aria-describedby="catalog-search-hint"
             maxlength="200"
+            show-word-limit
             clearable
             class="search-input"
             :prefix-icon="Search"
           />
+          <p id="catalog-search-hint" class="search-hint">可搜索菜名、食材或做法，最多 200 字。</p>
         </div>
       </div>
 
@@ -1391,6 +1394,7 @@ onBeforeUnmount(() => {
 .search-input {
   width: 100%;
 }
+.search-hint { margin: 6px 2px 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 
 .toolbar-row {
   display: flex;
