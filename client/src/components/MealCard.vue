@@ -688,6 +688,7 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
 }
 
 .meal-image-container {
+  width: calc(100% - 24px);
   height: 218px;
   margin: 12px 12px 0;
   border-radius: 20px;
@@ -812,10 +813,11 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
 
   .meal-image-container {
     width: auto;
-    height: 190px;
+    height: clamp(120px, 36vw, 158px);
     margin: 10px 10px 0;
   }
-  .meal-info { padding: 14px 12px 16px; }
+  .meal-info { padding: 12px 12px 14px; gap: 8px; }
+  .meal-name { font-size: 18px; }
   .meal-actions .feed-btn { padding-inline: 8px; }
 }
 
