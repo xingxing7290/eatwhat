@@ -19,4 +19,8 @@ test('paginated results must be complete, unique and on the requested page', () 
     { data: meals.slice(0, 1), total: 60 },
     { data: [{ _id: 'x', name: '' }], total: 1, page: 1, limit: 50 }
   ]) assert.throws(() => normalizeMealSearch(result, ''))
+  assert.deepEqual(normalizeMealSearch({ data: meals.slice(8, 16), total: 60, page: 2, limit: 8 }, '', 8, { page: 2 }).rows, meals.slice(8, 16))
+  assert.throws(() => normalizeMealSearch({ data: meals.slice(0, 8), total: 60, page: 1, limit: 8 }, '', 8, { page: 2 }))
+  const categorized = meals.map((meal, index) => ({ ...meal, category: index % 2 ? '素菜' : '荤菜' }))
+  assert.deepEqual(normalizeMealSearch({ data: categorized, total: 60 }, '', 8, { page: 2, category: '素菜' }).rows, categorized.filter(meal => meal.category === '素菜').slice(8, 16))
 })

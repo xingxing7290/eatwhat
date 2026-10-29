@@ -46,7 +46,11 @@ async function main () {
         const rows = search === 'slow' ? [meal] : search === 'fast' ? [extra] : catalog.filter(item => (!search || item.name.includes(search)) && (!url.searchParams.get('category') || item.category === url.searchParams.get('category')))
         const current = Number(url.searchParams.get('page') || 1)
         const limit = Number(url.searchParams.get('limit') || 8)
-        data = legacyCatalog ? catalog : { data: rows.slice((current - 1) * limit, current * limit), page: current, limit, total: rows.length }
+        if (search === '坏页') data = { data: [meal], page: 2, limit, total: 1 }
+        else if (search === '重复') data = { data: [meal, meal], page: 1, limit, total: 2 }
+        else if (search === '缺项') data = { data: [meal], page: 1, limit, total: 2 }
+        else if (search === '无分页') data = { data: [meal], total: 10 }
+        else data = legacyCatalog ? catalog : { data: rows.slice((current - 1) * limit, current * limit), page: current, limit, total: rows.length }
       } else if (req.method() === 'GET' && pathname === '/weekly-plans') {
         data = { weekStart: dates[0], supportsConditionalApply: true, days: malformedCurrent ? currentDays.map((day, i) => i === 0 ? { ...day, meals: {} } : day) : currentDays }
       } else if (req.method() === 'POST' && pathname === '/weekly-plans/generate') {
@@ -120,6 +124,12 @@ async function main () {
     await page.waitForTimeout(250)
     assert.equal(await dialog.getByRole('button', { name: '选择麻婆豆腐' }).count(), 1)
     await dialog.getByRole('button', { name: '选择麻婆豆腐' }).click()
+    for (const fault of ['坏页', '重复', '缺项', '无分页']) {
+      await search.fill(fault)
+      await dialog.locator('.catalog-error').waitFor()
+      assert.equal(await dialog.locator('.meal-option').count(), 0, `${fault} must not display unreliable choices`)
+      assert.equal(await dialog.getByRole('button', { name: '移除麻婆豆腐' }).count(), 1, 'existing selections must remain intact')
+    }
     await search.fill('')
     await dialog.getByRole('button', { name: '下一页' }).click()
     await dialog.getByRole('button', { name: '选择测试菜09' }).click()

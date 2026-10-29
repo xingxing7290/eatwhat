@@ -3,6 +3,7 @@ import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
+import { normalizeMealSearch } from '@/utils/mealSearch.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const props = defineProps({ date: { type: String, required: true }, label: { type: String, required: true }, meals: { type: Array, required: true } });
@@ -27,11 +28,6 @@ let alive = true;
 
 const selectedIds = computed(() => new Set(selected.value.map(idOf)));
 const lastPage = computed(() => Math.max(1, Math.ceil(total.value / limit)));
-const legacyMatches = meal => {
-  const terms = [meal.name, meal.description, meal.tips, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.ingredients) ? meal.ingredients.map(item => item?.name || item) : []), ...(Array.isArray(meal.steps) ? meal.steps.map(item => item?.description || item) : [])];
-  const text = query.value.trim().toLowerCase();
-  return (!text || terms.some(term => String(term || '').toLowerCase().includes(text))) && (!category.value || meal.category === category.value);
-};
 const load = async () => {
   const ticket = ++sequence;
   loading.value = true;
@@ -42,14 +38,7 @@ const load = async () => {
     if (category.value) params.category = category.value;
     const result = await api.meal.getAllMeals(params);
     if (!alive || ticket !== sequence) return;
-    let rows = result.data;
-    let count = result.total;
-    if (!Array.isArray(rows) || !Number.isSafeInteger(count) || count < 0 || rows.some(meal => !idOf(meal) || typeof meal.name !== 'string' || !meal.name.trim()) || new Set(rows.map(idOf)).size !== rows.length) throw new Error('菜品列表不完整，请重试');
-    if (result.page == null && result.limit == null && rows.length === count) {
-      const filtered = rows.filter(legacyMatches);
-      count = filtered.length;
-      rows = filtered.slice((page.value - 1) * limit, page.value * limit);
-    }
+    const { rows, total: count } = normalizeMealSearch(result, query.value, limit, { page: page.value, category: category.value });
     if (page.value > Math.max(1, Math.ceil(count / limit))) { page.value = Math.max(1, Math.ceil(count / limit)); return load(); }
     meals.value = rows;
     total.value = count;
