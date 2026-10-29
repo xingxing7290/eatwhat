@@ -711,7 +711,19 @@ async function main() {
     assert.ok(generatedShopping.data.items.some(item => item.name === '番茄' && !item.manual));
     assert.equal(generatedShopping.data.items.find(item => item.name === '番茄').amount, '1个 + 1个', 'equal ingredient amounts from different meals must not disappear');
     assert.ok(generatedShopping.data.items.some(item => item.name === '鸡蛋' && item.checked && item.manual));
-    const deletedShopping = await request(`/shopping-list/items/${egg._id}?weekStart=${shoppingWeek}&expectedVersion=${generatedShopping.data.listVersion}`, { method: 'DELETE', token: tokenA });
+    const generatedTomato = generatedShopping.data.items.find(item => item.name === '番茄');
+    const checkedTomato = await request(`/shopping-list/items/${generatedTomato._id}`, { method: 'PATCH', token: tokenA, body: { weekStart: shoppingWeek, expectedVersion: generatedShopping.data.listVersion, checked: true } });
+    assert.equal(checkedTomato.status, 200);
+    const sameShopping = await request('/shopping-list/generate', { method: 'POST', token: tokenA, body: { weekStart: shoppingWeek, expectedVersion: checkedTomato.data.listVersion } });
+    assert.equal(sameShopping.status, 200);
+    assert.equal(sameShopping.data.items.find(item => item.name === '番茄').checked, true, 'unchanged quantities retain purchase status');
+    await Meal.updateOne({ _id: shoppingMeal._id }, { $set: { ingredients: [{ name: '番茄', amount: '2个' }] } });
+    const changedShopping = await request('/shopping-list/generate', { method: 'POST', token: tokenPartner, body: { weekStart: shoppingWeek, expectedVersion: sameShopping.data.listVersion } });
+    assert.equal(changedShopping.status, 200);
+    assert.equal(changedShopping.data.items.find(item => item.name === '番茄').amount, '2个 + 2个');
+    assert.equal(changedShopping.data.items.find(item => item.name === '番茄').checked, false, 'changed quantities require purchase review');
+    assert.ok(changedShopping.data.items.some(item => item.name === '鸡蛋' && item.checked && item.manual), 'manual items remain unchanged');
+    const deletedShopping = await request(`/shopping-list/items/${egg._id}?weekStart=${shoppingWeek}&expectedVersion=${changedShopping.data.listVersion}`, { method: 'DELETE', token: tokenA });
     assert.equal(deletedShopping.status, 200);
     assert.equal(deletedShopping.data.items.some(item => item.name === '鸡蛋'), false);
     const legacyShopping = await Promise.all(Array.from({ length: 8 }, (_, index) => request('/shopping-list/items', {

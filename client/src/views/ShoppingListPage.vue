@@ -136,7 +136,7 @@ const generate = async () => {
   working.value = true;
   try {
     if ((list.value.items || []).some(item => !item.manual)) {
-      try { await ElMessageBox.confirm('重新生成会替换排餐生成的食材，手动添加的食材会保留。', '重新生成购物清单', { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' }); } catch (_) { return; }
+      try { await ElMessageBox.confirm('重新生成会替换排餐生成的食材，手动添加的食材会保留。食材用量和已购状态可能变化，请逐项核对实际需求。', '重新生成购物清单', { type: 'warning', confirmButtonText: '重新生成', cancelButtonText: '取消' }); } catch (_) { return; }
     }
     await mutate((version, week) => api.shoppingList.generate(week, version), () => ElMessage.success('已按所选周排餐生成购物清单'), (next, week) => typeof next.generatedFrom === 'string' && next.generatedFrom.startsWith(`week:${monday(week)}:`));
   } finally { working.value = false; }

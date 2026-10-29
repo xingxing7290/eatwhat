@@ -98,7 +98,7 @@ exports.generate = async (req, res, next) => {
     if (unavailableDates.length) return res.status(409).json({ code: 'SCHEDULE_MEAL_UNAVAILABLE', error: '本周排餐包含不可用的菜品，未生成购物清单。请先在日历中核对。', unavailableDates });
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
     if (!checkVersion(req, res, list)) return;
-    const checkedMap = new Map((list.items || []).filter(item => !item.manual).map(item => [itemKey(item), !!item.checked]));
+    const checkedMap = new Map((list.items || []).filter(item => !item.manual).map(item => [itemKey(item), { checked: !!item.checked, amount: item.amount || '' }]));
     const manualItems = (list.items || []).filter(item => item.manual);
     const generated = new Map();
     for (const schedule of schedules) {
@@ -111,7 +111,7 @@ exports.generate = async (req, res, next) => {
             if (!name) continue;
             const category = categoryFor(name);
             const key = `${name.toLowerCase()}|${category}`;
-            const row = generated.get(key) || { name, amountParts: [], category, checked: checkedMap.get(key) || false, manual: false, sourceMealIds: [] };
+            const row = generated.get(key) || { name, amountParts: [], category, manual: false, sourceMealIds: [] };
             // Repeated quantities from separate scheduled meals must not be
             // deduplicated: two recipes needing one egg still need two eggs.
             if (ingredient.amount) row.amountParts.push(ingredient.amount);
@@ -122,7 +122,11 @@ exports.generate = async (req, res, next) => {
       }
     }
     list.items = [
-      ...Array.from(generated.values()).map(item => ({ ...item, amount: item.amountParts.join(' + '), amountParts: undefined, addedBy: req.user.uid })),
+      ...Array.from(generated.values()).map(item => {
+        const amount = item.amountParts.join(' + ');
+        const previous = checkedMap.get(itemKey(item));
+        return { ...item, amount, checked: !!previous?.checked && previous.amount === amount, amountParts: undefined, addedBy: req.user.uid };
+      }),
       ...manualItems
     ];
     list.generatedFrom = `week:${weekStart}:${Date.now()}`;

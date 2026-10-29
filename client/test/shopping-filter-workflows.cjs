@@ -21,6 +21,7 @@ async function main () {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/shopping-list' && request.method() === 'GET') { if (holdInitial) await new Promise(resolve => { releaseInitial = resolve }); return route.fulfill({ json: snapshot() }) }
+      if (path === '/shopping-list/generate' && request.method() === 'POST') { writes++; return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/items' && request.method() === 'POST') { const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = [...items, { _id: 'new-item', name: body.name, amount: body.amount, category: body.category, checked: false, manual: true }]; return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/purchased' && request.method() === 'DELETE') { assert.equal(Number(url.searchParams.get('expectedVersion')), version); writes++; version++; items = items.filter(item => !item.checked); return route.fulfill({ json: snapshot() }) }
       if (path.startsWith('/shopping-list/items/') && request.method() === 'PATCH') { const id = path.split('/').pop(); const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = items.map(item => item._id === id ? { ...item, checked: body.checked } : item); return route.fulfill({ json: snapshot() }) }
@@ -34,6 +35,10 @@ async function main () {
     holdInitial = false; releaseInitial()
     await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
     assert.match(await page.locator('.progress-card').innerText(), /2\s*\/\s*4/)
+    await page.getByRole('button', { name: '从排餐生成' }).click()
+    await page.getByText('食材用量和已购状态可能变化', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    assert.equal(writes, 0, 'cancelling regeneration must not write')
     await page.getByRole('button', { name: '待买', exact: true }).click()
     await page.getByText('显示 2 / 4 项 · 本周待买 2 项').waitFor()
     assert.equal(await page.getByRole('button', { name: '待买', exact: true }).getAttribute('aria-pressed'), 'true')
