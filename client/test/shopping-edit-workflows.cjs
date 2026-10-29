@@ -11,7 +11,7 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let version = 1; let mode = 'ok'; let writes = 0; let reloadFails = false; let recipeWrites = 0
+    let version = 1; let mode = 'ok'; let writes = 0; let reloadFails = false; let sourceFails = true; let sourceHold = false; let releaseSource; let recipeWrites = 0
     const sourceId = '0123456789abcdef01234567'
     const recipe = { _id: sourceId, name: '菠菜菜谱', ingredients: [{ name: '菠菜', amount: '' }], steps: [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } }
     let items = [
@@ -20,10 +20,13 @@ async function main () {
     ]
     const snapshot = () => ({ weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: version, items })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    await page.route('**/api/**', route => {
+    await page.route('**/api/**', async route => {
       const req = route.request(); const path = new URL(req.url()).pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === `/meals/${sourceId}` && req.method() === 'GET') return route.fulfill({ json: recipe })
+      if (path === `/meals/${sourceId}` && req.method() === 'GET') {
+        if (sourceHold) await new Promise(resolve => { releaseSource = resolve })
+        return sourceFails ? route.fulfill({ status: 503, json: { error: '菜谱暂不可用' } }) : route.fulfill({ json: recipe })
+      }
       if (path === `/meals/${sourceId}` && req.method() === 'PUT') { recipeWrites++; assert.match(req.postData(), /2把/); return route.fulfill({ json: recipe }) }
       if (path === '/memories' && req.method() === 'GET') return route.fulfill({ json: [] })
       if (path === '/shopping-list' && req.method() === 'GET') return reloadFails ? route.fulfill({ status: 503, json: { error: '读取失败' } }) : route.fulfill({ json: snapshot() })
@@ -57,9 +60,28 @@ async function main () {
     await dialog.getByRole('button', { name: '保存修改' }).click()
     await dialog.waitFor({ state: 'hidden' })
     assert.equal(items.find(item => item._id === 'manual').checked, false, 'marking pending in the editor must update purchase state')
+    sourceHold = true
+    await page.getByRole('button', { name: '编辑菠菜' }).click()
+    for (let i = 0; i < 100 && !releaseSource; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseSource, 'function')
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    await page.getByRole('button', { name: '编辑土鸡蛋' }).click()
+    const lateSource = page.waitForResponse(response => new URL(response.url()).pathname === `/api/meals/${sourceId}`)
+    sourceHold = false; releaseSource()
+    await lateSource
+    assert.equal(await dialog.locator('.source-recipes').count(), 0, 'late recipe reads must not affect another item')
+    await dialog.getByRole('button', { name: '取消', exact: true }).click()
     await page.getByRole('button', { name: '编辑菠菜' }).click()
     await dialog.getByText('重新生成清单时', { exact: false }).waitFor()
-    const sourceLink = dialog.getByRole('link', { name: '查看来源菜谱 1' })
+    await dialog.getByText('部分菜谱名称暂不可用', { exact: false }).waitFor()
+    assert.equal(await dialog.getByRole('link', { name: '查看来源菜谱 1' }).count(), 1, 'an unavailable name still permits a detail check')
+    sourceFails = false
+    await dialog.getByRole('button', { name: '重试名称' }).focus()
+    await page.keyboard.press('Enter')
+    await dialog.getByText('部分菜谱名称暂不可用', { exact: false }).waitFor({ state: 'hidden' })
+    const sourceLink = dialog.getByRole('link', { name: '查看来源菜谱：菠菜菜谱' })
+    await sourceLink.waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '查看来源菜谱：菠菜菜谱')
     assert.equal(await sourceLink.getAttribute('href'), '/meals/detail/0123456789abcdef01234567?shoppingWeek=2026-10-26')
     assert.equal(await dialog.locator('.source-recipes a').count(), 1, 'duplicate and invalid source IDs must not produce links')
     assert.ok((await sourceLink.boundingBox()).height >= 44)
@@ -93,14 +115,14 @@ async function main () {
     assert.equal(writes, 4)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.getByRole('button', { name: '编辑菠菜' }).click()
-    await dialog.getByRole('link', { name: '查看来源菜谱 1' }).focus()
+    await dialog.getByRole('link', { name: '查看来源菜谱：菠菜菜谱' }).focus()
     await page.keyboard.press('Enter')
     await page.waitForURL('**/meals/detail/0123456789abcdef01234567?shoppingWeek=2026-10-26')
     await page.getByRole('heading', { name: '菠菜菜谱' }).waitFor()
     await page.getByRole('button', { name: '返回购物清单' }).click()
     await page.waitForURL('**/shopping-list?week=2026-10-26')
     await page.getByRole('button', { name: '编辑菠菜' }).click()
-    await dialog.getByRole('link', { name: '查看来源菜谱 1' }).click()
+    await dialog.getByRole('link', { name: '查看来源菜谱：菠菜菜谱' }).click()
     await page.getByRole('button', { name: '编辑菜品' }).click()
     await page.waitForURL('**/meals/editor/0123456789abcdef01234567?shoppingWeek=2026-10-26')
     await page.getByText('保存后返回 2026-10-26 所在周的购物清单', { exact: false }).waitFor()

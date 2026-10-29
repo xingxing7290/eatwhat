@@ -72,6 +72,45 @@ const editSourceMeals = computed(() => {
   const ids = Array.isArray(editLatest.value?.sourceMealIds) ? editLatest.value.sourceMealIds : [];
   return [...new Set(ids.map(value => typeof value === 'string' ? value.toLowerCase() : '').filter(value => /^[a-f\d]{24}$/.test(value)))];
 });
+const sourceNames = ref({});
+const sourceLoading = ref(false);
+const sourceError = ref(false);
+const sourceRetryButton = ref(null);
+let sourceSequence = 0;
+const loadSourceNames = async () => {
+  const sequence = ++sourceSequence;
+  const ids = [...editSourceMeals.value];
+  const restoreFocus = document.activeElement === sourceRetryButton.value;
+  sourceNames.value = {};
+  if (!restoreFocus) sourceError.value = false;
+  if (!editingItem.value || !ids.length) { sourceLoading.value = false; sourceError.value = false; return; }
+  sourceLoading.value = true;
+  let failed = false;
+  try {
+    for (let offset = 0; offset < ids.length; offset += 6) {
+      const batch = ids.slice(offset, offset + 6);
+      const results = await Promise.allSettled(batch.map(id => api.meal.getMealById(id, { suppressErrorToast: true })));
+      if (sequence !== sourceSequence) return;
+      const names = { ...sourceNames.value };
+      results.forEach((result, index) => {
+        const meal = result.status === 'fulfilled' ? result.value : null;
+        if (!meal || String(meal._id || meal.id || '').toLowerCase() !== batch[index] || typeof meal.name !== 'string' || !meal.name.trim()) { failed = true; return; }
+        names[batch[index]] = { name: meal.name.trim(), archived: meal.archived === true };
+      });
+      sourceNames.value = names;
+    }
+    sourceError.value = failed;
+  } finally {
+    if (sequence === sourceSequence) {
+      sourceLoading.value = false;
+      if (restoreFocus) {
+        await nextTick();
+        if (sequence === sourceSequence && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) (sourceError.value ? sourceRetryButton.value : document.querySelector('.source-recipes a'))?.focus();
+      }
+    }
+  }
+};
+watch(() => JSON.stringify([editingItem.value?.id || '', editSourceMeals.value]), loadSourceNames);
 const draftDirty = computed(() => !!(form.name.trim() || form.amount.trim() || form.category !== 'other') || editDirty.value);
 const uncertain = computed(() => !!mutationIssue.value);
 const versionAvailable = computed(() => list.value.supportsConditionalUpdates === true && Number.isSafeInteger(list.value.listVersion) && list.value.listVersion >= 0);
@@ -239,7 +278,7 @@ const remove = async item => {
 };
 const clearPurchased = async () => { if (!purchased.value || disabled.value) return; working.value = true; try { try { await ElMessageBox.confirm(`将删除 ${purchased.value} 项已购食材。${filtersActive.value ? '此操作作用于所选周全部已购食材，包括筛选后未显示的项目。' : ''}`, '清空已购', { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }); } catch (_) { return; } await mutate((version, week) => api.shoppingList.clearPurchased(week, version), () => ElMessage.success('已清空已购'), next => next.items.every(item => !item.checked)); } finally { working.value = false; } };
 onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '购物清单链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
-onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
+onBeforeUnmount(() => { loadSequence++; sourceSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
 <template>
@@ -275,7 +314,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
       <div v-if="editingItem && !editingItem.manual && !loading && !loadError" class="source-recipes">
         <strong>来源菜谱</strong>
         <p v-if="!editSourceMeals.length">没有可用的来源菜谱信息，请从菜谱列表查找。</p>
-        <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id }, query: { shoppingWeek: monday(weekStart) } }" :aria-label="`查看来源菜谱 ${index + 1}`">查看来源菜谱 {{ index + 1 }} →</router-link></nav></template>
+        <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><p v-if="sourceLoading" role="status">正在读取来源菜谱名称…</p><p v-if="sourceError" role="status">部分菜谱名称暂不可用，仍可打开核对。 <button ref="sourceRetryButton" type="button" :disabled="sourceLoading" @click="loadSourceNames">{{ sourceLoading ? '正在重试' : '重试名称' }}</button></p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id }, query: { shoppingWeek: monday(weekStart) } }" :aria-label="sourceNames[id] ? `查看来源菜谱：${sourceNames[id].name}` : `查看来源菜谱 ${index + 1}`">{{ sourceNames[id] ? sourceNames[id].name : `来源菜谱 ${index + 1}` }}{{ sourceNames[id]?.archived ? '（已归档）' : '' }} →</router-link></nav></template>
       </div>
       <el-form label-position="top" :disabled="disabled">
         <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" @keydown.enter="saveEditOnEnter" /></el-form-item>
@@ -301,6 +340,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 .edit-current p { margin: 6px 0 0; line-height: 1.6; }
 .source-recipes { margin: 12px 0; color: var(--text-primary); font-size: 13px; }
 .source-recipes p { margin: 6px 0; line-height: 1.6; }
+.source-recipes button { min-height: 44px; padding: 4px 6px; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.source-recipes button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .source-recipes nav { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .source-recipes a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .source-recipes a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
