@@ -31,6 +31,14 @@ async function main () {
         if (badSummary === 'legacy') delete session.orders[0].items[0].mealId
         if (badSummary === 'wrongNote') session.summary.dishes[0].notes = []
         if (badSummary === 'wrongGuest') session.summary.dishes[0].guestNames = ['其他客人']
+        if (badSummary === 'duplicateNames') {
+          session.orders = [
+            { id: 'one', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 1, note: '少盐' }] },
+            { id: 'two', guestName: '测试客人', submittedAt: '2026-10-29T12:01:00Z', items: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 1, note: '不辣' }] }
+          ]
+          session.summary.guestCount = 2
+          session.summary.dishes[0].notes = ['测试客人：少盐', '测试客人：不辣']
+        }
         return route.fulfill({ json: { session } })
       }
       if (req.method() === 'POST' && pathname === '/guest-orders/idempotent') {
@@ -111,6 +119,17 @@ async function main () {
       await dialog.getByRole('button', { name: '刷新点菜' }).click()
       await dialog.getByText('汇总中的客人或备注与点菜单不一致', { exact: false }).waitFor({ state: 'hidden' })
     }
+    badSummary = 'duplicateNames'
+    await dialog.getByRole('button', { name: '刷新点菜' }).click()
+    await dialog.getByText('有客人使用相同称呼', { exact: false }).waitFor()
+    assert.equal(await dialog.getByText('汇总中的客人或备注与点菜单不一致', { exact: false }).count(), 0)
+    await dialog.getByText('测试客人 · 第 1 份', { exact: false }).click()
+    await dialog.getByText('测试客人 · 第 2 份', { exact: false }).click()
+    await dialog.getByText('客人想吃的菜 × 1 · 少盐', { exact: true }).waitFor()
+    await dialog.getByText('客人想吃的菜 × 1 · 不辣', { exact: true }).waitFor()
+    badSummary = ''
+    await dialog.getByRole('button', { name: '刷新点菜' }).click()
+    await dialog.getByText('有客人使用相同称呼', { exact: false }).waitFor({ state: 'hidden' })
     await dialog.getByRole('button', { name: '编辑信息' }).click()
     const edit = dialog.locator('.edit-panel input').first()
     await edit.fill('本页的宴请草稿')
