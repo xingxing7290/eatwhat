@@ -9,6 +9,7 @@ import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 import { validWishVersion } from '@/utils/wishlistVersion.mjs';
 import { normalizeMealSearch } from '@/utils/mealSearch.mjs';
+import { validWeekLink } from '@/utils/weekLink.mjs';
 
 const items = ref([]);
 const router = useRouter();
@@ -31,6 +32,10 @@ const reviewedLinks = reactive({});
 const linkReviewErrors = reactive({});
 const uncertainCreates = reactive({});
 const linkDialog = ref(false);
+const scheduleDialog = ref(false);
+const scheduleItem = ref(null);
+const scheduleDate = ref('');
+const scheduleType = ref('dinner');
 const linkItem = ref(null);
 const availableMeals = ref([]);
 const selectedMealId = ref('');
@@ -79,6 +84,7 @@ const linkedMealId = item => {
   return typeof id === 'string' && /^[a-z\d_-]{1,128}$/i.test(id) ? id : '';
 };
 const linkedMealName = item => typeof item?.mealId?.name === 'string' && item.mealId.name.trim() ? item.mealId.name.trim() : '查看菜谱';
+const canSchedule = item => !!linkedMealId(item) && item?.mealId?.archived !== true;
 const confirmedLink = (result, wishId, expectedMealId) => result?._id === wishId && String(typeof result.mealId === 'string' ? result.mealId : result.mealId?._id || result.mealId?.id || '') === String(expectedMealId);
 const canLinkMeal = item => item?.supportsSafeMealLink === true && item?.supportsMealLinkVisibility === true && item?.mealLinkStatus === 'unlinked' && !item.mealId;
 const linkOptions = computed(() => {
@@ -392,14 +398,24 @@ const finishLinkReview = async item => {
     if (pendingLinks[item._id] === expected) { delete pendingLinks[item._id]; delete reviewedLinks[item._id]; delete linkReviewErrors[item._id]; }
   } catch (_) {} finally { confirmingId.value = ''; }
 };
+const localToday = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
 const arrangeToday = (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
-  const meal = item.mealId;
-  const id = typeof meal === 'string' ? meal : meal?._id || meal?.id;
-  if (!id) return ElMessage.warning('请先关联菜谱');
-  const now = new Date();
-  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  router.push({ name: 'MealSelection', query: { date, mealType: 'dinner', suggestedMealId: id, wishlistId: item._id } });
+  if (!canSchedule(item)) return ElMessage.warning('请先核对关联菜谱');
+  router.push({ name: 'MealSelection', query: { date: localToday(), mealType: 'dinner', suggestedMealId: linkedMealId(item), wishlistId: item._id } });
+};
+const openSchedule = item => {
+  if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value || !canSchedule(item)) return;
+  scheduleItem.value = { id: item._id, mealId: linkedMealId(item), title: item.title };
+  scheduleDate.value = localToday(); scheduleType.value = 'dinner'; scheduleDialog.value = true;
+};
+const continueSchedule = async () => {
+  const selected = scheduleItem.value;
+  const current = items.value.find(item => item._id === selected?.id);
+  if (!current || !canSchedule(current) || linkedMealId(current) !== selected.mealId || current.title !== selected.title) return ElMessage.warning('想吃记录已变化，请关闭后重新核对');
+  if (!validWeekLink(scheduleDate.value) || !['breakfast', 'lunch', 'dinner'].includes(scheduleType.value)) return ElMessage.warning('请选择有效日期和餐次');
+  const failure = await router.push({ name: 'MealSelection', query: { date: scheduleDate.value, mealType: scheduleType.value, suggestedMealId: selected.mealId, wishlistId: selected.id } });
+  if (!failure) scheduleDialog.value = false;
 };
 onMounted(load);
 onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkTimer) clearTimeout(linkTimer); if (filterTimer) clearTimeout(filterTimer); });
@@ -408,7 +424,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 <template>
   <div class="wishlist-page">
     <div class="page-header">
-      <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、对方提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可安排到今天晚餐。</small></div>
+      <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、对方提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可选择日期和餐次安排。</small></div>
       <el-button ref="addWishButton" type="primary" :disabled="loading || !!loadError || reviewing || !!actionIssue || !!actionId || !!confirmingId || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>添加想吃</el-button>
     </div>
 
@@ -452,7 +468,9 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
             <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :loading="convertingId === item._id" :disabled="busy || loading || !!actionIssue || actionLocked || !canLinkMeal(item)" @click="attachExisting(item, pendingLinks[item._id])">重试关联</el-button>
             <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="reviewPendingLink(item)">核对关联</el-button>
             <el-button v-if="!item.mealId && pendingLinks[item._id] && reviewedLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="finishLinkReview(item)">结束核对</el-button>
-            <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !linkedMealId(item)" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
+            <p v-if="item.mealId?.archived === true" class="pending-note">关联菜谱已移入回收站，请恢复后再安排。</p>
+            <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !canSchedule(item)" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
+            <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !canSchedule(item)" @click="openSchedule(item)">选择日期安排</el-button>
             <el-button v-if="item.status === 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'planned')">标记已安排</el-button>
             <el-button v-if="item.status !== 'done'" size="small" type="success" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>
             <el-button v-if="item.status !== 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'open')">重新想吃</el-button>
@@ -479,6 +497,11 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!actionIssue || !!actionId" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
+    <el-dialog v-model="scheduleDialog" title="安排想吃的菜" width="min(480px, 92vw)">
+      <p class="schedule-help">为「{{ scheduleItem?.title }}」选择日期和餐次。下一步会核对已有安排；保存前不会修改日历。</p>
+      <div class="schedule-fields"><label for="wish-schedule-date">日期</label><input id="wish-schedule-date" v-model="scheduleDate" type="date" min="0100-01-01" max="9998-12-31" /><fieldset><legend>餐次</legend><label v-for="option in [{ value: 'breakfast', label: '早餐' }, { value: 'lunch', label: '午餐' }, { value: 'dinner', label: '晚餐' }]" :key="option.value"><input v-model="scheduleType" type="radio" name="wish-schedule-type" :value="option.value" />{{ option.label }}</label></fieldset></div>
+      <template #footer><el-button @click="scheduleDialog = false">取消</el-button><el-button type="primary" :disabled="!validWeekLink(scheduleDate) || busy || loading || !!loadError || !!actionIssue || actionLocked" @click="continueSchedule">下一步：核对安排</el-button></template>
+    </el-dialog>
     <el-dialog v-model="linkDialog" title="关联已有菜谱" width="min(520px, 92vw)" :close-on-click-modal="!convertingId" :close-on-press-escape="!convertingId" :show-close="!convertingId">
       <p>为「{{ linkItem?.title }}」选择已有菜谱，不会创建新菜品。</p>
       <el-alert v-if="linkError" type="error" :closable="false" :title="linkError"><el-button link type="primary" @click="fetchLinkMeals">重试</el-button></el-alert>
@@ -490,6 +513,12 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 </template>
 
 <style scoped>
+.schedule-help { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
+.schedule-fields { display: grid; gap: 10px; color: var(--text-primary); }
+.schedule-fields input[type='date'] { min-height: 44px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.schedule-fields fieldset { display: flex; flex-wrap: wrap; gap: 12px; margin: 0; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px; }
+.schedule-fields fieldset label { display: inline-flex; align-items: center; min-height: 44px; gap: 6px; }
+.schedule-fields input:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 2px; }
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .wishlist-page { --wish-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }

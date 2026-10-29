@@ -1295,8 +1295,12 @@ async function main() {
       await reviewPage.goto(`${webBase}/review`);
       await reviewPage.getByText('2026 年 1 月 · OUR STORY', { exact: true }).waitFor();
       await reviewPage.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor();
-      assert.equal(await reviewPage.getByRole('link', { name: /归档的历史菜/ }).getAttribute('href'), `/meals/detail/${reviewMeal._id}`);
+      assert.equal(await reviewPage.getByRole('link', { name: /归档的历史菜/ }).getAttribute('href'), `/meals/detail/${reviewMeal._id}?reviewMonth=2026-01`);
       assert.equal(await reviewPage.getByText(otherMeal.name, { exact: true }).count(), 0, 'foreign recipe must not appear in the review UI');
+      await reviewPage.getByRole('link', { name: /归档的历史菜/ }).click();
+      await reviewPage.getByRole('button', { name: '返回饭桌回顾' }).click();
+      await reviewPage.waitForURL('**/review?month=2026-01');
+      await reviewPage.getByText('2026 年 1 月 · OUR STORY', { exact: true }).waitFor();
       assert.match(await reviewPage.locator('.feature-link').getAttribute('href'), /\/memories\?edit=/);
       assert.equal(await reviewPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await reviewPage.getByRole('radio', { name: '年度' }).focus();

@@ -24,6 +24,10 @@ async function main () {
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/wishlist' && request.method() === 'GET') return route.fulfill({ json: invalid ? [items[0], items[0]] : items })
       if (path.startsWith('/wishlist/') && request.method() === 'GET') return route.fulfill({ json: items.find(item => item._id === path.split('/').pop()) || {} })
+      if (path === '/meals/m1') return route.fulfill({ json: { _id: 'm1', name: '豆腐锅', ingredients: [], steps: [], photos: [], tags: [] } })
+      if (path === '/meals' && request.method() === 'GET') return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 8 } })
+      if (path === '/meals/categories' || path === '/meals/tags') return route.fulfill({ json: [] })
+      if (path.startsWith('/schedules/day/')) return route.fulfill({ json: { date: path.split('/').pop(), scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [{ meal: { _id: 'm2', name: '原有菜' } }], dinner: [] } } })
       if (path === '/meals' && request.method() === 'POST') return route.fulfill({ status: 503, json: { error: '模拟菜谱创建响应丢失' } })
       if (path === '/wishlist/a/status' && request.method() === 'PATCH') {
         const body = request.postDataJSON(); assert.equal(body.status, 'planned'); writes++
@@ -58,6 +62,43 @@ async function main () {
     await popup.getByRole('heading', { name: '豆腐锅' }).waitFor()
     assert.equal(await page.getByRole('textbox', { name: '搜索想吃记录' }).inputValue(), '豆腐锅', 'opening a recipe must preserve the original filtered board')
     await popup.close()
+    await page.locator('.wish-card').filter({ hasText: '火锅' }).getByRole('button', { name: '选择日期安排' }).click()
+    const schedule = page.getByRole('dialog', { name: '安排想吃的菜' })
+    await schedule.getByText('保存前不会修改日历', { exact: false }).waitFor()
+    await page.setViewportSize({ width: 320, height: 844 })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.schedule-help', '.schedule-fields', '#wish-schedule-date']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await schedule.getByLabel('日期').fill('')
+    assert.equal(await schedule.getByRole('button', { name: '下一步：核对安排' }).isDisabled(), true)
+    await schedule.getByLabel('日期').fill('2026-12-31')
+    await schedule.getByLabel('午餐').check()
+    await schedule.getByRole('button', { name: '下一步：核对安排' }).click()
+    await page.waitForURL('**/selection?date=2026-12-31&mealType=lunch&suggestedMealId=m1&wishlistId=a')
+    await page.getByRole('button', { name: '移除豆腐锅' }).waitFor()
+    await page.getByRole('button', { name: '移除原有菜' }).waitFor()
+    assert.equal(writes, 0, 'reviewing the meal must not modify a schedule or wish')
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await page.getByRole('dialog', { name: '放弃未保存的内容？' }).getByRole('button', { name: '放弃并离开' }).click()
+    await page.waitForURL('**/calendar?date=2026-12-31')
+    items[3].mealId = { _id: 'legacy-id', name: '面条', archived: true }
+    await page.goto(`${base}/wishlist`)
+    const archived = page.locator('.wish-card').filter({ hasText: '面条' })
+    await archived.getByText('关联菜谱已移入回收站', { exact: false }).waitFor()
+    assert.equal(await archived.getByRole('button', { name: '选择日期安排' }).isDisabled(), true)
+    assert.equal(await archived.getByRole('button', { name: '安排今天晚餐' }).isDisabled(), true)
+    items[3].mealId = 'legacy-id'
+    await page.reload()
     await page.getByRole('textbox', { name: '搜索想吃记录' }).fill('')
     await page.getByText('显示 5 / 5 条记录').waitFor()
     const unknown = page.locator('.wish-card').filter({ hasText: '旧状态心愿' })
