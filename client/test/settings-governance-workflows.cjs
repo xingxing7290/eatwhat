@@ -101,8 +101,10 @@ async function main () {
       }
     }
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.locator('.issue-item').filter({ hasText: '测试菜' }).getByRole('button', { name: '标记已修正' }).click()
+    const issueAction = page.locator('.issue-item').filter({ hasText: '测试菜' }).getByRole('button', { name: '标记已修正：测试菜', exact: true })
+    await issueAction.focus(); await page.keyboard.press('Enter')
     await page.getByText('图片反馈操作结果未确认').waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '待修正图片')
     assert.equal(issueCalls, 1)
     await page.getByRole('button', { name: '重新核对反馈' }).click()
     await page.getByText('当前有 0 条待修正反馈。').waitFor()
@@ -114,8 +116,9 @@ async function main () {
     issues = [{ _id: 'issue-1', mealId: { name: '测试菜' }, note: '图片不符' }]
     await page.locator('.settings-card').filter({ hasText: '用户设置' }).getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('图片不符').waitFor()
-    await page.getByRole('button', { name: '标记已修正' }).click()
+    await page.getByRole('button', { name: '标记已修正：测试菜', exact: true }).focus(); await page.keyboard.press('Enter')
     await page.getByText('暂无待修正图片').waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '待修正图片')
     assert.equal(issueCalls, 2)
     assert.equal(await page.getByText('图片反馈操作结果未确认').count(), 0)
     profileFailed = true

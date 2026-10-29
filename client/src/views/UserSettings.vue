@@ -103,8 +103,8 @@
             <strong>{{ issue.mealId?.name || '未知菜品' }}</strong>
             <span>{{ issue.note || '图片与菜名不匹配' }}</span>
           </div>
-          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining || joinUncertain" @click="resolveIssue(issue, 'fixed')">标记已修正</el-button>
-          <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain" @click="resolveIssue(issue, 'ignored')">忽略</el-button>
+          <el-button size="small" type="success" :disabled="!!resolvingIssue || joining || joinUncertain" :aria-label="`标记已修正：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'fixed', $event)">标记已修正</el-button>
+          <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain" :aria-label="`忽略图片反馈：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'ignored', $event)">忽略</el-button>
         </div>
       </div>
     </el-card>
@@ -447,11 +447,25 @@ const restoreDefaultImages = async () => {
   catch (_) { defaultUncertain.value = true; defaultReviewReady.value = false; }
   finally { defaultLoading.value = false; }
 };
-const resolveIssue = async (issue, status) => {
+const resolveIssue = async (issue, status, event) => {
   if (resolvingIssue.value || issueUncertain.value || issuesError.value || !profileReady.value || profileError.value || joinUncertain.value || governanceLoading.value || !sessionIsCurrent()) return;
+  const source = event?.currentTarget;
+  const restoreFocus = document.activeElement === source;
+  const issueIndex = Math.max(0, imageIssues.value?.findIndex(item => item._id === issue._id) ?? 0);
   try { resolvingIssue.value = issue._id; const result = await api.mealImageIssue.update(issue._id, { status }); if (result?._id !== issue._id || result?.status !== status) throw new Error('响应不完整'); if (!await loadGovernance() || issuesError.value) throw new Error('反馈重新加载失败'); ElMessage.success('已更新'); }
   catch (_) { issueUncertain.value = true; issueReviewReady.value = false; }
-  finally { resolvingIssue.value = ''; }
+  finally {
+    resolvingIssue.value = '';
+    if (restoreFocus) {
+      await nextTick();
+      const focused = document.activeElement;
+      if (!focused || focused === document.body || !focused.isConnected || (focused === source && source?.disabled)) {
+        const root = issuesSection.value?.$el;
+        const rows = root?.querySelectorAll('.issue-item') || [];
+        (rows[Math.min(issueIndex, rows.length - 1)]?.querySelector('button:not(:disabled)') || root)?.focus();
+      }
+    }
+  }
 };
 const acknowledgeDefault = async () => {
   if (!defaultReviewReady.value || governanceLoading.value) return;
