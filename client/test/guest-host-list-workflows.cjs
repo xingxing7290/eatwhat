@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Guest host list tests require a local server')
 
@@ -8,12 +9,15 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
+    const initialTime = new Date(2026, 9, 29, 12, 0, 0)
+    await page.clock.setFixedTime(initialTime)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const home = '111111111111111111111111'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const items = Array.from({ length: 41 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), householdId: home, title: i === 40 ? '延迟旧宴请' : `宴请${String(i).padStart(3, '0')}`, status: i % 2 ? 'completed' : 'open', storedStatus: i % 2 ? 'completed' : 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: `https://example.test/guest-order/token${i}`, supportsConditionalSession: true, editVersion: { revision: `v${i}`, updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: i, totalQuantity: i }))
+    items[38].expiresAt = new Date(initialTime.getTime() + 5000).toISOString()
     let slowStarted; const slowRequest = new Promise(resolve => { slowStarted = resolve })
-    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false
+    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false; let serverExpired = false
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
@@ -22,7 +26,7 @@ async function main () {
         const pageNumber = Number(url.searchParams.get('page')); const limit = Number(url.searchParams.get('limit')); const search = url.searchParams.get('search') || ''; const status = url.searchParams.get('status') || ''
         assert.equal(limit, 12)
         if (search === '延迟') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
-        const filtered = items.filter(item => item.title.includes(search) && (!status || item.status === status))
+        const filtered = items.map(item => serverExpired && item.id === items[38].id ? { ...item, status: 'expired' } : item).filter(item => item.title.includes(search) && (!status || item.status === status))
         const pagination = { page: pageNumber, limit, total: filtered.length, totalPages: Math.max(1, Math.ceil(filtered.length / limit)) }
         if (malformed) pagination.totalPages = 999
         const sessions = truncated ? [] : filtered.slice((pageNumber - 1) * limit, pageNumber * limit)
@@ -63,6 +67,28 @@ async function main () {
     assert.ok(await page.locator('.session-card').count() <= 12)
     await page.getByRole('button', { name: '清除筛选' }).click()
     await page.getByText('41 场', { exact: true }).waitFor()
+    await search.fill('宴请038')
+    const expiringCard = page.locator('.session-card').filter({ hasText: '宴请038' })
+    await expiringCard.getByText('正在点菜', { exact: true }).waitFor()
+    await page.clock.setFixedTime(new Date(initialTime.getTime() + 6000))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await expiringCard.getByText('链接已过期', { exact: true }).waitFor()
+    const expiryNotice = page.getByRole('status').filter({ hasText: '分页和筛选结果可能已变化' })
+    await expiryNotice.waitFor()
+    for (const width of [320, 1280]) for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      for (const selector of ['.expiry-notice span', '.expiry-notice button']) assert.ok((await contrast(page, selector)).ratio >= 4.5, `${width} ${dark} ${theme} ${selector}`)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    serverExpired = true
+    await expiryNotice.getByRole('button', { name: '刷新宴请列表' }).focus()
+    await page.keyboard.press('Enter')
+    await expiryNotice.waitFor({ state: 'hidden' })
+    await expiringCard.getByText('链接已过期', { exact: true }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent?.trim() === '刷新')
     malformed = true
     await search.fill('宴请039')
     await page.getByText('宴请分页数据不完整，请重试', { exact: false }).waitFor()

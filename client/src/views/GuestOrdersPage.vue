@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh, Link, Food } from '@element-plus/icons-vue';
 import api from '@/services/api';
@@ -11,6 +11,7 @@ const search = ref(''); const statusFilter = ref(''); const listPage = ref(1); c
 const createOpen = ref(false); const detailOpen = ref(false); const detailLoading = ref(false);
 const selectedId = ref(''); const detail = ref(null); const detailError = ref('');
 const pending = ref(null); const mutationIssue = ref(null); const editing = ref(false);
+const headerRefresh = ref(null);
 const now = ref(Date.now());
 const form = reactive({ title: '', eventAt: null, hours: 72 });
 const editForm = reactive({ title: '', eventAt: null });
@@ -25,6 +26,7 @@ const validVersion = item => item?.supportsConditionalSession === true && item.e
 const canChange = computed(() => capabilities.value?.supportsConditionalSession === true && validVersion(detail.value) && !loading.value && !working.value && !detailLoading.value && !detailError.value && !mutationIssue.value);
 const linkExpired = computed(() => !detail.value?.expiresAt || !Number.isFinite(Date.parse(detail.value.expiresAt)) || Date.parse(detail.value.expiresAt) <= now.value);
 const effectiveStatus = item => item?.status === 'open' && item.expiresAt && Number.isFinite(Date.parse(item.expiresAt)) && Date.parse(item.expiresAt) <= now.value ? 'expired' : item?.status;
+const listNeedsExpiryReview = computed(() => paginationAvailable.value && sessions.value.some(item => item.status === 'open' && effectiveStatus(item) === 'expired'));
 const detailStatus = computed(() => effectiveStatus(detail.value));
 const canShare = computed(() => !loading.value && !detailLoading.value && !detailError.value && !mutationIssue.value && !linkExpired.value && ['open', 'locked'].includes(detail.value?.status) && !!safeShareUrl(detail.value?.shareUrl));
 const dateText = value => { if (!value) return '未设置'; const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date) : '时间不可用'; };
@@ -117,6 +119,12 @@ function queueFilters() {
 }
 function clearFilters() { search.value = ''; statusFilter.value = ''; queueFilters(); }
 function changePage(next) { if (loading.value || !listPagination.value || next < 1 || next > listPagination.value.totalPages) return; listPage.value = next; load(); }
+async function refreshExpiredList(event) {
+  if (loading.value || working.value) return;
+  const source = event.currentTarget; const hadFocus = document.activeElement === source;
+  now.value = Date.now(); await load(); await nextTick();
+  if (hadFocus && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) headerRefresh.value?.$el?.focus();
+}
 async function readDetail(id, review = false) {
   const sequence = ++detailSequence; detailLoading.value = true; detailError.value = '';
   if (review && mutationIssue.value) mutationIssue.value.checked = false;
@@ -250,11 +258,12 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
 
 <template>
   <div class="guest-host-page">
-    <section class="hero"><div><span class="eyebrow">GATHER TOGETHER · 家庭宴请</span><h1>邀请大家，点一桌好菜</h1><p>创建专属菜单，分享给客人，再一起查看大家想吃什么。</p></div><div class="hero-actions"><el-button :loading="loading" :disabled="working" @click="load"><el-icon><Refresh /></el-icon>刷新</el-button><el-button type="primary" :disabled="!safeCreate || loading || working || !!pending" @click="createOpen = true"><el-icon><Plus /></el-icon>创建宴请</el-button></div></section>
+    <section class="hero"><div><span class="eyebrow">GATHER TOGETHER · 家庭宴请</span><h1>邀请大家，点一桌好菜</h1><p>创建专属菜单，分享给客人，再一起查看大家想吃什么。</p></div><div class="hero-actions"><el-button ref="headerRefresh" :loading="loading" :disabled="working" @click="load"><el-icon><Refresh /></el-icon>刷新</el-button><el-button type="primary" :disabled="!safeCreate || loading || working || !!pending" @click="createOpen = true"><el-icon><Plus /></el-icon>创建宴请</el-button></div></section>
     <el-alert v-if="capabilitiesError" type="warning" :closable="false" show-icon :title="capabilitiesError" />
     <el-alert v-if="pending" type="warning" :closable="false" show-icon :title="pending.invalid ? '无法读取安全创建凭证，请检查浏览器存储并与家人核对。' : '有一份宴请的创建结果待核对。安全重试会使用原内容，不会重复创建。'"><div class="alert-actions"><el-button link type="primary" :disabled="working || !!pending.invalid" @click="retryCreate">安全重试</el-button><el-button link :disabled="working" @click="abandonPending">放弃安全重试</el-button></div></el-alert>
     <div class="section-head"><div><span class="eyebrow">YOUR GATHERINGS</span><h2>我的宴请</h2></div><span class="muted" aria-live="polite">{{ loading ? '加载中' : listError ? '暂不可用' : `${paginationAvailable ? listPagination.total : visibleSessions.length} 场` }}</span></div>
     <div class="list-filters"><el-input v-model="search" clearable maxlength="80" aria-label="搜索宴请名称" placeholder="搜索宴请名称" :disabled="working" @input="queueFilters" /><el-select v-model="statusFilter" aria-label="筛选宴请状态" placeholder="全部状态" :disabled="working" @change="queueFilters"><el-option label="全部状态" value="" /><el-option label="正在点菜" value="open" /><el-option label="已锁单" value="locked" /><el-option label="已完成" value="completed" /><el-option label="已取消" value="cancelled" /><el-option label="链接已过期" value="expired" /></el-select><el-button v-if="hasFilters" :disabled="working" @click="clearFilters">清除筛选</el-button></div>
+    <div v-if="!loading && !listError && listNeedsExpiryReview" class="expiry-notice" role="status"><span>设备时间显示列表中有宴请已过期；分页和筛选结果可能已变化，请刷新与服务器核对。</span><button type="button" :disabled="working" @click="refreshExpiredList">刷新宴请列表</button></div>
     <p v-if="!loading && !listError && !paginationAvailable && sessions.length === 30" class="legacy-note">当前服务器仅提供最近 30 场宴请，搜索和筛选结果可能不完整。</p>
     <nav v-if="!loading && !listError && listPagination && listPagination.totalPages > 1" class="list-pagination top" aria-label="宴请顶部分页"><el-button :disabled="working || listPage <= 1" aria-label="上一页（顶部）" @click="changePage(listPage - 1)">上一页</el-button><span>第 {{ listPage }} / {{ listPagination.totalPages }} 页</span><el-button :disabled="working || listPage >= listPagination.totalPages" aria-label="下一页（顶部）" @click="changePage(listPage + 1)">下一页</el-button></nav>
     <div v-if="listError" class="empty-card" role="alert"><p>{{ listError }}</p><el-button @click="load">重新加载</el-button></div>
@@ -283,5 +292,6 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
 .share-panel p,.dish-row small{color:var(--text-primary)}
 .card-top :deep(.el-tag),.detail-head :deep(.el-tag){color:var(--text-primary);background:var(--bg-primary);border-color:var(--border-color)}
 .card-top :deep(.el-tag__content),.detail-head :deep(.el-tag__content){color:var(--text-primary)}
+.expiry-notice{display:flex;align-items:center;flex-wrap:wrap;gap:8px 16px;padding:12px 16px;border:1px solid var(--border-color);border-radius:14px;background:var(--bg-secondary);color:var(--text-primary);font-size:13px;line-height:1.5}.expiry-notice button{min-height:44px;padding:4px 0;border:0;background:transparent;color:var(--text-primary);font:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer}.expiry-notice button:focus-visible{outline:2px solid var(--text-primary);outline-offset:3px}.expiry-notice button:disabled{opacity:.6;cursor:not-allowed}
 .list-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.list-filters .el-input{flex:1;min-width:180px}.list-filters .el-select{width:180px}.list-filters .el-button{margin:0}.legacy-note{margin:0;color:var(--text-primary);font-size:13px}.list-pagination{display:flex;justify-content:center;align-items:center;gap:12px;color:var(--text-primary);font-size:13px}.list-pagination.top{justify-content:flex-end}.list-pagination .el-button{margin:0}@media(max-width:720px){.list-filters .el-input{flex-basis:100%}.list-filters .el-select{flex:1;min-width:0}.list-filters :deep(.el-input__wrapper),.list-filters :deep(.el-select__wrapper),.list-filters .el-button,.list-pagination .el-button{min-height:44px}}
 </style>
