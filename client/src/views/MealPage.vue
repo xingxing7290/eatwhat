@@ -23,6 +23,7 @@ const internalCatalogUrls = new Set();
 const searchQuery = ref(initialCatalog.search);
 const selectedTag = ref(initialCatalog.tag);
 const selectedCategory = ref(initialCatalog.category);
+const uncategorized = ref(initialCatalog.uncategorized);
 const selectedSubcategory = ref(initialCatalog.subcategory);
 const selectedDifficulty = ref(initialCatalog.difficulty);
 const favoriteOnly = ref(initialCatalog.favorite);
@@ -66,7 +67,7 @@ const canArchive = meal => meal?.supportsConditionalArchive === true && meal.arc
 // 状态 - 显示方式
 const currentView = ref(initialCatalog.view); // 'grid', 'list', 'table', 'grouped'
 const showAdvancedFilters = ref(!!(initialCatalog.tag || initialCatalog.subcategory || initialCatalog.difficulty));
-const catalogState = () => ({ search: searchQuery.value, category: selectedCategory.value, subcategory: selectedSubcategory.value, tag: selectedTag.value, difficulty: selectedDifficulty.value, favorite: favoriteOnly.value, page: currentPage.value, view: currentView.value });
+const catalogState = () => ({ search: searchQuery.value, category: selectedCategory.value, uncategorized: uncategorized.value, subcategory: selectedSubcategory.value, tag: selectedTag.value, difficulty: selectedDifficulty.value, favorite: favoriteOnly.value, page: currentPage.value, view: currentView.value });
 const catalogKey = value => JSON.stringify(readCatalogQuery(value));
 const syncCatalogUrl = async () => {
   if (catalogUrlTimer) { clearTimeout(catalogUrlTimer); catalogUrlTimer = null; }
@@ -80,7 +81,7 @@ const syncCatalogUrl = async () => {
 const scheduleCatalogUrl = () => { if (catalogUrlTimer) clearTimeout(catalogUrlTimer); catalogUrlTimer = setTimeout(() => { catalogUrlTimer = null; void syncCatalogUrl(); }, 200); };
 
 const hasActiveFilters = computed(() => {
-  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value || selectedDifficulty.value || favoriteOnly.value);
+  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || uncategorized.value || selectedSubcategory.value || selectedDifficulty.value || favoriteOnly.value);
 });
 const activeFilterContainer = ref(null);
 const filterToggleButton = ref(null);
@@ -88,6 +89,7 @@ const searchInput = ref(null);
 const activeFilters = computed(() => [
   searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
   selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
+  uncategorized.value && { key: 'uncategorized', label: '分类：未分类' },
   selectedSubcategory.value && { key: 'subcategory', label: `子类：${selectedSubcategory.value}` },
   selectedTag.value && { key: 'tag', label: `标签：${selectedTag.value}` },
   selectedDifficulty.value && { key: 'difficulty', label: `难度：${({ easy: '简单', medium: '中等', hard: '进阶' })[selectedDifficulty.value] || selectedDifficulty.value}` },
@@ -97,6 +99,7 @@ const removeActiveFilter = async key => {
   const index = activeFilters.value.findIndex(item => item.key === key);
   if (key === 'search') searchQuery.value = '';
   else if (key === 'category') selectedCategory.value = '';
+  else if (key === 'uncategorized') uncategorized.value = false;
   else if (key === 'subcategory') selectedSubcategory.value = '';
   else if (key === 'tag') selectedTag.value = '';
   else if (key === 'difficulty') selectedDifficulty.value = '';
@@ -139,7 +142,7 @@ const revealActiveCategory = async () => {
   const sidebar = categorySidebar.value;
   if (!sidebar) return;
   const buttons = [...sidebar.querySelectorAll('.category-list button')];
-  const target = selectedCategory.value
+  const target = uncategorized.value ? buttons.find(button => button.dataset.sidebarKind === 'uncategorized') : selectedCategory.value
     ? buttons.find(button => button.dataset.sidebarKind === 'category' && button.dataset.category === selectedCategory.value)
     : buttons.find(button => button.dataset.sidebarKind === (favoriteOnly.value ? 'favorite' : 'all'));
   if (!target) return;
@@ -147,7 +150,7 @@ const revealActiveCategory = async () => {
   if (bounds.top < box.top + 4) sidebar.scrollTop += bounds.top - box.top - 4;
   else if (bounds.bottom > box.bottom - 4) sidebar.scrollTop += bounds.bottom - box.bottom + 4;
 };
-watch([selectedCategory, favoriteOnly, categoryOptions], revealActiveCategory, { flush: 'post' });
+watch([selectedCategory, uncategorized, favoriteOnly, categoryOptions], revealActiveCategory, { flush: 'post' });
 onMounted(revealActiveCategory);
 
 const subcategoryOptions = computed(() => {
@@ -214,7 +217,7 @@ const legacyCatalogMatches = meal => {
   const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
   const steps = Array.isArray(meal.steps) ? meal.steps : [];
   const fields = [meal.name, meal.description, meal.tips, ...tags, ...ingredients.map(item => item?.name || item), ...steps.map(item => item?.description || item)];
-  return (!query || fields.some(value => String(value || '').toLocaleLowerCase().includes(query))) && (!selectedTag.value || tags.includes(selectedTag.value)) && (!selectedCategory.value || meal.category === selectedCategory.value) && (!selectedSubcategory.value || meal.subcategory === selectedSubcategory.value) && (!selectedDifficulty.value || meal.difficulty === selectedDifficulty.value) && (!favoriteOnly.value || meal.favorite === true);
+  return (!query || fields.some(value => String(value || '').toLocaleLowerCase().includes(query))) && (!selectedTag.value || tags.includes(selectedTag.value)) && (!uncategorized.value || meal.category == null || meal.category === '') && (!selectedCategory.value || meal.category === selectedCategory.value) && (!selectedSubcategory.value || meal.subcategory === selectedSubcategory.value) && (!selectedDifficulty.value || meal.difficulty === selectedDifficulty.value) && (!favoriteOnly.value || meal.favorite === true);
 };
 
 // 加载菜品；完整数组是旧接口，在本地筛选和分页。
@@ -229,6 +232,7 @@ const fetchMeals = async () => {
     if (searchQuery.value) params.search = searchQuery.value;
     if (selectedTag.value) params.tag = selectedTag.value;
     if (selectedCategory.value) params.category = selectedCategory.value;
+    if (uncategorized.value) params.uncategorized = '1';
     if (selectedSubcategory.value) params.subcategory = selectedSubcategory.value;
     if (selectedDifficulty.value) params.difficulty = selectedDifficulty.value;
     if (favoriteOnly.value) params.favorite = 'true';
@@ -242,6 +246,8 @@ const fetchMeals = async () => {
     let rows = result.data; let total = result.total;
     if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(item => !item || !(item._id || item.id) || typeof item.name !== 'string' || !item.name.trim()) || new Set(rows.map(item => String(item._id || item.id))).size !== rows.length) throw new Error('菜品列表数据不完整');
     if (result.legacyArray) { rows = rows.filter(legacyCatalogMatches); total = rows.length; rows = rows.slice((requestedPage - 1) * pageSize.value, requestedPage * pageSize.value); }
+    else if (uncategorized.value && !result.supportsUncategorizedFilter) throw new Error('当前服务器不支持未分类筛选，请升级服务器或查看全部分类');
+    else if (uncategorized.value && rows.some(meal => meal.category != null && meal.category !== '')) throw new Error('未分类筛选结果不完整，请重试');
     else if (result.page != null || result.limit != null) {
       if (result.page !== requestedPage || result.limit !== pageSize.value || rows.length !== Math.min(pageSize.value, Math.max(0, total - (requestedPage - 1) * pageSize.value))) throw new Error('菜品分页数据不完整或已发生变化，请重试');
     }
@@ -554,6 +560,7 @@ const clearFilters = async () => {
   searchQuery.value = '';
   selectedTag.value = '';
   selectedCategory.value = '';
+  uncategorized.value = false;
   selectedSubcategory.value = '';
   selectedDifficulty.value = '';
   favoriteOnly.value = false;
@@ -583,7 +590,7 @@ const scheduleFetch = (delay = 160) => {
 };
 
 // 监听筛选条件变化，重置分页
-watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory, selectedDifficulty, favoriteOnly], () => {
+watch([searchQuery, selectedTag, selectedCategory, uncategorized, selectedSubcategory, selectedDifficulty, favoriteOnly], () => {
   if (applyingCatalogRoute) return;
   currentPage.value = 1;
   scheduleFetch();
@@ -592,6 +599,7 @@ watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory, selected
 
 watch(selectedCategory, () => {
   if (applyingCatalogRoute) return;
+  if (selectedCategory.value) uncategorized.value = false;
   selectedSubcategory.value = '';
 }, { flush: 'sync' });
 
@@ -605,7 +613,7 @@ watch(() => route.fullPath, () => {
   if (JSON.stringify(next) === JSON.stringify(catalogState())) return;
   if (catalogUrlTimer) { clearTimeout(catalogUrlTimer); catalogUrlTimer = null; }
   applyingCatalogRoute = true;
-  searchQuery.value = next.search; selectedCategory.value = next.category; selectedSubcategory.value = next.subcategory; selectedTag.value = next.tag; selectedDifficulty.value = next.difficulty; favoriteOnly.value = next.favorite; currentPage.value = next.page; currentView.value = next.view;
+  searchQuery.value = next.search; selectedCategory.value = next.category; uncategorized.value = next.uncategorized; selectedSubcategory.value = next.subcategory; selectedTag.value = next.tag; selectedDifficulty.value = next.difficulty; favoriteOnly.value = next.favorite; currentPage.value = next.page; currentView.value = next.view;
   showAdvancedFilters.value = !!(next.tag || next.subcategory || next.difficulty);
   applyingCatalogRoute = false;
   scheduleFetch(0);
@@ -853,9 +861,10 @@ onBeforeUnmount(() => {
       <aside ref="categorySidebar" class="category-sidebar" aria-label="菜品分类">
         <div class="category-heading">菜品分类</div>
         <nav class="category-list" aria-label="选择菜品分类">
-          <button type="button" data-sidebar-kind="all" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部分类</button>
-          <button type="button" data-sidebar-kind="favorite" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
-          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = category">{{ category }}</button>
+          <button type="button" data-sidebar-kind="all" :class="{ active: !selectedCategory && !uncategorized && !favoriteOnly }" :aria-pressed="!selectedCategory && !uncategorized && !favoriteOnly" @click="selectedCategory = ''; uncategorized = false; favoriteOnly = false">全部分类</button>
+          <button type="button" data-sidebar-kind="favorite" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; uncategorized = false; favoriteOnly = !favoriteOnly">我的收藏</button>
+          <button type="button" data-sidebar-kind="uncategorized" :class="{ active: uncategorized }" :aria-pressed="uncategorized" @click="selectedCategory = ''; uncategorized = true; favoriteOnly = false">未分类</button>
+          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="uncategorized = false; favoriteOnly = false; selectedCategory = category">{{ category }}</button>
         </nav>
         <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button ref="categoryRetryButton" type="button" :disabled="categoryLoading" @click="loadCategories">{{ categoryLoading ? '正在重试' : '重试' }}</button></div>
       </aside>

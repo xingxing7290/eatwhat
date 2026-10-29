@@ -101,15 +101,17 @@ exports.validateMeal = [
 exports.getAllMeals = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
-    const { search, tag, category, subcategory, difficulty, favorite, page, limit, archived } = req.query;
+    const { search, tag, category, subcategory, difficulty, favorite, page, limit, archived, uncategorized } = req.query;
     if (archived !== undefined && archived !== 'true' && archived !== 'false') return res.status(400).json({ error: '归档筛选参数无效' });
+    if (uncategorized !== undefined && (uncategorized !== '1' || category || subcategory)) return res.status(400).json({ error: '分类筛选参数无效' });
     const query = { householdId: household._id, archived: archived === 'true' ? true : { $ne: true } };
     if (search && String(search).trim()) {
       const rx = { $regex: escapeRegExp(String(search).trim()), $options: 'i' };
       query.$or = [{ name: rx }, { description: rx }, { tags: rx }, { tips: rx }, { 'ingredients.name': rx }, { 'steps.description': rx }];
     }
     if (tag && String(tag).trim()) query.tags = String(tag).trim();
-    if (category && String(category).trim()) query.category = String(category).trim();
+    if (uncategorized === '1') query.category = { $in: [null, ''] };
+    else if (category && String(category).trim()) query.category = String(category).trim();
     if (subcategory && String(subcategory).trim()) query.subcategory = String(subcategory).trim();
     if (difficulty && String(difficulty).trim()) query.difficulty = String(difficulty).trim();
     if (favorite === 'true') query.favorite = true;
@@ -128,7 +130,7 @@ exports.getAllMeals = async (req, res, next) => {
     let mealQuery = Meal.find(query).sort({ favorite: -1, createdAt: -1, _id: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit);
     if (mobile) mealQuery = mealQuery.select('name imageUrl category tags healthTags ingredients cookTime difficulty rating favorite');
     const meals = await mealQuery.lean();
-    res.status(200).json({ data: mobile ? meals.map(compactMeal) : meals.map(presentArchive), total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1 });
+    res.status(200).json({ data: mobile ? meals.map(compactMeal) : meals.map(presentArchive), total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1, supportsUncategorizedFilter: true });
   } catch (error) { logger.error(`获取菜品失败: ${error.message}`); next(error); }
 };
 

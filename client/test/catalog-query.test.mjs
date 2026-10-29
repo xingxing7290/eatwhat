@@ -12,3 +12,10 @@ test('catalog links discard malformed or unrelated parameters', () => {
   assert.deepEqual(buildCatalogQuery(parsed), {})
   assert.deepEqual(filterCatalogQuery({ q: 'a'.repeat(201), page: '0', favorite: '1' }), { favorite: '1' })
 })
+
+test('uncategorized links are distinct from a named category and survive round trips', () => {
+  const query = { q: '番茄', uncategorized: '1', favorite: '1', page: '2' }
+  assert.deepEqual(buildCatalogQuery(readCatalogQuery(query)), query)
+  assert.deepEqual(filterCatalogQuery({ uncategorized: '1', category: '热菜', subcategory: '炒菜' }), { uncategorized: '1' })
+  assert.deepEqual(filterCatalogQuery({ uncategorized: 'true' }), {})
+})

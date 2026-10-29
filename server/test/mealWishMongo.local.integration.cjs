@@ -195,6 +195,16 @@ async function main() {
       return result.data.token;
     }
     const [tokenA, tokenPartner, tokenB] = await Promise.all(['test-local-a', 'test-local-partner', 'test-local-b'].map(login));
+    const uncategorizedHome = await Household.create({ name: '未分类筛选测试', inviteCode: 'UNCATEGORIZED-TEST' });
+    await User.create({ username: 'uncategorized-test-user', passwordHash: hash, householdId: uncategorizedHome._id });
+    const uncategorizedToken = await login('uncategorized-test-user');
+    const uncategorizedOtherHome = await Household.create({ name: '未分类隔离测试', inviteCode: 'UNCATEGORIZED-OTHER' });
+    await Meal.collection.insertMany([{ householdId: uncategorizedHome._id, name: '空分类菜', category: '' }, { householdId: uncategorizedHome._id, name: '缺省分类菜' }, { householdId: uncategorizedHome._id, name: '有分类菜', category: '热菜' }, { householdId: uncategorizedOtherHome._id, name: '外家空分类菜', category: '' }]);
+    const uncategorizedResult = await request('/meals?uncategorized=1&page=1&limit=8', { token: uncategorizedToken });
+    assert.equal(uncategorizedResult.status, 200);
+    assert.equal(uncategorizedResult.data.supportsUncategorizedFilter, true);
+    assert.deepEqual(uncategorizedResult.data.data.map(meal => meal.name).sort(), ['缺省分类菜', '空分类菜'].sort());
+    assert.equal((await request('/meals?uncategorized=1&category=热菜&page=1', { token: uncategorizedToken })).status, 400);
     const scopedHome = await Household.create({ name: '隔离排餐测试', inviteCode: 'SCOPED-SCHEDULE' });
     const [scopedUser, scopedPartner] = await User.create([{ username: 'scope-schedule-user', passwordHash: hash, householdId: scopedHome._id }, { username: 'scope-schedule-partner', passwordHash: hash, householdId: scopedHome._id }]);
     const scopedToken = await login('scope-schedule-user');

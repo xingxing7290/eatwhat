@@ -310,7 +310,8 @@ export const mealApi = {
 					total,
 					page: data?.page,
 					limit: data?.limit,
-					totalPages: data?.totalPages
+					totalPages: data?.totalPages,
+					supportsUncategorizedFilter: data?.supportsUncategorizedFilter === true
 				};
 			});
 	},
