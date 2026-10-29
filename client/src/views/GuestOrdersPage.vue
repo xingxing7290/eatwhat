@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh, Link, Food } from '@element-plus/icons-vue';
 import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import { currentSessionScope, sessionIsCurrent } from '@/services/sessionScope';
 
 const loading = ref(false); const working = ref(false); const listError = ref('');
 const capabilities = ref(null); const capabilitiesError = ref(''); const sessions = ref([]);
@@ -53,7 +54,13 @@ const summaryDetailsMismatch = computed(() => {
 const visibleSessions = computed(() => paginationAvailable.value ? sessions.value : sessions.value.filter(item => (!statusFilter.value || effectiveStatus(item) === statusFilter.value) && (!search.value.trim() || item.title.toLowerCase().includes(search.value.trim().toLowerCase()))));
 const hasFilters = computed(() => !!(search.value.trim() || statusFilter.value));
 const safeCreate = computed(() => capabilities.value?.supportsIdempotentSessionCreate === true && /^[a-f0-9]{24}$/.test(capabilities.value?.householdId || ''));
-const pendingKey = computed(() => /^[a-f0-9]{24}$/.test(capabilities.value?.householdId || '') ? `eatwhat.hostGuest.create.${capabilities.value.householdId}` : '');
+const pendingHome = computed(() => {
+  const verifiedHome = capabilities.value?.householdId;
+  if (/^[a-f0-9]{24}$/.test(verifiedHome || '')) return verifiedHome;
+  const scope = currentSessionScope();
+  return scope.token && scope.userId && /^[a-f0-9]{24}$/.test(scope.householdId) && sessionIsCurrent(scope) ? scope.householdId : '';
+});
+const pendingKey = computed(() => pendingHome.value ? `eatwhat.hostGuest.create.${pendingHome.value}` : '');
 const validVersion = item => item?.supportsConditionalSession === true && item.editVersion && (item.editVersion.revision === null || (typeof item.editVersion.revision === 'string' && !!item.editVersion.revision)) && (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
 const canChange = computed(() => capabilities.value?.supportsConditionalSession === true && validVersion(detail.value) && !loading.value && !working.value && !detailLoading.value && !detailError.value && !mutationIssue.value);
 const linkExpired = computed(() => !detail.value?.expiresAt || !Number.isFinite(Date.parse(detail.value.expiresAt)) || Date.parse(detail.value.expiresAt) <= now.value);
@@ -81,7 +88,7 @@ function readPending() {
   if (!pendingKey.value) return null;
   let raw; try { raw = sessionStorage.getItem(pendingKey.value); } catch (_) { return { invalid: true, unavailable: true }; }
   if (!raw) return null;
-  try { const value = JSON.parse(raw); return validPending(value, capabilities.value.householdId) ? value : { invalid: true }; } catch (_) { return { invalid: true }; }
+  try { const value = JSON.parse(raw); return validPending(value, pendingHome.value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; }
 }
 function savePending(value) {
   if (!validPending(value, capabilities.value?.householdId) || !pendingKey.value) throw new Error('安全创建数据无效');
@@ -300,7 +307,7 @@ async function copyLink() {
   }
 }
 const refreshClock = () => { now.value = Date.now(); };
-onMounted(() => { load(); window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 30000); });
+onMounted(() => { pending.value = readPending(); load(); window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 30000); });
 onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); clearInterval(clockTimer); clearTimeout(filterTimer); });
 </script>
 

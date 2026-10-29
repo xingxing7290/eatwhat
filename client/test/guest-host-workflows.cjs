@@ -9,7 +9,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     page.on('dialog', dialog => dialog.accept())
-    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
+    await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: '111111111111111111111111' })) })
     const home = '111111111111111111111111'; const id = '222222222222222222222222'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''; let rotateFails = true; let capabilitiesMode = 'ok'
@@ -98,6 +98,10 @@ async function main () {
     assert.ok(await page.evaluate(key => sessionStorage.getItem(key), `eatwhat.hostGuest.create.${home}`), 'capability failure must retain the recovery credential')
     assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
     assert.equal(createRequests, 1)
+    await page.reload()
+    await page.getByText('有一份宴请的创建结果待核对', { exact: false }).waitFor()
+    await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '安全重试', exact: true }).isDisabled(), true)
     capabilitiesMode = 'unsupported'
     await refreshCapabilities()
     await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
@@ -225,6 +229,23 @@ async function main () {
     assert.equal(await retainedEdit.inputValue(), '找不到宴请时仍保留草稿')
     assert.deepEqual(errors, [])
     await page.close()
+    const isolated = await browser.newPage()
+    await isolated.addInitScript(() => {
+      localStorage.setItem('token', 'other-token')
+      localStorage.setItem('user', JSON.stringify({ id: 'other', householdId: '333333333333333333333333' }))
+      sessionStorage.setItem('eatwhat.hostGuest.create.111111111111111111111111', '{"private":"another household"}')
+    })
+    await isolated.route('**/api/**', route => {
+      const pathname = new URL(route.request().url()).pathname
+      if (pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: '333333333333333333333333' } })
+      if (pathname.endsWith('/guest-orders/capabilities')) return route.fulfill({ status: 503, json: { error: '能力暂不可用' } })
+      return route.fulfill({ json: { sessions: [] } })
+    })
+    await isolated.goto(`${base}/guest-orders`)
+    await isolated.getByText('服务器未提供安全宴请能力', { exact: false }).waitFor()
+    assert.equal(await isolated.getByText('无法读取安全创建凭证', { exact: false }).count(), 0, 'another household’s pending record must not be read')
+    assert.equal(await isolated.getByText('有一份宴请的创建结果待核对', { exact: false }).count(), 0)
+    await isolated.close()
     const legacy = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await legacy.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' })) })
     await legacy.route('**/api/**', route => route.request().url().endsWith('/guest-orders/capabilities') ? route.fulfill({ status: 404, json: { error: '未找到' } }) : route.fulfill({ json: { sessions: [] } }))
