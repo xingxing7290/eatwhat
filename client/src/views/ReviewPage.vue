@@ -49,6 +49,7 @@ const summaryText = computed(() => {
 const mealType = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '一餐' };
 const nonnegative = value => Number.isSafeInteger(value) && value >= 0;
 const idOf = value => String(value?._id || value?.id || '');
+const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const validYear = value => /^\d{4}$/.test(value || '') && Number(value) >= 2000 && Number(value) <= 2100;
 function expectedRange(type, label) {
   if (type === 'year' && validYear(label)) return { start: `${label}-01-01`, end: `${label}-12-31` };
@@ -67,9 +68,9 @@ function acceptReview(data, type, label) {
   for (const [key, field] of [['moodStats', 'mood'], ['categoryStats', 'category'], ['healthTagStats', 'tag']]) {
     if (!Array.isArray(data[key]) || data[key].some(item => !item || typeof item[field] !== 'string' || !item[field] || !nonnegative(item.count))) throw new Error('回顾分类数据不完整');
   }
-  if (!Array.isArray(data.photos) || data.photos.some(item => !item || typeof item.photo !== 'string' || !item.photo || typeof item.memoryId !== 'string' || !item.memoryId || typeof item.date !== 'string' || item.date < range.start || item.date > range.end)) throw new Error('回顾照片数据不完整');
-  if (!Array.isArray(data.recentMemories) || data.recentMemories.some(item => !item || !idOf(item) || typeof item.date !== 'string' || item.date < range.start || item.date > range.end)) throw new Error('回忆记录不完整');
-  if (data.bestMemory && (!idOf(data.bestMemory) || typeof data.bestMemory.date !== 'string' || data.bestMemory.date < range.start || data.bestMemory.date > range.end)) throw new Error('精选回忆数据不完整');
+  if (!Array.isArray(data.photos) || data.photos.some(item => !item || typeof item.photo !== 'string' || !item.photo || typeof item.memoryId !== 'string' || !item.memoryId || !validDate(item.date) || item.date < range.start || item.date > range.end)) throw new Error('回顾照片数据不完整');
+  if (!Array.isArray(data.recentMemories) || data.recentMemories.some(item => !item || !idOf(item) || !validDate(item.date) || item.date < range.start || item.date > range.end)) throw new Error('回忆记录不完整');
+  if (data.bestMemory && (!idOf(data.bestMemory) || !validDate(data.bestMemory.date) || data.bestMemory.date < range.start || data.bestMemory.date > range.end)) throw new Error('精选回忆数据不完整');
   return data;
 }
 async function load() {
@@ -89,6 +90,10 @@ const imageFor = value => {
   try { const url = new URL(resolved, window.location.origin); return ['http:', 'https:'].includes(url.protocol) ? url.href : placeholder; } catch (_) { return placeholder; }
 };
 const imageError = event => handleUploadedImageError(event, placeholder);
+const photoLink = photo => {
+  if (/^[a-f\d]{24}$/i.test(photo.memoryId) && Number.isSafeInteger(photo.photoIndex) && photo.photoIndex >= 0 && typeof photo.fingerprint === 'string' && /^[a-f\d]{64}$/i.test(photo.fingerprint)) return { name: 'photoAlbum', query: { month: photo.date.slice(0, 7), memoryId: photo.memoryId, photoIndex: String(photo.photoIndex), fingerprint: photo.fingerprint } };
+  return { name: 'memories', query: { edit: photo.memoryId } };
+};
 const widthFor = item => `${Math.round((item.count / Math.max(1, ...result.value.categoryStats.map(row => row.count))) * 100)}%`;
 watch(mode, value => {
   if (applyingRoute) return;
@@ -144,7 +149,7 @@ onBeforeUnmount(() => { alive = false; sequence++; window.removeEventListener('f
         <section class="panel memory-feature"><div class="panel-head"><div><span class="eyebrow">A MOMENT TO KEEP</span><h2>精选饭桌回忆</h2></div><router-link class="text-link" to="/memories">查看全部 →</router-link></div><div v-if="!result.bestMemory" class="panel-empty">还没有值得收藏的饭后回忆。</div><router-link v-else class="feature-link" :to="{ name: 'memories', query: { edit: idOf(result.bestMemory) } }"><img v-if="result.bestMemory.photos?.length" :src="imageFor(result.bestMemory.photos[0])" :alt="result.bestMemory.title || '饭桌回忆'" @error="imageError" /><div><span>{{ result.bestMemory.date }} · {{ mealType[result.bestMemory.mealType] || '一餐' }}</span><h3>{{ result.bestMemory.title || '一段饭桌回忆' }}</h3><p>{{ result.bestMemory.note || '那天的味道，留在这段小小的记录里。' }}</p><small>{{ result.bestMemory.mood || '日常心情' }}<template v-if="result.bestMemory.rating"> · {{ result.bestMemory.rating }} / 5 分</template></small></div></router-link></section>
         <section class="panel moods"><div class="panel-head"><div><span class="eyebrow">LITTLE FEELINGS</span><h2>饭桌上的心情</h2></div></div><div v-if="!result.moodStats.length" class="panel-empty">还没有心情记录。</div><div v-else class="mood-list"><div v-for="item in result.moodStats" :key="item.mood"><span>{{ item.mood }}</span><strong>{{ item.count }} 条</strong></div></div><p class="current-note">当前小家：{{ result.summary.mealTotal }} 道菜 · {{ result.summary.favoriteTotal }} 道收藏 · {{ result.summary.wishlistOpen }} 条待完成想吃</p></section>
       </div>
-      <section class="panel photos"><div class="panel-head"><div><span class="eyebrow">PHOTO NOTES</span><h2>照片里的日常</h2><p class="explain">最多展示本期最近 12 张照片。</p></div><router-link class="text-link" :to="mode === 'month' ? { name: 'photoAlbum', query: { month } } : { name: 'photoAlbum' }">{{ mode === 'month' ? '打开本月相册 →' : '打开相册 →' }}</router-link></div><div v-if="!result.photos.length" class="panel-empty">这段时间还没有饭桌照片。</div><div v-else class="photo-grid"><router-link v-for="(photo, index) in result.photos" :key="`${photo.memoryId}-${index}-${photo.photo}`" :to="{ name: 'memories', query: { edit: photo.memoryId } }" class="photo-card" :aria-label="`查看${photo.date} ${photo.title || '饭桌回忆'}`"><img :src="imageFor(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="imageError" /><span>{{ photo.date }} · {{ photo.title || '饭桌回忆' }}</span></router-link></div></section>
+      <section class="panel photos"><div class="panel-head"><div><span class="eyebrow">PHOTO NOTES</span><h2>照片里的日常</h2><p class="explain">最多展示本期最近 12 张照片。</p></div><router-link class="text-link" :to="mode === 'month' ? { name: 'photoAlbum', query: { month } } : { name: 'photoAlbum' }">{{ mode === 'month' ? '打开本月相册 →' : '打开相册 →' }}</router-link></div><div v-if="!result.photos.length" class="panel-empty">这段时间还没有饭桌照片。</div><div v-else class="photo-grid"><router-link v-for="(photo, index) in result.photos" :key="`${photo.memoryId}-${index}-${photo.photo}`" :to="photoLink(photo)" class="photo-card" :aria-label="`${photoLink(photo).name === 'photoAlbum' ? '在相册查看照片' : '查看饭桌回忆'}：${photo.date} ${photo.title || '饭桌回忆'}`"><img :src="imageFor(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="imageError" /><span>{{ photo.date }} · {{ photo.title || '饭桌回忆' }}</span></router-link></div></section>
       <section class="panel recent"><div class="panel-head"><div><span class="eyebrow">RECENT NOTES</span><h2>最近的回忆</h2></div><router-link class="text-link" to="/memories">全部回忆 →</router-link></div><div v-if="!result.recentMemories.length" class="panel-empty">这段时间还没有饭后回忆。</div><div v-else class="recent-list"><router-link v-for="item in result.recentMemories" :key="idOf(item)" :to="{ name: 'memories', query: { edit: idOf(item) } }"><div><strong>{{ item.title || '一段饭桌回忆' }}</strong><small>{{ item.date }} · {{ mealType[item.mealType] || '一餐' }} · {{ item.mood || '日常心情' }}</small></div><span aria-hidden="true">→</span></router-link></div></section>
     </template>
   </div>

@@ -374,6 +374,13 @@ async function main() {
     const photoReview = await request('/review/monthly?month=2026-02', { token: reviewToken });
     assert.equal(photoReview.data.summary.photoCount, 15);
     assert.equal(photoReview.data.photos.length, 12);
+    const reviewPhoto = photoReview.data.photos[2];
+    assert.equal(reviewPhoto.photoIndex, 2);
+    assert.match(reviewPhoto.fingerprint, /^[a-f0-9]{64}$/);
+    const reviewLocate = await request(`/photo-album?view=locate&month=2026-02&memoryId=${reviewPhoto.memoryId}&photoIndex=${reviewPhoto.photoIndex}&fingerprint=${reviewPhoto.fingerprint}`, { token: reviewToken });
+    assert.equal(reviewLocate.status, 200);
+    assert.equal(reviewLocate.data.photo, reviewPhoto.photo, 'review photo should locate the exact household image');
+    assert.equal((await request(`/photo-album?view=locate&month=2026-02&memoryId=${reviewPhoto.memoryId}&photoIndex=${reviewPhoto.photoIndex}&fingerprint=${reviewPhoto.fingerprint}`, { token: tokenA })).status, 404, 'review photo links must not cross households');
     assert.match(photoReview.data.summary.sentence, /15 张饭桌照片/);
     assert.deepEqual((await request('/review/monthly?month=2000-02', { token: reviewToken })).data.range, { start: '2000-02-01', end: '2000-02-29' });
     assert.deepEqual((await request('/review/monthly?month=2100-02', { token: reviewToken })).data.range, { start: '2100-02-01', end: '2100-02-28' });
@@ -1723,6 +1730,7 @@ async function main() {
       await pages[1].getByText('已按所选周排餐生成购物清单').waitFor();
       await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor();
       await pages[1].getByRole('button', { name: '删除浏览器鸡蛋' }).click();
+      await pages[1].getByRole('dialog', { name: '删除食材' }).getByRole('button', { name: '删除', exact: true }).click();
       await pages[1].getByText('浏览器鸡蛋', { exact: true }).waitFor({ state: 'hidden' });
       assert.equal((await request('/shopping-list?weekStart=2026-10-26', { token: tokenA })).data.items.length, 0);
       await pages[0].goto(`${webBase}/weekly-plan`);

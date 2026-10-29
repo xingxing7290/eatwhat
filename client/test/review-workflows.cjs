@@ -15,7 +15,7 @@ function fixture (type, label) {
     topMeals: [{ id: 'meal-a', name: '番茄炒蛋', count: 3, memoryCount: 1, scheduleCount: 2, imageUrl: '/api/uploads/missing.jpg' }],
     moodStats: [{ mood: '开心', count: 1 }], categoryStats: [{ category: '家常菜', count: 3 }], healthTagStats: [{ tag: '少油', count: 1 }],
     bestMemory: { id: 'memory-a', date, title: '温暖的晚餐', mealType: 'dinner', mood: '开心', note: '和家人一起', rating: 5, photos: ['/api/uploads/missing.jpg'] },
-    photos: [{ memoryId: 'memory-a', date, title: '温暖的晚餐', photo: '/api/uploads/missing.jpg' }],
+    photos: [{ memoryId: '0123456789abcdef01234567', photoIndex: 2, fingerprint: 'a'.repeat(64), date, title: '温暖的晚餐', photo: '/api/uploads/missing.jpg' }],
     recentMemories: [{ _id: 'memory-a', date, title: '温暖的晚餐', mealType: 'dinner', mood: '开心' }]
   }
 }
@@ -33,6 +33,12 @@ async function main () {
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url())
+      if (url.pathname === '/api/photo-album') {
+        const month = url.searchParams.get('month')
+        const photo = { memoryId: '0123456789abcdef01234567', photoIndex: 2, date: `${month}-10`, title: '温暖的晚餐', photo: '/api/uploads/missing.jpg' }
+        if (url.searchParams.get('view') === 'locate') return route.fulfill({ json: { supportsPhotoLocate: true, month, memoryId: photo.memoryId, photoIndex: photo.photoIndex, fingerprint: 'a'.repeat(64), photo: photo.photo, position: 1, page: 1, limit: 24 } })
+        return route.fulfill({ json: { month, photos: [photo], total: 1, page: 1, limit: 24 } })
+      }
       if (url.pathname.startsWith('/api/review/')) {
         const type = url.pathname.endsWith('/yearly') ? 'year' : 'month'; const label = url.searchParams.get(type === 'year' ? 'year' : 'month')
         if (label === '2026-02') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
@@ -40,6 +46,8 @@ async function main () {
         const data = fixture(type, label)
         if (scenario === 'legacy') delete data.supportsHouseholdScopedReview
         if (scenario === 'malformed') data.range.end = '1999-01-01'
+        if (scenario === 'oldphoto') { delete data.photos[0].photoIndex; delete data.photos[0].fingerprint }
+        if (scenario === 'invalidphoto') data.photos[0].date = `${label}-02-31`
         if (scenario === 'empty') { data.summary = { ...data.summary, memoryCount: 0, plannedMealCount: 0, reviewedDayCount: 0, photoCount: 0 }; data.topMeals = []; data.moodStats = []; data.categoryStats = []; data.healthTagStats = []; data.bestMemory = null; data.photos = []; data.recentMemories = [] }
         return route.fulfill({ json: data })
       }
@@ -51,7 +59,18 @@ async function main () {
     await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
     assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a')
     assert.match(await page.locator('.feature-link').getAttribute('href'), /\/memories\?edit=memory-a/)
-    assert.match(await page.locator('.photo-card').getAttribute('href'), /\/memories\?edit=memory-a/)
+    const photoUrl = new URL(await page.locator('.photo-card').getAttribute('href'), base)
+    assert.equal(photoUrl.pathname, '/photo-album')
+    assert.equal(photoUrl.searchParams.get('month'), '2026-10')
+    assert.equal(photoUrl.searchParams.get('photoIndex'), '2')
+    assert.equal(photoUrl.searchParams.get('fingerprint'), 'a'.repeat(64))
+    await page.locator('.photo-card').click()
+    await page.getByRole('dialog', { name: '饭桌回忆' }).getByText('温暖的晚餐').waitFor()
+    await page.goBack(); await page.locator('.photo-card').waitFor()
+    scenario = 'oldphoto'; await page.reload()
+    await page.locator('.photo-card').waitFor()
+    assert.match(await page.locator('.photo-card').getAttribute('href'), /\/memories\?edit=0123456789abcdef01234567/)
+    scenario = 'normal'; await page.reload(); await page.locator('.photo-card').waitFor()
     await page.getByAltText('图片暂不可用').first().waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     if (process.env.EATWHAT_REVIEW_SHOT) await page.screenshot({ path: process.env.EATWHAT_REVIEW_SHOT })
@@ -117,6 +136,10 @@ async function main () {
     assert.equal(await page.getByRole('link', { name: '去安排一餐 →' }).getAttribute('href'), '/calendar')
     scenario = 'normal'
     await page.goto(`${base}/review?year=2024`)
+    await page.getByText('2024 年 · OUR STORY', { exact: true }).waitFor()
+    scenario = 'invalidphoto'; await page.reload()
+    await page.getByText('回顾照片数据不完整', { exact: false }).waitFor()
+    scenario = 'normal'; await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('2024 年 · OUR STORY', { exact: true }).waitFor()
     await page.reload(); await page.getByText('2024 年 · OUR STORY', { exact: true }).waitFor()
     await page.goto(`${base}/review?year=2024&month=2026-03`)

@@ -4,6 +4,7 @@ const MealMemory = require('../models/memoryModel');
 const WishlistItem = require('../models/wishlistModel');
 const { ensureUserHousehold } = require('../utils/household');
 const { monthRange } = require('../utils/week');
+const { createHash } = require('crypto');
 
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
 
@@ -95,8 +96,8 @@ function scheduledMealEntries(schedules) {
 }
 
 function photoWall(memories, limit = 12) {
-  return memories.flatMap(memory => (memory.photos || []).map(photo => ({
-    photo,
+  return memories.flatMap(memory => (memory.photos || []).map((photo, photoIndex) => ({ photo, photoIndex })).filter(({ photo }) => typeof photo === 'string' && photo).map(({ photo, photoIndex }) => ({
+    photo, photoIndex, fingerprint: createHash('sha256').update(photo).digest('hex'),
     memoryId: memory._id,
     date: memory.date,
     mealType: memory.mealType,
