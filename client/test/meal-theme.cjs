@@ -29,6 +29,7 @@ async function main() {
     });
     await page.goto(`${base}/meals`);
     await page.locator('.meal-card-wrapper .meal-name').waitFor();
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
     const checks = [
       ['page title', '.page-title'],
       ['presence title', '.presence-copy strong'],
@@ -51,10 +52,17 @@ async function main() {
         const tooltipContrast = await contrast(page, '[role="tooltip"]:visible');
         assert.ok(tooltipContrast.ratio >= 4.5, `dark tooltip contrast ${JSON.stringify(tooltipContrast)}`);
       }
-      for (const [width, height] of [[1280, 900], [390, 844]]) {
+      for (const [width, height] of [[1280, 900], [390, 844], [320, 844]]) {
         await page.setViewportSize({ width, height });
         assert.equal(await page.getByRole('radio', { name: '网格视图' }).count(), 1, 'view selector must retain its accessible name on mobile');
-        if (width === 390) {
+        if (width <= 390) {
+          if (mode === 'light' && width === 390 && process.env.EATWHAT_MEAL_COMPACT_SHOT) await page.screenshot({ path: process.env.EATWHAT_MEAL_COMPACT_SHOT, fullPage: true });
+          const searchTop = await page.getByRole('textbox', { name: '搜索菜品' }).evaluate(element => element.getBoundingClientRect().top);
+          assert.ok(searchTop < 510, `mobile search should remain easy to reach, got ${searchTop}`);
+          for (const name of ['菜品回收站', '添加菜品', '查看想吃清单']) {
+            const box = await page.getByRole('button', { name }).boundingBox();
+            assert.ok(box && box.height >= 44 && box.width >= 44, `${name} must remain a usable touch target: ${JSON.stringify(box)}`);
+          }
           for (const selector of ['.view-switcher .el-radio-button__inner', '.category-list button', '.meal-card-wrapper .feed-btn']) {
             const box = await page.locator(selector).first().boundingBox();
             assert.ok(box && box.height >= 44, `${selector} must have a 44px touch target`);
@@ -101,7 +109,7 @@ async function main() {
     await page.keyboard.press('Space');
     await page.locator('.meals-grouped .el-collapse-item__header').first().waitFor();
     assert.ok((await contrast(page, '.meals-grouped .el-collapse-item__header')).ratio >= 4.5, 'dark grouped header contrast');
-    console.log('Meal theme checks passed across six palettes, light/dark modes and two viewport sizes');
+    console.log('Meal theme checks passed across six palettes, light/dark modes and three viewport sizes');
     await context.close();
   } finally { await browser.close(); }
 }

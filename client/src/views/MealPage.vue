@@ -738,7 +738,7 @@ onBeforeUnmount(() => {
     <el-alert v-if="!loading && !loadError && displayedMeals.some(meal => !canArchive(meal))" type="info" :closable="false" show-icon title="服务器未提供安全回收站能力，暂不能移除部分菜品。" />
 
     <div class="couple-presence-card">
-      <div class="presence-avatars">
+      <div class="presence-avatars" aria-hidden="true">
         <span>我</span>
         <span>TA</span>
       </div>
@@ -2354,14 +2354,27 @@ onBeforeUnmount(() => {
     text-align: left;
   }
 
+  .header-content { gap: 10px; }
+  .header-actions { flex-direction: row; gap: 8px; }
+  .header-actions .el-button { flex: 1 1 0; min-width: 0; min-height: 44px; margin: 0; padding-inline: 8px; }
+
   .couple-presence-card {
-    align-items: flex-start;
-    flex-wrap: wrap;
+    align-items: center;
+    flex-wrap: nowrap;
+    gap: 10px;
+    padding: 12px 14px;
     border-radius: 22px;
   }
+  .presence-avatars { display: none; }
+  .presence-copy strong { font-size: 13px; }
 
   .feed-inspiration-btn {
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
+    max-width: 48%;
+    padding-inline: 8px;
+    font-size: 12px;
+    white-space: normal;
   }
 
   .meals-grid :deep(.meal-card-wrapper:nth-child(n)) {
