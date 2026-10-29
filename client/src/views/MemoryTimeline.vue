@@ -164,6 +164,8 @@ const searchMealCatalog = async () => {
   const query = mealQuery.value.trim();
   mealLoading.value = true;
   mealError.value = '';
+  meals.value = [];
+  mealTotal.value = 0;
   try {
     const params = { page: 1, limit: 50 };
     if (query) params.search = query;
@@ -171,13 +173,14 @@ const searchMealCatalog = async () => {
     if (!alive || sequence !== mealSequence) return;
     let rows = result.data;
     let total = result.total;
-    if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(meal => !mealId(meal) || typeof meal.name !== 'string' || !meal.name.trim())) throw new Error('菜品列表不完整');
-    if (result.page == null && result.limit == null && rows.length === total) {
+    if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(meal => !mealId(meal) || typeof meal.name !== 'string' || !meal.name.trim()) || new Set(rows.map(mealId)).size !== rows.length) throw new Error('菜品列表不完整');
+    if (result.page == null && result.limit == null) {
+      if (rows.length !== total) throw new Error('菜品列表不完整');
       const lower = query.toLowerCase();
       rows = rows.filter(meal => [meal.name, meal.description, meal.tips, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.ingredients) ? meal.ingredients.map(item => item?.name || item) : []), ...(Array.isArray(meal.steps) ? meal.steps.map(item => item?.description || item) : [])].some(field => String(field || '').toLowerCase().includes(lower)));
       total = rows.length;
       rows = rows.slice(0, 50);
-    }
+    } else if (result.page !== 1 || result.limit !== 50 || rows.length !== Math.min(50, total)) throw new Error('菜品分页数据不完整，请重试');
     meals.value = rows;
     mealTotal.value = total;
     mealLoaded.value = true;
@@ -190,6 +193,8 @@ const searchMeals = query => {
   mealSequence++;
   mealLoading.value = true;
   mealError.value = '';
+  meals.value = [];
+  mealTotal.value = 0;
   if (mealTimer) clearTimeout(mealTimer);
   mealTimer = setTimeout(searchMealCatalog, 180);
 };

@@ -11,7 +11,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true; let detailFailure = false
+    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true; let detailFailure = false; let releaseSlow
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/broken-memory.png', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/api/**', async route => {
@@ -33,7 +33,12 @@ async function main () {
       }
       else if (req.method() === 'GET' && path === '/meals') {
         reads.push(Object.fromEntries(url.searchParams)); const query = url.searchParams.get('search') || ''; const found = meals.filter(meal => meal.name.includes(query))
-        data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
+        if (query === '慢查询') await new Promise(resolve => { releaseSlow = resolve })
+        if (query === '坏页') data = { data: [meals[1]], total: 1, page: 2, limit: 50 }
+        else if (query === '重复') data = { data: [meals[1], meals[1]], total: 2, page: 1, limit: 50 }
+        else if (query === '缺项') data = { data: [meals[1]], total: 2, page: 1, limit: 50 }
+        else if (query === '无分页') data = { data: [meals[1]], total: 75 }
+        else data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
       } else if (req.method() === 'GET' && path.startsWith('/meals/')) data = meals.find(meal => `/meals/${meal._id}` === path) || null
       await route.fulfill({ status: 200, json: data })
     })
@@ -65,7 +70,21 @@ async function main () {
     assert.equal(reads[0].limit, '50')
     await page.getByRole('option', { name: '菜品01', exact: true }).click()
     await search.click()
+    await search.fill('慢查询')
+    for (let i = 0; i < 100 && !releaseSlow; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseSlow, 'function')
     await search.fill('菜品75')
+    await page.getByRole('option', { name: '菜品75', exact: true }).waitFor()
+    const slowResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('search') === '慢查询')
+    releaseSlow(); await slowResponse
+    await page.getByRole('option', { name: '菜品75', exact: true }).waitFor()
+    for (const fault of ['坏页', '重复', '缺项', '无分页']) {
+      await search.fill(fault)
+      await dialog.getByText('菜品暂时无法加载', { exact: false }).waitFor()
+      assert.equal(await page.getByRole('option', { name: '菜品02', exact: true }).count(), 0, `${fault} must not expose stale or invalid choices`)
+    }
+    await search.fill('菜品75')
+    await dialog.getByText('菜品暂时无法加载', { exact: false }).waitFor({ state: 'hidden' })
     try { await page.getByRole('option', { name: '菜品75', exact: true }).click() } catch (error) { console.error('Meal reads:', reads, 'Visible options:', await page.getByRole('option').allTextContents()); throw error }
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
