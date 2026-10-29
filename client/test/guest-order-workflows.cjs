@@ -211,6 +211,7 @@ async function main () {
       return route.fulfill({ json: { session: { ...session, status: 'locked', canOrder: false }, meals: [meals[1]] } })
     })
     await closedPage.goto(`http://127.0.0.1:${server.address().port}/guest-order/closed-test`)
+    assert.match(await closedPage.locator('#subtitle').innerText(), /暂不接收新点单.*核对已有选择及提交状态/)
     await closedPage.getByRole('button', { name: '查看点菜单' }).click()
     const closedRow = closedPage.locator('.cart-row')
     assert.equal(await closedRow.getByRole('button', { name: '增加测试青菜' }).isDisabled(), true)
@@ -222,6 +223,13 @@ async function main () {
     assert.equal(await closedPage.locator('#orderNote').inputValue(), '保留的整单备注')
     await closedPage.getByRole('button', { name: '关闭点菜单' }).waitFor()
     await closedPage.close()
+    const closedEmpty = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await closedEmpty.route('**/guest-orders/public/**', route => route.fulfill({ json: { session: { ...session, status: 'locked', canOrder: false }, meals: [] } }))
+    await closedEmpty.goto(`http://127.0.0.1:${server.address().port}/guest-order/closed-empty`)
+    await closedEmpty.locator('#subtitle').getByText('主人暂不接收新点单。', { exact: true }).waitFor()
+    await closedEmpty.locator('#mealGrid').getByText('主人暂不接收新点单。', { exact: true }).waitFor()
+    assert.equal(await closedEmpty.getByRole('button', { name: '查看菜单' }).isDisabled(), true)
+    await closedEmpty.close()
     const noSessionStorage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await noSessionStorage.addInitScript(() => {
       const original = Storage.prototype.setItem

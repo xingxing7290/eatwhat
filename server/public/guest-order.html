@@ -388,13 +388,18 @@
       function renderHeader() {
         const session = state.session || {};
         $('title').textContent = session.title || '来家里吃饭';
-        $('subtitle').textContent = canOrder() ? '主人已经备好菜谱，挑你真正想吃的。' : '本次点菜已经结束，下面是你最后保存的点菜单。';
+        $('subtitle').textContent = canOrder() ? '主人已经备好菜谱，挑你真正想吃的。' : closedMenuText();
         $('household').textContent = `🏠 ${session.householdName || '主人家'}`;
         const eventText = dateText(session.eventAt);
         $('eventTime').hidden = !eventText;
         $('eventTime').textContent = eventText ? `🗓 ${eventText}` : '';
         $('status').textContent = statusCopy(session.status);
         $('status').className = `pill ${canOrder() ? 'open' : 'closed'}`;
+      }
+
+      function closedMenuText() {
+        const hasContent = state.cart.size || state.order || state.pending || state.uncertain || state.conflict;
+        return `主人暂不接收新点单。${hasContent ? '可在下方点菜单中核对已有选择及提交状态。' : ''}`;
       }
 
       function renderFilters() {
@@ -478,7 +483,7 @@
         $('count').textContent = `${state.menuSupported === true ? state.menu.total : meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
         if (!state.session) return;
         if (!state.meals.length && !canOrder()) {
-          const closed = document.createElement('div'); closed.className = 'empty'; closed.textContent = '本次点菜已经结束。你仍可通过下方点菜单查看自己已提交的内容。'; $('mealGrid').replaceChildren(closed); return;
+          const closed = document.createElement('div'); closed.className = 'empty'; closed.textContent = closedMenuText(); $('mealGrid').replaceChildren(closed); return;
         }
         if (!meals.length) {
           const empty = document.createElement('div'); empty.className = 'empty'; empty.textContent = '没有找到匹配的菜，换个关键词试试。'; $('mealGrid').replaceChildren(empty); return;
