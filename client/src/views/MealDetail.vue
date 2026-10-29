@@ -7,6 +7,7 @@ import api from '@/services/api';
 import defaultImage from '@/assets/meal-placeholder.svg';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -165,11 +166,11 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 <template>
   <div class="meal-detail" v-loading="loading">
     <div class="detail-toolbar">
-      <el-button @click="router.push('/meals')"><el-icon><ArrowLeft /></el-icon>返回</el-button>
+      <el-button @click="router.push({ name: 'meals', query: filterCatalogQuery(route.query) })"><el-icon><ArrowLeft /></el-icon>返回</el-button>
       <div class="toolbar-actions">
         <el-button type="success" :disabled="!meal || loading" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
         <el-button type="warning" :disabled="!meal || loading || reportUncertain || reportSubmitted || reportChecking" :loading="reporting" @click="reportImageIssue"><el-icon><Warning /></el-icon>{{ reportSubmitted ? '已反馈' : '图片不对' }}</el-button>
-        <el-button type="primary" :disabled="!meal || loading" @click="router.push({ name: 'MealEditor', params: { id: route.params.id } })">
+        <el-button type="primary" :disabled="!meal || loading" @click="router.push({ name: 'MealEditor', params: { id: route.params.id }, query: filterCatalogQuery(route.query) })">
           <el-icon><Edit /></el-icon>编辑菜品
         </el-button>
       </div>

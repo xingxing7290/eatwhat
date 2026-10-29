@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Upload } from '@element-plus/icons-vue';
 import { useMealStore } from '../stores/meal';
 import api from '@/services/api';
+import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -167,7 +168,7 @@ const submit = async () => {
       else await mealStore.createMeal(buildPayload());
       ElMessage.success('菜品已保存');
       saved.value = true;
-      await router.push('/meals');
+      await router.push({ name: 'meals', query: filterCatalogQuery(route.query) });
     } catch (e) {
       if (e?.code === 'MEAL_CONFLICT') conflict.value = true;
       else if (e?.code === 'SESSION_CHANGED' && !e.requestSent) ElMessage.warning(e.error);
@@ -200,7 +201,7 @@ watch(() => route.params.id, load, { immediate: true });
 
 <template>
   <div class="meal-editor" v-loading="loading" element-loading-text="正在加载菜品" :aria-busy="loading ? 'true' : 'false'">
-    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push('/meals')">取消</el-button><el-button type="primary" :disabled="loading || !!loadError || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
+    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push({ name: 'meals', query: filterCatalogQuery(route.query) })">取消</el-button><el-button type="primary" :disabled="loading || !!loadError || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-alert v-if="editMode && !loading && !loadError && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供有效的菜谱版本，暂时无法安全保存。" />
     <el-alert v-if="conflict" type="warning" :closable="false" show-icon title="这道菜已被其他成员修改，本次未保存。"><span>你的输入和选择的图片仍在当前页面。请先复制需要保留的内容，再查看最新菜谱并重新加载编辑页。</span> <a :href="latestMealUrl" target="_blank" rel="noopener noreferrer">查看最新菜谱</a></el-alert>

@@ -1,25 +1,31 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed, reactive, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
 import { useDraftGuard } from '../composables/useDraftGuard';
+import { readCatalogQuery, buildCatalogQuery } from '../utils/catalogQuery.mjs';
 import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
 
 const router = useRouter();
+const route = useRoute();
 const mealStore = useMealStore();
+const initialCatalog = readCatalogQuery(route.query);
+let applyingCatalogRoute = false;
+let catalogUrlTimer = null;
+const internalCatalogUrls = new Set();
 
 // 状态 - 列表过滤和分页
-const searchQuery = ref('');
-const selectedTag = ref('');
-const selectedCategory = ref('');
-const selectedSubcategory = ref('');
-const selectedDifficulty = ref('');
-const favoriteOnly = ref(false);
-const currentPage = ref(1);
+const searchQuery = ref(initialCatalog.search);
+const selectedTag = ref(initialCatalog.tag);
+const selectedCategory = ref(initialCatalog.category);
+const selectedSubcategory = ref(initialCatalog.subcategory);
+const selectedDifficulty = ref(initialCatalog.difficulty);
+const favoriteOnly = ref(initialCatalog.favorite);
+const currentPage = ref(initialCatalog.page);
 const pageSize = ref(8);
 const loading = ref(false);
 const loadError = ref('');
@@ -48,8 +54,20 @@ const canArchive = meal => meal?.supportsConditionalArchive === true && meal.arc
   (meal.archiveVersion.updatedAt === null || (typeof meal.archiveVersion.updatedAt === 'string' && Number.isFinite(Date.parse(meal.archiveVersion.updatedAt))));
 
 // 状态 - 显示方式
-const currentView = ref('grid'); // 'grid', 'list', 'table'
-const showAdvancedFilters = ref(false);
+const currentView = ref(initialCatalog.view); // 'grid', 'list', 'table', 'grouped'
+const showAdvancedFilters = ref(!!(initialCatalog.tag || initialCatalog.subcategory || initialCatalog.difficulty));
+const catalogState = () => ({ search: searchQuery.value, category: selectedCategory.value, subcategory: selectedSubcategory.value, tag: selectedTag.value, difficulty: selectedDifficulty.value, favorite: favoriteOnly.value, page: currentPage.value, view: currentView.value });
+const catalogKey = value => JSON.stringify(readCatalogQuery(value));
+const syncCatalogUrl = async () => {
+  if (catalogUrlTimer) { clearTimeout(catalogUrlTimer); catalogUrlTimer = null; }
+  if (route.name !== 'meals') return;
+  const query = buildCatalogQuery(catalogState());
+  const key = catalogKey(query);
+  if (key === catalogKey(route.query)) return;
+  internalCatalogUrls.add(key);
+  try { await router.replace({ name: 'meals', query }); } finally { internalCatalogUrls.delete(key); }
+};
+const scheduleCatalogUrl = () => { if (catalogUrlTimer) clearTimeout(catalogUrlTimer); catalogUrlTimer = setTimeout(() => { catalogUrlTimer = null; void syncCatalogUrl(); }, 200); };
 
 const hasActiveFilters = computed(() => {
   return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value || selectedDifficulty.value || favoriteOnly.value);
@@ -202,6 +220,7 @@ const fetchMeals = async () => {
     const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
     if (currentPage.value > lastPage) {
       currentPage.value = lastPage;
+      scheduleCatalogUrl();
       return fetchMeals();
     }
     displayedMeals.value = result.data;
@@ -214,17 +233,21 @@ const fetchMeals = async () => {
 };
 
 // 编辑菜品
-const handleEditMeal = (meal) => {
+const handleEditMeal = async (meal) => {
   const mealId = meal._id || meal.id;
+  await syncCatalogUrl();
+  if (route.name !== 'meals') return;
   router.push({
     name: 'MealEditor',
-    params: { id: mealId }
+    params: { id: mealId }, query: buildCatalogQuery(catalogState())
   });
 };
 
-const handleViewMeal = (meal) => {
+const handleViewMeal = async (meal) => {
   const mealId = meal._id || meal.id;
-  router.push({ name: 'MealDetail', params: { id: mealId } });
+  await syncCatalogUrl();
+  if (route.name !== 'meals') return;
+  router.push({ name: 'MealDetail', params: { id: mealId }, query: buildCatalogQuery(catalogState()) });
 };
 
 const handleMealKeydown = (event, meal) => {
@@ -502,6 +525,7 @@ const clearFilters = () => {
 const handlePageChange = (page) => {
   currentPage.value = page;
   scheduleFetch(0);
+  scheduleCatalogUrl();
 };
 
 let fetchTimer = null;
@@ -517,18 +541,34 @@ const scheduleFetch = (delay = 160) => {
 
 // 监听筛选条件变化，重置分页
 watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory, selectedDifficulty, favoriteOnly], () => {
+  if (applyingCatalogRoute) return;
   currentPage.value = 1;
   scheduleFetch();
-});
+  scheduleCatalogUrl();
+}, { flush: 'sync' });
 
 watch(selectedCategory, () => {
+  if (applyingCatalogRoute) return;
   selectedSubcategory.value = '';
-});
+}, { flush: 'sync' });
 
 watch(currentView, () => {
+  if (applyingCatalogRoute) return;
   currentPage.value = 1;
   scheduleFetch(0);
-});
+  scheduleCatalogUrl();
+}, { flush: 'sync' });
+watch(() => route.fullPath, () => {
+  if (route.name !== 'meals' || internalCatalogUrls.has(catalogKey(route.query))) return;
+  const next = readCatalogQuery(route.query);
+  if (JSON.stringify(next) === JSON.stringify(catalogState())) return;
+  if (catalogUrlTimer) { clearTimeout(catalogUrlTimer); catalogUrlTimer = null; }
+  applyingCatalogRoute = true;
+  searchQuery.value = next.search; selectedCategory.value = next.category; selectedSubcategory.value = next.subcategory; selectedTag.value = next.tag; selectedDifficulty.value = next.difficulty; favoriteOnly.value = next.favorite; currentPage.value = next.page; currentView.value = next.view;
+  showAdvancedFilters.value = !!(next.tag || next.subcategory || next.difficulty);
+  applyingCatalogRoute = false;
+  scheduleFetch(0);
+}, { flush: 'sync' });
 watch(archiveSearch, () => {
   if (!archiveDialog.value || !archiveSupported.value) return;
   archivePage.value = 1; archiveSequence++; archiveLoading.value = true;
@@ -563,6 +603,7 @@ onBeforeUnmount(() => {
   fetchSequence++;
   archiveSequence++;
   if (fetchTimer) clearTimeout(fetchTimer);
+  if (catalogUrlTimer) clearTimeout(catalogUrlTimer);
   if (archiveTimer) clearTimeout(archiveTimer);
   if (newMealImagePreviewUrl.value) URL.revokeObjectURL(newMealImagePreviewUrl.value);
 });
@@ -581,7 +622,7 @@ onBeforeUnmount(() => {
           <el-button :disabled="archiveBusy || !!archiveProblem" @click="openArchive">菜品回收站</el-button>
           <el-button
             type="primary"
-            @click="router.push({ name: 'MealEditor' })"
+            @click="router.push({ name: 'MealEditor', query: buildCatalogQuery(catalogState()) })"
             class="add-meal-btn"
           >
         <el-icon><Plus /></el-icon>
@@ -632,6 +673,7 @@ onBeforeUnmount(() => {
             v-model="searchQuery"
             placeholder="搜索菜名、描述、食材或做法..."
             aria-label="搜索菜品"
+            maxlength="200"
             clearable
             class="search-input"
             :prefix-icon="Search"
@@ -1021,7 +1063,7 @@ onBeforeUnmount(() => {
         <el-button
           v-else
           type="primary"
-          @click="router.push({ name: 'MealEditor' })"
+          @click="router.push({ name: 'MealEditor', query: buildCatalogQuery(catalogState()) })"
           class="empty-action-btn"
         >
           <el-icon><Plus /></el-icon>

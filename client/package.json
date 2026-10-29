@@ -30,6 +30,8 @@
     "test:wishlist-board": "node test/wishlist-board-workflows.cjs",
     "test:wishlist-edit": "node test/wishlist-edit-workflows.cjs",
     "test:meal-detail": "node test/meal-detail-workflows.cjs",
+    "test:catalog-navigation": "node test/catalog-navigation-workflows.cjs",
+    "test:catalog-query": "node --test test/catalog-query.test.mjs",
     "test:meal-detail-memories": "node test/meal-detail-memories-workflows.cjs",
     "test:meal-editor": "node test/meal-editor-switch-workflows.cjs",
     "test:meal-archive": "node test/meal-archive-workflows.cjs",
