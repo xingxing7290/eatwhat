@@ -24,7 +24,7 @@ async function main () {
       if (path.startsWith('/shopping-list/items/') && req.method() === 'PATCH') {
         const id = path.split('/').pop(); const body = req.postDataJSON(); assert.equal(body.expectedVersion, version); assert.equal(body.weekStart, '2026-10-26'); writes++
         if (mode === 'conflict') { version++; items = items.map(item => item._id === id ? { ...item, amount: '家人修改' } : item); return route.fulfill({ status: 409, json: { code: 'SHOPPING_LIST_CONFLICT', error: '冲突' } }) }
-        version++; items = items.map(item => item._id === id ? { ...item, name: body.name, amount: body.amount, category: body.category } : item)
+        version++; items = items.map(item => item._id === id ? { ...item, name: body.name, amount: body.amount, category: body.category, ...(typeof body.checked === 'boolean' ? { checked: body.checked } : {}) } : item)
         return route.fulfill({ json: snapshot() })
       }
       return route.fulfill({ json: {} })
@@ -43,6 +43,12 @@ async function main () {
     await page.getByText('土鸡蛋', { exact: true }).waitFor()
     assert.equal(items.find(item => item._id === 'manual').checked, true)
     assert.equal(items.find(item => item._id === 'manual').amount, '6个')
+    await page.getByRole('button', { name: '编辑土鸡蛋' }).click()
+    await dialog.getByText('不勾选则保留已买状态').waitFor()
+    await dialog.getByText('保存后将此项改为待买').click()
+    await dialog.getByRole('button', { name: '保存修改' }).click()
+    await dialog.waitFor({ state: 'hidden' })
+    assert.equal(items.find(item => item._id === 'manual').checked, false, 'marking pending in the editor must update purchase state')
     await page.getByRole('button', { name: '编辑菠菜' }).click()
     await dialog.getByText('重新生成清单时', { exact: false }).waitFor()
     await amount.fill('两把'); mode = 'conflict'
@@ -61,7 +67,7 @@ async function main () {
     await dialog.getByRole('button', { name: '保存修改' }).click()
     await dialog.waitFor({ state: 'hidden' })
     assert.equal(items.find(item => item._id === 'generated').amount, '两把')
-    assert.equal(writes, 3)
+    assert.equal(writes, 4)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
     console.log('Shopping edit checks passed: draft protection, versions, conflict recovery and generated-item warning')

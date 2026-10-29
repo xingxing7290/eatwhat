@@ -700,6 +700,9 @@ async function main() {
     const editedItem = await request(`/shopping-list/items/${editId}`, { method: 'PATCH', token: tokenA, body: { weekStart: editWeek, expectedVersion: editChecked.data.listVersion, name: '土鸡蛋', amount: '6个', category: 'other' } });
     assert.equal(editedItem.status, 200);
     assert.deepEqual([editedItem.data.items[0].name, editedItem.data.items[0].amount, editedItem.data.items[0].category, editedItem.data.items[0].checked], ['土鸡蛋', '6个', 'other', true]);
+    const editedPending = await request(`/shopping-list/items/${editId}`, { method: 'PATCH', token: tokenA, body: { weekStart: editWeek, expectedVersion: editedItem.data.listVersion, name: '土鸡蛋', amount: '8个', category: 'other', checked: false } });
+    assert.equal(editedPending.status, 200);
+    assert.deepEqual([editedPending.data.items[0].amount, editedPending.data.items[0].checked], ['8个', false], 'editing an item can explicitly mark it pending in the same versioned write');
     const staleItemEdit = await request(`/shopping-list/items/${editId}`, { method: 'PATCH', token: tokenPartner, body: { weekStart: editWeek, expectedVersion: editChecked.data.listVersion, name: '过期修改' } });
     assert.equal(staleItemEdit.status, 409);
     assert.equal((await request(`/shopping-list?weekStart=${editWeek}`, { token: tokenA })).data.items[0].name, '土鸡蛋', 'stale edits must not overwrite the newer item');

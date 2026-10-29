@@ -23,10 +23,11 @@ const generationDates = ref([]);
 let loadSequence = 0;
 const form = reactive({ name: '', amount: '', category: 'other' });
 const editingItem = ref(null);
-const editForm = reactive({ name: '', amount: '', category: 'other' });
+const editForm = reactive({ name: '', amount: '', category: 'other', markPending: false });
 const editInitial = ref('');
 const search = ref('');
 const statusFilter = ref('all');
+const quantityOnly = ref(false);
 const groupGrid = ref(null);
 const filterGroup = ref(null);
 const searchInput = ref(null);
@@ -51,17 +52,20 @@ const generationTime = computed(() => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 const purchased = computed(() => (list.value.items || []).filter(item => item.checked).length);
-const filtersActive = computed(() => !!search.value.trim() || statusFilter.value !== 'all');
+const needsQuantityReview = item => !item.manual && item.quantityComplete === false;
+const quantityReviewCount = computed(() => (list.value.items || []).filter(needsQuantityReview).length);
+const filtersActive = computed(() => !!search.value.trim() || statusFilter.value !== 'all' || quantityOnly.value);
 const filteredItems = computed(() => {
   const query = search.value.trim().toLocaleLowerCase();
   return (list.value.items || []).filter(item => {
     if (statusFilter.value === 'pending' && item.checked) return false;
     if (statusFilter.value === 'purchased' && !item.checked) return false;
+    if (quantityOnly.value && !needsQuantityReview(item)) return false;
     return !query || [item.name, item.amount, categoryText[categoryKey(item)]].some(value => String(value || '').toLocaleLowerCase().includes(query));
   });
 });
 const groups = computed(() => Object.keys(categoryText).map(key => ({ key, label: categoryText[key], items: filteredItems.value.filter(item => categoryKey(item) === key) })).filter(group => group.items.length));
-const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; await nextTick(); searchInput.value?.focus(); };
+const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; quantityOnly.value = false; await nextTick(); searchInput.value?.focus(); };
 const editDirty = computed(() => !!editingItem.value && JSON.stringify(editForm) !== editInitial.value);
 const editLatest = computed(() => editingItem.value ? (list.value.items || []).find(item => item._id === editingItem.value.id) : null);
 const draftDirty = computed(() => !!(form.name.trim() || form.amount.trim() || form.category !== 'other') || editDirty.value);
@@ -170,7 +174,7 @@ const addItem = async () => {
 const beginEdit = item => {
   if (disabled.value) return;
   editingItem.value = { id: item._id, manual: !!item.manual };
-  Object.assign(editForm, { name: item.name, amount: item.amount || '', category: categoryKey(item) });
+  Object.assign(editForm, { name: item.name, amount: item.amount || '', category: categoryKey(item), markPending: false });
   editInitial.value = JSON.stringify(editForm);
 };
 const closeEdit = async () => {
@@ -187,12 +191,14 @@ const saveEdit = async () => {
   const id = editingItem.value.id;
   if (!list.value.items.some(item => item._id === id)) return ElMessage.warning('该食材已不存在，请关闭编辑并核对清单');
   const fields = { name, amount: editForm.amount.trim(), category: editForm.category };
+  const markPending = editLatest.value?.checked && editForm.markPending;
+  const expectedChecked = markPending ? false : editLatest.value.checked;
   working.value = true;
   try {
-    await mutate((version, week) => api.shoppingList.updateItem(id, { ...fields, weekStart: week, expectedVersion: version }), () => {
+    await mutate((version, week) => api.shoppingList.updateItem(id, { ...fields, ...(markPending ? { checked: false } : {}), weekStart: week, expectedVersion: version }), () => {
       editingItem.value = null; editInitial.value = '';
       ElMessage.success(filtersActive.value ? '食材已更新；如未显示，可清除筛选查看' : '食材已更新');
-    }, next => next.items.some(item => item._id === id && item.name === fields.name && (item.amount || '') === fields.amount && item.category === fields.category));
+    }, next => next.items.some(item => item._id === id && item.name === fields.name && (item.amount || '') === fields.amount && item.category === fields.category && item.checked === expectedChecked));
   } finally { working.value = false; }
 };
 const toggle = async item => {
@@ -248,6 +254,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">
       <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p></div><el-input ref="searchInput" v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
       <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'pending', label: '待买' }, { value: 'purchased', label: '已买' }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button></div>
+      <div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div>
       <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
     </section>
     <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加" />
@@ -259,11 +266,12 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
       <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
       <div v-if="!loading && !loadError && editLatest" class="edit-current"><strong>清单当前内容</strong><p>{{ editLatest.name }} · {{ editLatest.amount || '未填写数量' }} · {{ categoryText[categoryKey(editLatest)] }} · {{ editLatest.checked ? '已买' : '待买' }}</p></div>
       <el-alert v-else-if="!loading && !loadError && editingItem" type="warning" :closable="false" show-icon title="该食材已不在当前清单中，请关闭编辑并核对。" />
-      <p v-if="editingItem && !editingItem.manual" class="edit-note">这项来自排餐；重新生成清单时，名称和数量可能被排餐数据覆盖，已购状态也可能变化。</p>
+      <p v-if="editingItem && !editingItem.manual" class="edit-note">这项来自排餐；重新生成清单时，名称和数量可能被排餐数据覆盖，已购状态也可能变化。清单中的修改不会改变菜谱；用量待核对的提示需在菜谱中补全后重新生成才会更新。</p>
       <el-form label-position="top" :disabled="disabled">
         <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" /></el-form-item>
         <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" maxlength="200" /></el-form-item>
         <el-form-item label="分类"><el-select v-model="editForm.category" aria-label="编辑食材分类"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
+        <el-form-item v-if="editLatest?.checked"><el-checkbox v-model="editForm.markPending">保存后将此项改为待买</el-checkbox><small class="edit-note">不勾选则保留已买状态。</small></el-form-item>
       </el-form>
       <template #footer><el-button :disabled="working || loading" @click="closeEdit">取消</el-button><el-button type="primary" :loading="working" :disabled="disabled || !editLatest" @click="saveEdit">保存修改</el-button></template>
     </el-dialog>
