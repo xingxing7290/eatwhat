@@ -9,7 +9,7 @@ import { readCatalogQuery, buildCatalogQuery } from '../utils/catalogQuery.mjs';
 import { resolveRecipeImage, handleUploadedImageError } from '../utils/uploadedImage.mjs';
 import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { ElMessageBox, ElMessage } from 'element-plus';
-import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
+import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present, Warning } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -249,7 +249,7 @@ const handleViewMeal = async (meal) => {
   const mealId = meal._id || meal.id;
   await syncCatalogUrl();
   if (route.name !== 'meals') return;
-  router.push({ name: 'MealDetail', params: { id: mealId }, query: buildCatalogQuery(catalogState()) });
+  return router.push({ name: 'MealDetail', params: { id: mealId }, query: buildCatalogQuery(catalogState()) });
 };
 
 const handleMealKeydown = (event, meal) => {
@@ -360,12 +360,8 @@ const allowWishRetry = async (item) => {
 };
 
 const handleImageIssue = async (meal) => {
-  try {
-    await api.mealImageIssue.create({ mealId: meal._id || meal.id, issueType: 'wrong_image', note: '列表中标记图片不匹配' });
-    ElMessage.success('已加入待修正图片列表');
-  } catch (e) {
-    ElMessage.error(e?.error || '提交失败');
-  }
+  const failure = await handleViewMeal(meal);
+  if (!failure && route.name === 'MealDetail') ElMessage.info('请在菜品详情中选择“图片不对”提交反馈');
 };
 
 // 归档而不删除，保留排餐、回忆和图片引用。
@@ -899,6 +895,16 @@ onBeforeUnmount(() => {
                   <el-icon><Present /></el-icon>
                 </el-button>
                 <el-button
+                  type="warning"
+                  size="small"
+                  circle
+                  :aria-label="`在详情反馈${meal.name}图片问题`"
+                  title="在详情中反馈图片问题"
+                  @click.stop="handleImageIssue(meal)"
+                >
+                  <el-icon><Warning /></el-icon>
+                </el-button>
+                <el-button
                   type="primary"
                   size="small"
                   circle
@@ -1011,10 +1017,11 @@ onBeforeUnmount(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="220" align="center">
+          <el-table-column label="操作" width="280" align="center">
             <template #default="{ row }">
               <div class="table-actions">
                 <el-button type="warning" size="small" circle :aria-label="`加入想吃清单：${row.name}`" :loading="!!sharingMealIds[String(row._id || row.id)]" :disabled="!!sharingMealIds[String(row._id || row.id)] || hasPendingWish(row._id || row.id)" @click="handleShareMeal(row)"><el-icon><Present /></el-icon></el-button>
+                <el-button type="warning" size="small" circle :aria-label="`在详情反馈${row.name}图片问题`" title="在详情中反馈图片问题" @click="handleImageIssue(row)"><el-icon><Warning /></el-icon></el-button>
                 <el-button
                   type="info"
                   size="small"
@@ -1447,6 +1454,7 @@ onBeforeUnmount(() => {
 
 .meal-list-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   flex-shrink: 0;
 }

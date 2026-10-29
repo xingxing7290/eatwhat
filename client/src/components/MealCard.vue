@@ -178,7 +178,8 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
               type="warning"
               size="small"
               circle
-              :aria-label="`反馈${meal.name}图片问题`"
+              :aria-label="`在详情反馈${meal.name}图片问题`"
+              title="在详情中反馈图片问题"
               @click.stop="emit('imageIssue', meal)"
             >
               <el-icon><Warning /></el-icon>

@@ -8,9 +8,10 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const meals = Array.from({ length: 20 }, (_, index) => ({ _id: `m${index + 1}`, name: `家常菜${String(index + 1).padStart(2, '0')}`, category: '家常菜', subcategory: '热菜', description: '', tags: index < 2 ? ['清淡'] : [], ingredients: [], steps: [], photos: [], favorite: index < 2, supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: '2026-10-28T08:00:00.000Z' } }))
-    const errors = []; const requests = []; let mode = 'normal'; page.on('pageerror', error => errors.push(error.message))
+    const errors = []; const requests = []; let mode = 'normal'; let reports = 0; page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
+      if (path === '/meal-image-issues' && req.method() === 'POST') { reports++; return route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/meals/categories') return route.fulfill({ json: [{ category: '家常菜', subcategory: '热菜' }] })
       if (path === '/meals/tags' || path === '/wishlist' || path === '/memories') return route.fulfill({ json: [] })
@@ -89,6 +90,22 @@ async function main () {
       mode = failure; await page.goto(`${base}/meals`)
       await page.getByText('无法加载菜品', { exact: false }).waitFor()
       assert.equal(await page.locator('.meal-card-wrapper').count(), 0, `${failure} response must not be displayed as a valid catalog`)
+    }
+    mode = 'normal'
+    for (const [view, width] of [['grid', 390], ['list', 320], ['table', 1280]]) {
+      await page.setViewportSize({ width, height: 844 })
+      await page.goto(`${base}/meals?q=${encodeURIComponent('家常菜01')}&view=${view}`)
+      const feedback = page.getByRole('button', { name: '在详情反馈家常菜01图片问题' }).first()
+      await feedback.waitFor()
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      await feedback.click()
+      await page.waitForURL(/\/meals\/detail\/m1/)
+      await page.getByRole('button', { name: '图片不对' }).waitFor()
+      assert.equal(reports, 0, 'opening the feedback flow must not submit a report')
+      await page.getByRole('button', { name: '返回', exact: true }).click()
+      await page.getByRole('button', { name: '在详情反馈家常菜01图片问题' }).first().waitFor()
+      assert.equal(new URL(page.url()).searchParams.get('q'), '家常菜01')
+      assert.equal(new URL(page.url()).searchParams.get('view') || 'grid', view)
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
