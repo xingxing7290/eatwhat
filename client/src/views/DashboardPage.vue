@@ -31,6 +31,7 @@ let loadRequest = null;
 let active = true;
 let dayTimer = null;
 let lastLocalDay = '';
+let wasAway = false;
 const localDay = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const validMeals = value => value && typeof value === 'object' && Object.keys(mealTypeText).every(type => Array.isArray(value[type]));
@@ -107,7 +108,17 @@ const refreshAfterLocalDayChange = async () => {
   if (loadRequest) await loadRequest;
   if (active) await load();
 };
-const onVisibility = () => { if (!document.hidden) void refreshAfterLocalDayChange(); };
+const onReturn = async () => {
+  if (!active || document.hidden) return;
+  if (!wasAway) return refreshAfterLocalDayChange();
+  wasAway = false;
+  lastLocalDay = localDay();
+  // A request started before leaving may contain stale data; refresh after it finishes.
+  if (loadRequest) await loadRequest;
+  if (active && !document.hidden) await load();
+};
+const onBlur = () => { wasAway = true; };
+const onVisibility = () => { if (document.hidden) wasAway = true; else void onReturn(); };
 const photoKey = (photo, index) => `${photo.memoryId || ''}:${index}:${photo.photo || ''}`;
 const photoLink = photo => {
   if (!validDate(photo?.date)) return { name: 'photoAlbum' };
@@ -118,12 +129,13 @@ const photoLink = photo => {
 
 onMounted(() => {
   lastLocalDay = localDay();
-  window.addEventListener('focus', refreshAfterLocalDayChange);
+  window.addEventListener('focus', onReturn);
+  window.addEventListener('blur', onBlur);
   document.addEventListener('visibilitychange', onVisibility);
   dayTimer = setInterval(refreshAfterLocalDayChange, 60000);
   load();
 });
-onBeforeUnmount(() => { active = false; window.removeEventListener('focus', refreshAfterLocalDayChange); document.removeEventListener('visibilitychange', onVisibility); if (dayTimer) clearInterval(dayTimer); });
+onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onReturn); window.removeEventListener('blur', onBlur); document.removeEventListener('visibilitychange', onVisibility); if (dayTimer) clearInterval(dayTimer); });
 </script>
 
 <template>

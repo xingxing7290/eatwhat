@@ -234,11 +234,25 @@ async function main () {
     const callsBeforeFocus = calls
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     assert.equal(calls, callsBeforeFocus, 'same-day focus must not refresh repeatedly')
+    wishTitle = '返回后的家庭心愿'
+    await page.evaluate(() => { window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('focus')) })
+    await page.getByText('返回后的家庭心愿').waitFor()
+    assert.equal(calls, callsBeforeFocus + 1, 'returning on the same day refreshes once despite duplicate focus events')
+    release = null; mode = 'hold'
+    await page.getByRole('button', { name: '刷新饭桌' }).click()
+    for (let i = 0; i < 100 && !release; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof release, 'function')
+    wishTitle = '离开期间更新的心愿'; mode = 'valid'
+    await page.evaluate(() => { window.dispatchEvent(new Event('blur')); window.dispatchEvent(new Event('focus')) })
+    release()
+    await page.getByText('离开期间更新的心愿').waitFor()
+    assert.equal(calls, callsBeforeFocus + 3, 'return refresh follows a request started before leaving')
+    wishTitle = '家人想吃的菜'
     date = '2026-10-29'
     await page.clock.setFixedTime(new Date(2026, 9, 29, 0, 1))
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await page.getByRole('button', { name: '安排2026-10-29早餐' }).waitFor()
-    assert.equal(calls, callsBeforeFocus + 1, 'cross-day focus refreshes the displayed server date')
+    assert.equal(calls, callsBeforeFocus + 4, 'cross-day focus refreshes the displayed server date')
     const beforePending = calls
     release = null; mode = 'hold'
     await page.getByRole('button', { name: '刷新饭桌' }).click()
