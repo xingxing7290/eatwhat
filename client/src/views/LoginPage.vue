@@ -134,6 +134,15 @@ const persistRememberedLogin = () => {
   }))
 }
 
+const validLoginResponse = result => {
+  const user = result?.user
+  const userId = user?.id || user?._id
+  const householdId = user?.householdId || user?.household?.id
+  const validId = value => typeof value === 'string' && /^[a-z\d_-]{1,128}$/i.test(value)
+  if (typeof result?.token !== 'string' || !result.token.trim() || !user || typeof user !== 'object' || Array.isArray(user) || !validId(userId) || !validId(householdId)) return false
+  return !(user.householdId && user.household?.id && String(user.householdId).toLowerCase() !== String(user.household.id).toLowerCase())
+}
+
 const onSubmit = async () => {
   if (loading.value || !formRef.value) return
   loginError.value = ''
@@ -144,7 +153,7 @@ const onSubmit = async () => {
     if (!valid) return
     try {
       const res = await api.auth.login({ username: form.value.username.trim(), password: form.value.password })
-      if (typeof res?.token !== 'string' || !res.token || !res.user) throw new Error('登录响应不完整')
+      if (!validLoginResponse(res)) throw new Error('登录响应不完整，无法确认账号和小家，请联系管理员检查服务器。')
       localStorage.setItem('token', res.token)
       localStorage.setItem('user', JSON.stringify(res.user))
       adoptSession(res.token)

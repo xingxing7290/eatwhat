@@ -16,6 +16,9 @@ async function main () {
         if (mode === 'wrong') return route.fulfill({ status: 401, json: { error: '用户名或密码错误' } })
         if (mode === 'network') return route.abort('failed')
         if (mode === 'malformed') return route.fulfill({ json: { token: 'x' } })
+        if (mode === 'missing-scope') return route.fulfill({ json: { token: 'x', user: { id: 'u1' } } })
+        if (mode === 'mismatched-scope') return route.fulfill({ json: { token: 'x', user: { id: 'u1', householdId: 'home-a', household: { id: 'home-b' } } } })
+        if (mode === 'missing-user-id') return route.fulfill({ json: { token: 'x', user: { householdId: 'home-a' } } })
         return route.fulfill({ json: { token: 'token', user: { id: 'u1', householdId: 'home-a', username: 'test' } } })
       }
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'home-a' } })
@@ -51,6 +54,14 @@ async function main () {
     mode = 'malformed'; await password.press('Enter')
     await page.getByRole('alert').getByText('登录响应不完整').waitFor()
     assert.equal(await page.evaluate(() => localStorage.getItem('token')), null)
+    for (const badMode of ['missing-scope', 'mismatched-scope', 'missing-user-id']) {
+      mode = badMode
+      await password.press('Enter')
+      await page.getByRole('alert').getByText('无法确认账号和小家', { exact: false }).waitFor()
+      assert.equal(await page.evaluate(() => localStorage.getItem('token')), null, `${badMode} must not establish a session`)
+      assert.equal(await page.evaluate(() => localStorage.getItem('user')), null)
+      assert.equal(new URL(page.url()).pathname, '/login')
+    }
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 760 })
       for (const dark of [false, true]) {
