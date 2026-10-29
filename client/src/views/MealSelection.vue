@@ -20,6 +20,7 @@ const calendarDestination = () => ({ name: 'calendar', ...(validWeekLink(date.va
 
 const isInitializing = ref(true);
 const isSaving = ref(false);
+const confirmingEmpty = ref(false);
 const catalogLoading = ref(false);
 const catalogError = ref('');
 const metadataError = ref(false);
@@ -54,6 +55,7 @@ const selectionStatus = computed(() => {
   if (isInitializing.value) return '正在核对当前安排';
   if (saveUncertain.value) return '保存结果待核对';
   if (loadError.value) return '当前安排尚未核实';
+  if (confirmingEmpty.value) return '等待确认清空安排';
   if (isSaving.value) return '正在保存安排';
   return selectionDirty.value ? '选择有变更，尚未保存' : '与当前安排一致';
 });
@@ -207,6 +209,13 @@ const saveSelection = async () => {
     if (mealIds.length === 0 && selectedMeals.value.length > 0) {
       ElMessage.warning('所选菜品ID无效，请重新选择');
       return;
+    }
+    if (mealIds.length === 0 && initialIds.value.length > 0) {
+      confirmingEmpty.value = true;
+      try {
+        await ElMessageBox.confirm(`这会清空 ${date.value} ${mealTypeText.value}原有的 ${initialIds.value.length} 道菜，不影响其他餐次。确认保存空安排吗？`, '确认清空此餐次？', { type: 'warning', confirmButtonText: '确认清空', cancelButtonText: '继续选择' });
+      } catch (_) { return; }
+      finally { confirmingEmpty.value = false; }
     }
     
     await scheduleStore.setMeal(date.value, mealType.value, mealIds, { expectedVersion: expectedVersion.value });
