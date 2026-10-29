@@ -90,6 +90,14 @@ async function main () {
     await page.getByRole('button', { name: '下一页' }).click()
     await page.getByText('共 205 条回忆 · 第 2 / 18 页').waitFor()
     await page.getByText('历史回忆012', { exact: true }).waitFor()
+    rows[12].title = '历史回忆012·家人更新'
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await page.getByText('历史回忆012·家人更新', { exact: true }).waitFor()
+    await page.getByText('共 205 条回忆 · 第 2 / 18 页').waitFor()
+    assert.equal(new URL(page.url()).searchParams.get('page'), '2')
+    rows[12].title = '历史回忆012'
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await page.getByText('历史回忆012', { exact: true }).waitFor()
     const search = page.getByRole('searchbox', { name: '搜索回忆' })
     await search.fill('历史回忆001')
     await page.waitForRequest(request => request.url().includes('search=%E5%8E%86%E5%8F%B2%E5%9B%9E%E5%BF%86001'))

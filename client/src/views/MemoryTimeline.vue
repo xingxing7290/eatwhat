@@ -482,8 +482,8 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
 <template>
   <div class="memory-page">
     <div class="page-header">
-      <div><span class="eyebrow">AFTER THE MEAL · 饭后时光</span><h1>饭后回忆</h1><p>把每一餐后的心情、照片和小故事留下来。</p></div>
-      <el-button type="primary" :disabled="loading || !!loadError || !!deletingId || !!deleteIssue || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>记录一餐</el-button>
+      <div><span class="eyebrow">AFTER THE MEAL · 饭后时光</span><h1>饭后回忆</h1><p>把每一餐后的心情、照片和小故事留下来。刷新只读取当前结果，不会保存或丢弃草稿。</p></div>
+      <div class="header-actions"><el-button :loading="loading" :disabled="busy" @click="load">刷新当前结果</el-button><el-button type="primary" :disabled="loading || !!loadError || !!deletingId || !!deleteIssue || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>记录一餐</el-button></div>
     </div>
 
     <el-alert v-if="monthLinkNotice" type="warning" :closable="false" show-icon :title="monthLinkNotice" />
@@ -557,6 +557,8 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .memory-page { display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
+.header-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.header-actions .el-button { margin: 0; min-height: 44px; }
 h1, h2, h3 { margin: 0; color: var(--text-primary); }
 h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}
 .page-header p { color: var(--text-secondary); margin: 6px 0 0; }
