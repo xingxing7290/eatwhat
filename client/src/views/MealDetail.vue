@@ -244,13 +244,14 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 
         <el-card>
           <template #header><span ref="memoryHeading" tabindex="-1">饭后回忆</span></template>
+          <span class="sr-only" role="status" aria-atomic="true">{{ memoryLoading ? '正在加载相关回忆' : memoryError ? '相关回忆加载失败' : memoryPagination ? `共 ${memoryTotal} 条相关回忆，第 ${memoryPage} / ${memoryPages} 页` : `共 ${memoryTotal} 条相关回忆` }}</span>
           <el-alert v-if="memoryError" type="error" :closable="false" show-icon :title="`无法加载相关回忆：${memoryError}`"><el-button ref="memoryRetry" link type="primary" :loading="memoryLoading" @click="reloadMemories">重新加载</el-button></el-alert>
           <p v-else-if="memoryLoading" class="memory-date">正在加载相关回忆…</p>
           <el-empty v-else-if="!memories.length" description="还没有相关回忆" />
           <div v-else class="memory-list">
-            <p v-if="memoryPagination" class="memory-date" aria-live="polite">共 {{ memoryTotal }} 条相关回忆 · 第 {{ memoryPage }} / {{ memoryPages }} 页</p>
+            <p v-if="memoryPagination" class="memory-date">共 {{ memoryTotal }} 条相关回忆 · 第 {{ memoryPage }} / {{ memoryPages }} 页</p>
             <p v-else-if="memories.length >= 200" class="memory-date">旧服务器最多显示最近 200 条相关回忆，请升级服务器以查看全部历史。</p>
-            <div v-for="item in memories" :key="item._id" class="memory-item">
+            <div v-for="item in memories" :key="item._id || item.id" class="memory-item">
               <div class="memory-date">{{ item.date }} · {{ item.mood || '日常一餐' }}</div>
               <strong>{{ item.title || meal.name }}</strong>
               <p>{{ item.note }}</p>
@@ -258,7 +259,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
               <el-rate :model-value="item.rating || 0" disabled size="small" />
               <router-link class="memory-link" :to="{ name: 'memories', query: { edit: item._id || item.id } }">查看并编辑回忆 →</router-link>
             </div>
-            <nav v-if="memoryPagination && memoryTotal > memoryPageSize" ref="memoryNav" class="memory-pagination" aria-label="相关回忆分页"><el-button :disabled="memoryLoading || memoryPage <= 1" @click="changeMemoryPage(memoryPage - 1)">上一页</el-button><span aria-live="polite">第 {{ memoryPage }} / {{ memoryPages }} 页</span><el-button :disabled="memoryLoading || memoryPage >= memoryPages" @click="changeMemoryPage(memoryPage + 1)">下一页</el-button></nav>
+            <nav v-if="memoryPagination && memoryTotal > memoryPageSize" ref="memoryNav" class="memory-pagination" aria-label="相关回忆分页"><el-button :disabled="memoryLoading || memoryPage <= 1" @click="changeMemoryPage(memoryPage - 1)">上一页</el-button><span>第 {{ memoryPage }} / {{ memoryPages }} 页</span><el-button :disabled="memoryLoading || memoryPage >= memoryPages" @click="changeMemoryPage(memoryPage + 1)">下一页</el-button></nav>
           </div>
         </el-card>
       </section>
@@ -273,6 +274,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 </template>
 
 <style scoped>
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .meal-detail { display: flex; flex-direction: column; gap: 18px; }
 .detail-toolbar { display: flex; justify-content: space-between; gap: 12px; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }

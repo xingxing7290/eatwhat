@@ -11,6 +11,7 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const rows = Array.from({ length: 14 }, (_, i) => ({ _id: `memory-${i}`, date: '2026-10-01', title: `菜谱回忆${String(i).padStart(2, '0')}`, note: '家庭故事', mealType: 'dinner', photos: [], mealIds: [], editVersion: { revision: `v${i}`, updatedAt: '2026-01-01T00:00:00.000Z' }, supportsConditionalEdit: true }))
+    rows[1] = { ...rows[1], id: rows[1]._id }; delete rows[1]._id
     const otherRows = [{ ...rows[0], _id: 'other-memory', title: '另一道菜的回忆' }]
     let hold = false; let release; let fail = false; let legacy = false; const requests = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
@@ -31,10 +32,13 @@ async function main () {
     await page.goto(`${base}/meals/detail/a`)
     await page.getByRole('heading', { name: '第一道菜' }).waitFor()
     await page.getByText('共 14 条相关回忆 · 第 1 / 3 页').waitFor()
+    await page.getByRole('status').filter({ hasText: '共 14 条相关回忆，第 1 / 3 页' }).waitFor()
+    assert.match(await page.locator('.memory-item').filter({ hasText: '菜谱回忆01' }).getByRole('link').getAttribute('href'), /edit=memory-1/)
     assert.equal(requests[0].view, 'timeline'); assert.equal(requests[0].mealId, 'a'); assert.equal(await page.locator('.memory-item').count(), 6)
     const nav = page.getByRole('navigation', { name: '相关回忆分页' })
     await nav.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
     await page.getByText('共 14 条相关回忆 · 第 2 / 3 页').waitFor()
+    await page.getByRole('status').filter({ hasText: '共 14 条相关回忆，第 2 / 3 页' }).waitFor()
     await page.waitForFunction(() => document.activeElement?.textContent?.trim() === '下一页')
     await page.keyboard.press('Enter')
     await page.getByText('共 14 条相关回忆 · 第 3 / 3 页').waitFor()
@@ -43,6 +47,7 @@ async function main () {
     fail = true
     await page.keyboard.press('Enter')
     await page.getByText('无法加载相关回忆：模拟回忆读取失败', { exact: true }).waitFor()
+    await page.getByRole('status').filter({ hasText: '相关回忆加载失败' }).waitFor()
     await page.waitForFunction(() => document.activeElement?.textContent?.includes('重新加载'))
     assert.equal(await page.getByRole('heading', { name: '第一道菜' }).count(), 1, 'memory failure must not hide meal detail')
     fail = false
@@ -69,6 +74,7 @@ async function main () {
     await nav.getByRole('button', { name: '下一页' }).click()
     for (let i = 0; i < 100 && !release; i++) await page.waitForTimeout(25)
     assert.equal(typeof release, 'function')
+    await page.getByRole('status').filter({ hasText: '正在加载相关回忆' }).waitFor()
     await page.evaluate(() => { void document.querySelector('#app').__vue_app__.config.globalProperties.$router.push('/meals/detail/b') })
     await page.getByRole('heading', { name: '第二道菜' }).waitFor()
     await page.getByText('另一道菜的回忆').waitFor()
