@@ -205,6 +205,7 @@ const saveEdit = async () => {
     }, next => next.items.some(item => item._id === id && item.name === fields.name && (item.amount || '') === fields.amount && item.category === fields.category && item.checked === expectedChecked));
   } finally { working.value = false; }
 };
+const saveEditOnEnter = event => { if (event.isComposing) return; event.preventDefault(); saveEdit(); };
 const toggle = async item => {
   if (disabled.value) return;
   const hadFocus = document.activeElement?.closest('.item-row')?.dataset.itemId === String(item._id);
@@ -277,8 +278,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
         <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id }, query: { shoppingWeek: monday(weekStart) } }" :aria-label="`查看来源菜谱 ${index + 1}`">查看来源菜谱 {{ index + 1 }} →</router-link></nav></template>
       </div>
       <el-form label-position="top" :disabled="disabled">
-        <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" /></el-form-item>
-        <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" maxlength="200" /></el-form-item>
+        <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" @keydown.enter="saveEditOnEnter" /></el-form-item>
+        <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" maxlength="200" @keydown.enter="saveEditOnEnter" /></el-form-item>
         <el-form-item label="分类"><el-select v-model="editForm.category" aria-label="编辑食材分类"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item v-if="editLatest?.checked"><el-checkbox v-model="editForm.markPending">保存后将此项改为待买</el-checkbox><small class="edit-note">不勾选则保留已买状态。</small></el-form-item>
       </el-form>
