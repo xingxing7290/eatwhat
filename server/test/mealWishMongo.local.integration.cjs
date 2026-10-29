@@ -164,6 +164,7 @@ async function main() {
     app.get('/meal-image-issues', mealImageIssueController.list);
     app.post('/meal-image-issues', mealImageIssueController.create);
     app.get('/anniversaries', anniversaryController.list);
+    app.get('/anniversaries/:id', anniversaryController.get);
     app.get('/anniversary-templates', anniversaryTemplateController.list);
     app.post('/anniversaries', multer().array('photos', 12), anniversaryController.create);
     app.put('/anniversaries/:id', multer().array('photos', 12), anniversaryController.update);
@@ -219,6 +220,36 @@ async function main() {
     assert.equal(scopedAnniversaryRead.data[0].createdBy, null);
     assert.equal(scopedAnniversaryRead.data[0].meals.breakfast[1], null);
     assert.equal(scopedAnniversaryRead.data[0].meals.dinner[0], null);
+    {
+    const boardFixtures = await AnniversaryMenu.insertMany(Array.from({ length: 26 }, (_, index) => ({ householdId: scopedHome._id, createdBy: scopedUser._id, title: `分页测试 ${String(index).padStart(2, '0')}`, date: index < 13 ? `2027-01-${String(index + 1).padStart(2, '0')}` : `2025-01-${String(index - 12).padStart(2, '0')}`, meals: { breakfast: [], lunch: [], dinner: [] } })));
+    const invalidBoardDate = await AnniversaryMenu.collection.insertOne({ householdId: scopedHome._id, createdBy: scopedUser._id, title: '分页测试 异常日期', date: '2026-02-30', photos: [], meals: { breakfast: [], lunch: [], dinner: [] } });
+    const boardQuery = '/anniversaries?view=board&today=2026-10-29&search=%E5%88%86%E9%A1%B5%E6%B5%8B%E8%AF%95';
+    const firstBoard = await request(`${boardQuery}&page=1&limit=12`, { token: scopedToken });
+    assert.equal(firstBoard.status, 200);
+    assert.equal(firstBoard.data.supportsAnniversaryBoard, true);
+    assert.equal(firstBoard.data.total, 27);
+    assert.deepEqual(firstBoard.data.counts, { upcoming: 13, past: 13, unknown: 1 });
+    assert.equal(firstBoard.data.items.length, 12);
+    const secondBoard = await request(`${boardQuery}&page=2&limit=12`, { token: scopedToken });
+    const thirdBoard = await request(`${boardQuery}&page=3&limit=12`, { token: scopedToken });
+    const boardItems = [...firstBoard.data.items, ...secondBoard.data.items, ...thirdBoard.data.items];
+    assert.equal(new Set(boardItems.map(item => item._id)).size, 27);
+    assert.equal(boardItems[0].date, '2027-01-01');
+    assert.equal(boardItems[13].date, '2025-01-13');
+    assert.equal(boardItems[26].date, '2026-02-30');
+    assert.equal((await request(`${boardQuery}&period=unknown`, { token: scopedToken })).data.total, 1);
+    assert.equal((await request('/anniversaries?view=board&today=2026-10-29&search=%E5%A4%96%E5%AE%B6%E7%A7%81%E5%AF%86%E8%8F%9C%E5%90%8D', { token: scopedToken })).data.total, 0, 'foreign meal names cannot affect search results');
+    const mealNameBoard = await request('/anniversaries?view=board&today=2026-10-29&search=%E6%9C%AC%E5%AE%B6%E6%AD%A3%E5%B8%B8%E8%8F%9C', { token: scopedToken });
+    assert.equal(mealNameBoard.data.total, 1);
+    assert.equal(mealNameBoard.data.items[0].meals.breakfast[1], null);
+    assert.equal((await request('/anniversaries?view=board&today=2026-10-29&search=.%2A', { token: scopedToken })).data.total, 0, 'search treats regular expression characters literally');
+    assert.equal((await request('/anniversaries?view=board&today=2026-02-30', { token: scopedToken })).status, 400);
+    assert.equal((await request('/anniversaries?view=board&today=2026-10-29&limit=31', { token: scopedToken })).status, 400);
+    const singleBoardMenu = await request(`/anniversaries/${scopedAnniversary._id}`, { token: scopedToken });
+    assert.equal(singleBoardMenu.data.meals.breakfast[1], null);
+    assert.equal((await request(`/anniversaries/${scopedAnniversary._id}`, { token: tokenB })).status, 404);
+    await AnniversaryMenu.deleteMany({ _id: { $in: [...boardFixtures.map(item => item._id), invalidBoardDate.insertedId] } });
+    }
     const scopedDaily = await request(`/schedules/day/${scopeToday}`, { token: scopedToken });
     assert.equal(scopedDaily.status, 200);
     assert.equal(scopedDaily.data.meals.dinner.length, 2);
