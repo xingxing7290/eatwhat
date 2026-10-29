@@ -9,6 +9,7 @@ import { Grid, Menu, Search, Filter } from '@element-plus/icons-vue';
 import api from '../services/api';
 import { validWishVersion } from '../utils/wishlistVersion.mjs';
 import { validWeekLink } from '../utils/weekLink.mjs';
+import { normalizeMealSearch } from '../utils/mealSearch.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -286,18 +287,6 @@ const goToNewMeal = () => {
   router.push({ name: 'MealEditor' });
 };
 
-const legacyMatches = (meal) => {
-  const query = searchQuery.value.trim().toLowerCase();
-  const mealTags = Array.isArray(meal.tags) ? meal.tags : [];
-  const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
-  const steps = Array.isArray(meal.steps) ? meal.steps : [];
-  const fields = [meal.name, meal.description, meal.tips, ...mealTags, ...ingredients.map(item => item?.name || item), ...steps.map(step => step?.description || step)];
-  return (!query || fields.some(value => String(value || '').toLowerCase().includes(query))) &&
-    (!selectedTag.value || mealTags.includes(selectedTag.value)) &&
-    (!selectedCategory.value || meal.category === selectedCategory.value) &&
-    (!selectedSubcategory.value || meal.subcategory === selectedSubcategory.value);
-};
-
 const fetchCatalog = async () => {
   const sequence = ++catalogSequence;
   catalogLoading.value = true;
@@ -310,15 +299,7 @@ const fetchCatalog = async () => {
     if (selectedTag.value) params.tag = selectedTag.value;
     const result = await api.meal.getAllMeals(params);
     if (sequence !== catalogSequence) return;
-    let rows = result.data;
-    let total = result.total;
-    // Older servers return a complete array and ignore pagination; keep their
-    // existing client-side filtering behavior without rendering all cards.
-    if (result.page == null && result.limit == null && rows.length === total) {
-      const filtered = rows.filter(legacyMatches);
-      total = filtered.length;
-      rows = filtered.slice((currentPage.value - 1) * pageSize.value, currentPage.value * pageSize.value);
-    }
+    const { rows, total } = normalizeMealSearch(result, searchQuery.value, pageSize.value, { page: currentPage.value, category: selectedCategory.value, subcategory: selectedSubcategory.value, tag: selectedTag.value });
     const lastPage = Math.max(1, Math.ceil(total / pageSize.value));
     if (currentPage.value > lastPage) {
       currentPage.value = lastPage;

@@ -57,7 +57,11 @@ async function main () {
             (!query || meal.name.includes(query)) && (!url.searchParams.get('category') || meal.category === url.searchParams.get('category')))
           const current = Number(url.searchParams.get('page') || 1)
           const limit = Number(url.searchParams.get('limit') || 8)
-          data = { data: filtered.slice((current - 1) * limit, current * limit), total: filtered.length, page: current, limit }
+          if (query === '坏页') data = { data: [meals[0]], total: 1, page: 2, limit }
+          else if (query === '重复') data = { data: [meals[0], meals[0]], total: 2, page: 1, limit }
+          else if (query === '缺项') data = { data: [meals[0]], total: 2, page: 1, limit }
+          else if (query === '无分页') data = { data: [meals[0]], total: 23 }
+          else data = { data: filtered.slice((current - 1) * limit, current * limit), total: filtered.length, page: current, limit }
         }
       } else if (method === 'GET' && pathname.startsWith('/meals/')) {
         if (suggestionFailure === 'unavailable' && pathname === '/meals/meal-20') return route.fulfill({ status: 503, json: { error: '菜品暂不可用' } })
@@ -144,6 +148,16 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '搜索可选菜品')
     await page.waitForFunction(() => document.querySelectorAll('.meals-grid .meal-card-wrapper').length === 8)
     assert.equal(await page.locator('.meals-grid .meal-card-wrapper').count(), 8)
+    const catalogSearch = page.getByRole('textbox', { name: '搜索可选菜品' })
+    for (const fault of ['坏页', '重复', '缺项', '无分页']) {
+      await catalogSearch.fill(fault)
+      await page.getByText('无法加载菜品', { exact: false }).waitFor()
+      assert.equal(await page.locator('.meals-grid .meal-card-wrapper').count(), 0, `${fault} must not display unreliable choices`)
+      assert.equal(await page.getByRole('button', { name: '移除测试菜19' }).count(), 1)
+      assert.equal(await page.getByRole('button', { name: '移除测试菜20' }).count(), 1)
+    }
+    await catalogSearch.fill('')
+    await page.waitForFunction(() => document.querySelectorAll('.meals-grid .meal-card-wrapper').length === 8)
     const filterToggle = page.getByRole('button', { name: '筛选', exact: true })
     await filterToggle.click()
     assert.equal(await filterToggle.getAttribute('aria-expanded'), 'true')

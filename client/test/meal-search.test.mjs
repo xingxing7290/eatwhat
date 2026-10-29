@@ -23,4 +23,6 @@ test('paginated results must be complete, unique and on the requested page', () 
   assert.throws(() => normalizeMealSearch({ data: meals.slice(0, 8), total: 60, page: 1, limit: 8 }, '', 8, { page: 2 }))
   const categorized = meals.map((meal, index) => ({ ...meal, category: index % 2 ? '素菜' : '荤菜' }))
   assert.deepEqual(normalizeMealSearch({ data: categorized, total: 60 }, '', 8, { page: 2, category: '素菜' }).rows, categorized.filter(meal => meal.category === '素菜').slice(8, 16))
+  const tagged = [{ _id: '1', name: '一', category: '素菜', subcategory: '叶菜', tags: ['清淡'] }, { _id: '2', name: '二', category: '素菜', subcategory: '根茎', tags: ['清淡'] }, { _id: '3', name: '三', category: '素菜', subcategory: '叶菜', tags: ['辣'] }]
+  assert.deepEqual(normalizeMealSearch({ data: tagged, total: 3 }, '', 8, { category: '素菜', subcategory: '叶菜', tag: '清淡' }).rows, [tagged[0]])
 })

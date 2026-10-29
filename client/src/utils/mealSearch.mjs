@@ -2,14 +2,14 @@ const mealId = meal => String(meal?._id || meal?.id || '')
 
 // New servers return an exact first page; older servers return the complete
 // array. Never present a partial or duplicate response as a complete search.
-export function normalizeMealSearch (result, query, limit = 50, { page = 1, category = '' } = {}) {
+export function normalizeMealSearch (result, query, limit = 50, { page = 1, category = '', subcategory = '', tag = '' } = {}) {
   let rows = result?.data
   let total = result?.total
   if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(meal => !mealId(meal) || typeof meal.name !== 'string' || !meal.name.trim()) || new Set(rows.map(mealId)).size !== rows.length) throw new Error('菜品列表不完整')
   if (result.page == null && result.limit == null) {
     if (rows.length !== total) throw new Error('菜品列表不完整')
     const lower = String(query || '').trim().toLowerCase()
-    rows = rows.filter(meal => (!category || meal.category === category) && [meal.name, meal.description, meal.tips, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.ingredients) ? meal.ingredients.map(item => item?.name || item) : []), ...(Array.isArray(meal.steps) ? meal.steps.map(item => item?.description || item) : [])].some(field => String(field || '').toLowerCase().includes(lower)))
+    rows = rows.filter(meal => (!category || meal.category === category) && (!subcategory || meal.subcategory === subcategory) && (!tag || (Array.isArray(meal.tags) && meal.tags.includes(tag))) && [meal.name, meal.description, meal.tips, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.ingredients) ? meal.ingredients.map(item => item?.name || item) : []), ...(Array.isArray(meal.steps) ? meal.steps.map(item => item?.description || item) : [])].some(field => String(field || '').toLowerCase().includes(lower)))
     total = rows.length
     rows = rows.slice((page - 1) * limit, page * limit)
   } else if (result.page !== page || result.limit !== limit || rows.length !== Math.min(limit, Math.max(0, total - (page - 1) * limit))) throw new Error('菜品分页数据不完整，请重试')
