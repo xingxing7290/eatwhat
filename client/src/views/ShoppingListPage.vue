@@ -21,6 +21,7 @@ const mutationIssue = ref('');
 const generationNotice = ref('');
 const generationDates = ref([]);
 let loadSequence = 0;
+let active = true;
 const form = reactive({ name: '', amount: '', category: 'other' });
 const editingItem = ref(null);
 const editForm = reactive({ name: '', amount: '', category: 'other', markPending: false });
@@ -52,7 +53,28 @@ const generationTime = computed(() => {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 });
 const purchased = computed(() => (list.value.items || []).filter(item => item.checked).length);
+const pendingItems = computed(() => (list.value.items || []).filter(item => !item.checked));
+const copyingList = ref(false);
+const copyDialogVisible = ref(false);
+const copiedSnapshot = ref('');
+const snapshotInput = ref(null);
 const needsQuantityReview = item => !item.manual && item.quantityComplete === false;
+const copyPendingList = async () => {
+  if (copyingList.value || loading.value || working.value || changingWeek.value || loadError.value || mutationIssue.value || !pendingItems.value.length) return;
+  const clean = value => String(value || '').replace(/\s+/g, ' ').trim();
+  const items = [...pendingItems.value];
+  const sections = Object.keys(categoryText).map(key => {
+    const rows = items.filter(item => categoryKey(item) === key);
+    if (!rows.length) return '';
+    return [`【${categoryText[key]}】`, ...rows.map(item => `- ${clean(item.name)}${clean(item.amount) ? `：${clean(item.amount)}` : ''}${needsQuantityReview(item) ? '（用量待核对）' : ''}`)].join('\n');
+  }).filter(Boolean);
+  const text = [`购物清单 · ${weekRange.value}`, `全部待买 ${items.length} 项（当前页面快照，不含未保存输入）`, ...sections].join('\n\n');
+  copyingList.value = true;
+  try { await navigator.clipboard.writeText(text); if (active) ElMessage.success('已复制所选周全部待买项；其他成员的最新修改请重新核对'); }
+  catch (_) { if (active) { copiedSnapshot.value = text; copyDialogVisible.value = true; } }
+  finally { copyingList.value = false; }
+};
+const selectSnapshot = () => { const input = snapshotInput.value?.textarea; if (input) { input.focus(); input.select(); } };
 const quantityReviewCount = computed(() => (list.value.items || []).filter(needsQuantityReview).length);
 const filtersActive = computed(() => !!search.value.trim() || statusFilter.value !== 'all' || quantityOnly.value);
 const filteredItems = computed(() => {
@@ -278,7 +300,7 @@ const remove = async item => {
 };
 const clearPurchased = async () => { if (!purchased.value || disabled.value) return; working.value = true; try { try { await ElMessageBox.confirm(`将删除 ${purchased.value} 项已购食材。${filtersActive.value ? '此操作作用于所选周全部已购食材，包括筛选后未显示的项目。' : ''}`, '清空已购', { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }); } catch (_) { return; } await mutate((version, week) => api.shoppingList.clearPurchased(week, version), () => ElMessage.success('已清空已购'), next => next.items.every(item => !item.checked)); } finally { working.value = false; } };
 onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '购物清单链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
-onBeforeUnmount(() => { loadSequence++; sourceSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
+onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
 <template>
@@ -297,6 +319,7 @@ onBeforeUnmount(() => { loadSequence++; sourceSequence++; window.removeEventList
     <el-card><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keyup.enter="addItem" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keyup.enter="addItem" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">
       <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p></div><el-input ref="searchInput" v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
+      <div class="copy-tools"><el-button :loading="copyingList" :disabled="loading || working || changingWeek || !!loadError || !!mutationIssue || !pendingItems.length" @click="copyPendingList">复制全部待买项</el-button><p>不受筛选影响；复制当前已加载的清单，不含未保存输入。其他成员的更新请先重新核对。</p></div>
       <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'pending', label: '待买' }, { value: 'purchased', label: '已买' }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button></div>
       <div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div>
       <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
@@ -305,6 +328,7 @@ onBeforeUnmount(() => { loadSequence++; sourceSequence++; window.removeEventList
     <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
     <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
     </template>
+    <el-dialog v-model="copyDialogVisible" title="手动复制待买清单" width="min(560px, 92vw)"><p class="copy-help">浏览器未允许自动复制。以下是点击时的快照；清单之后的变化不会自动更新。</p><el-input ref="snapshotInput" :model-value="copiedSnapshot" type="textarea" :rows="10" readonly aria-label="待买清单快照" /><template #footer><el-button @click="selectSnapshot">全选内容</el-button><el-button type="primary" @click="copyDialogVisible = false">完成</el-button></template></el-dialog>
     <el-dialog :model-value="!!editingItem" title="编辑购物食材" width="min(520px, 92vw)" :close-on-click-modal="false" :before-close="closeEdit">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法核对购物清单：${loadError}`"><el-button link type="primary" :disabled="loading || working" @click="load">重试</el-button></el-alert>
       <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
@@ -330,6 +354,9 @@ onBeforeUnmount(() => { loadSequence++; sourceSequence++; window.removeEventList
 <style scoped>
 .shopping-page { --shopping-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }.page-header{display:flex;justify-content:space-between;gap:20px;align-items:center;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:26px;padding:clamp(22px,3vw,36px);box-shadow:0 12px 28px var(--shadow-color)}h1{margin:8px 0;font-family:Georgia,'Songti SC',serif;font-size:clamp(26px,3vw,36px);color:var(--text-primary)}.eyebrow{color:var(--shopping-accent);font-size:11px;letter-spacing:.14em;font-weight:800}.page-header p,.page-header small{color:var(--text-secondary)}.actions,.add-row{display:flex;gap:10px;flex-wrap:wrap}.actions .el-button,.add-row .el-button{margin:0}.add-row .el-input{flex:1;min-width:160px}.progress-card{display:flex;align-items:center;gap:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:20px;padding:18px 24px}.progress-card>div:first-child{display:flex;align-items:baseline;gap:8px;white-space:nowrap;color:var(--text-secondary)}.progress-card strong{color:var(--shopping-accent);font-size:26px}.progress-card .el-progress{flex:1}.load-error{padding:18px;border:1px solid var(--border-color);border-radius:18px;background:var(--bg-primary);color:var(--text-secondary)}.group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px}.item-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-light)}.item-row :deep(.el-checkbox){height:auto;min-width:0;flex:1}.item-row :deep(.el-checkbox__label){white-space:normal;overflow-wrap:anywhere}.item-row.checked :deep(.el-checkbox__label){color:var(--text-secondary);text-decoration:line-through}.item-row :deep(.el-checkbox__label span){margin-left:8px;color:var(--text-secondary)}.item-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}.item-actions .el-button{min-width:44px;min-height:44px}@media(max-width:720px){.page-header{flex-direction:column;align-items:stretch}.add-row{flex-direction:column}.add-row :deep(.el-input__wrapper),.add-row :deep(.el-select__wrapper),.add-row .el-button,.actions .el-button{min-height:44px}.progress-card{align-items:stretch;flex-direction:column;gap:12px}.group-grid{grid-template-columns:1fr}}
 .list-tools { padding: 20px 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; }
+.copy-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0; }
+.copy-tools .el-button { min-height: 44px; margin: 0; }
+.copy-tools p, .copy-help { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .progress-loading { padding: 18px 24px; border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-secondary); color: var(--text-primary); }
 .filter-reset { min-height: 44px; margin-top: 8px; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .filter-reset:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
