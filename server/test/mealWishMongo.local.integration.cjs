@@ -1316,7 +1316,7 @@ async function main() {
       const switchPage = await scopeContext.newPage();
       await switchPage.goto(`${webBase}/settings`);
       await switchPage.getByText('会话家庭甲', { exact: true }).waitFor();
-      await switchPage.getByPlaceholder('输入伴侣的邀请码').fill('SCOPE-B');
+      await switchPage.getByPlaceholder('输入家人的邀请码').fill('SCOPE-B');
       await switchPage.getByRole('button', { name: '加入', exact: true }).click();
       await switchPage.getByRole('button', { name: '确认加入' }).click();
       await switchPage.getByText('已加入小家').waitFor();
@@ -1382,7 +1382,7 @@ async function main() {
       });
       await lostPage.goto(`${webBase}/settings`);
       await lostPage.getByText('响应丢失家庭甲', { exact: true }).waitFor();
-      await lostPage.getByPlaceholder('输入伴侣的邀请码').fill('LOST-B');
+      await lostPage.getByPlaceholder('输入家人的邀请码').fill('LOST-B');
       await lostPage.getByRole('button', { name: '加入', exact: true }).click();
       await lostPage.getByRole('button', { name: '确认加入' }).click();
       await lostPage.getByText('家庭切换结果未确认').waitFor();
@@ -2022,7 +2022,7 @@ async function main() {
       await invitePage.goto(`${webBase}/apply-account#invite=${encodeURIComponent(newInviteB)}`);
       await invitePage.getByRole('button', { name: '使用当前账号加入' }).click();
       await invitePage.waitForURL('**/settings');
-      assert.equal(await invitePage.getByPlaceholder('输入伴侣的邀请码').inputValue(), newInviteB);
+      assert.equal(await invitePage.getByPlaceholder('输入家人的邀请码').inputValue(), newInviteB);
       assert.equal(String((await User.findById(browserUser._id)).householdId), String(homeA._id), 'opening a link does not switch households');
       await invitePage.getByRole('button', { name: '加入', exact: true }).click();
       await invitePage.getByRole('button', { name: '取消', exact: true }).last().click();

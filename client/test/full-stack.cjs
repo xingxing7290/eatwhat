@@ -169,7 +169,7 @@ async function main () {
     await page.goto(`${base}/apply-account#invite=${encodeURIComponent(meB.household.inviteCode)}`)
     await page.getByRole('button', { name: '使用当前账号加入' }).click()
     await page.waitForURL('**/settings')
-    assert.equal(await page.getByPlaceholder('输入伴侣的邀请码').inputValue(), meB.household.inviteCode)
+    assert.equal(await page.getByPlaceholder('输入家人的邀请码').inputValue(), meB.household.inviteCode)
     assert.equal((await apiGet('/auth/me')).household.id, me.household.id, 'opening an invitation must not switch households automatically')
     await page.getByRole('button', { name: '加入', exact: true }).click()
     await page.getByRole('button', { name: '取消' }).last().click()

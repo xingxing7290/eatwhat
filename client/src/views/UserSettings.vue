@@ -119,7 +119,7 @@
           <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
         </el-form-item>
         <el-form-item label="加入小家">
-          <div class="invite-row"><el-input v-model="joinCode" placeholder="输入伴侣的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
+          <div class="invite-row"><el-input v-model="joinCode" placeholder="输入家人的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small>加入前无法预览目标小家，请先与家人核对邀请码。切换后，原小家的数据不会自动转移。</small><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
         </el-form-item>
         <el-form-item label="成员">
           <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="avatarSource(member) && !failedAvatars.has(memberAvatarKey(member))" :key="memberAvatarKey(member)" :src="avatarSource(member)" :alt="`${member.displayName || member.username || '成员'}的头像`" @error="onAvatarError($event, memberAvatarKey(member))" /><span v-else aria-label="头像不可用">{{ memberInitial(member) }}</span></div><span class="member-name">{{ member.displayName || member.username || '家庭成员' }}</span></div></div>
@@ -363,7 +363,7 @@ const joinHousehold = async () => {
   if (requestedCode.length > 20) return ElMessage.warning('邀请码过长，请重新确认');
   joining.value = true;
   try {
-    try { await ElMessageBox.confirm('加入其他小家会切换当前账号所属家庭，原家庭的菜谱、计划和回忆不会自动转移，未保存的设置也会放弃。', '确认切换小家', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '取消' }); } catch (_) { return; }
+    try { await ElMessageBox.confirm(`当前小家：${household.value.name || '未命名'}。\n使用的邀请码：${requestedCode}。\n暂无法预览目标小家，请先与家人核对邀请码。加入后账号会切换小家，原小家的菜谱、计划和回忆不会自动转移，未保存的设置也会放弃。`, '确认切换小家', { type: 'warning', confirmButtonText: '确认加入', cancelButtonText: '取消' }); } catch (_) { return; }
     const result = await api.household.join(requestedCode);
     if (!result?.user?.id || String(result.user.id) !== String(user.value.id) || !result?.household?.id || String(result.user.householdId || '') !== String(result.household.id) ||
         typeof result.household.inviteCode !== 'string' || result.household.inviteCode.toUpperCase() !== requestedCode ||
