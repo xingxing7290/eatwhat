@@ -50,6 +50,16 @@ async function main () {
     await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
     await page.getByRole('button', { name: '下一页' }).click()
     await page.getByText('共 20 条匹配记录 · 第 2 / 2 页').waitFor()
+    rows[12].title = '心愿12（已更新）'
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await page.getByText('心愿12（已更新）', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('textbox', { name: '搜索想吃记录' }).inputValue(), '心愿')
+    assert.equal(await page.getByLabel('按优先级筛选').inputValue(), 'normal')
+    await page.getByText('共 20 条匹配记录 · 第 2 / 2 页').waitFor()
+    assert.equal(createRequests, 0, 'refresh must not create records or recipes')
+    rows[12].title = '心愿12'
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await page.getByText('心愿12', { exact: true }).waitFor()
     await page.locator('.wish-card').filter({ hasText: '心愿12' }).getByRole('button', { name: '选择日期安排' }).click()
     const schedule = page.getByRole('dialog', { name: '安排想吃的菜' })
     await schedule.getByLabel('日期').fill('2026-12-31')

@@ -438,7 +438,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
   <div class="wishlist-page">
     <div class="page-header">
       <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、家人提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可选择日期和餐次安排。</small></div>
-      <el-button ref="addWishButton" type="primary" :disabled="loading || !!loadError || reviewing || !!actionIssue || !!actionId || !!confirmingId || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>添加想吃</el-button>
+      <div class="header-actions"><el-button :loading="loading" :disabled="busy" @click="load">刷新当前结果</el-button><el-button ref="addWishButton" type="primary" :disabled="loading || !!loadError || reviewing || !!actionIssue || !!actionId || !!confirmingId || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>添加想吃</el-button></div>
     </div>
 
     <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="想吃记录" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -538,6 +538,8 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .wishlist-page { --wish-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
+.header-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.header-actions .el-button { margin: 0; min-height: 44px; }
 h1, h2 { margin: 0; color: var(--text-primary); }
 h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--wish-accent);font-size:11px;letter-spacing:.14em;font-weight:800}.page-header p,.page-header small { color: var(--text-secondary); }.page-header p { margin: 6px 0; }.pending-note { color:var(--text-primary) !important; font-size:13px; }
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }

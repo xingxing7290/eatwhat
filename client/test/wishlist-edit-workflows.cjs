@@ -79,6 +79,9 @@ async function main () {
     await page.getByRole('button', { name: '编辑核对后修改' }).click()
     await title.fill('暂存草稿')
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
+    const refreshResponse = page.waitForResponse(response => response.url().includes('/api/wishlist') && response.request().method() === 'GET')
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await refreshResponse
     assert.equal(await page.getByRole('button', { name: '删除核对后修改' }).isDisabled(), true)
     await page.getByRole('button', { name: '添加想吃' }).click()
     await page.getByRole('button', { name: '继续编辑', exact: true }).last().click()
