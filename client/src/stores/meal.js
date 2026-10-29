@@ -131,19 +131,20 @@ export const useMealStore = defineStore('meal', {
     },
     
     // 创建新菜品
-    async createMeal(mealData) {
+    async createMeal(mealData, validateReceipt) {
       this.loading = true;
       this.error = null;
       
       try {
         const newMeal = await mealApi.createMeal(mealData);
+        if (validateReceipt) validateReceipt(newMeal);
         this.meals.unshift(newMeal);
         this.totalMeals++;
         ElMessage.success('菜品创建成功');
         return newMeal;
       } catch (err) {
         this.error = err.message || '创建菜品失败';
-        ElMessage.error(this.error);
+        if (err?.code !== 'MEAL_RECEIPT_UNCONFIRMED') ElMessage.error(this.error);
         throw err;
       } finally {
         this.loading = false;
@@ -151,12 +152,13 @@ export const useMealStore = defineStore('meal', {
     },
     
     // 更新菜品
-    async updateMeal(id, mealData) {
+    async updateMeal(id, mealData, validateReceipt) {
       this.loading = true;
       this.error = null;
       
       try {
         const updatedMeal = await mealApi.updateMeal(id, mealData);
+        if (validateReceipt) validateReceipt(updatedMeal);
         const index = this.meals.findIndex(meal => String(meal._id || meal.id) === String(id));
         
         if (index !== -1) {
@@ -168,7 +170,7 @@ export const useMealStore = defineStore('meal', {
         return updatedMeal;
       } catch (err) {
         this.error = err?.error || err?.message || '更新菜品失败';
-        if (err?.code !== 'MEAL_CONFLICT') ElMessage.error(this.error);
+        if (err?.code !== 'MEAL_CONFLICT' && err?.code !== 'MEAL_RECEIPT_UNCONFIRMED') ElMessage.error(this.error);
         throw err;
       } finally {
         this.loading = false;

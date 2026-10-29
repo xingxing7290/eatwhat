@@ -9,6 +9,7 @@ import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
 import { validWeekLink } from '@/utils/weekLink.mjs';
 import { readReviewOrigin, reviewDestination } from '@/utils/reviewOrigin.mjs';
 import { resolveRecipeImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
+import { currentSessionScope } from '@/services/sessionScope';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const route = useRoute();
@@ -234,8 +235,19 @@ const submit = async () => {
       try { await ElMessageBox.confirm('还有未添加到列表的食材或步骤，继续保存不会包含这些内容。', '检查未添加的内容', { type: 'warning', confirmButtonText: '仍要保存', cancelButtonText: '返回添加' }); } catch (_) { return; }
     }
     try {
-      if (editMode.value) await mealStore.updateMeal(route.params.id, buildPayload());
-      else await mealStore.createMeal(buildPayload());
+      const expectedId = editMode.value ? String(route.params.id) : '';
+      const expectedName = form.name.trim();
+      const expectedHousehold = currentSessionScope().householdId;
+      const validateReceipt = meal => {
+        const id = meal?._id || meal?.id;
+        const household = meal?.householdId?._id || meal?.householdId?.id || meal?.householdId;
+        const normalizeId = value => /^[a-f\d]{24}$/i.test(value) ? value.toLowerCase() : value;
+        if (!meal || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id) || (expectedId && normalizeId(id) !== normalizeId(expectedId)) || typeof meal.name !== 'string' || meal.name.trim() !== expectedName || (household != null && expectedHousehold && normalizeId(String(household)) !== normalizeId(expectedHousehold))) {
+          throw { code: 'MEAL_RECEIPT_UNCONFIRMED', message: '菜品保存回执不完整或不一致' };
+        }
+      };
+      if (editMode.value) await mealStore.updateMeal(expectedId, buildPayload(), validateReceipt);
+      else await mealStore.createMeal(buildPayload(), validateReceipt);
       ElMessage.success('菜品已保存');
       saved.value = true;
       await router.push(saveDestination.value);
