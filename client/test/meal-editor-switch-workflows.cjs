@@ -10,7 +10,7 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
-    let holdA = false; let releaseA; let foreign = false; let failB = false; let writes = 0; let submittedIngredients; let submittedSteps
+    let holdA = false; let releaseA; let foreign = false; let failB = false; let writes = 0; let submittedIngredients; let submittedSteps; let submittedBody
     const originalCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E'
     const meal = id => ({ _id: id, name: id === 'a' ? '菜品甲' : '菜品乙', imageUrl: originalCover, ingredients: id === 'b' ? [{ name: '鸡蛋', amount: '2个' }] : [], steps: id === 'b' ? [{ description: '炒熟', imageUrl: '' }, { description: '', imageUrl: '/uploads/step.jpg' }] : [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: `rev-${id}`, updatedAt: null } })
     await page.route('**/api/**', async route => {
@@ -25,6 +25,7 @@ async function main () {
       }
       if (request.method() === 'PUT' && path === '/meals/b') {
         writes++
+        submittedBody = request.postData()
         const match = request.postData()?.match(/name="ingredients"\r\n\r\n([^\r]*)/)
         submittedIngredients = match && JSON.parse(match[1])
         const stepMatch = request.postData()?.match(/name="steps"\r\n\r\n([^\r]*)/)
@@ -98,6 +99,28 @@ async function main () {
     await page.getByRole('button', { name: '移除待添加步骤图' }).click()
     assert.equal(await page.getByRole('img', { name: '待添加步骤图' }).count(), 0)
     assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false, 'undoing image selections leaves a clean draft')
+    await page.getByRole('button', { name: '移除第 2 步图片' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByText('第 2 步没有文字或图片', { exact: false }).waitFor()
+    assert.equal(writes, 0, 'removing the only content of a step must not save an empty step')
+    await page.getByRole('button', { name: '撤销第 2 步图片修改' }).click()
+    const secondStepUpload = page.locator('.step-item').nth(1).locator('input[type="file"]')
+    await secondStepUpload.setInputFiles(photo)
+    await secondStepUpload.setInputFiles({ ...photo, name: 'replacement.png' })
+    await page.getByRole('button', { name: '上移第 2 步' }).click()
+    await page.getByRole('button', { name: '撤销第 1 步图片修改' }).click()
+    await page.getByRole('button', { name: '下移第 1 步' }).click()
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false, 'undo follows a reordered step and restores a clean draft')
+    await page.getByRole('textbox', { name: '新步骤描述' }).fill('临时步骤')
+    await stepUpload.setInputFiles(photo)
+    await page.getByRole('button', { name: '添加步骤', exact: true }).click()
+    const thirdStep = page.locator('.step-item').nth(2)
+    const firstPreview = await thirdStep.getByAltText('步骤 3 图片').getAttribute('src')
+    await thirdStep.locator('input[type="file"]').setInputFiles({ ...photo, name: 'replacement.png' })
+    await page.getByRole('button', { name: '撤销第 3 步图片修改' }).click()
+    assert.equal(await thirdStep.getByAltText('步骤 3 图片').getAttribute('src'), firstPreview, 'undo restores an unsaved step image too')
+    await page.getByRole('button', { name: '删除第 3 步' }).click()
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false)
     await page.getByText('已生成的购物清单不会自动更新', { exact: false }).waitFor()
     const ingredient = page.getByRole('textbox', { name: '第 1 项食材名称' })
     const amount = page.getByRole('textbox', { name: '第 1 项食材用量' })
@@ -139,6 +162,15 @@ async function main () {
     assert.deepEqual(submittedIngredients, [{ name: '鸡蛋', amount: '4个' }])
     assert.deepEqual(submittedSteps, [{ description: '', imageUrl: '/uploads/step.jpg' }, { description: '炒熟', imageUrl: '' }])
     assert.equal(writes, 1)
+    await navigate('/meals/editor/b')
+    await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '菜品乙')
+    await page.getByRole('textbox', { name: '第 2 步描述' }).fill('保留文字')
+    await page.getByRole('button', { name: '移除第 2 步图片' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForURL('**/meals')
+    assert.deepEqual(submittedSteps, [{ description: '炒熟', imageUrl: '' }, { description: '保留文字', imageUrl: '' }], 'saving a removed image must clear its stored URL')
+    assert.equal(submittedBody.includes('name="stepImages"'), false)
+    assert.equal(writes, 2)
     console.log('Meal editor checks passed: draft guard, route switching, stale responses and retry')
   } finally { await browser.close() }
 }

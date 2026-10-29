@@ -44,6 +44,8 @@ const emptyForm = () => ({
 const form = reactive(emptyForm());
 const newIngredient = reactive({ name: '', amount: '' });
 const newStep = reactive({ description: '', imageFile: null, imagePreview: '' });
+// Key by the step object, so undo follows the step when it is reordered.
+const stepImageUndo = reactive(new WeakMap());
 const rules = { name: [{ required: true, whitespace: true, message: '请输入菜品名称', trigger: 'blur' }] };
 const initialForm = ref(JSON.stringify(form));
 const previews = new Set();
@@ -81,7 +83,14 @@ const addStep = () => {
   form.steps.push({ description: newStep.description.trim(), imageUrl: newStep.imagePreview || '', imageFile: newStep.imageFile || null });
   newStep.description = ''; newStep.imageFile = null; newStep.imagePreview = '';
 };
-const removeStep = (index) => form.steps.splice(index, 1);
+const removeStep = (index) => {
+  const [step] = form.steps.splice(index, 1);
+  if (!step) return;
+  releasePreview(step.imageUrl);
+  const previous = stepImageUndo.get(step);
+  if (previous) releasePreview(previous.imageUrl);
+  stepImageUndo.delete(step);
+};
 const moveStep = (index, delta) => {
   const target = index + delta;
   if (target < 0 || target >= form.steps.length) return;
@@ -97,7 +106,22 @@ const onPhotosChange = async (_file, files) => {
 };
 const onNewStepImage = (file) => { const error = photoError(file); if (error) return ElMessage.warning(error); releasePreview(newStep.imagePreview); newStep.imageFile = file; newStep.imagePreview = makePreview(file); };
 const clearNewStepImage = () => { releasePreview(newStep.imagePreview); newStep.imageFile = null; newStep.imagePreview = ''; };
-const onStepImage = (index, file) => { const error = photoError(file); if (error) return ElMessage.warning(error); form.steps[index].imageFile = file; form.steps[index].imageUrl = makePreview(file); };
+const prepareStepImageChange = (step) => {
+  if (!stepImageUndo.has(step)) stepImageUndo.set(step, { imageUrl: step.imageUrl, imageFile: step.imageFile, hadImageFile: Object.prototype.hasOwnProperty.call(step, 'imageFile') });
+  else releasePreview(step.imageUrl);
+};
+const onStepImage = (index, file) => {
+  const error = photoError(file); if (error) return ElMessage.warning(error);
+  const step = form.steps[index]; if (!step) return;
+  prepareStepImageChange(step); step.imageFile = file; step.imageUrl = makePreview(file);
+};
+const clearStepImage = (step) => { prepareStepImageChange(step); step.imageFile = null; step.imageUrl = ''; };
+const undoStepImage = (step) => {
+  const previous = stepImageUndo.get(step); if (!previous) return;
+  releasePreview(step.imageUrl); step.imageUrl = previous.imageUrl;
+  if (previous.hadImageFile) step.imageFile = previous.imageFile; else delete step.imageFile;
+  stepImageUndo.delete(step);
+};
 const removeExistingPhoto = async (index, event) => {
   const source = event.currentTarget;
   const hadFocus = document.activeElement === source;
@@ -261,7 +285,7 @@ watch(() => route.params.id, load, { immediate: true });
 
         <el-card><template #header>做法步骤</template>
           <div class="step-editor"><el-input v-model="newStep.description" type="textarea" rows="2" placeholder="写下一个步骤" aria-label="新步骤描述" /><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onNewStepImage"><el-button><el-icon><Upload /></el-icon>步骤图</el-button></el-upload><img v-if="newStep.imagePreview" :src="newStep.imagePreview" alt="待添加步骤图" /><el-button v-if="newStep.imageFile" @click="clearNewStepImage">移除待添加步骤图</el-button><el-button type="primary" @click="addStep">添加步骤</el-button></div>
-          <div v-if="form.steps.length" class="steps"><div v-for="(step, index) in form.steps" :key="index" class="step-item"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :key="step.imageUrl" :src="imageFor(step.imageUrl)" :alt="`步骤 ${index + 1} 图片`" @error="imageError" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index)">删除</el-button></div></div></div>
+          <div v-if="form.steps.length" class="steps"><div v-for="(step, index) in form.steps" :key="index" class="step-item"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :key="step.imageUrl" :src="imageFor(step.imageUrl)" :alt="`步骤 ${index + 1} 图片`" @error="imageError" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button v-if="step.imageUrl || step.imageFile" size="small" :aria-label="`移除第 ${index + 1} 步图片`" @click="clearStepImage(step)">移除图</el-button><el-button v-if="stepImageUndo.has(step)" size="small" :aria-label="`撤销第 ${index + 1} 步图片修改`" @click="undoStepImage(step)">撤销图片修改</el-button><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index)">删除</el-button></div></div></div>
           <el-empty v-else description="暂无做法步骤" />
         </el-card>
 
