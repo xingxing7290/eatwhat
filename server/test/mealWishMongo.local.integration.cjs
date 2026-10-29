@@ -1843,7 +1843,11 @@ async function main() {
       assert.equal(await pages[1].evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       const sharedShopping = await request('/shopping-list?weekStart=2026-10-26', { token: tokenA });
       assert.deepEqual(sharedShopping.data.items.map(item => item.name).sort(), ['浏览器面包', '浏览器鸡蛋'].sort());
-      await pages[0].reload();
+      await pages[0].getByRole('textbox', { name: '食材名称' }).fill('保留的采购草稿');
+      await pages[0].getByRole('button', { name: '刷新所选周清单' }).click();
+      await pages[0].getByText('浏览器面包', { exact: true }).waitFor();
+      assert.equal(await pages[0].getByRole('textbox', { name: '食材名称' }).inputValue(), '保留的采购草稿', 'refresh must retain the unfinished item');
+      await pages[0].getByRole('textbox', { name: '食材名称' }).fill('');
       await pages[0].getByRole('button', { name: '编辑浏览器鸡蛋' }).click();
       await pages[1].getByRole('button', { name: '编辑浏览器鸡蛋' }).click();
       const shoppingEditA = pages[0].getByRole('dialog', { name: '编辑购物食材' });
@@ -1882,6 +1886,11 @@ async function main() {
       await pages[0].goto(`${webBase}/wishlist`);
       await pages[0].getByRole('textbox', { name: '搜索想吃记录' }).fill('浏览器安全转菜');
       const convertCard = pages[0].locator('.wish-card').filter({ hasText: '浏览器安全转菜' });
+      await convertCard.waitFor();
+      await WishlistItem.updateOne({ _id: browserConvert._id }, { $set: { note: '家人更新的口味' } });
+      await pages[0].getByRole('button', { name: '刷新当前结果' }).click();
+      await convertCard.getByText('家人更新的口味').waitFor();
+      assert.equal(await pages[0].getByRole('textbox', { name: '搜索想吃记录' }).inputValue(), '浏览器安全转菜');
       await convertCard.getByRole('button', { name: '转菜品' }).click();
       try { await convertCard.getByRole('button', { name: '安排今天晚餐' }).waitFor({ timeout: 8000 }); }
       catch (error) { console.error('Conversion state:', await convertCard.innerText(), 'messages:', await pages[0].locator('.el-message').allTextContents()); throw error; }
@@ -1896,6 +1905,13 @@ async function main() {
       const impactValues = await pages[0].locator('.impact-summary > div strong').allTextContents();
       assert.equal(impactValues.reduce((sum, value) => sum + Number(value), 0), 21, 'impact totals cover all seven days and three meal slots');
       const beforeDiscard = JSON.stringify(await Schedule.find({ householdId: homeA._id }).sort({ _id: 1 }).lean());
+      const weeklyRefresh = pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/weekly-plans' && response.request().method() === 'GET');
+      await pages[0].getByRole('button', { name: '刷新当前安排' }).click();
+      await weeklyRefresh;
+      await pages[0].waitForFunction(() => document.querySelector('.weekly-page')?.getAttribute('aria-busy') === 'false');
+      await pages[0].getByRole('button', { name: '刷新当前安排' }).waitFor();
+      assert.equal(await pages[0].getByText('规则生成草稿').isVisible(), true, 'refresh must retain the weekly draft');
+      assert.equal(JSON.stringify(await Schedule.find({ householdId: homeA._id }).sort({ _id: 1 }).lean()), beforeDiscard, 'refresh must not modify schedules');
       await pages[0].getByRole('button', { name: '放弃草稿', exact: true }).click();
       const discardPrompt = pages[0].getByRole('dialog', { name: '放弃周计划草稿？' });
       await discardPrompt.getByRole('button', { name: '放弃草稿', exact: true }).click();
