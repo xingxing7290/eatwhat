@@ -363,8 +363,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
         <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><p v-if="sourceLoading" role="status">正在读取来源菜谱名称…</p><p v-if="sourceError" role="status">部分菜谱名称暂不可用，仍可打开核对。 <button ref="sourceRetryButton" type="button" :disabled="sourceLoading" @click="loadSourceNames">{{ sourceLoading ? '正在重试' : '重试名称' }}</button></p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id }, query: { shoppingWeek: monday(weekStart) } }" :aria-label="sourceNames[id] ? `查看来源菜谱：${sourceNames[id].name}` : `查看来源菜谱 ${index + 1}`">{{ sourceNames[id] ? sourceNames[id].name : `来源菜谱 ${index + 1}` }}{{ sourceNames[id]?.archived ? '（已归档）' : '' }} →</router-link></nav></template>
       </div>
       <el-form label-position="top" :disabled="disabled">
-        <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" @keydown.enter="saveEditOnEnter" /></el-form-item>
-        <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" maxlength="200" @keydown.enter="saveEditOnEnter" /></el-form-item>
+        <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" @keydown.enter="saveEditOnEnter" /></el-form-item>
+        <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" @keydown.enter="saveEditOnEnter" /></el-form-item>
         <el-form-item label="分类"><el-select v-model="editForm.category" aria-label="编辑食材分类"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item v-if="editLatest?.checked"><el-checkbox v-model="editForm.markPending">保存后将此项改为待买</el-checkbox><small class="edit-note">不勾选则保留已买状态。</small></el-form-item>
       </el-form>
