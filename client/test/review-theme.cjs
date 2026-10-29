@@ -15,7 +15,7 @@ async function main () {
     await page.goto(`${base}/review`)
     await page.getByRole('heading', { name: '常出现在饭桌上的菜' }).waitFor()
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
-    const checks = ['.intro h2', '.intro p', '.metric span', '.metric strong', '.metric small', '.metric-note', '.favorites h2', '.explain', '.meal-row strong', '.meal-row small', '.rank', '.bar-row span', '.bar-row strong', '.mood-list span', '.current-note', '.recent-list strong', '.period-controls .el-radio-button.is-active .el-radio-button__inner']
+    const checks = ['.intro h2', '.intro p', '.metric span', '.metric strong', '.metric small', '.metric-note', '.favorites h2', '.explain', '.meal-row strong', '.meal-row small', '.rank', '.bar-row span', '.bar-row strong', '.mood-list span', '.current-note', '.recent-list strong', '.period-controls .el-radio-button.is-active .el-radio-button__inner', '.period-navigation button:first-child']
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const [width, height] of [[1280, 900], [390, 844]]) {
@@ -29,6 +29,7 @@ async function main () {
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `${dark ? 'dark' : 'light'} ${width} ${theme} overflows`)
         }
         if (width === 390) assert.ok((await page.locator('.period-controls .el-radio-button__inner').first().boundingBox()).height >= 44, 'period controls need a touch-sized target')
+        if (width === 390) assert.ok((await page.locator('.period-navigation button').first().boundingBox()).height >= 44, 'period navigation needs a touch-sized target')
       }
     }
     await page.getByRole('radio', { name: '年度' }).focus()

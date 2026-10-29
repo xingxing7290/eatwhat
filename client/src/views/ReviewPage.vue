@@ -6,6 +6,8 @@ import placeholder from '@/assets/meal-placeholder.svg';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 
 const today = new Date();
+const clock = ref(today);
+let clockTimer = null;
 const mode = ref('month');
 const month = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
 const year = ref(String(today.getFullYear()));
@@ -14,6 +16,20 @@ let sequence = 0; let alive = true;
 const period = computed(() => mode.value === 'month' ? month.value : year.value);
 const periodKey = computed(() => `${mode.value}:${period.value}`);
 const displayPeriod = computed(() => mode.value === 'year' ? `${year.value} 年` : `${month.value.slice(0, 4)} 年 ${Number(month.value.slice(5))} 月`);
+const currentPeriod = () => { const date = clock.value; return mode.value === 'year' ? String(date.getFullYear()) : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; };
+const refreshClock = () => { clock.value = new Date(); };
+const canStep = direction => {
+  if (mode.value === 'year') return Number(year.value) + direction >= 2000 && Number(year.value) + direction <= 2100;
+  const [y, m] = month.value.split('-').map(Number); const index = y * 12 + m - 1 + direction;
+  return index >= 2000 * 12 && index <= 2100 * 12 + 11;
+};
+const stepPeriod = direction => {
+  if (!canStep(direction)) return;
+  if (mode.value === 'year') year.value = String(Number(year.value) + direction);
+  else { const [y, m] = month.value.split('-').map(Number); const index = y * 12 + m - 1 + direction; month.value = `${Math.floor(index / 12)}-${String(index % 12 + 1).padStart(2, '0')}`; }
+};
+const currentInRange = computed(() => clock.value.getFullYear() >= 2000 && clock.value.getFullYear() <= 2100);
+const goCurrent = () => { if (!currentInRange.value) return; if (mode.value === 'year') year.value = currentPeriod(); else month.value = currentPeriod(); };
 const empty = computed(() => !!result.value && result.value.summary.memoryCount === 0 && result.value.summary.plannedMealCount === 0);
 const summaryText = computed(() => {
   const data = result.value; if (!data) return '';
@@ -67,14 +83,18 @@ const imageFor = value => {
 };
 const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
 const widthFor = item => `${Math.round((item.count / Math.max(1, ...result.value.categoryStats.map(row => row.count))) * 100)}%`;
+watch(mode, value => {
+  if (value === 'year') year.value = month.value.slice(0, 4);
+  else month.value = `${year.value}-${month.value.slice(5, 7)}`;
+}, { flush: 'sync' });
 watch(periodKey, load);
-onMounted(load);
-onBeforeUnmount(() => { alive = false; sequence++; });
+onMounted(() => { load(); window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 60000); });
+onBeforeUnmount(() => { alive = false; sequence++; window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
   <div class="review-page">
-    <section class="review-hero"><div><span class="eyebrow">OUR TABLE JOURNAL · 饭桌回顾</span><h1>把日子，慢慢记下来</h1><p>从排餐、回忆和照片里，看看这段时间属于小家的味道。</p></div><div class="period-controls"><el-radio-group v-model="mode" aria-label="回顾周期"><el-radio-button label="month">月度</el-radio-button><el-radio-button label="year">年度</el-radio-button></el-radio-group><el-date-picker v-if="mode === 'month'" v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾月份" /><el-date-picker v-else v-model="year" type="year" value-format="YYYY" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾年份" /></div></section>
+    <section class="review-hero"><div><span class="eyebrow">OUR TABLE JOURNAL · 饭桌回顾</span><h1>把日子，慢慢记下来</h1><p>从排餐、回忆和照片里，看看这段时间属于小家的味道。</p></div><div class="period-controls"><el-radio-group v-model="mode" aria-label="回顾周期"><el-radio-button label="month">月度</el-radio-button><el-radio-button label="year">年度</el-radio-button></el-radio-group><el-date-picker v-if="mode === 'month'" v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾月份" /><el-date-picker v-else v-model="year" type="year" value-format="YYYY" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾年份" /><div class="period-navigation" role="group" aria-label="切换回顾时间"><button type="button" :disabled="!canStep(-1)" :aria-label="mode === 'month' ? '上个月' : '上一年'" @click="stepPeriod(-1)">← <span>{{ mode === 'month' ? '上个月' : '上一年' }}</span></button><button type="button" :disabled="!currentInRange || period === currentPeriod()" :title="!currentInRange ? '当前日期超出可查看范围（2000–2100）' : ''" @click="goCurrent">{{ mode === 'month' ? '回到本月' : '回到今年' }}</button><button type="button" :disabled="!canStep(1)" :aria-label="mode === 'month' ? '下个月' : '下一年'" @click="stepPeriod(1)"><span>{{ mode === 'month' ? '下个月' : '下一年' }}</span> →</button></div></div></section>
     <div v-if="loading" class="state-card" role="status">正在整理 {{ displayPeriod }} 的饭桌记录…</div>
     <div v-else-if="error" class="state-card" role="alert"><strong>暂时无法查看回顾</strong><p>{{ error }}</p><el-button @click="load"><el-icon><Refresh /></el-icon>重新加载</el-button></div>
     <template v-else-if="result">
@@ -98,4 +118,5 @@ onBeforeUnmount(() => { alive = false; sequence++; });
 :global(html.dark .review-page){--review-on-accent:#241810}
 .period-controls :deep(.el-radio-button.is-active .el-radio-button__inner){background:var(--review-accent);border-color:var(--review-accent);color:var(--review-on-accent);box-shadow:none}
 .period-controls :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner){outline:3px solid var(--review-accent);outline-offset:2px}
+.period-navigation{display:flex;flex-wrap:wrap;gap:6px;width:100%}.period-navigation button{min-height:44px;padding:8px 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary);color:var(--text-primary);font:inherit;font-size:13px;cursor:pointer}.period-navigation button:disabled{opacity:.55;cursor:not-allowed}.period-navigation button:focus-visible{outline:3px solid var(--review-accent);outline-offset:2px}
 </style>
