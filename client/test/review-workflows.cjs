@@ -57,6 +57,7 @@ async function main () {
         if (scenario === 'malformed') data.range.end = '1999-01-01'
         if (scenario === 'oldphoto') { delete data.photos[0].photoIndex; delete data.photos[0].fingerprint }
         if (scenario === 'invalidphoto') data.photos[0].date = `${label}-02-31`
+        if (scenario === 'long') { data.categoryStats[0].category = 'LongCategory'.repeat(20); data.moodStats[0].mood = 'LongMood'.repeat(20); data.healthTagStats[0].tag = 'LongTag'.repeat(20); data.topMeals[0].name = 'LongRecipe'.repeat(20); data.bestMemory.title = 'LongTitle'.repeat(20); data.recentMemories[0].title = 'LongTitle'.repeat(20) }
         if (scenario === 'empty') { data.summary = { ...data.summary, memoryCount: 0, plannedMealCount: 0, reviewedDayCount: 0, photoCount: 0 }; data.topMeals = []; data.moodStats = []; data.categoryStats = []; data.healthTagStats = []; data.bestMemory = null; data.photos = []; data.recentMemories = [] }
         return route.fulfill({ json: data })
       }
@@ -66,6 +67,14 @@ async function main () {
     await page.getByRole('heading', { name: '把日子，慢慢记下来' }).waitFor()
     await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
+    scenario = 'long'; await page.setViewportSize({ width: 320, height: 844 }); await page.reload()
+    await page.getByText('LongCategory'.repeat(20)).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'long unbroken labels must not overflow the review page')
+    for (const selector of ['.bar-row', '.mood-list div', '.tags span']) {
+      assert.equal(await page.locator(selector).first().evaluate(node => node.scrollWidth <= node.clientWidth), true, `${selector} must contain its text`)
+    }
+    scenario = 'normal'; await page.setViewportSize({ width: 390, height: 844 }); await page.reload()
+    await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     assert.equal(await page.getByRole('link', { name: '本月回忆 →' }).getAttribute('href'), '/memories?month=2026-10')
     await page.getByRole('link', { name: '本月回忆 →' }).click()
     await page.waitForURL('**/memories?month=2026-10')
