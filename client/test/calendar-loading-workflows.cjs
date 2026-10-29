@@ -88,7 +88,7 @@ async function main () {
     assert.equal(await page.locator('.desktop-only .meal-item').filter({ hasText: '新月份菜名' }).count(), 1)
 
     mode = 'bulk'; peak = 0
-    await page.reload()
+    await page.goto(`${base}/calendar?month=2026-10`)
     await page.locator('.desktop-only .meal-item').filter({ hasText: '补全菜品 legacy-12' }).waitFor()
     assert.ok(peak > 1 && peak <= 6, `legacy lookups must be bounded: ${peak}`)
     mode = 'invalid'

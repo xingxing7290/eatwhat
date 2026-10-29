@@ -10,6 +10,7 @@
     "test:selection": "node test/selection-workflows.cjs",
     "test:calendar-delete": "node test/calendar-delete-workflows.cjs",
     "test:calendar-loading": "node test/calendar-loading-workflows.cjs",
+    "test:calendar-navigation": "node test/calendar-navigation-workflows.cjs",
     "test:schedule-unavailable": "node test/schedule-unavailable-workflows.cjs",
     "test:shopping": "node test/shopping-workflows.cjs",
     "test:shopping-filter": "node test/shopping-filter-workflows.cjs",

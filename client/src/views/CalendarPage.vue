@@ -1,25 +1,31 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { onBeforeRouteUpdate, useRoute, useRouter } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
 import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { format, addMonths, subMonths, getYear, getMonth, startOfMonth, endOfMonth, eachDayOfInterval, getDay } from 'date-fns';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 import { useDraftGuard } from '@/composables/useDraftGuard';
+import { validWeekLink } from '@/utils/weekLink.mjs';
 import { ArrowLeft, ArrowRight, Edit, Delete, Plus, Sunrise, Sunny, Sunset } from '@element-plus/icons-vue';
 
 const router = useRouter();
 const route = useRoute();
 const scheduleStore = useScheduleStore();
 
-const linkedDate = typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : '';
-const linkedParts = linkedDate ? linkedDate.split('-').map(Number) : [];
-const parsedLinkedDate = linkedParts.length ? new Date(linkedParts[0], linkedParts[1] - 1, linkedParts[2]) : null;
-const validLinkedDate = parsedLinkedDate && parsedLinkedDate.getFullYear() === linkedParts[0] && parsedLinkedDate.getMonth() + 1 === linkedParts[1] && parsedLinkedDate.getDate() === linkedParts[2];
-const targetedDate = ref(validLinkedDate ? linkedDate : '');
-const invalidDateLink = ref(route.query.date !== undefined && !validLinkedDate);
-const currentDate = ref(validLinkedDate ? parsedLinkedDate : new Date());
+const parseLocation = query => {
+  const { date, month } = query;
+  if ((date !== undefined && month !== undefined) || (date !== undefined && !validWeekLink(date)) || (month !== undefined && (typeof month !== 'string' || !/^\d{4}-\d{2}$/.test(month) || !validWeekLink(`${month}-01`)))) return { invalid: true };
+  const value = date || (month ? `${month}-01` : '');
+  if (!value) return { date: new Date(), target: '' };
+  const [year, partMonth, day] = value.split('-').map(Number);
+  return { date: new Date(year, partMonth - 1, day), target: date || '' };
+};
+const initialLocation = parseLocation(route.query);
+const targetedDate = ref(initialLocation.target || '');
+const invalidDateLink = ref(!!initialLocation.invalid);
+const currentDate = ref(initialLocation.date || new Date());
 const isLoading = ref(false);
 const loadError = ref('');
 const deleting = ref(false);
@@ -177,7 +183,7 @@ const fetchMonthSchedules = async () => {
   } catch (error) {
     if (active && sequence === monthSequence) loadError.value = error?.error || error?.message || '获取月度安排失败';
   } finally {
-    if (active && sequence === monthSequence) isLoading.value = false;
+    if (active && sequence === monthSequence) { isLoading.value = false; await nextTick(); if (active && sequence === monthSequence && !loadError.value) scrollToTarget(); }
   }
 };
 
@@ -217,7 +223,9 @@ const changeMonth = (delta) => {
   currentDate.value = delta > 0 
     ? addMonths(currentDate.value, 1)
     : subMonths(currentDate.value, 1);
+  syncCalendarMonth();
 };
+const syncCalendarMonth = () => { const month = format(currentDate.value, 'yyyy-MM'); if (route.name === 'calendar' && (route.query.month !== month || route.query.date !== undefined)) void router.replace({ name: 'calendar', query: { month } }); };
 
 // 工具：滚动到元素（窗口或容器）
 const scrollElementIntoView = (el, options = {}) => {
@@ -237,6 +245,11 @@ const scrollElementIntoView = (el, options = {}) => {
 
   const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
   window.scrollTo({ top: Math.max(y, 0), behavior: 'smooth' });
+};
+const scrollToTarget = () => {
+  if (!targetedDate.value) return;
+  const target = [...document.querySelectorAll('.calendar-page .target-date')].find(element => element.getClientRects().length);
+  if (target) scrollElementIntoView(target, { containerSelector: target.classList.contains('date-cell') ? '.calendar-grid' : null });
 };
 
 // 重试查找今天元素
@@ -262,6 +275,7 @@ const goToToday = async () => {
   targetedDate.value = '';
   invalidDateLink.value = false;
   currentDate.value = new Date();
+  syncCalendarMonth();
   shouldScrollToToday.value = true;
   await nextTick();
   // 若无需等待加载，也尝试一次
@@ -392,14 +406,24 @@ watch(
   }
 );
 
-onMounted(async () => {
-  await fetchMonthSchedules();
-  if (active && targetedDate.value && !loadError.value) {
-    await nextTick();
-    const target = [...document.querySelectorAll('.calendar-page .target-date')].find(element => element.getClientRects().length);
-    if (target) scrollElementIntoView(target, { containerSelector: target.classList.contains('date-cell') ? '.calendar-grid' : null });
-  }
+onBeforeRouteUpdate(to => {
+  if (to.name !== 'calendar') return true;
+  const location = parseLocation(to.query);
+  if (location.invalid) { ElMessage.warning('日历链接中的日期无效'); return false; }
+  if (format(location.date, 'yyyy-MM') === format(currentDate.value, 'yyyy-MM') && location.target === targetedDate.value) return true;
+  if (blocked.value || isLoading.value) { ElMessage.warning('请先完成当前操作或核对删除结果'); return false; }
+  return true;
 });
+watch(() => [route.query.date, route.query.month], async () => {
+  if (route.name !== 'calendar') return;
+  const location = parseLocation(route.query);
+  if (location.invalid) return;
+  const sameMonth = format(location.date, 'yyyy-MM') === format(currentDate.value, 'yyyy-MM');
+  targetedDate.value = location.target; invalidDateLink.value = false;
+  if (!sameMonth) currentDate.value = location.date;
+  else { await nextTick(); if (active && !isLoading.value && !loadError.value) scrollToTarget(); }
+});
+onMounted(fetchMonthSchedules);
 onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
 </script>
 
