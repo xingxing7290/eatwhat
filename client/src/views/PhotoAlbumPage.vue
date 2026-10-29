@@ -101,7 +101,7 @@ const moveMonth = offset => {
   month.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
   changeMonth();
 };
-const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; clearLocationLink(); selectedIndex.value = null; load(); };
+const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; clearLocationLink(); selectedIndex.value = null; returnFocusIndex.value = 0; focusAfterLoad = true; load(); };
 const navigatePhoto = async direction => {
   if (loading.value || selectedIndex.value === null) return;
   const next = selectedIndex.value + direction;
