@@ -395,7 +395,7 @@ export const mealApi = {
 export const authApi = {
 	// 登录
 	login: (payload) => {
-		return api.post('/auth/login', payload);
+		return api.post('/auth/login', payload, { suppressErrorToast: true });
 	},
 	// 注册
 	register: (payload) => {

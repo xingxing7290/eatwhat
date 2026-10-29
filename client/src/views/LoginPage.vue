@@ -24,8 +24,10 @@
 
       <!-- 登录表单 -->
       <el-form :model="form" :rules="rules" ref="formRef" label-width="0" class="login-form" @submit.prevent="onSubmit">
+        <label class="field-label" for="login-username">用户名</label>
         <el-form-item prop="username">
           <el-input 
+            id="login-username"
             v-model="form.username" 
             placeholder="请输入用户名" 
             clearable 
@@ -34,11 +36,14 @@
             class="custom-input"
             autocomplete="username"
             :disabled="loading"
+            @input="loginError = ''"
           />
         </el-form-item>
         
+        <label class="field-label" for="login-password">密码</label>
         <el-form-item prop="password">
           <el-input 
+            id="login-password"
             v-model="form.password" 
             type="password" 
             placeholder="请输入密码" 
@@ -48,12 +53,15 @@
             class="custom-input"
             autocomplete="current-password"
             :disabled="loading"
+            @input="loginError = ''"
           />
         </el-form-item>
 
         <div class="login-options">
           <el-checkbox v-model="rememberPassword">记住账号</el-checkbox>
         </div>
+
+        <div v-if="loginError" class="login-error" role="alert">{{ loginError }}</div>
         
         <el-button 
           type="primary" 
@@ -90,6 +98,7 @@ const route = useRoute()
 const router = useRouter()
 const formRef = ref()
 const loading = ref(false)
+const loginError = ref('')
 const form = ref({ username: '', password: '' })
 const rememberPassword = ref(false)
 
@@ -127,6 +136,7 @@ const persistRememberedLogin = () => {
 
 const onSubmit = async () => {
   if (loading.value || !formRef.value) return
+  loginError.value = ''
   loading.value = true
   try {
     let valid = false
@@ -144,13 +154,13 @@ const onSubmit = async () => {
       const redirect = requested.startsWith('/') && !requested.startsWith('//') && !/[\\\r\n]/.test(requested) && router.resolve(requested).matched.length ? requested : '/'
       await router.replace(redirect)
     } catch (e) {
-      ElMessage.error(e?.error || '登录失败')
+      loginError.value = (typeof e === 'string' ? e : e?.error || e?.message) || '登录失败，请检查网络后重试。'
     }
   } finally { loading.value = false }
 }
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }],
+  username: [{ required: true, message: '请输入用户名', trigger: 'blur' }, { validator: (_rule, value, callback) => typeof value === 'string' && value.trim() ? callback() : callback(new Error('请输入用户名')), trigger: 'blur' }],
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }]
 }
 
@@ -220,7 +230,7 @@ onMounted(loadRememberedLogin)
 .login-card {
   width: 420px;
   padding: 40px;
-  background: rgba(255, 250, 243, 0.94);
+  background: var(--bg-primary);
   backdrop-filter: blur(20px);
   border-radius: 24px;
   box-shadow: 
@@ -284,6 +294,9 @@ onMounted(loadRememberedLogin)
 .login-form {
   margin-bottom: 20px;
 }
+.field-label { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 14px; font-weight: 700; }
+.login-error { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; overflow-wrap: anywhere; }
+.footer-tips a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 4px; border-radius: 2px; }
 
 .login-options {
   display: flex;
@@ -423,8 +436,9 @@ onMounted(loadRememberedLogin)
 }
 
 :deep(.el-form-item__error) {
-  color: #f56c6c;
+  color: var(--text-primary);
   font-size: 12px;
+  font-weight: 600;
   margin-top: 4px;
 }
 </style>
