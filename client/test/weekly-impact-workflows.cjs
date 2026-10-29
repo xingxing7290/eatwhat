@@ -18,7 +18,7 @@ async function main () {
     const current = dates.map((date, index) => ({ date, scheduleExists: index === 0, scheduleVersion: index === 0 ? '2026-10-28T00:00:00.000Z' : null, meals: index === 0 ? { breakfast: [{ meal: mealA }], lunch: [{ meal: mealA }], dinner: [{ meal: mealA }] } : empty() }))
     const days = dates.map((date, index) => ({ date, meals: index === 0 ? { breakfast: [], lunch: ['b'], dinner: ['a'] } : index === 1 ? { ...empty(), dinner: ['b'] } : empty() }))
     const preview = days.map(day => ({ date: day.date, meals: Object.fromEntries(Object.entries(day.meals).map(([type, ids]) => [type, ids.map(id => id === 'a' ? mealA : mealB)])), hints: [] }))
-    await page.route('**/api/**', route => {
+    await page.context().route('**/api/**', route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/weekly-plans' && request.method() === 'GET') return route.fulfill({ json: { weekStart: dates[0], supportsConditionalApply: true, days: current } })
@@ -26,12 +26,29 @@ async function main () {
       if (path === '/weekly-plans/apply') { applications++; return route.fulfill({ status: 500, json: { error: 'unexpected application' } }) }
       if (path === '/meals/categories') return route.fulfill({ json: [{ category: '家常菜' }, { category: '川菜' }] })
       if (path === '/meals') return route.fulfill({ json: { data: [mealA, mealB], page: 1, limit: 8, total: 2 } })
+      if (path === '/meals/a') return route.fulfill({ json: mealA })
+      if (path === '/meals/b') return route.fulfill({ json: mealB })
+      if (path === '/memories') return route.fulfill({ json: [] })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/weekly-plan`)
+    const currentLink = page.getByRole('link', { name: '在新标签页查看2026-10-26早餐的番茄炒蛋菜谱' })
+    assert.equal(await currentLink.getAttribute('href'), '/meals/detail/a')
+    assert.equal(await currentLink.getAttribute('target'), '_blank')
     await page.getByRole('button', { name: '生成草稿' }).click()
     const impact = page.getByLabel('草稿对当前安排的影响')
     await impact.waitFor()
+    const draftLink = page.getByRole('link', { name: '在新标签页查看草稿中2026-10-26午餐的麻婆豆腐菜谱' })
+    assert.equal(await draftLink.getAttribute('rel'), 'noopener noreferrer')
+    assert.ok((await draftLink.boundingBox()).height >= 44)
+    const popupPromise = page.waitForEvent('popup')
+    await draftLink.click()
+    const popup = await popupPromise
+    await popup.waitForURL('**/meals/detail/b')
+    await popup.getByRole('heading', { name: '麻婆豆腐' }).waitFor()
+    await popup.close()
+    assert.equal(await impact.isVisible(), true, 'opening a recipe must preserve the draft')
+    assert.equal(applications, 0)
     const impactText = () => impact.innerText()
     assert.match(await impactText(), /新增\s*1\s*餐/)
     assert.match(await impactText(), /替换\s*1\s*餐/)
@@ -43,11 +60,11 @@ async function main () {
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
-      for (const width of [390, 1280]) {
+      for (const width of [320, 390, 1280]) {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.weekly-page .eyebrow', '.weekly-page h1', '.week-link', '.day-calendar-link', '.draft-heading strong', '.draft-heading span', '.impact-summary > div span', '.impact-summary > div strong', '.impact-summary p', '.change-note', '.day-card h3', '.draft-slot .el-tag', '.edit-slot']) {
+          for (const selector of ['.weekly-page .eyebrow', '.weekly-page h1', '.week-link', '.day-calendar-link', '.draft-heading strong', '.draft-heading span', '.impact-summary > div span', '.impact-summary > div strong', '.impact-summary p', '.change-note', '.day-card h3', '.draft-slot .el-tag', '.draft-slot .recipe-link', '.recipe-context', '.edit-slot']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`)
           }
