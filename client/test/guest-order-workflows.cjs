@@ -349,6 +349,53 @@ async function main () {
       assert.equal(blockedWrites, 0, 'reading a credential must not submit an order')
       await readBlocked.close()
     }
+    for (const accessCase of ['saved', 'missing', 'order-unavailable']) {
+      const hasAccess = accessCase !== 'missing'
+      const accessBlocked = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      await accessBlocked.addInitScript(({ hasAccess }) => {
+        const key = 'eatwhat.guestOrder.access-read-blocked'
+        if (hasAccess) localStorage.setItem(key, 'previous-access')
+        window.__blockAccessRead = true
+        const original = Storage.prototype.getItem
+        Storage.prototype.getItem = function (name) { if (window.__blockAccessRead && this === localStorage && name === key) throw new DOMException('blocked', 'SecurityError'); return original.call(this, name) }
+      }, { hasAccess })
+      let accessWrites = 0; let accessReads = 0; let failOrder = accessCase === 'order-unavailable'
+      await accessBlocked.route('**/guest-orders/public/**', route => {
+        const req = route.request()
+        if (req.method() !== 'GET') { accessWrites++; return route.fulfill({ status: 500 }) }
+        if (new URL(req.url()).pathname.endsWith('/orders/previous-access')) { accessReads++; return failOrder ? route.fulfill({ status: 503, json: { error: '订单暂不可用' } }) : route.fulfill({ json: { order: { revision: 2, guestName: '之前的客人', note: '之前的备注', items: [{ mealId: safeMeal._id, name: safeMeal.name, quantity: 1, note: '' }] } } }) }
+        return route.fulfill({ json: { session: { ...session, supportsIdempotentCreate: true }, meals: [safeMeal] } })
+      })
+      await accessBlocked.goto(`http://127.0.0.1:${server.address().port}/guest-order/access-read-blocked`)
+      await accessBlocked.getByRole('button', { name: '查看 / 核对' }).click()
+      await accessBlocked.getByText('浏览器暂时无法读取已提交订单的凭证', { exact: false }).waitFor()
+      assert.equal(await accessBlocked.locator('#guestName').isDisabled(), true)
+      assert.equal(await accessBlocked.getByRole('button', { name: '提交给主人' }).isDisabled(), true)
+      assert.equal(await accessBlocked.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+      await accessBlocked.getByRole('button', { name: '重新读取订单凭证' }).click()
+      await accessBlocked.getByText('仍无法读取订单凭证', { exact: false }).waitFor()
+      await accessBlocked.evaluate(() => { window.__blockAccessRead = false })
+      await accessBlocked.getByRole('button', { name: '重新读取订单凭证' }).click()
+      if (hasAccess) {
+        if (failOrder) {
+          await accessBlocked.getByText('暂时无法读取之前提交的订单', { exact: false }).waitFor()
+          assert.equal(await accessBlocked.getByRole('button', { name: '提交给主人' }).isDisabled(), true)
+          failOrder = false
+          accessBlocked.once('dialog', dialog => dialog.accept())
+          await accessBlocked.getByRole('button', { name: '载入最新订单' }).click()
+        }
+        await accessBlocked.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor()
+        assert.equal(await accessBlocked.locator('#guestName').inputValue(), '之前的客人')
+        assert.equal(await accessBlocked.locator('#orderNote').inputValue(), '之前的备注')
+        assert.equal(accessReads, accessCase === 'order-unavailable' ? 2 : 1)
+      } else {
+        await accessBlocked.getByText('未发现已保存的订单凭证', { exact: false }).waitFor()
+        assert.equal(await accessBlocked.locator('#guestName').isDisabled(), false)
+        assert.equal(accessReads, 0)
+      }
+      assert.equal(accessWrites, 0, 'checking an existing credential must not create or update an order')
+      await accessBlocked.close()
+    }
     const closedPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await closedPage.addInitScript(() => localStorage.setItem('eatwhat.guestOrder.closed-test', 'closed-access'))
     await closedPage.route('**/guest-orders/public/**', async route => {
