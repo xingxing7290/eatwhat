@@ -23,6 +23,7 @@ async function main () {
         if (mode === 'invalid-items') return route.fulfill({ json: [schedule('2026-10-28', [null])] })
         if (mode === 'bulk') return route.fulfill({ json: [schedule('2026-10-28', Array.from({ length: 13 }, (_, index) => ({ meal: `legacy-${index}` })))] })
         if (mode === 'populated') return route.fulfill({ json: [schedule('2026-10-28', [{ meal: { _id: 'a', name: '已填充的菜' } }])] })
+        if (mode === 'updated') return route.fulfill({ json: [schedule('2026-10-28', [{ meal: { _id: 'a', name: '家人更新的菜' } }])] })
         if (mode === 'race') return route.fulfill({ json: [schedule(month === 10 ? '2026-10-28' : '2026-11-01', [{ meal: 'a' }])] })
         return route.fulfill({ json: [schedule('2026-10-28', [{ meal: 'a' }, { meal: 'b' }])] })
       }
@@ -47,6 +48,16 @@ async function main () {
     assert.equal(catalogCalls, 0)
     assert.deepEqual(mealCalls, [])
     assert.equal(await page.getByText('无法加载月度安排', { exact: false }).count(), 0)
+    mode = 'updated'
+    await page.getByRole('button', { name: '刷新所选月' }).click()
+    await page.locator('.desktop-only .meal-item').filter({ hasText: '家人更新的菜' }).waitFor()
+    assert.equal(new URL(page.url()).pathname, '/calendar')
+    mode = 'populated'
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.getByRole('button', { name: '刷新所选月' }).click()
+    await page.locator('.mobile-only .mobile-meal-item').filter({ hasText: '已填充的菜' }).waitFor()
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.setViewportSize({ width: 1280, height: 900 })
 
     wishes = [
       { _id: 'wish-unlinked', title: '先关联菜', partnerSignal: true, mealLinkStatus: 'unlinked' },

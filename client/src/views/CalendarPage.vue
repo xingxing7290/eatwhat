@@ -185,7 +185,7 @@ const resolveMealNames = async rows => {
     nameWarning.value = missing ? '部分菜品已不可用或名称暂时无法读取，原有排餐不会因此改变。' : '';
   }
 };
-const fetchMonthSchedules = async () => {
+const fetchMonthSchedules = async (scrollTarget = true) => {
   const sequence = ++monthSequence;
   nameSequence++;
   isLoading.value = true;
@@ -205,9 +205,10 @@ const fetchMonthSchedules = async () => {
   } catch (error) {
     if (active && sequence === monthSequence) loadError.value = error?.error || error?.message || '获取月度安排失败';
   } finally {
-    if (active && sequence === monthSequence) { isLoading.value = false; await nextTick(); if (active && sequence === monthSequence && !loadError.value) scrollToTarget(); }
+    if (active && sequence === monthSequence) { isLoading.value = false; await nextTick(); if (active && sequence === monthSequence && !loadError.value && scrollTarget) scrollToTarget(); }
   }
 };
+const refreshMonth = () => { if (!isLoading.value && !blocked.value && !arrangingWish.value) void fetchMonthSchedules(false); };
 
 // 新增：处理编辑日程的函数
 const handleEditSchedule = (date, mealType) => {
@@ -497,6 +498,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
           >
             今天
           </el-button>
+          <el-button :disabled="isLoading || blocked || !!arrangingWish" @click="refreshMonth">刷新所选月</el-button>
         </div>
       </div>
     </div>
@@ -557,15 +559,16 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
           今天
         </el-button>
       </div>
-      <label class="mobile-date-jump">跳转到本月日期
+      <div class="mobile-date-tools"><label class="mobile-date-jump">跳转到本月日期
         <select aria-label="跳转到本月日期" :disabled="isLoading || blocked || !!loadError" @change="jumpToMobileDate">
           <option value="">选择日期</option>
           <option v-for="day in calendarDays.filter(Boolean)" :key="format(day, 'yyyy-MM-dd')" :value="format(day, 'yyyy-MM-dd')">{{ format(day, 'M月d日') }} · 周{{ weekDays[getDay(day)] }}</option>
         </select>
       </label>
+      <el-button class="mobile-refresh" :disabled="isLoading || blocked || !!arrangingWish" @click="refreshMonth">刷新所选月</el-button></div>
     </div>
     
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载月度安排：${loadError}`"><el-button link type="primary" @click="fetchMonthSchedules">重新加载</el-button></el-alert>
+    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载月度安排：${loadError}`"><el-button link type="primary" @click="fetchMonthSchedules()">重新加载</el-button></el-alert>
     <el-skeleton v-else :loading="isLoading" animated>
       <template #default>
         <!-- 桌面端日历网格 -->
@@ -926,7 +929,9 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
   }
 }
 
-.mobile-date-jump { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--text-secondary); font-size: 13px; }
+.mobile-date-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+.mobile-date-jump { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; color: var(--text-secondary); font-size: 13px; }
+.mobile-refresh { min-height: 44px; margin: 0; flex-shrink: 0; }
 .mobile-date-jump select { min-height: 44px; min-width: 0; max-width: 58%; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
 .mobile-date-jump select:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
