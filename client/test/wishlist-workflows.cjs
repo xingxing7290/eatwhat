@@ -24,7 +24,11 @@ async function main () {
       else if (req.method() === 'GET' && path === '/meals') {
         const query = url.searchParams.get('search') || ''; reads.push(Object.fromEntries(url.searchParams)); const found = meals.filter(meal => meal.name.includes(query))
         if (query === '菜品0') await new Promise(resolve => { releaseSlow = resolve })
-        data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
+        if (query === '坏页') data = { data: [meals[1]], total: 1, page: 2, limit: 50 }
+        else if (query === '重复') data = { data: [meals[1], meals[1]], total: 2, page: 1, limit: 50 }
+        else if (query === '缺项') data = { data: [meals[1]], total: 2, page: 1, limit: 50 }
+        else if (query === '无分页') data = { data: [meals[1]], total: 75 }
+        else data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
       } else if (req.method() === 'PUT' && path === '/wishlist/wish-a/vote') {
         const voted = req.postDataJSON().voted; writes.push({ path, voted })
         if (voteMode === 'hold') await new Promise(resolve => { releaseVote = resolve })
@@ -84,11 +88,20 @@ async function main () {
     await search.click()
     await dialog.getByText('仅显示前 50 道', { exact: false }).waitFor()
     assert.equal(reads[0].limit, '50')
+    await page.getByRole('option', { name: '菜品01', exact: true }).click()
+    await search.click()
+    for (const fault of ['坏页', '重复', '缺项', '无分页']) {
+      await search.fill(fault)
+      await dialog.getByText(/菜品(?:列表|分页数据)不完整/).waitFor()
+      assert.equal(await page.getByRole('option', { name: '菜品02', exact: true }).count(), 0, `${fault} must not expose stale or invalid choices`)
+      assert.equal(await dialog.getByRole('button', { name: '确认关联' }).isDisabled(), true)
+    }
     await search.fill('菜品0')
     await page.waitForFunction(() => true)
     await page.waitForRequest(request => request.url().includes('search=%E8%8F%9C%E5%93%810'))
     await search.fill('菜品75')
     await page.getByRole('option', { name: '菜品75', exact: true }).waitFor()
+    assert.equal(await dialog.getByRole('button', { name: '确认关联' }).isEnabled(), true, 'the previously selected recipe survives failed searches')
     const slowResponse = page.waitForResponse(response => new URL(response.url()).searchParams.get('search') === '菜品0')
     releaseSlow()
     await slowResponse

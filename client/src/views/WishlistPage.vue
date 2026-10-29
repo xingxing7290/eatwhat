@@ -8,6 +8,7 @@ import { useDraftGuard } from '@/composables/useDraftGuard';
 import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 import { validWishVersion } from '@/utils/wishlistVersion.mjs';
+import { normalizeMealSearch } from '@/utils/mealSearch.mjs';
 
 const items = ref([]);
 const router = useRouter();
@@ -316,17 +317,12 @@ const fetchLinkMeals = async () => {
   const sequence = ++linkSequence;
   const query = linkQuery.value.trim();
   linkLoading.value = true; linkError.value = '';
+  availableMeals.value = []; linkTotal.value = 0;
   try {
     const params = { page: 1, limit: 50 }; if (query) params.search = query;
     const result = await api.meal.getAllMeals(params);
     if (!alive || sequence !== linkSequence || !linkDialog.value) return;
-    let rows = result.data; let total = result.total;
-    if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(meal => !mealId(meal) || typeof meal.name !== 'string' || !meal.name.trim())) throw new Error('菜谱列表不完整');
-    if (result.page == null && result.limit == null && rows.length === total) {
-      const lower = query.toLowerCase();
-      rows = rows.filter(meal => [meal.name, meal.description, meal.tips, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.ingredients) ? meal.ingredients.map(item => item?.name || item) : []), ...(Array.isArray(meal.steps) ? meal.steps.map(item => item?.description || item) : [])].some(field => String(field || '').toLowerCase().includes(lower)));
-      total = rows.length; rows = rows.slice(0, 50);
-    }
+    const { rows, total } = normalizeMealSearch(result, query);
     availableMeals.value = rows; linkTotal.value = total;
   } catch (e) { if (alive && sequence === linkSequence && linkDialog.value) linkError.value = e?.error || e?.message || '加载菜谱失败'; }
   finally { if (alive && sequence === linkSequence) linkLoading.value = false; }
@@ -334,6 +330,7 @@ const fetchLinkMeals = async () => {
 const searchLinkMeals = query => {
   linkQuery.value = typeof query === 'string' ? query : ''; linkSequence++;
   linkLoading.value = true; linkError.value = '';
+  availableMeals.value = []; linkTotal.value = 0;
   if (linkTimer) clearTimeout(linkTimer);
   linkTimer = setTimeout(fetchLinkMeals, 180);
 };
