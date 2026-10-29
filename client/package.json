@@ -46,6 +46,7 @@
     "test:household-name": "node test/household-name-workflows.cjs",
     "test:anniversary": "node test/anniversary-workflows.cjs",
     "test:anniversary-filter": "node test/anniversary-filter-workflows.cjs",
+    "test:anniversary-board": "node test/anniversary-board-workflows.cjs",
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:anniversary-unavailable": "node test/anniversary-unavailable-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",

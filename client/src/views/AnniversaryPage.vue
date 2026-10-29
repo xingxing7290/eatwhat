@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture, Edit } from '@element-plus/icons-vue';
 import api from '@/services/api';
@@ -19,7 +19,14 @@ const mealQuery = ref('');
 let mealSequence = 0;
 let mealTimer = null;
 let menuSequence = 0;
+let filterTimer = null;
 let alive = true;
+const boardMode = ref(false);
+const boardPage = ref(1);
+const boardLimit = 12;
+const boardTotal = ref(0);
+const boardCounts = ref({ upcoming: 0, past: 0, unknown: 0 });
+const boardPages = computed(() => Math.max(1, Math.ceil(boardTotal.value / boardLimit)));
 const templates = ref([]);
 const templateError = ref('');
 const templateLoading = ref(false);
@@ -29,10 +36,14 @@ const dialogVisible = ref(false);
 const saving = ref(false);
 const deletingId = ref('');
 const deleteIssue = ref('');
+const deleteTarget = ref('');
+const deleteReviewMessage = ref('');
+const checkingDelete = ref(false);
 const editing = ref(null);
 const editIssue = ref('');
 const editReviewed = ref(false);
 const checkingEdit = ref(false);
+const latestError = ref('');
 const confirmingSlot = ref('');
 const latestEdit = ref(null);
 const viewedPhoto = ref(null);
@@ -53,7 +64,7 @@ const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0 || Object.values(clearedSlots).some(Boolean));
 const recovery = useUncertainCreate({ reload: () => { resetFilters(); return load(); }, loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '纪念日菜单' });
 const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
-const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || !!deletingId.value || !!confirmingSlot.value);
+const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || checkingDelete.value || !!deletingId.value || !!confirmingSlot.value);
 const uncertain = computed(() => saveUncertain.value || !!editIssue.value || !!deleteIssue.value);
 useDraftGuard({ dirty, busy, uncertain, label: '纪念日菜单' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
@@ -65,16 +76,43 @@ const validDate = value => {
 };
 const periodOf = item => !validDate(item?.date) ? 'unknown' : item.date >= today.value ? 'upcoming' : 'past';
 const periodNames = { upcoming: '即将到来', past: '往日菜单', unknown: '日期待核对' };
-const periodOptions = computed(() => [{ key: 'all', label: '全部' }, { key: 'upcoming', label: '即将到来' }, { key: 'past', label: '已过去' }, ...(menus.value.some(item => periodOf(item) === 'unknown') ? [{ key: 'unknown', label: '日期待核对' }] : [])]);
+const periodOptions = computed(() => [{ key: 'all', label: '全部' }, { key: 'upcoming', label: '即将到来' }, { key: 'past', label: '已过去' }, ...((boardMode.value ? boardCounts.value.unknown > 0 || period.value === 'unknown' : menus.value.some(item => periodOf(item) === 'unknown')) ? [{ key: 'unknown', label: '日期待核对' }] : [])]);
 const filtersActive = computed(() => !!search.value.trim() || period.value !== 'all');
 const filteredMenus = computed(() => {
+  if (boardMode.value) return menus.value;
   const term = search.value.trim().toLocaleLowerCase();
   return menus.value.filter(item => (period.value === 'all' || periodOf(item) === period.value) && (!term || [item.title, item.theme, item.description, ...Object.values(item.meals || {}).flat().map(meal => meal?.name)].some(value => String(value || '').toLocaleLowerCase().includes(term))));
 });
 const menuGroups = computed(() => ['upcoming', 'past', 'unknown'].map(key => ({ key, title: periodNames[key], items: filteredMenus.value.filter(item => periodOf(item) === key).sort((a, b) => (key === 'past' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)) || String(a._id || a.id).localeCompare(String(b._id || b.id))) })).filter(group => group.items.length));
 const hiddenEdit = computed(() => !!editing.value && !filteredMenus.value.some(item => String(item._id || item.id) === editing.value.id));
 const resetFilters = () => { search.value = ''; period.value = 'all'; };
-const refreshAndReview = () => { resetFilters(); return load(); };
+const refreshAndReview = async () => {
+  if (!deleteIssue.value || checkingDelete.value) return;
+  checkingDelete.value = true;
+  let found;
+  try {
+    if (boardMode.value) {
+      try {
+        const item = await api.anniversary.get(deleteTarget.value);
+        if (String(item?._id || item?.id || '') !== deleteTarget.value || !validVersion(item)) throw new Error('菜单核对结果不完整');
+        found = true;
+      } catch (e) { if (e?.code === 'ANNIVERSARY_NOT_FOUND') found = false; else throw e; }
+    }
+    resetFilters(); boardPage.value = 1;
+    await load();
+    if (loadError.value) return;
+    if (!boardMode.value) found = menus.value.some(item => String(item._id || item.id) === deleteTarget.value);
+    deleteReviewMessage.value = found ? '核对时服务器仍有这份菜单；之前的删除请求仍可能稍后完成。' : '核对时未找到这份菜单；之前的删除请求仍可能稍后完成。';
+    deleteIssue.value = ''; deleteTarget.value = '';
+  } catch (e) { ElMessage.warning(e?.error || e?.message || '无法核对删除结果，请重试'); }
+  finally { checkingDelete.value = false; }
+};
+watch([search, period, today], () => {
+  if (!boardMode.value) return;
+  boardPage.value = 1; menuSequence++; loading.value = true;
+  if (filterTimer) clearTimeout(filterTimer);
+  filterTimer = setTimeout(() => { filterTimer = null; load(); }, 180);
+}, { flush: 'sync' });
 const dayLabel = item => {
   if (!validDate(item?.date)) return '日期待核对';
   const delta = Math.round((Date.parse(`${item.date}T00:00:00Z`) - Date.parse(`${today.value}T00:00:00Z`)) / 86400000);
@@ -234,7 +272,7 @@ const startCreate = async () => {
   dialogVisible.value = true;
 };
 const startEdit = async item => {
-  if (busy.value || deleteIssue.value || saveUncertain.value) return;
+  if (busy.value || loading.value || loadError.value || deleteIssue.value || saveUncertain.value) return;
   if (editing.value?.id === String(item._id || item.id)) { dialogVisible.value = true; return; }
   if (editIssue.value) return ElMessage.warning('请先核对当前编辑结果');
   if (!validVersion(item)) return ElMessage.warning('服务器未提供有效的菜单版本，暂时无法安全编辑');
@@ -243,13 +281,22 @@ const startEdit = async item => {
 };
 const checkLatest = async () => {
   if (!editing.value || checkingEdit.value) return;
-  checkingEdit.value = true; editReviewed.value = false;
+  checkingEdit.value = true; editReviewed.value = false; latestError.value = '';
   try {
-    await load();
-    if (loadError.value) return;
-    latestEdit.value = menus.value.find(item => String(item._id || item.id) === editing.value.id) || null;
+    if (boardMode.value) {
+      try {
+        const item = await api.anniversary.get(editing.value.id);
+        if (String(item?._id || item?.id || '') !== editing.value.id || !validVersion(item)) throw new Error('菜单核对结果不完整');
+        latestEdit.value = item;
+      } catch (e) { if (e?.code === 'ANNIVERSARY_NOT_FOUND') latestEdit.value = null; else throw e; }
+    } else {
+      await load();
+      if (loadError.value) return;
+      latestEdit.value = menus.value.find(item => String(item._id || item.id) === editing.value.id) || null;
+    }
     editReviewed.value = true;
-  } finally { checkingEdit.value = false; }
+  } catch (e) { latestError.value = e?.error || e?.message || '无法核对最新菜单，请重试'; }
+  finally { checkingEdit.value = false; }
 };
 const reloadLatest = async () => {
   if (!editReviewed.value || !latestEdit.value || !validVersion(latestEdit.value)) return;
@@ -266,18 +313,36 @@ const discardEditDraft = async () => {
   reset(); dialogVisible.value = false;
 };
 const load = async () => {
+  if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
   const sequence = ++menuSequence;
   loading.value = true;
   loadError.value = '';
   try {
-    const menuData = await api.anniversary.list({ view: 'editor' });
+    const request = { view: 'board', page: boardPage.value, limit: boardLimit, search: search.value.trim(), period: period.value, today: today.value };
+    let menuData = await api.anniversary.list(request);
     if (!alive || sequence !== menuSequence) return;
-    if (!Array.isArray(menuData) || menuData.some(item => !item || typeof (item._id || item.id) !== 'string' || !(item._id || item.id) || typeof item.title !== 'string' || typeof item.date !== 'string' || (item.photos !== undefined && (!Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string'))) || (item.meals !== undefined && (!item.meals || typeof item.meals !== 'object' || Object.values(item.meals).some(rows => !Array.isArray(rows) || rows.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string')))))) || new Set(menuData.map(item => item._id || item.id)).size !== menuData.length) throw new Error('菜单列表不完整');
-    menus.value = menuData;
-    deleteIssue.value = '';
+    let rows;
+    if (Array.isArray(menuData)) {
+      if (boardMode.value) throw new Error('服务器分页能力已变化，请重新加载页面');
+      menuData = await api.anniversary.list({ view: 'editor' });
+      if (!alive || sequence !== menuSequence) return;
+      rows = menuData;
+    } else {
+      const counts = menuData?.counts;
+      if (menuData?.supportsAnniversaryBoard !== true || menuData.page !== request.page || menuData.limit !== request.limit || menuData.search !== request.search || menuData.period !== request.period || menuData.today !== request.today || !counts || ['upcoming', 'past', 'unknown'].some(key => !Number.isSafeInteger(counts[key]) || counts[key] < 0) || !Number.isSafeInteger(menuData.total) || menuData.total < 0 || menuData.total !== (request.period === 'all' ? counts.upcoming + counts.past + counts.unknown : counts[request.period]) || !Array.isArray(menuData.items) || menuData.items.length !== Math.min(boardLimit, Math.max(0, menuData.total - (request.page - 1) * boardLimit)) || menuData.items.some(item => item?.supportsUnavailableMealVisibility !== true)) throw new Error('菜单分页结果不完整');
+      const lastPage = Math.max(1, Math.ceil(menuData.total / boardLimit));
+      if (request.page > lastPage) { boardPage.value = lastPage; return await load(); }
+      rows = menuData.items;
+      boardMode.value = true;
+      boardTotal.value = menuData.total;
+      boardCounts.value = counts;
+    }
+    if (!Array.isArray(rows) || rows.some(item => !item || typeof (item._id || item.id) !== 'string' || !(item._id || item.id) || typeof item.title !== 'string' || typeof item.date !== 'string' || (item.photos !== undefined && (!Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string'))) || (item.meals !== undefined && (!item.meals || typeof item.meals !== 'object' || Object.values(item.meals).some(rows => !Array.isArray(rows) || rows.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string')))))) || new Set(rows.map(item => item._id || item.id)).size !== rows.length) throw new Error('菜单列表不完整');
+    menus.value = rows;
   } catch (e) { if (alive && sequence === menuSequence) loadError.value = e?.error || e?.message || '加载纪念日菜单失败'; }
   finally { if (alive && sequence === menuSequence) loading.value = false; }
 };
+const changePage = page => { if (loading.value || deleteIssue.value || page < 1 || page > boardPages.value || page === boardPage.value) return; boardPage.value = page; load(); };
 const save = async () => {
   if (!form.title.trim() || !validDate(form.date)) return ElMessage.warning('请填写标题和有效日期');
   if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value || confirmingSlot.value) return;
@@ -306,7 +371,7 @@ const save = async () => {
     const result = editing.value ? await api.anniversary.update(editing.value.id, fd) : await api.anniversary.create(fd);
     if (!result?._id && !result?.id) throw new Error('保存响应不完整');
     if (editing.value && (String(result._id || result.id) !== editing.value.id || !validVersion(result))) throw new Error('保存响应不完整');
-    ElMessage.success(`纪念日菜单已保存${filtersActive.value ? '；如未显示，请清除筛选查看' : ''}`);
+    ElMessage.success(`纪念日菜单已保存${filtersActive.value || boardMode.value ? '；如未显示，请检查筛选条件或其他页' : ''}`);
     dialogVisible.value = false;
     reset();
     await load();
@@ -322,7 +387,7 @@ const remove = async (item) => {
   const hadFocus = document.activeElement?.closest('.menu-card')?.dataset.menuId === String(item._id || item.id);
   deletingId.value = item._id;
   try { await ElMessageBox.confirm('确定删除这个纪念日菜单吗？', '删除确认', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }); await api.anniversary.delete(item._id, item.editVersion); if (editing.value?.id === String(item._id)) reset(); await load(); }
-  catch (e) { if (e !== 'cancel' && e !== 'close') deleteIssue.value = e?.code === 'ANNIVERSARY_CONFLICT' ? '菜单已被修改或删除，本次未删除；请重新加载并核对。' : '删除结果未确认，请重新加载并核对后再操作。'; }
+  catch (e) { if (e !== 'cancel' && e !== 'close') { deleteTarget.value = String(item._id || item.id); deleteReviewMessage.value = ''; deleteIssue.value = e?.code === 'ANNIVERSARY_CONFLICT' ? '菜单已被修改或删除，本次未删除；请重新加载并核对。' : '删除结果未确认，请重新加载并核对后再操作。'; } }
   finally { deletingId.value = ''; }
   if (hadFocus && !loadError.value && !filteredMenus.value.some(row => String(row._id || row.id) === String(item._id || item.id))) {
     await nextTick();
@@ -332,7 +397,7 @@ const remove = async (item) => {
   }
 };
 onMounted(() => { window.addEventListener('keydown', onPhotoKey); window.addEventListener('focus', scheduleMidnight); document.addEventListener('visibilitychange', onVisibility); scheduleMidnight(); load(); loadTemplates(); });
-onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (midnightTimer) clearTimeout(midnightTimer); window.removeEventListener('keydown', onPhotoKey); window.removeEventListener('focus', scheduleMidnight); document.removeEventListener('visibilitychange', onVisibility); });
+onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (filterTimer) clearTimeout(filterTimer); if (midnightTimer) clearTimeout(midnightTimer); window.removeEventListener('keydown', onPhotoKey); window.removeEventListener('focus', scheduleMidnight); document.removeEventListener('visibilitychange', onVisibility); });
 </script>
 
 <template>
@@ -343,22 +408,23 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
     </div>
 
     <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="纪念日菜单" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
-    <p v-if="saveUncertain && !dialogVisible && filtersActive" class="filter-note">筛选可能隐藏刚保存的菜单；刷新核对会清除筛选。</p>
-    <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><span v-if="hiddenEdit">当前筛选中未显示这份菜单。</span><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button><el-button v-if="hiddenEdit && filtersActive" link @click="resetFilters">清除筛选</el-button></el-alert>
+    <p v-if="saveUncertain && !dialogVisible && (filtersActive || boardMode)" class="filter-note">{{ boardMode ? '刚保存的菜单可能在其他页；请检查所有相关页面后再决定是否重试。' : '筛选可能隐藏刚保存的菜单；刷新核对会清除筛选。' }}</p>
+    <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><span v-if="hiddenEdit">{{ boardMode ? '当前筛选或页面中未显示这份菜单。' : '当前筛选中未显示这份菜单。' }}</span><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button><el-button v-if="hiddenEdit && filtersActive" link @click="resetFilters">清除筛选</el-button></el-alert>
 
-    <el-alert v-if="deleteIssue" type="warning" :closable="false" show-icon :title="deleteIssue"><el-button link type="primary" :loading="loading" @click="refreshAndReview">重新加载并核对</el-button></el-alert>
+    <el-alert v-if="deleteIssue" type="warning" :closable="false" show-icon :title="deleteIssue"><el-button link type="primary" :loading="loading || checkingDelete" @click="refreshAndReview">重新加载并核对</el-button></el-alert>
+    <el-alert v-if="deleteReviewMessage" type="info" show-icon :title="deleteReviewMessage" @close="deleteReviewMessage = ''" />
     <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分纪念日菜单。" />
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载纪念日菜单：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-    <section v-if="!loadError && (menus.length || filtersActive)" class="menu-filters" aria-label="查找纪念日菜单">
-      <div class="filter-heading"><div><span class="filter-kicker">YOUR SPECIAL DAYS</span><h2>寻找特别的一天</h2><p aria-live="polite">显示 {{ filteredMenus.length }} / {{ menus.length }} 份菜单</p></div><el-input v-model="search" clearable maxlength="100" aria-label="搜索纪念日菜单" placeholder="搜索标题、主题、备注或菜品" :disabled="!!deletingId || !!deleteIssue" /></div>
+    <section v-if="!loadError && (menus.length || filtersActive || boardMode)" class="menu-filters" aria-label="查找纪念日菜单">
+      <div class="filter-heading"><div><span class="filter-kicker">YOUR SPECIAL DAYS</span><h2>寻找特别的一天</h2><p aria-live="polite">{{ boardMode ? (loading ? '正在更新菜单…' : `共 ${boardTotal} 份匹配菜单 · 第 ${boardPage} / ${boardPages} 页`) : `显示 ${filteredMenus.length} / ${menus.length} 份菜单` }}</p></div><el-input v-model="search" clearable maxlength="100" aria-label="搜索纪念日菜单" placeholder="搜索标题、主题、备注或菜品" :disabled="!!deletingId || !!deleteIssue" /></div>
       <div ref="filterGroup" class="period-filters" role="group" aria-label="按日期筛选菜单"><button v-for="option in periodOptions" :key="option.key" type="button" :class="{ active: period === option.key }" :aria-pressed="period === option.key" :disabled="!!deletingId || !!deleteIssue" @click="period = option.key">{{ option.label }}</button><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deletingId || !!deleteIssue" @click="resetFilters">清除筛选</button></div>
     </section>
     <div v-if="!loadError" v-loading="loading" class="menu-content" :aria-busy="loading ? 'true' : 'false'">
-      <el-empty v-if="!loading && !menus.length" description="还没有纪念日菜单" />
+      <el-empty v-if="!loading && !menus.length && !filtersActive" description="还没有纪念日菜单" />
       <el-empty v-else-if="!loading && !filteredMenus.length" description="没有符合条件的纪念日菜单" />
-      <section v-for="group in menuGroups" :key="group.key" class="menu-group"><div class="group-heading"><h2>{{ group.title }}</h2><span>{{ group.items.length }} 份</span></div><div class="menu-grid">
+      <section v-for="group in menuGroups" :key="group.key" class="menu-group"><div class="group-heading"><h2>{{ group.title }}</h2><span>{{ boardMode ? '本页 ' : '' }}{{ group.items.length }} 份</span></div><div class="menu-grid">
       <el-card v-for="item in group.items" :key="item._id || item.id" class="menu-card" :data-menu-id="item._id || item.id">
-        <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
+        <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="loading || !!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="loading || !!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
         <span class="day-badge">{{ dayLabel(item) }}</span>
         <p class="desc">{{ item.description || '没有备注，也可以是一份默契。' }}</p>
         <p v-if="item.supportsUnavailableMealVisibility && Object.keys(mealTypeText).some(key => item.meals?.[key]?.some(meal => meal === null))" class="unavailable-note">部分菜品不可用，原有引用仍保留在菜单中。</p>
@@ -372,6 +438,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
         </div>
       </el-card>
       </div></section>
+      <nav v-if="boardMode && boardTotal > boardLimit" class="board-pagination" aria-label="纪念日菜单分页"><el-button :disabled="loading || boardPage <= 1 || !!deleteIssue" @click="changePage(boardPage - 1)">上一页</el-button><span aria-live="polite">第 {{ boardPage }} / {{ boardPages }} 页</span><el-button :disabled="loading || boardPage >= boardPages || !!deleteIssue" @click="changePage(boardPage + 1)">下一页</el-button></nav>
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑纪念日菜单' : '新增纪念日菜单'" width="min(620px, 92vw)" :close-on-click-modal="!saving && !confirmingSlot" :close-on-press-escape="!saving && !confirmingSlot" :show-close="!saving && !confirmingSlot">
@@ -379,6 +446,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
       <el-alert v-if="editIssue" type="warning" :closable="false" show-icon :title="editIssue === 'conflict' ? '菜单已被修改或删除，本次未保存。' : '编辑结果未确认，请先核对最新菜单。'">
         <p>你的草稿和所选照片仍在本页。核对后可载入最新内容；载入会放弃当前草稿。</p>
         <el-button link type="primary" :loading="checkingEdit" @click="checkLatest">刷新最新菜单并核对</el-button>
+        <p v-if="latestError" role="alert">{{ latestError }}</p>
         <div v-if="editReviewed" class="latest-summary">
           <template v-if="latestEdit"><strong>{{ latestEdit.title }} · {{ latestEdit.date }}</strong><p>{{ latestEdit.theme || '无主题' }} · {{ latestEdit.photos?.length || 0 }} 张照片</p><p>{{ latestEdit.description || '无备注' }}</p><p v-for="(label, key) in mealTypeText" :key="key">{{ label }}：{{ (latestEdit.meals?.[key] || []).map(meal => meal?.name || '菜品不可用').join('、') || '未安排' }}</p><el-button link type="primary" :disabled="!validVersion(latestEdit)" @click="reloadLatest">放弃草稿并载入最新</el-button><el-button v-if="editIssue === 'unknown' && validVersion(latestEdit) && sameVersion(editing?.version, latestEdit.editVersion)" link type="primary" @click="retryEdit">已核对，允许重试</el-button></template>
           <p v-else>最新列表中已没有这份菜单，可能已被删除。</p>
@@ -427,6 +495,8 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .period-filters .reset-filter { text-decoration: underline; text-underline-offset: 3px; }
 .filter-note { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.5; }
 .menu-content { display: flex; flex-direction: column; gap: 22px; }
+.board-pagination { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 14px; color: var(--text-primary); }
+.board-pagination :deep(.el-button) { min-height: 44px; margin: 0; }
 .menu-group { display: flex; flex-direction: column; gap: 12px; }
 .group-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 3px; color: var(--text-primary); }
 .group-heading h2 { font-size: 19px; }.group-heading span { font-size: 13px; }
