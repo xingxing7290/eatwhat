@@ -7,6 +7,7 @@ async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     let version = 1; let writes = 0; let holdInitial = true; let releaseInitial; let generatedFrom = `week:2026-10-26:${new Date(2026, 9, 28, 10, 15).getTime()}`
@@ -25,6 +26,7 @@ async function main () {
       if (path === '/shopping-list/items' && request.method() === 'POST') { const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = [...items, { _id: 'new-item', name: body.name, amount: body.amount, category: body.category, checked: false, manual: true }]; return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/purchased' && request.method() === 'DELETE') { assert.equal(Number(url.searchParams.get('expectedVersion')), version); writes++; version++; items = items.filter(item => !item.checked); return route.fulfill({ json: snapshot() }) }
       if (path.startsWith('/shopping-list/items/') && request.method() === 'PATCH') { const id = path.split('/').pop(); const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = items.map(item => item._id === id ? { ...item, checked: body.checked } : item); return route.fulfill({ json: snapshot() }) }
+      if (path.startsWith('/shopping-list/items/') && request.method() === 'DELETE') { const id = path.split('/').pop(); assert.equal(Number(url.searchParams.get('expectedVersion')), version); writes++; version++; items = items.filter(item => item._id !== id); return route.fulfill({ json: snapshot() }) }
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/shopping-list`)
@@ -101,6 +103,34 @@ async function main () {
     await page.getByRole('textbox', { name: '搜索购物食材' }).fill('')
     await page.getByText('牛肉', { exact: true }).waitFor()
     assert.equal(writes, 4)
+    await search.fill('牛肉')
+    await page.getByRole('button', { name: '删除牛肉' }).click()
+    await page.getByText('确定从所选周购物清单中删除“牛肉”吗？').waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await page.getByRole('dialog', { name: '删除食材' }).waitFor({ state: 'hidden' })
+    assert.equal(writes, 4, 'cancelling a deletion must not write')
+    await page.getByRole('button', { name: '删除牛肉' }).focus()
+    await page.keyboard.press('Enter')
+    const deleteDialog = page.getByRole('dialog', { name: '删除食材' }).last()
+    await deleteDialog.waitFor()
+    await deleteDialog.getByRole('button', { name: '删除', exact: true }).click()
+    await page.getByText('没有符合条件的食材').waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '搜索购物食材')
+    await search.fill('')
+    await page.getByRole('button', { name: '删除菠菜' }).click()
+    await page.getByText('若排餐仍包含此食材，重新生成时可能再次出现。', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    assert.equal(writes, 5)
+    await page.getByRole('dialog', { name: '删除食材' }).waitFor({ state: 'hidden' })
+    items = [{ _id: 'last', name: '最后一项', amount: '', category: 'other', checked: false, manual: true }]; version++
+    await page.reload()
+    await page.getByRole('button', { name: '删除最后一项' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByRole('dialog', { name: '删除食材' }).getByRole('button', { name: '删除', exact: true }).click()
+    await page.getByText('还没有购物项', { exact: false }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '食材名称')
+    assert.equal(writes, 6)
+    assert.deepEqual(errors, [])
     console.log('Shopping filters passed: search, status, global counts and clear scope')
   } finally { await browser.close() }
 }

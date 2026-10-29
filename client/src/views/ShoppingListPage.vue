@@ -27,6 +27,7 @@ const statusFilter = ref('all');
 const groupGrid = ref(null);
 const filterGroup = ref(null);
 const searchInput = ref(null);
+const addNameInput = ref(null);
 const categoryText = { vegetable: '蔬菜', meat_egg: '肉蛋', staple: '主食', seasoning: '调料', other: '其他' };
 const categoryKey = item => Object.prototype.hasOwnProperty.call(categoryText, item.category) ? item.category : 'other';
 const monday = value => { const d = value ? new Date(...value.split('-').map((part, index) => index === 1 ? Number(part) - 1 : Number(part))) : new Date(); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -173,7 +174,25 @@ const toggle = async item => {
     if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) (groupGrid.value?.querySelector('input[type="checkbox"]:not(:disabled)') || filterGroup.value?.querySelector('button[aria-pressed="true"]'))?.focus();
   }
 };
-const remove = async item => { if (disabled.value) return; working.value = true; try { await mutate((version, week) => api.shoppingList.deleteItem(item._id, week, version), null, next => next.items.every(row => row._id !== item._id)); } finally { working.value = false; } };
+const remove = async item => {
+  if (disabled.value) return;
+  const hadFocus = document.activeElement?.closest('.item-row')?.dataset.itemId === String(item._id);
+  const requestedWeek = weekStart.value;
+  let closingDialog = null;
+  working.value = true;
+  try {
+    try { await ElMessageBox.confirm(`确定从所选周购物清单中删除“${item.name}”吗？${item.manual ? '' : '若排餐仍包含此食材，重新生成时可能再次出现。'}`, '删除食材', { type: 'warning', confirmButtonText: '删除', cancelButtonText: '取消' }); } catch (_) { return; }
+    closingDialog = document.activeElement?.closest('.el-message-box');
+    await mutate((version, week) => api.shoppingList.deleteItem(item._id, week, version), null, next => next.items.every(row => row._id !== item._id));
+  } finally { working.value = false; }
+  if (hadFocus && !list.value.items.some(row => row._id === item._id)) {
+    setTimeout(() => {
+      if (weekStart.value !== requestedWeek || disabled.value) return;
+      const active = document.activeElement;
+      if (!active || active === document.body || !active.isConnected || closingDialog?.contains(active)) (groupGrid.value?.querySelector('input[type="checkbox"]:not(:disabled)') || searchInput.value?.input || addNameInput.value?.input)?.focus();
+    }, 350);
+  }
+};
 const clearPurchased = async () => { if (!purchased.value || disabled.value) return; working.value = true; try { try { await ElMessageBox.confirm(`将删除 ${purchased.value} 项已购食材。${filtersActive.value ? '此操作作用于所选周全部已购食材，包括筛选后未显示的项目。' : ''}`, '清空已购', { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }); } catch (_) { return; } await mutate((version, week) => api.shoppingList.clearPurchased(week, version), () => ElMessage.success('已清空已购'), next => next.items.every(item => !item.checked)); } finally { working.value = false; } };
 onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '购物清单链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
 onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
@@ -192,7 +211,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     <el-alert v-if="generationNotice" class="generation-alert" type="warning" :closable="false" show-icon :title="generationNotice"><p v-if="generationDates.length">需核对的日期：{{ generationDates.join('、') }}。</p><p v-else>{{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}可能跨月，请核对整周的安排。</p><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: generationDates[0] || monday(weekStart) } }">前往日历核对</router-link><el-button link @click="generationNotice = ''; generationDates = []">关闭提示</el-button><nav v-if="generationDates.length > 1" class="affected-dates" aria-label="按日期核对购物清单"><span>逐日核对：</span><router-link v-for="date in generationDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
     <div v-if="loading" class="progress-loading" role="status">正在读取所选周采购进度…</div>
     <div v-else class="progress-card"><div><span>采购进度</span><strong>{{ purchased }} / {{ list.items?.length || 0 }}</strong><small>项已买好</small></div><el-progress :percentage="list.items?.length ? Math.round(purchased / list.items.length * 100) : 0" :show-text="false" /></div>
-    <el-card><div class="add-row"><el-input v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keyup.enter="addItem" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keyup.enter="addItem" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
+    <el-card><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keyup.enter="addItem" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keyup.enter="addItem" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">
       <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p></div><el-input ref="searchInput" v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
       <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'pending', label: '待买' }, { value: 'purchased', label: '已买' }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button></div>
