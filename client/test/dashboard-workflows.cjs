@@ -130,6 +130,8 @@ async function main () {
     const days = await page.locator('.week-day').evaluateAll(links => links.map(link => new URL(link.href).searchParams.get('date')))
     assert.deepEqual(days, [...days].sort(), 'week dates must be displayed in chronological order')
     assert.equal(await page.getByRole('link', { name: /查看 2026-10-29 的日历安排/ }).getAttribute('aria-current'), 'date')
+    assert.deepEqual(await page.locator('.week-day-label').allTextContents(), ['周一', '周二', '周三', '周四 · 今天', '周五', '周六', '周日'])
+    assert.match(await page.locator('.week-day[aria-current="date"]').getAttribute('aria-label'), /周四，今天/)
     for (const link of await page.locator('.week-day').all()) assert.ok((await link.boundingBox()).height >= 44)
     date = '2026-10-30'
     await page.getByRole('button', { name: '安排2026-10-29早餐' }).click()

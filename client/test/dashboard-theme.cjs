@@ -55,8 +55,8 @@ async function main() {
       ['eyebrow', '.eyebrow'], ['title', '.hero-panel h1'], ['accent title', '.hero-panel h1 span'],
       ['summary text', '.hero-panel > div:first-child > p:last-of-type'], ['section label', '.section-heading small'],
       ['section title', '.section-heading h2'], ['card title', '.today-card .card-title span'],
-      ['meal tag', '.today-card .meal-tags .el-tag'], ['today action', '.today-slot-action'], ['warning tag', '.today-card .hint-list .el-tag'],
-      ['metric number', '.metric-row strong'], ['week label', '.week-day span'], ['week date', '.week-day strong'],
+      ['meal link', '.today-card .today-recipe-link'], ['today action', '.today-slot-action'], ['warning tag', '.today-card .hint-list .el-tag'],
+      ['metric number', '.metric-row strong'], ['weekday label', '.week-day-label'], ['week meal count', '.week-day span:last-child'], ['week date', '.week-day strong'],
       ['partner title', '.wishlist-row strong'], ['partner detail', '.wishlist-row p'],
       ['missing photo', '.photo-unavailable'], ['quick link', '.quick-links a'], ['card link', '.card-links a']
     ];

@@ -13,6 +13,7 @@ const arranging = ref('');
 const failedPhotos = reactive(new Set());
 const photoError = (event, photo, index) => { if (!retryLocalUpload(event)) failedPhotos.add(photoKey(photo, index)); };
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
+const weekdayText = date => `周${['日', '一', '二', '三', '四', '五', '六'][new Date(`${date}T00:00:00Z`).getUTCDay()]}`;
 
 const mealName = (item) => item?.meal?.name || item?.name || '菜品不可用';
 const mealId = (meal) => meal?._id || meal?.id || meal?.mealId || (typeof meal === 'string' ? meal : '');
@@ -160,7 +161,8 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', refr
         <template #header><div class="card-title"><el-icon><Calendar /></el-icon><span>本周饭桌计划</span></div></template>
         <div class="metric-row"><span>本周已安排</span><strong>{{ plannedSlots }}</strong><span>餐</span></div>
         <div class="week-mini">
-          <router-link v-for="day in summary.week?.days || []" :key="day.date" class="week-day" :to="{ name: 'calendar', query: { date: day.date } }" :aria-current="day.date === summary.today ? 'date' : undefined" :aria-label="`查看 ${day.date} 的日历安排，已安排 ${['breakfast','lunch','dinner'].filter(t => day.meals?.[t]?.length).length} 餐`">
+          <router-link v-for="day in summary.week?.days || []" :key="day.date" class="week-day" :to="{ name: 'calendar', query: { date: day.date } }" :aria-current="day.date === summary.today ? 'date' : undefined" :aria-label="`查看 ${day.date} 的日历安排，${weekdayText(day.date)}${day.date === summary.today ? '，今天' : ''}，已安排 ${['breakfast','lunch','dinner'].filter(t => day.meals?.[t]?.length).length} 餐`">
+            <span class="week-day-label">{{ weekdayText(day.date) }}<template v-if="day.date === summary.today"> · 今天</template></span>
             <strong>{{ day.date.slice(5) }}</strong>
             <span>{{ ['breakfast','lunch','dinner'].filter(t => day.meals?.[t]?.length).length }} 餐</span>
           </router-link>
