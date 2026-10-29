@@ -11,17 +11,21 @@ import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploaded
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const memories = ref([]);
+const route = useRoute();
+const router = useRouter();
+const validMonth = value => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const monthLinkNotice = ref(route.query.month !== undefined && !validMonth(route.query.month) ? '回忆链接中的月份无效，已显示全部月份。' : '');
 const timelinePage = ref(1);
 const timelineLimit = 12;
 const timelineTotal = ref(0);
 const timelineCapable = ref(false);
 const timelineSearch = ref('');
-const timelineMonth = ref('');
+const timelineMonth = ref(validMonth(route.query.month) ? route.query.month : '');
 const timelineMealType = ref('all');
 const timelinePhotos = ref('all');
 let timelineTimer = null;
-const route = useRoute();
-const router = useRouter();
+let monthUrlTimer = null;
+const internalMonths = new Set();
 const meals = ref([]);
 const selectedMeals = ref([]);
 const mealLoading = ref(false);
@@ -316,7 +320,7 @@ const load = async () => {
       const requestedId = route.query.edit;
       await openLinkedMemory(requestedId);
       if (!alive || sequence !== memorySequence) return;
-      await router.replace({ name: 'memories' });
+      await router.replace({ name: 'memories', query: timelineMonth.value ? { month: timelineMonth.value } : {} });
       return;
     }
     if (route.query.new === '1' && typeof route.query.mealId === 'string') {
@@ -333,7 +337,7 @@ const load = async () => {
         ElMessage.warning('未找到这道菜，请手动选择');
       }
       dialogVisible.value = true;
-      await router.replace({ name: 'memories' });
+      await router.replace({ name: 'memories', query: timelineMonth.value ? { month: timelineMonth.value } : {} });
     }
   } catch (e) { if (alive && sequence === memorySequence) loadError.value = e?.error || e?.message || '加载饭后回忆失败'; }
   finally { if (alive && sequence === memorySequence) loading.value = false; }
@@ -346,6 +350,22 @@ watch([timelineSearch, timelineMonth, timelineMealType, timelinePhotos], () => {
   timelinePage.value = 1; memorySequence++; loading.value = true;
   if (timelineTimer) clearTimeout(timelineTimer);
   timelineTimer = setTimeout(load, 200);
+}, { flush: 'sync' });
+watch(timelineMonth, value => {
+  monthLinkNotice.value = '';
+  if (monthUrlTimer) clearTimeout(monthUrlTimer);
+  monthUrlTimer = setTimeout(async () => {
+    monthUrlTimer = null;
+    if (!alive || route.name !== 'memories' || (route.query.month || '') === value) return;
+    internalMonths.add(value);
+    try { await router.replace({ name: 'memories', query: { ...route.query, month: value || undefined } }); } finally { internalMonths.delete(value); }
+  }, 200);
+}, { flush: 'sync' });
+watch(() => route.query.month, value => {
+  if (route.name !== 'memories' || internalMonths.has(value || '')) return;
+  if (monthUrlTimer) { clearTimeout(monthUrlTimer); monthUrlTimer = null; }
+  timelineMonth.value = validMonth(value) ? value : '';
+  monthLinkNotice.value = value !== undefined && !validMonth(value) ? '回忆链接中的月份无效，已显示全部月份。' : '';
 }, { flush: 'sync' });
 const save = async () => {
   if (!form.date) return ElMessage.warning('请选择日期');
@@ -417,7 +437,7 @@ const reviewDelete = async () => {
   checkingDelete.value = false;
 };
 onMounted(() => { window.addEventListener('keydown', onPhotoKey); load(); });
-onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); window.removeEventListener('keydown', onPhotoKey); });
+onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); if (monthUrlTimer) clearTimeout(monthUrlTimer); window.removeEventListener('keydown', onPhotoKey); });
 </script>
 
 <template>
@@ -427,6 +447,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       <el-button type="primary" :disabled="loading || !!loadError || !!deletingId || !!deleteIssue || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>记录一餐</el-button>
     </div>
 
+    <el-alert v-if="monthLinkNotice" type="warning" :closable="false" show-icon :title="monthLinkNotice" />
     <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
     <p v-if="saveUncertain && !dialogVisible" class="timeline-note">列表可能跨页或受到筛选影响，请按日期和内容逐页核对；未显示不代表保存失败。</p>
     <el-alert v-if="linkedError" type="warning" :closable="false" show-icon :title="`无法打开相册关联的回忆：${linkedError}`"><el-button link type="primary" :loading="linkedLoading" @click="openLinkedMemory(linkedId)">重新打开</el-button><el-button link @click="linkedError = ''; linkedId = ''">关闭提示</el-button></el-alert>

@@ -33,6 +33,10 @@ async function main () {
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url())
+      if (url.pathname === '/api/memories') {
+        const month = url.searchParams.get('month') || ''
+        return route.fulfill({ json: { supportsMemoryTimeline: true, page: 1, limit: 12, search: '', month, mealType: 'all', photos: 'all', total: 1, items: [{ _id: 'memory-a', date: `${month || '2026-10'}-10`, title: '温暖的晚餐', photos: [], mealIds: [] }] } })
+      }
       if (url.pathname === '/api/photo-album') {
         const month = url.searchParams.get('month')
         const photo = { memoryId: '0123456789abcdef01234567', photoIndex: 2, date: `${month}-10`, title: '温暖的晚餐', photo: '/api/uploads/missing.jpg' }
@@ -57,6 +61,12 @@ async function main () {
     await page.getByRole('heading', { name: '把日子，慢慢记下来' }).waitFor()
     await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('link', { name: '本月回忆 →' }).getAttribute('href'), '/memories?month=2026-10')
+    await page.getByRole('link', { name: '本月回忆 →' }).click()
+    await page.waitForURL('**/memories?month=2026-10')
+    await page.locator('.memory-card').getByText('温暖的晚餐', { exact: true }).waitFor()
+    assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2026-10')
+    await page.goBack(); await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a')
     assert.match(await page.locator('.feature-link').getAttribute('href'), /\/memories\?edit=memory-a/)
     const photoUrl = new URL(await page.locator('.photo-card').getAttribute('href'), base)
