@@ -10,6 +10,7 @@ import api from '../services/api';
 import { validWishVersion } from '../utils/wishlistVersion.mjs';
 import { validWeekLink } from '../utils/weekLink.mjs';
 import { normalizeMealSearch } from '../utils/mealSearch.mjs';
+import { filterCatalogQuery } from '../utils/catalogQuery.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -18,6 +19,15 @@ const scheduleStore = useScheduleStore();
 const date = computed(() => route.query.date);
 const mealType = computed(() => route.query.mealType);
 const calendarDestination = () => ({ name: 'calendar', ...(validWeekLink(date.value) ? { query: { date: date.value } } : {}) });
+const cancelDestination = () => {
+  const id = route.query.suggestedMealId;
+  if (route.query.fromRecipe !== '1' || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id)) return calendarDestination();
+  const query = filterCatalogQuery(route.query);
+  if (validWeekLink(route.query.shoppingWeek)) query.shoppingWeek = route.query.shoppingWeek;
+  else if (validWeekLink(route.query.calendarDate)) query.calendarDate = route.query.calendarDate;
+  else if (route.query.fromDashboard === '1') query.fromDashboard = '1';
+  return { name: 'MealDetail', params: { id }, query };
+};
 
 const isInitializing = ref(true);
 const isSaving = ref(false);
@@ -254,7 +264,7 @@ const saveSelection = async () => {
 
 // 取消选择
 const handleCancel = () => {
-  router.push(calendarDestination());
+  router.push(cancelDestination());
 };
 
 // 清除过滤

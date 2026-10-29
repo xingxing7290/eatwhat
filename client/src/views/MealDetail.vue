@@ -72,7 +72,7 @@ const openSchedule = () => {
 };
 const continueSchedule = async () => {
   if (!schedulableId.value || !validWeekLink(scheduleDate.value) || !['breakfast', 'lunch', 'dinner'].includes(scheduleType.value)) return ElMessage.warning('请选择有效日期和餐次');
-  const failure = await router.push({ name: 'MealSelection', query: { date: scheduleDate.value, mealType: scheduleType.value, suggestedMealId: schedulableId.value } });
+  const failure = await router.push({ name: 'MealSelection', query: { date: scheduleDate.value, mealType: scheduleType.value, suggestedMealId: schedulableId.value, fromRecipe: '1', ...editorQuery.value } });
   if (!failure) scheduleDialog.value = false;
 };
 const doneOnce = () => {
