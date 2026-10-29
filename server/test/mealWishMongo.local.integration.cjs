@@ -1238,7 +1238,7 @@ async function main() {
       await namePageB.getByRole('button', { name: '保存', exact: true }).click();
       await namePageB.getByText('保存成功').waitFor();
       assert.equal(await namePageB.getByPlaceholder('给你们的小家取个名字').inputValue(), '真实并发名称乙');
-      const nameHouseholdCard = namePageB.locator('.settings-card').filter({ hasText: '情侣小家' });
+      const nameHouseholdCard = namePageB.locator('.settings-card').filter({ hasText: '小家与成员' });
       await nameHouseholdCard.getByRole('button', { name: '刷新', exact: true }).click();
       await namePageB.getByRole('button', { name: '刷新邀请码' }).click();
       await namePageB.getByText('邀请码已刷新').waitFor();

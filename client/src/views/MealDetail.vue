@@ -341,6 +341,9 @@ h1 { margin: 0; color: var(--text-primary); }
 .tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .ingredient-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
+.ingredient-row { gap: 12px; }
+.ingredient-row > span, .ingredient-row > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.ingredient-row > strong { text-align: right; }
 .steps-list, .memory-list { display: flex; flex-direction: column; gap: 12px; }
 .step-item { display: grid; grid-template-columns: 34px 96px 1fr; gap: 12px; align-items: start; }
 .step-item.no-image { grid-template-columns: 34px 1fr; }
@@ -357,5 +360,6 @@ h1 { margin: 0; color: var(--text-primary); }
 .photo-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 12px 0; color: var(--text-secondary); font-size: 13px; }
 .photo-nav .el-button { margin: 0; min-height: 44px; }
 .tips-card p { white-space: pre-wrap; }
+.step-item p, .tips-card p { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 768px) { .hero, .content-grid { grid-template-columns: 1fr; } .meta-grid { grid-template-columns: repeat(2, 1fr); } .step-item, .step-item.no-image { grid-template-columns: 28px 1fr; } .step-item img { grid-column: 2; } }
 </style>
