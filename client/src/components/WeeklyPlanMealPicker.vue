@@ -2,7 +2,7 @@
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import api from '@/services/api';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const props = defineProps({ date: { type: String, required: true }, label: { type: String, required: true }, meals: { type: Array, required: true } });
@@ -86,7 +86,7 @@ const cancel = async () => {
   emit('cancel');
 };
 const imageFor = meal => resolveUploadedImage(meal.imageUrl || meal.image || '') || placeholder;
-const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; } };
+const imageError = event => handleUploadedImageError(event, placeholder);
 onMounted(() => { load(); loadCategories(); });
 onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer); });
 </script>
@@ -113,7 +113,7 @@ onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer
           <div v-if="!meals.length" class="catalog-state">没有找到匹配的菜品</div>
           <div v-else class="meal-list">
             <button v-for="meal in meals" :key="idOf(meal)" type="button" class="meal-option" :class="{ active: selectedIds.has(idOf(meal)) }" :aria-label="`${selectedIds.has(idOf(meal)) ? '取消选择' : '选择'}${meal.name}`" :aria-pressed="selectedIds.has(idOf(meal))" @click="toggle(meal)">
-              <img :src="imageFor(meal)" alt="" @error="imageError" /><span class="meal-copy"><strong>{{ meal.name }}</strong><small>{{ meal.category || '未分类' }}</small></span><span class="choice-mark" aria-hidden="true">{{ selectedIds.has(idOf(meal)) ? '✓' : '+' }}</span>
+              <img :key="imageFor(meal)" :src="imageFor(meal)" alt="" @error="imageError" /><span class="meal-copy"><strong>{{ meal.name }}</strong><small>{{ meal.category || '未分类' }}</small></span><span class="choice-mark" aria-hidden="true">{{ selectedIds.has(idOf(meal)) ? '✓' : '+' }}</span>
             </button>
           </div>
           <div v-if="total > limit" class="pagination"><el-button :disabled="page <= 1" @click="changePage(page - 1)">上一页</el-button><span>第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="page >= lastPage" @click="changePage(page + 1)">下一页</el-button></div>

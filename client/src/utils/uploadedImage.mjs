@@ -26,17 +26,23 @@ export function resolveRecipeImage (value, fallback, origin = window.location.or
 
 // Only retry our own legacy /uploads path; a failed external image must never
 // be substituted with an unrelated local image bearing the same path.
-export function handleUploadedImageError (event, fallback, origin = window.location.origin) {
+export function retryLocalUpload (event, origin = window.location.origin) {
   const image = event?.target
-  if (!image) return
+  if (!image) return false
   try {
     const url = new URL(image.src, origin)
     if (url.origin === new URL(origin).origin && url.pathname.startsWith('/uploads/') && image.dataset.retry !== '1') {
       image.dataset.retry = '1'
       image.src = `${new URL(origin).origin}/api${url.pathname}${url.search}${url.hash}`
-      return
+      return true
     }
-  } catch (_) { /* Fall through to the placeholder. */ }
+  } catch (_) { /* No safe alternate route. */ }
+  return false
+}
+
+export function handleUploadedImageError (event, fallback, origin = window.location.origin) {
+  const image = event?.target
+  if (!image || retryLocalUpload(event, origin)) return
   if (image.dataset.placeholder !== '1') {
     image.dataset.placeholder = '1'
     image.src = fallback

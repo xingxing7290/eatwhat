@@ -4,13 +4,14 @@ import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Calendar, ShoppingCart, Picture, Star, Warning, Food } from '@element-plus/icons-vue';
 import api from '@/services/api';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, retryLocalUpload } from '@/utils/uploadedImage.mjs';
 
 const router = useRouter();
 const loading = ref(false);
 const summary = ref(null);
 const arranging = ref('');
 const failedPhotos = reactive(new Set());
+const photoError = (event, photo, index) => { if (!retryLocalUpload(event)) failedPhotos.add(photoKey(photo, index)); };
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 
 const mealName = (item) => item?.meal?.name || item?.name || '菜品不可用';
@@ -128,7 +129,7 @@ onBeforeUnmount(() => { active = false; });
         <el-empty v-if="!summary.recentPhotos?.length" description="还没有饭后照片" />
         <div v-else class="photo-strip">
           <router-link v-for="(photo, index) in summary.recentPhotos" :key="photoKey(photo, index)" :to="photoLink(photo)" class="photo-tile" :aria-label="`前往饭桌相册：${photo.title || photo.date || '饭桌照片'}`">
-            <img v-if="!failedPhotos.has(photoKey(photo, index))" :src="resolveUploadedImage(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="failedPhotos.add(photoKey(photo, index))" />
+            <img v-if="!failedPhotos.has(photoKey(photo, index))" :src="resolveUploadedImage(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="photoError($event, photo, index)" />
             <span v-else class="photo-unavailable">照片暂不可用</span>
           </router-link>
         </div>

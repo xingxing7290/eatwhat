@@ -3,7 +3,7 @@ const { chromium } = require('playwright')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Weekly tests require a local test server')
 const dates = ['2026-10-26', '2026-10-27', '2026-10-28', '2026-10-29', '2026-10-30', '2026-10-31', '2026-11-01']
-const meal = { _id: 'meal-a', name: '番茄炒蛋', category: '家常菜' }
+const meal = { _id: 'meal-a', name: '番茄炒蛋', category: '家常菜', imageUrl: '/uploads/legacy-weekly.png?v=2' }
 const extra = { _id: 'meal-b', name: '麻婆豆腐', category: '川菜' }
 const catalog = [meal, extra, ...Array.from({ length: 10 }, (_, i) => ({ _id: `other-${i + 1}`, name: `测试菜${String(i + 1).padStart(2, '0')}`, category: '家常菜' }))]
 const emptyMeals = () => ({ breakfast: [], lunch: [], dinner: [] })
@@ -65,6 +65,11 @@ async function main () {
       } else if (req.method() === 'GET' && pathname === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       await route.fulfill({ status: 200, json: data })
     })
+    await page.route('**/uploads/**', route => {
+      const url = new URL(route.request().url())
+      if (url.pathname === '/api/uploads/legacy-weekly.png') return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>' })
+      return route.fulfill({ status: 404, body: '' })
+    })
 
     await page.goto(`${base}/weekly-plan`)
     await page.getByRole('heading', { name: /周一.*2026-10-26/ }).waitFor()
@@ -89,6 +94,7 @@ async function main () {
     await page.getByRole('button', { name: '调整2026-10-26晚餐' }).click()
     const dialog = page.getByRole('dialog', { name: '调整 2026-10-26 晚餐' })
     await dialog.getByRole('button', { name: '移除番茄炒蛋' }).waitFor()
+    await page.waitForFunction(() => [...document.querySelectorAll('.weekly-meal-picker .meal-option img')].some(image => image.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/legacy-weekly.png?v=2')))
     const search = dialog.getByRole('textbox', { name: '搜索周计划菜品' })
     await search.fill('slow')
     await page.waitForTimeout(250)

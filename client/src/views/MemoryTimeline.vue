@@ -7,7 +7,7 @@ import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const memories = ref([]);
@@ -187,7 +187,7 @@ const searchMeals = query => {
 };
 const openMealOptions = visible => { if (visible && !mealLoaded.value && !mealLoading.value) searchMeals(''); };
 const imageFor = photo => resolveUploadedImage(photo) || placeholder;
-const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
+const imageError = event => handleUploadedImageError(event, placeholder);
 const openMemoryPhoto = (item, index) => { viewedPhoto.value = { title: item.title || item.date || '饭后照片', photos: item.photos, index }; };
 const moveMemoryPhoto = direction => {
   if (!viewedPhoto.value) return;

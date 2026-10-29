@@ -4,7 +4,7 @@ import { Calendar, Picture, Food, ChatDotRound, Refresh } from '@element-plus/ic
 import { useRoute, useRouter } from 'vue-router';
 import api from '@/services/api';
 import placeholder from '@/assets/meal-placeholder.svg';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 
 const today = new Date();
 const route = useRoute();
@@ -88,7 +88,7 @@ const imageFor = value => {
   if (!resolved) return placeholder;
   try { const url = new URL(resolved, window.location.origin); return ['http:', 'https:'].includes(url.protocol) ? url.href : placeholder; } catch (_) { return placeholder; }
 };
-const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
+const imageError = event => handleUploadedImageError(event, placeholder);
 const widthFor = item => `${Math.round((item.count / Math.max(1, ...result.value.categoryStats.map(row => row.count))) * 100)}%`;
 watch(mode, value => {
   if (applyingRoute) return;

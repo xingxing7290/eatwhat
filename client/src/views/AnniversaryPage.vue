@@ -6,7 +6,7 @@ import api from '@/services/api';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const menus = ref([]);
@@ -176,7 +176,7 @@ const searchMeals = query => {
 };
 const openMealOptions = visible => { if (visible) searchMeals(''); };
 const imageFor = photo => resolveUploadedImage(photo) || placeholder;
-const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
+const imageError = event => handleUploadedImageError(event, placeholder);
 const openPhoto = (item, index) => { viewedPhoto.value = { title: item.title || '纪念日照片', photos: item.photos, index }; };
 const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.photos.length) viewedPhoto.value.index = next; };
 const onPhotoKey = event => { if (!viewedPhoto.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1); };

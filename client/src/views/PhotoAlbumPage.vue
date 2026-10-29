@@ -2,7 +2,7 @@
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import api from '@/services/api';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const loading = ref(false);
@@ -118,7 +118,7 @@ const onKey = event => {
   navigatePhoto(event.key === 'ArrowLeft' ? -1 : 1);
 };
 const imageFor = item => resolveUploadedImage(item.photo) || placeholder;
-const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
+const imageError = event => handleUploadedImageError(event, placeholder);
 const loadLocation = async () => {
   const requestedMonth = route.query.month;
   const hasLocation = ['memoryId', 'photoIndex', 'fingerprint'].some(key => route.query[key] !== undefined);
