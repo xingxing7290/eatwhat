@@ -8,7 +8,14 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(12000)
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
-    await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
+    await page.addInitScript(() => {
+      localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' }))
+      window.__calendarScrolls = []
+      const windowScroll = window.scrollTo.bind(window)
+      window.scrollTo = (...args) => { if (args[0] && typeof args[0] === 'object') window.__calendarScrolls.push(args[0].behavior); return windowScroll(...args) }
+      const elementScroll = Element.prototype.scroll
+      Element.prototype.scroll = function (...args) { if (args[0] && typeof args[0] === 'object') window.__calendarScrolls.push(args[0].behavior); return elementScroll.apply(this, args) }
+    })
     const errors = []; const reads = []; page.on('pageerror', error => errors.push(error.message))
     let recipeWrites = 0
     const recipe = { _id: 'recipe-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } }
@@ -27,9 +34,16 @@ async function main () {
       if (path === '/wishlist' || path === '/meals/categories' || path === '/meals/tags') return route.fulfill({ json: [] })
       return route.fulfill({ json: {} })
     })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     await page.goto(`${base}/calendar?date=2026-12-31`)
     await page.getByText('已定位到 2026-12-31', { exact: false }).waitFor()
     await page.locator('.mobile-date-card.target-date').waitFor()
+    await page.waitForFunction(() => window.__calendarScrolls.includes('auto'))
+    assert.equal(await page.evaluate(() => window.__calendarScrolls.includes('smooth')), false, 'reduced motion must suppress programmatic smooth scrolling')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    await page.reload()
+    await page.locator('.mobile-date-card.target-date').waitFor()
+    await page.waitForFunction(() => window.__calendarScrolls.includes('smooth'))
     const recipeLink = page.getByRole('link', { name: '查看2026-12-31晚餐的家常菜菜谱' })
     await recipeLink.waitFor()
     assert.equal(await recipeLink.getAttribute('href'), '/meals/detail/recipe-a?calendarDate=2026-12-31')
@@ -98,6 +112,12 @@ async function main () {
     await page.goto(`${base}/meals/detail/recipe-a?calendarDate=2026-02-31`)
     await page.getByRole('button', { name: '返回', exact: true }).click()
     await page.waitForURL('**/meals')
+    await page.setViewportSize({ width: 1280, height: 844 })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    await page.goto(`${base}/calendar?date=2026-12-31`)
+    await page.locator('.date-cell.target-date').waitFor()
+    await page.waitForFunction(() => window.__calendarScrolls.includes('auto'))
+    assert.equal(await page.evaluate(() => window.__calendarScrolls.includes('smooth')), false, 'desktop calendar scroll must respect reduced motion')
     assert.deepEqual(errors, [])
     console.log('Calendar navigation checks passed: recipe details and editing, themes, dated selection, history and invalid links')
   } finally { await browser.close() }

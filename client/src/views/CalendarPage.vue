@@ -254,19 +254,20 @@ const scrollElementIntoView = (el, options = {}) => {
   const headerOffset = getHeaderOffset();
   const { containerSelector = null } = options;
   if (!el) return;
+  const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
 
   if (containerSelector) {
     const container = document.querySelector(containerSelector);
     if (container) {
       const elTop = el.offsetTop;
       const top = elTop - headerOffset;
-      container.scroll({ top: Math.max(top, 0), behavior: 'smooth' });
+      container.scroll({ top: Math.max(top, 0), behavior });
       return;
     }
   }
 
   const y = el.getBoundingClientRect().top + window.scrollY - headerOffset;
-  window.scrollTo({ top: Math.max(y, 0), behavior: 'smooth' });
+  window.scrollTo({ top: Math.max(y, 0), behavior });
 };
 const scrollToTarget = () => {
   if (!targetedDate.value) return;

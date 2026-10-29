@@ -11,6 +11,7 @@ async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await page.emulateMedia({ reducedMotion: 'reduce' })
     page.setDefaultTimeout(10000)
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
@@ -37,6 +38,7 @@ async function main () {
       return route.fulfill({ status: 201, json: { accessToken: 'access', order: { revision: 1, guestName: body.guestName, note: body.note, items: body.items.map(item => ({ ...item, name: meals.find(meal => meal._id === item.mealId)?.name })) } } })
     })
     await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/local-test`)
+    assert.ok(await page.locator('#toast').evaluate(node => parseFloat(getComputedStyle(node).transitionDuration)) < 0.001, 'guest page should respect reduced motion')
     const card = name => page.locator('.meal').filter({ hasText: name })
     const unloadBlocked = () => page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))
     assert.equal(await unloadBlocked(), false, 'an untouched page should not warn on exit')
