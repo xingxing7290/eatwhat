@@ -274,6 +274,13 @@ const scrollToTarget = () => {
   const target = [...document.querySelectorAll('.calendar-page .target-date')].find(element => element.getClientRects().length);
   if (target) scrollElementIntoView(target, { containerSelector: target.classList.contains('date-cell') ? '.calendar-grid' : null });
 };
+const jumpToMobileDate = event => {
+  const date = event.target.value;
+  event.target.value = '';
+  if (isLoading.value || blocked.value || loadError.value || !calendarDays.value.some(day => day && format(day, 'yyyy-MM-dd') === date)) return;
+  if (date === targetedDate.value) scrollToTarget();
+  else void router.replace({ name: 'calendar', query: { date } });
+};
 
 // 重试查找今天元素
 const tryScrollToToday = (attempt = 0) => {
@@ -551,6 +558,12 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
           今天
         </el-button>
       </div>
+      <label class="mobile-date-jump">跳转到本月日期
+        <select aria-label="跳转到本月日期" :disabled="isLoading || blocked || !!loadError" @change="jumpToMobileDate">
+          <option value="">选择日期</option>
+          <option v-for="day in calendarDays.filter(Boolean)" :key="format(day, 'yyyy-MM-dd')" :value="format(day, 'yyyy-MM-dd')">{{ format(day, 'M月d日') }} · 周{{ weekDays[getDay(day)] }}</option>
+        </select>
+      </label>
     </div>
     
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载月度安排：${loadError}`"><el-button link type="primary" @click="fetchMonthSchedules">重新加载</el-button></el-alert>
@@ -913,6 +926,10 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
     }
   }
 }
+
+.mobile-date-jump { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; color: var(--text-secondary); font-size: 13px; }
+.mobile-date-jump select { min-height: 44px; min-width: 0; max-width: 58%; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.mobile-date-jump select:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
 .calendar-grid {
   flex: 1;
