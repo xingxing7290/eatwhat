@@ -86,14 +86,15 @@ async function main () {
     await page.getByText('服务器未提供有效的回忆版本', { exact: false }).waitFor()
     assert.equal(await page.getByRole('dialog', { name: '编辑饭后回忆' }).count(), 0)
     compatible = true; listCapped = true; detailFailure = true
-    await page.goto(`${base}/memories?edit=memory-a`)
+    await page.goto(`${base}/memories?edit=memory-a&month=2026-10`)
     await page.getByText('无法打开相册关联的回忆', { exact: false }).waitFor()
     detailFailure = false
     await page.getByRole('button', { name: '重新打开' }).click()
     const linked = page.getByRole('dialog', { name: '编辑饭后回忆' })
     await linked.getByPlaceholder('比如：周五晚上的番茄牛腩').waitFor()
     assert.equal(await linked.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '核对后回忆')
-    await page.waitForURL('**/memories')
+    await page.waitForURL('**/memories?month=2026-10')
+    assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2026-10')
     assert.deepEqual(errors, [])
     console.log('Memory edit workflows passed: conflict, direct review, recovery, photo and linked-data preservation')
   } finally { await browser.close() }

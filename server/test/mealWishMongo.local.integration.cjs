@@ -1805,6 +1805,9 @@ async function main() {
       const linkedMemory = pages[0].getByRole('dialog', { name: '编辑饭后回忆' });
       assert.equal(await linkedMemory.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '甲家庭相册');
       await linkedMemory.getByRole('button', { name: '取消', exact: true }).click();
+      assert.equal(await pages[0].getByLabel('按月份筛选回忆').inputValue(), '2026-10');
+      await pages[0].getByRole('button', { name: '清除筛选' }).click();
+      await pages[0].getByRole('button', { name: '删除旧客户端回忆修改' }).waitFor();
       assert.equal((await request(`/memories/${memoryId}`, { method: 'PUT', token: tokenPartner, body: { note: '家人更新后的回忆备注' } })).status, 200);
       await pages[0].getByRole('button', { name: '删除旧客户端回忆修改' }).click();
       await pages[0].getByRole('button', { name: '确定', exact: true }).click();

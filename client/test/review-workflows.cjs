@@ -69,6 +69,8 @@ async function main () {
     await page.goBack(); await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a')
     assert.match(await page.locator('.feature-link').getAttribute('href'), /\/memories\?edit=memory-a/)
+    assert.match(await page.locator('.feature-link').getAttribute('href'), /month=2026-10/)
+    assert.match(await page.locator('.recent-list a').first().getAttribute('href'), /month=2026-10/)
     const photoUrl = new URL(await page.locator('.photo-card').getAttribute('href'), base)
     assert.equal(photoUrl.pathname, '/photo-album')
     assert.equal(photoUrl.searchParams.get('month'), '2026-10')

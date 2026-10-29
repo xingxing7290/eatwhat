@@ -74,7 +74,7 @@ async function main () {
     const viewer = page.getByRole('dialog', { name: '饭桌回忆' })
     await viewer.getByText('25 / 30').waitFor()
     await viewer.getByRole('link', { name: '编辑这条饭后回忆' }).click()
-    await page.waitForURL('**/memories?edit=memory-a')
+    await page.waitForURL('**/memories?edit=memory-a&month=2026-10')
     await page.goBack()
     await page.getByRole('button', { name: /第 25 张/ }).waitFor()
     assert.equal(await page.locator('.photo-card').count(), 6, 'returning from a memory should restore the album page')
