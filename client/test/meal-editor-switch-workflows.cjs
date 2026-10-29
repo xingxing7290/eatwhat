@@ -10,8 +10,8 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
-    let holdA = false; let releaseA; let foreign = false; let failB = false; let writes = 0; let submittedIngredients
-    const meal = id => ({ _id: id, name: id === 'a' ? '菜品甲' : '菜品乙', ingredients: id === 'b' ? [{ name: '鸡蛋', amount: '2个' }] : [], steps: [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: `rev-${id}`, updatedAt: null } })
+    let holdA = false; let releaseA; let foreign = false; let failB = false; let writes = 0; let submittedIngredients; let submittedSteps
+    const meal = id => ({ _id: id, name: id === 'a' ? '菜品甲' : '菜品乙', ingredients: id === 'b' ? [{ name: '鸡蛋', amount: '2个' }] : [], steps: id === 'b' ? [{ description: '炒熟', imageUrl: '' }, { description: '', imageUrl: '/uploads/step.jpg' }] : [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: `rev-${id}`, updatedAt: null } })
     await page.route('**/api/**', async route => {
       const request = route.request(); const path = new URL(request.url()).pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
@@ -26,6 +26,8 @@ async function main () {
         writes++
         const match = request.postData()?.match(/name="ingredients"\r\n\r\n([^\r]*)/)
         submittedIngredients = match && JSON.parse(match[1])
+        const stepMatch = request.postData()?.match(/name="steps"\r\n\r\n([^\r]*)/)
+        submittedSteps = stepMatch && JSON.parse(stepMatch[1])
         return route.fulfill({ json: meal('b') })
       }
       if (request.method() !== 'GET') writes++
@@ -93,6 +95,7 @@ async function main () {
       assert.ok((await page.getByRole('button', { name: '删除第 1 项食材' }).boundingBox()).height >= 44)
     }
     await page.setViewportSize({ width: 390, height: 844 })
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
@@ -109,9 +112,18 @@ async function main () {
     assert.equal(writes, 0, 'an empty ingredient cannot be saved')
     await ingredient.fill(' 鸡蛋 ')
     await amount.fill(' 4个 ')
+    await page.getByRole('textbox', { name: '第 1 步描述' }).fill('   ')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByText('第 1 步没有文字或图片', { exact: false }).waitFor()
+    assert.equal(writes, 0, 'a completely empty step cannot be saved')
+    await page.getByRole('textbox', { name: '第 1 步描述' }).fill(' 炒熟 ')
+    await page.getByRole('button', { name: '下移第 1 步' }).click()
+    assert.equal(await page.getByRole('textbox', { name: '第 1 步描述' }).inputValue(), '')
+    assert.equal(await page.getByRole('textbox', { name: '第 2 步描述' }).inputValue(), ' 炒熟 ')
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.waitForURL('**/meals')
     assert.deepEqual(submittedIngredients, [{ name: '鸡蛋', amount: '4个' }])
+    assert.deepEqual(submittedSteps, [{ description: '', imageUrl: '/uploads/step.jpg' }, { description: '炒熟', imageUrl: '' }])
     assert.equal(writes, 1)
     console.log('Meal editor checks passed: draft guard, route switching, stale responses and retry')
   } finally { await browser.close() }

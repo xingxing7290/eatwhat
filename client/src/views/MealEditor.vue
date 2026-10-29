@@ -142,7 +142,7 @@ const buildPayload = () => {
   fd.append('healthTags', JSON.stringify(form.healthTags));
   fd.append('ingredients', JSON.stringify(form.ingredients.map(item => ({ name: item.name.trim(), amount: item.amount.trim() }))));
   fd.append('existingPhotos', JSON.stringify(form.existingPhotos));
-  const stepPayload = form.steps.map(s => ({ description: s.description, imageUrl: s.imageFile ? '' : (s.imageUrl || '') }));
+  const stepPayload = form.steps.map(s => ({ description: s.description.trim(), imageUrl: s.imageFile ? '' : (s.imageUrl || '') }));
   const stepImageIndexes = [];
   form.steps.forEach((step, index) => { if (step.imageFile?.raw) { fd.append('stepImages', step.imageFile.raw); stepImageIndexes.push(index); } });
   fd.append('steps', JSON.stringify(stepPayload));
@@ -160,6 +160,8 @@ const submit = async () => {
     if (!valid) return;
     const invalidIngredient = form.ingredients.findIndex(item => typeof item.name !== 'string' || !item.name.trim() || typeof item.amount !== 'string');
     if (invalidIngredient >= 0) return ElMessage.warning(`第 ${invalidIngredient + 1} 项食材名称不能为空，请先修正或删除`);
+    const invalidStep = form.steps.findIndex(step => typeof step.description !== 'string' || (!step.description.trim() && !step.imageUrl && !step.imageFile?.raw));
+    if (invalidStep >= 0) return ElMessage.warning(`第 ${invalidStep + 1} 步没有文字或图片，请先补充或删除`);
     if (form.steps.filter(step => step.imageFile?.raw).length > 20) return ElMessage.warning('每次最多上传 20 张步骤图片');
     if ([imageFile.value, ...photoFiles.value, ...form.steps.map(step => step.imageFile)].filter(Boolean).some(photoError)) return ElMessage.warning('请检查选择的图片格式和大小');
     if (newIngredient.name.trim() || newIngredient.amount.trim() || newStep.description.trim() || newStep.imageFile) {
@@ -231,8 +233,8 @@ watch(() => route.params.id, load, { immediate: true });
         </el-card>
 
         <el-card><template #header>做法步骤</template>
-          <div class="step-editor"><el-input v-model="newStep.description" type="textarea" rows="2" placeholder="写下一个步骤" /><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onNewStepImage"><el-button><el-icon><Upload /></el-icon>步骤图</el-button></el-upload><img v-if="newStep.imagePreview" :src="newStep.imagePreview" alt="待添加步骤图" /><el-button type="primary" @click="addStep">添加步骤</el-button></div>
-          <div v-if="form.steps.length" class="steps"><div v-for="(step, index) in form.steps" :key="index" class="step-item"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :src="step.imageUrl" :alt="`步骤 ${index + 1} 图片`" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small">换图</el-button></el-upload><el-button size="small" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" @click="removeStep(index)">删除</el-button></div></div></div>
+          <div class="step-editor"><el-input v-model="newStep.description" type="textarea" rows="2" placeholder="写下一个步骤" aria-label="新步骤描述" /><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onNewStepImage"><el-button><el-icon><Upload /></el-icon>步骤图</el-button></el-upload><img v-if="newStep.imagePreview" :src="newStep.imagePreview" alt="待添加步骤图" /><el-button type="primary" @click="addStep">添加步骤</el-button></div>
+          <div v-if="form.steps.length" class="steps"><div v-for="(step, index) in form.steps" :key="index" class="step-item"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :src="step.imageUrl" :alt="`步骤 ${index + 1} 图片`" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index)">删除</el-button></div></div></div>
           <el-empty v-else description="暂无做法步骤" />
         </el-card>
 
@@ -272,6 +274,7 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .step-item img { width: 100px; height: 72px; object-fit: cover; border-radius: 8px; }
 .step-placeholder { width:100px; height:72px; border-radius:8px; background:var(--bg-primary); color:var(--text-secondary); font-size:12px; display:flex; align-items:center; justify-content:center; }
 .step-actions { display: flex; flex-direction: column; gap: 6px; }
+.step-actions :deep(.el-button) { min-height: 44px; }
 .photo-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
 .photo-item { position: relative; }
 .photo-item img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; }
