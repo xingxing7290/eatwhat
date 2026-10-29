@@ -84,6 +84,15 @@ async function main () {
     await page.getByRole('button', { name: '确认继续' }).click()
     await page.getByText('菜品管理操作结果未确认').waitFor({ state: 'hidden' })
     assert.equal(restoreCalls, 1)
+    issues = Array.from({ length: 200 }, (_, index) => ({ _id: `bulk-${index}`, mealId: null, note: `待处理 ${index}` }))
+    await page.getByRole('button', { name: '刷新图片反馈' }).click()
+    await page.getByRole('status').getByText('列表最多显示 200 条，可能还有其他反馈；处理后请刷新查看。').waitFor()
+    assert.equal(await page.locator('.issue-item').count(), 200)
+    assert.equal(await page.getByRole('region', { name: '待修正图片' }).getByText('已显示 200', { exact: true }).count(), 1)
+    issues = issues.slice(0, 199)
+    await page.getByRole('button', { name: '刷新图片反馈' }).click()
+    await page.getByText('列表最多显示 200 条', { exact: false }).waitFor({ state: 'hidden' })
+    assert.equal(await page.locator('.issue-item').count(), 199)
     issues = [
       { _id: 'issue-1', mealId: { _id: '0123456789abcdef01234567', name: '测试菜', imageUrl: '/uploads/missing.jpg' }, note: '图片不符' + '长内容'.repeat(100) },
       { _id: 'issue-deleted', mealId: null, note: '已删除菜品' },

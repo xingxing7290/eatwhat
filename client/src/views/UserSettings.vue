@@ -82,7 +82,7 @@
     </el-card>
 
     <el-card ref="issuesSection" class="settings-card" role="region" aria-label="待修正图片" tabindex="-1">
-      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length }}</el-tag></div></template>
+      <template #header><div class="card-header"><span>待修正图片</span><el-tag v-if="profileReady && !profileError && !joinUncertain && imageIssues && !issuesError" type="warning">{{ imageIssues.length >= 200 ? `已显示 ${imageIssues.length}` : imageIssues.length }}</el-tag></div></template>
       <div v-if="profileReady && !profileError && !joinUncertain && !issueUncertain && !issuesError && imageIssues" class="issue-refresh">
         <p>在新标签页修改菜谱后，可刷新反馈并核对图片；标记状态不会自动修改菜谱。</p>
         <el-button :loading="governanceLoading" :disabled="!!resolvingIssue || defaultLoading || joining || profileLoading" @click="loadGovernance">刷新图片反馈</el-button>
@@ -91,7 +91,7 @@
       <el-alert v-else-if="issueUncertain" class="name-alert" title="图片反馈操作结果未确认" type="warning" :closable="false" show-icon>
         <p>请求可能仍在处理。重新加载只反映当时的反馈状态，请核对后再决定是否继续操作。</p>
         <el-button link type="primary" :loading="governanceLoading" @click="loadGovernance">重新核对反馈</el-button>
-        <span v-if="issueReviewReady">当前有 {{ imageIssues.length }} 条待修正反馈。</span>
+        <span v-if="issueReviewReady">{{ imageIssues.length >= 200 ? `本次显示 ${imageIssues.length} 条待修正反馈，可能还有其他反馈。` : `当前有 ${imageIssues.length} 条待修正反馈。` }}</span>
         <ul v-if="issueReviewReady && imageIssues.length" class="review-issues"><li v-for="issue in imageIssues" :key="issue._id">{{ issue.mealId?.name || '未知菜品' }}：{{ issue.note || '图片与菜名不匹配' }}</li></ul>
         <span v-else-if="issuesError">反馈加载失败，请重试。</span>
         <el-button v-if="issueReviewReady" link type="primary" @click="acknowledgeIssues">已核对，查看反馈</el-button>
@@ -100,6 +100,7 @@
       <p v-else-if="!imageIssues" class="status-note">正在加载图片反馈…</p>
       <el-empty v-else-if="!imageIssues.length" description="暂无待修正图片" />
       <div v-else class="issue-list">
+        <p v-if="imageIssues.length >= 200" class="issue-limit-note" role="status">列表最多显示 200 条，可能还有其他反馈；处理后请刷新查看。</p>
         <div v-for="issue in imageIssues" :key="issue._id" class="issue-item">
           <img v-if="issueImageSrc(issue) && !failedIssueImages.has(issueImageKey(issue))" :key="issueImageKey(issue)" :src="issueImageSrc(issue)" :alt="`${issue.mealId?.name || '菜品'}的图片`" @error="onIssueImageError($event, issue)" />
           <div v-else class="issue-placeholder">{{ issue.mealId?.imageUrl ? '图片不可用' : '无图片' }}</div>
@@ -557,6 +558,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .issue-list { display: flex; flex-direction: column; gap: 10px; }
 .issue-refresh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 12px; }
 .issue-refresh p { flex: 1 1 240px; margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.issue-limit-note { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .issue-refresh .el-button { min-height: 44px; margin: 0; }
 .issue-item { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto auto; gap: 10px; align-items: center; padding: 10px; background: var(--bg-secondary); border-radius: 14px; }
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
