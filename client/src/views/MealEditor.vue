@@ -140,7 +140,7 @@ const buildPayload = () => {
   fd.append('tags', JSON.stringify(form.tags));
   fd.append('taste', JSON.stringify(form.taste));
   fd.append('healthTags', JSON.stringify(form.healthTags));
-  fd.append('ingredients', JSON.stringify(form.ingredients));
+  fd.append('ingredients', JSON.stringify(form.ingredients.map(item => ({ name: item.name.trim(), amount: item.amount.trim() }))));
   fd.append('existingPhotos', JSON.stringify(form.existingPhotos));
   const stepPayload = form.steps.map(s => ({ description: s.description, imageUrl: s.imageFile ? '' : (s.imageUrl || '') }));
   const stepImageIndexes = [];
@@ -158,6 +158,8 @@ const submit = async () => {
     let valid = false;
     try { valid = await formRef.value.validate(); } catch (_) { return; }
     if (!valid) return;
+    const invalidIngredient = form.ingredients.findIndex(item => typeof item.name !== 'string' || !item.name.trim() || typeof item.amount !== 'string');
+    if (invalidIngredient >= 0) return ElMessage.warning(`第 ${invalidIngredient + 1} 项食材名称不能为空，请先修正或删除`);
     if (form.steps.filter(step => step.imageFile?.raw).length > 20) return ElMessage.warning('每次最多上传 20 张步骤图片');
     if ([imageFile.value, ...photoFiles.value, ...form.steps.map(step => step.imageFile)].filter(Boolean).some(photoError)) return ElMessage.warning('请检查选择的图片格式和大小');
     if (newIngredient.name.trim() || newIngredient.amount.trim() || newStep.description.trim() || newStep.imageFile) {
@@ -222,8 +224,9 @@ watch(() => route.params.id, load, { immediate: true });
         </el-card>
 
         <el-card><template #header>食材</template>
-          <div class="inline-form"><el-input v-model="newIngredient.name" placeholder="食材" /><el-input v-model="newIngredient.amount" placeholder="用量" /><el-button type="primary" aria-label="添加食材" @click="addIngredient"><el-icon><Plus /></el-icon></el-button></div>
-          <el-table v-if="form.ingredients.length" :data="form.ingredients"><el-table-column prop="name" label="食材" /><el-table-column prop="amount" label="用量" /><el-table-column width="80"><template #default="scope"><el-button type="danger" circle size="small" @click="removeIngredient(scope.$index)"><el-icon><Delete /></el-icon></el-button></template></el-table-column></el-table>
+          <p class="ingredient-help">可直接修改已有食材和用量。保存后，已生成的购物清单不会自动更新。</p>
+          <div class="inline-form"><el-input v-model="newIngredient.name" placeholder="食材" aria-label="新食材名称" /><el-input v-model="newIngredient.amount" placeholder="用量" aria-label="新食材用量" /><el-button type="primary" aria-label="添加食材" @click="addIngredient"><el-icon><Plus /></el-icon></el-button></div>
+          <div v-if="form.ingredients.length" class="ingredient-list"><div v-for="(item, index) in form.ingredients" :key="index" class="ingredient-item"><label><span>食材 {{ index + 1 }}</span><el-input v-model="item.name" :aria-label="`第 ${index + 1} 项食材名称`" /></label><label><span>用量</span><el-input v-model="item.amount" :aria-label="`第 ${index + 1} 项食材用量`" placeholder="可选" /></label><el-button type="danger" circle :aria-label="`删除第 ${index + 1} 项食材`" @click="removeIngredient(index)"><el-icon><Delete /></el-icon></el-button></div></div>
           <el-empty v-else description="暂无食材" />
         </el-card>
 
@@ -252,6 +255,13 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .main-column, .side-column { display: flex; flex-direction: column; gap: 18px; }
 .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .inline-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 12px; }
+.ingredient-help { color: var(--text-primary); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
+.ingredient-list { display: grid; gap: 10px; }
+.ingredient-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); }
+.ingredient-item label { display: grid; min-width: 0; gap: 6px; color: var(--text-primary); font-size: 13px; }
+.ingredient-item :deep(.el-input__wrapper) { min-height: 44px; }
+.ingredient-item .el-button { min-width: 44px; min-height: 44px; margin: 0; }
+@media (max-width: 480px) { .ingredient-item { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ingredient-item .el-button { grid-column: 1 / -1; justify-self: end; } }
 .cover-box { height: 260px; border: 1px dashed var(--border-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); overflow: hidden; background: var(--bg-secondary); cursor: pointer; }
 .cover-box img { width: 100%; height: 100%; object-fit: cover; }
 .step-editor { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: start; margin-bottom: 14px; }
