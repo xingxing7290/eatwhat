@@ -9,14 +9,16 @@ import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploaded
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
 import { validWeekLink } from '@/utils/weekLink.mjs';
+import { readReviewOrigin, reviewDestination } from '@/utils/reviewOrigin.mjs';
 
 const route = useRoute();
 const router = useRouter();
 const shoppingWeek = computed(() => validWeekLink(route.query.shoppingWeek) ? route.query.shoppingWeek : '');
 const calendarDate = computed(() => !shoppingWeek.value && validWeekLink(route.query.calendarDate) ? route.query.calendarDate : '');
 const dashboardOrigin = computed(() => !shoppingWeek.value && !calendarDate.value && route.query.fromDashboard === '1');
-const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : calendarDate.value ? { name: 'calendar', query: { date: calendarDate.value } } : dashboardOrigin.value ? { name: 'dashboard' } : { name: 'meals', query: filterCatalogQuery(route.query) });
-const editorQuery = computed(() => ({ ...filterCatalogQuery(route.query), ...(shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : calendarDate.value ? { calendarDate: calendarDate.value } : dashboardOrigin.value ? { fromDashboard: '1' } : {}) }));
+const reviewOrigin = computed(() => !shoppingWeek.value && !calendarDate.value && !dashboardOrigin.value ? readReviewOrigin(route.query) : null);
+const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : calendarDate.value ? { name: 'calendar', query: { date: calendarDate.value } } : dashboardOrigin.value ? { name: 'dashboard' } : reviewOrigin.value ? reviewDestination(reviewOrigin.value) : { name: 'meals', query: filterCatalogQuery(route.query) });
+const editorQuery = computed(() => ({ ...filterCatalogQuery(route.query), ...(shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : calendarDate.value ? { calendarDate: calendarDate.value } : dashboardOrigin.value ? { fromDashboard: '1' } : reviewOrigin.value || {}) }));
 const meal = ref(null);
 const memories = ref([]);
 const memoryPage = ref(1);
@@ -198,7 +200,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 <template>
   <div class="meal-detail" v-loading="loading">
     <div class="detail-toolbar">
-      <el-button @click="router.push(detailBack)"><el-icon><ArrowLeft /></el-icon>{{ shoppingWeek ? '返回购物清单' : calendarDate ? '返回日历' : dashboardOrigin ? '返回首页' : '返回' }}</el-button>
+      <el-button @click="router.push(detailBack)"><el-icon><ArrowLeft /></el-icon>{{ shoppingWeek ? '返回购物清单' : calendarDate ? '返回日历' : dashboardOrigin ? '返回首页' : reviewOrigin ? '返回饭桌回顾' : '返回' }}</el-button>
       <div class="toolbar-actions">
         <el-button :disabled="!schedulableId || loading" @click="openSchedule">安排到日历</el-button>
         <el-button type="success" :disabled="!meal || loading" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>

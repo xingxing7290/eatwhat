@@ -11,6 +11,7 @@ import { validWishVersion } from '../utils/wishlistVersion.mjs';
 import { validWeekLink } from '../utils/weekLink.mjs';
 import { normalizeMealSearch } from '../utils/mealSearch.mjs';
 import { filterCatalogQuery } from '../utils/catalogQuery.mjs';
+import { readReviewOrigin } from '../utils/reviewOrigin.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -26,6 +27,7 @@ const cancelDestination = () => {
   if (validWeekLink(route.query.shoppingWeek)) query.shoppingWeek = route.query.shoppingWeek;
   else if (validWeekLink(route.query.calendarDate)) query.calendarDate = route.query.calendarDate;
   else if (route.query.fromDashboard === '1') query.fromDashboard = '1';
+  else Object.assign(query, readReviewOrigin(route.query) || {});
   return { name: 'MealDetail', params: { id }, query };
 };
 

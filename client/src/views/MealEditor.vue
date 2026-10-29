@@ -7,6 +7,7 @@ import { useMealStore } from '../stores/meal';
 import api from '@/services/api';
 import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
 import { validWeekLink } from '@/utils/weekLink.mjs';
+import { readReviewOrigin, reviewDestination } from '@/utils/reviewOrigin.mjs';
 import { resolveRecipeImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
@@ -34,13 +35,14 @@ const editMode = computed(() => !!route.params.id);
 const shoppingWeek = computed(() => editMode.value && validWeekLink(route.query.shoppingWeek) ? route.query.shoppingWeek : '');
 const calendarDate = computed(() => editMode.value && !shoppingWeek.value && validWeekLink(route.query.calendarDate) ? route.query.calendarDate : '');
 const dashboardOrigin = computed(() => editMode.value && !shoppingWeek.value && !calendarDate.value && route.query.fromDashboard === '1');
-const cancelDestination = computed(() => shoppingWeek.value ? { name: 'MealDetail', params: { id: route.params.id }, query: { shoppingWeek: shoppingWeek.value } } : calendarDate.value ? { name: 'MealDetail', params: { id: route.params.id }, query: { calendarDate: calendarDate.value } } : dashboardOrigin.value ? { name: 'MealDetail', params: { id: route.params.id }, query: { fromDashboard: '1' } } : { name: 'meals', query: filterCatalogQuery(route.query) });
-const saveDestination = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : calendarDate.value ? { name: 'calendar', query: { date: calendarDate.value } } : dashboardOrigin.value ? { name: 'dashboard' } : { name: 'meals', query: filterCatalogQuery(route.query) });
+const reviewOrigin = computed(() => editMode.value && !shoppingWeek.value && !calendarDate.value && !dashboardOrigin.value ? readReviewOrigin(route.query) : null);
+const cancelDestination = computed(() => shoppingWeek.value ? { name: 'MealDetail', params: { id: route.params.id }, query: { shoppingWeek: shoppingWeek.value } } : calendarDate.value ? { name: 'MealDetail', params: { id: route.params.id }, query: { calendarDate: calendarDate.value } } : dashboardOrigin.value ? { name: 'MealDetail', params: { id: route.params.id }, query: { fromDashboard: '1' } } : reviewOrigin.value ? { name: 'MealDetail', params: { id: route.params.id }, query: reviewOrigin.value } : { name: 'meals', query: filterCatalogQuery(route.query) });
+const saveDestination = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : calendarDate.value ? { name: 'calendar', query: { date: calendarDate.value } } : dashboardOrigin.value ? { name: 'dashboard' } : reviewOrigin.value ? reviewDestination(reviewOrigin.value) : { name: 'meals', query: filterCatalogQuery(route.query) });
 const pageTitle = computed(() => editMode.value ? '编辑菜品' : '创建菜品');
 const versionAvailable = computed(() => !editMode.value || (supportsConditionalEdit.value && editVersion.value &&
   (editVersion.value.revision === null || (typeof editVersion.value.revision === 'string' && !!editVersion.value.revision)) &&
   (editVersion.value.updatedAt === null || (typeof editVersion.value.updatedAt === 'string' && Number.isFinite(Date.parse(editVersion.value.updatedAt))))));
-const latestMealUrl = computed(() => editMode.value ? router.resolve({ name: 'MealDetail', params: { id: route.params.id }, query: shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : calendarDate.value ? { calendarDate: calendarDate.value } : dashboardOrigin.value ? { fromDashboard: '1' } : {} }).href : '');
+const latestMealUrl = computed(() => editMode.value ? router.resolve({ name: 'MealDetail', params: { id: route.params.id }, query: shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : calendarDate.value ? { calendarDate: calendarDate.value } : dashboardOrigin.value ? { fromDashboard: '1' } : reviewOrigin.value || {} }).href : '');
 
 const emptyForm = () => ({
   name: '', description: '', category: '', subcategory: '', tags: [], imageUrl: '', existingPhotos: [],
@@ -262,7 +264,7 @@ watch(() => route.params.id, load, { immediate: true });
 
 <template>
   <div class="meal-editor" v-loading="loading" element-loading-text="正在加载菜品" :aria-busy="loading ? 'true' : 'false'">
-    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p><p v-if="shoppingWeek">保存后返回 {{ shoppingWeek }} 所在周的购物清单；清单不会自动更新。</p><p v-else-if="calendarDate">保存后返回 {{ calendarDate }} 的日历；排餐中的菜品引用不会改变。</p><p v-else-if="dashboardOrigin">保存后返回首页；日历中的菜品引用不会改变。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push(cancelDestination)">取消</el-button><el-button type="primary" :disabled="loading || !!loadError || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
+    <div class="page-header"><div><span class="eyebrow">RECIPE NOTES · 菜谱记录</span><h1>{{ pageTitle }}</h1><p>把食材、做法和自己的小诀窍整理在一起。</p><p v-if="shoppingWeek">保存后返回 {{ shoppingWeek }} 所在周的购物清单；清单不会自动更新。</p><p v-else-if="calendarDate">保存后返回 {{ calendarDate }} 的日历；排餐中的菜品引用不会改变。</p><p v-else-if="dashboardOrigin">保存后返回首页；日历中的菜品引用不会改变。</p><p v-else-if="reviewOrigin">保存后返回原来的饭桌回顾。</p></div><div class="header-actions"><el-button :disabled="submitting" @click="router.push(cancelDestination)">取消</el-button><el-button type="primary" :disabled="loading || !!loadError || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存</el-button></div></div>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载菜品：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-alert v-if="editMode && !loading && !loadError && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供有效的菜谱版本，暂时无法安全保存。" />
     <el-alert v-if="conflict" type="warning" :closable="false" show-icon title="这道菜已被其他成员修改，本次未保存。"><span>你的输入和选择的图片仍在当前页面。请先复制需要保留的内容，再查看最新菜谱并重新加载编辑页。</span> <a :href="latestMealUrl" target="_blank" rel="noopener noreferrer">查看最新菜谱</a></el-alert>

@@ -140,7 +140,7 @@ async function main () {
     await page.waitForURL('**/meals/detail/meal-a?calendarDate=2026-12-31')
     await page.getByRole('button', { name: '返回日历' }).waitFor()
     assert.equal(scheduleWrites, 0)
-    for (const query of ['fromDashboard=1', 'q=tomato&category=home']) {
+    for (const query of ['fromDashboard=1', 'q=tomato&category=home', 'reviewMonth=2026-10', 'reviewYear=2026']) {
       await page.goto(`${base}/meals/detail/meal-a?${query}`)
       await page.getByRole('button', { name: '安排到日历' }).click()
       await scheduleDialog.getByLabel('日期').fill('2026-12-31')
@@ -150,6 +150,11 @@ async function main () {
       await page.getByRole('button', { name: '取消', exact: true }).click()
       await leave.getByRole('button', { name: '放弃并离开' }).click()
       await page.waitForURL(`**/meals/detail/meal-a?${query}`)
+    }
+    for (const query of ['reviewMonth=2026-13', 'reviewYear=2101', 'reviewMonth=2026-10&reviewYear=2026']) {
+      await page.goto(`${base}/meals/detail/meal-a?${query}`)
+      await page.getByRole('button', { name: '返回', exact: true }).waitFor()
+      assert.equal(await page.getByRole('button', { name: '返回饭桌回顾' }).count(), 0)
     }
     assert.deepEqual(errors, [])
     console.log('Meal detail workflows passed: scheduling review, independent reads, previews, uncertain feedback and memory navigation')

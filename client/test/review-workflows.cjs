@@ -28,12 +28,17 @@ async function main () {
     await page.clock.setFixedTime(new Date(2026, 9, 29, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    let scenario = 'normal'; let slowStarted
+    let scenario = 'normal'; let slowStarted; let recipeWrites = 0
     const slowRequest = new Promise(resolve => { slowStarted = resolve })
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url())
+      if (url.pathname === '/api/meals/meal-a') {
+        if (route.request().method() === 'PUT') recipeWrites++
+        return route.fulfill({ json: { _id: 'meal-a', name: '番茄炒蛋', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } } })
+      }
       if (url.pathname === '/api/memories') {
+        if (url.searchParams.has('mealId')) return route.fulfill({ json: [] })
         const month = url.searchParams.get('month') || ''
         return route.fulfill({ json: { supportsMemoryTimeline: true, page: 1, limit: 12, search: '', month, mealType: 'all', photos: 'all', total: 1, items: [{ _id: 'memory-a', date: `${month || '2026-10'}-10`, title: '温暖的晚餐', photos: [], mealIds: [] }] } })
       }
@@ -67,7 +72,19 @@ async function main () {
     await page.locator('.memory-card').getByText('温暖的晚餐', { exact: true }).waitFor()
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2026-10')
     await page.goBack(); await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
-    assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a')
+    assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a?reviewMonth=2026-10')
+    await page.getByRole('link', { name: /番茄炒蛋/ }).click()
+    await page.getByRole('button', { name: '返回饭桌回顾' }).click()
+    await page.waitForURL('**/review?month=2026-10')
+    await page.getByRole('link', { name: /番茄炒蛋/ }).click()
+    await page.getByRole('button', { name: '编辑菜品' }).click()
+    await page.getByText('保存后返回原来的饭桌回顾').waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await page.waitForURL('**/meals/detail/meal-a?reviewMonth=2026-10')
+    await page.getByRole('button', { name: '编辑菜品' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForURL('**/review?month=2026-10')
+    assert.equal(recipeWrites, 1)
     assert.match(await page.locator('.feature-link').getAttribute('href'), /\/memories\?edit=memory-a/)
     assert.match(await page.locator('.feature-link').getAttribute('href'), /month=2026-10/)
     assert.match(await page.locator('.recent-list a').first().getAttribute('href'), /month=2026-10/)
@@ -99,6 +116,7 @@ async function main () {
     await page.getByText('2026 年 11 月 · OUR STORY', { exact: true }).waitFor()
     await page.getByRole('radio', { name: '年度' }).focus(); await page.keyboard.press('Space')
     await page.getByText('2026 年 · OUR STORY', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a?reviewYear=2026')
     await navigation.getByRole('button', { name: '下一年' }).click()
     await page.getByText('2027 年 · OUR STORY', { exact: true }).waitFor()
     await page.getByRole('radio', { name: '月度' }).focus(); await page.keyboard.press('Space')
@@ -119,6 +137,9 @@ async function main () {
     await page.getByText('2026 年 10 月 · OUR STORY', { exact: true }).waitFor()
     await page.getByRole('radio', { name: '年度' }).focus(); await page.keyboard.press('Space')
     await page.getByText('2026 年 · OUR STORY', { exact: true }).waitFor()
+    await page.getByRole('link', { name: /番茄炒蛋/ }).click()
+    await page.getByRole('button', { name: '返回饭桌回顾' }).click()
+    await page.waitForURL('**/review?year=2026')
     await page.getByRole('radio', { name: '月度' }).focus(); await page.keyboard.press('Space')
     await page.getByText('2026 年 10 月 · OUR STORY', { exact: true }).waitFor()
     await page.getByLabel('选择回顾月份').click()
