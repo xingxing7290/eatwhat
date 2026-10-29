@@ -15,12 +15,15 @@ async function main () {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     let legacy = false
-    let photoUnavailable = true
+    let photoUnavailable = true; let photoHold = false; let releasePhotos = []
     let malformed = false
     let failPage = false
     let holdPage = false; let releasePage; let noPhotos = false
     const reads = []
-    await page.route('**/broken-photo.png', route => photoUnavailable ? route.fulfill({ status: 404, body: '' }) : route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect width="100" height="80" fill="orange"/></svg>' }))
+    await page.route('**/broken-photo.png', async route => {
+      if (photoHold) await new Promise(resolve => releasePhotos.push(resolve))
+      return photoUnavailable ? route.fulfill({ status: 404, body: '' }) : route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect width="100" height="80" fill="orange"/></svg>' })
+    })
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request()
@@ -66,11 +69,22 @@ async function main () {
     await brokenCard.click()
     const photoDialog = page.getByRole('dialog', { name: '饭桌回忆' })
     await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    photoHold = true
+    await photoDialog.getByRole('button', { name: '重试这张照片' }).focus()
+    await page.keyboard.press('Enter')
+    await photoDialog.getByText('正在重试这张照片，回忆记录仍然保留。').waitFor()
+    assert.equal(await photoDialog.getByRole('button', { name: '正在重试…' }).getAttribute('aria-disabled'), 'true')
+    for (let i = 0; i < 100 && !releasePhotos.length; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.ok(releasePhotos.length > 0)
+    photoHold = false; releasePhotos.forEach(resolve => resolve())
+    await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), '重试这张照片', 'a failed retry keeps its keyboard focus')
     photoUnavailable = false
-    await photoDialog.getByRole('button', { name: '重试这张照片' }).click()
+    await page.keyboard.press('Enter')
     await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor({ state: 'hidden' })
     await photoDialog.locator('img.preview').waitFor()
     await page.waitForFunction(() => document.querySelector('.el-dialog img.preview')?.naturalWidth === 100)
+    assert.equal(await page.evaluate(() => document.activeElement.classList.contains('preview')), true, 'successful retry moves focus to the recovered photo')
     await page.keyboard.press('Escape')
     await photoDialog.waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: /第 4 张$/ }).waitFor()
