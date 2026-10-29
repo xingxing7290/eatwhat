@@ -294,7 +294,7 @@
       <div class="order-warning" id="unavailableWarning" role="status" hidden><p>部分菜品已下架或不可用。你的选择和备注仍保留，请核对并移除不可用菜品，或稍后重试。</p></div>
       <div class="order-warning" id="conflictWarning" role="alert" hidden><p id="conflictMessage"></p><button type="button" id="loadLatestOrder">载入最新订单</button></div>
       <div class="order-warning" id="uncertainWarning" role="alert" hidden><p>提交结果尚未确认，先前请求仍可能完成。请先联系主人核对，避免重复提交；本页已有的选择和备注不会被自动清除。</p><button type="button" id="acknowledgeUncertain">已核对，继续</button></div>
-      <div class="order-warning" id="pendingWarning" role="alert" hidden><p id="pendingMessage"></p><button type="button" id="retryPending">安全重试原提交</button> <button type="button" id="abandonPending">放弃安全重试</button></div>
+      <div class="order-warning" id="pendingWarning" role="alert" hidden><p id="pendingMessage"></p><button type="button" id="retryPendingRead" hidden>重新读取凭证</button> <button type="button" id="retryPending">安全重试原提交</button> <button type="button" id="abandonPending">放弃安全重试</button></div>
       <div class="order-warning" id="storageWarning" role="status" hidden><p>本浏览器无法保存订单凭证；刷新或关闭页面后，你可能无法继续修改这份订单，请联系主人。</p><button type="button" id="retryStorage">重新保存凭证</button></div>
       <div class="order-warning" id="dishLimitWarning" role="alert" hidden>点菜单超过 50 道菜，请移除多余菜品后再提交。现有选择和备注会保留。</div>
       <div class="cart-list" id="cartList"></div>
@@ -319,7 +319,7 @@
       function storedUncertainty() { try { return sessionStorage.getItem(uncertaintyKey) === '1'; } catch (_) { return false; } }
       function setUncertainty(value) { state.uncertain = value; try { if (value) sessionStorage.setItem(uncertaintyKey, '1'); else sessionStorage.removeItem(uncertaintyKey); } catch (_) { /* Warning remains active in this page. */ } }
       function validPending(value) { return !!value && /^[A-Za-z0-9_-]{43}$/.test(value.creationKey || '') && typeof value.guestName === 'string' && typeof value.note === 'string' && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= MAX_DISHES && value.items.every(item => item && /^[a-f0-9]{24}$/.test(item.mealId || '') && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20 && typeof item.note === 'string' && typeof item.name === 'string'); }
-      function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return null; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
+      function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return { invalid: true, unavailable: true }; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
       const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, statusSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), pending: storedPending(), storageFailed: false, unavailable: new Set() };
       const $ = id => document.getElementById(id);
       let toastTimer; let searchTimer;
@@ -621,9 +621,11 @@
         $('conflictMessage').textContent = state.conflict === 'load' ? '暂时无法读取之前提交的订单，本页选择仍保留。请先载入最新订单；载入会替换本页未保存的修改。' : '订单已在其他设备更新，本页修改仍保留。请先核对；载入最新订单会替换本页未保存的修改。';
         $('uncertainWarning').hidden = !state.uncertain;
         $('pendingWarning').hidden = !state.pending;
-        $('pendingMessage').textContent = state.pending?.invalid ? '无法读取之前的安全提交凭证，暂时不能重试。请先联系主人核对，再决定是否放弃。' : '这份点菜单需要核对或保存凭证。可以安全重试原内容，不会因重复重试生成第二份订单；放弃重试前请联系主人确认。';
+        $('pendingMessage').textContent = state.pending?.unavailable ? '浏览器暂时无法读取安全提交凭证。请恢复存储访问并重新读取，避免重复提交。' : state.pending?.invalid ? '无法读取之前的安全提交凭证，暂时不能重试。请先联系主人核对，再决定是否放弃。' : '这份点菜单需要核对或保存凭证。可以安全重试原内容，不会因重复重试生成第二份订单；放弃重试前请联系主人确认。';
+        $('retryPendingRead').hidden = !state.pending?.unavailable;
+        $('retryPendingRead').disabled = state.busy;
         $('retryPending').disabled = state.busy || !validPending(state.pending);
-        $('abandonPending').disabled = state.busy;
+        $('abandonPending').disabled = state.busy || !!state.pending?.unavailable;
         $('storageWarning').hidden = !state.storageFailed;
         $('retryStorage').disabled = state.busy || !state.accessToken || !state.order;
         $('dishLimitWarning').hidden = state.cart.size <= MAX_DISHES;
@@ -885,6 +887,22 @@
       $('orderNote').addEventListener('input', renderDraftStatus);
       $('loadLatestOrder').addEventListener('click', loadLatestOrder);
       $('retryPending').addEventListener('click', submitPending);
+      $('retryPendingRead').addEventListener('click', async () => {
+        if (state.busy || !state.pending?.unavailable) return;
+        const source = document.activeElement;
+        const pending = storedPending();
+        if (pending?.unavailable) return toast('仍无法读取凭证，请检查浏览器存储');
+        state.pending = pending;
+        if (validPending(pending)) restorePendingDraft();
+        else if (!pending && state.accessToken) {
+          state.busy = true; renderMeals(); renderCartList();
+          try { await loadOwnOrder(true); } catch (_) { state.conflict = 'load'; toast('暂时无法读取已提交的订单，请先核对'); }
+          finally { state.busy = false; }
+        }
+        renderMeals(); renderCartBar(); renderCartList();
+        if (source === $('retryPendingRead') && (document.activeElement === source || document.activeElement === document.body)) $('closeCart').focus({ preventScroll: true });
+        if (!pending) toast('已重新读取存储，请核对点菜单');
+      });
       $('retryStorage').addEventListener('click', () => {
         if (state.busy || !state.storageFailed || !state.accessToken || !state.order) return;
         try {

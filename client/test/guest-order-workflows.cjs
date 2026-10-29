@@ -312,6 +312,43 @@ async function main () {
     assert.equal(await safePage.evaluate(() => localStorage.getItem('eatwhat.guestOrder.safe-test')), 'safe-access')
     assert.equal(safeRequests, 4, 'credential recovery must not repeat a safe order request')
     await safePage.close()
+    for (const hasPending of [true, false]) {
+      const readBlocked = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      await readBlocked.addInitScript(({ hasPending }) => {
+        const key = 'eatwhat.guestOrder.read-blocked.pendingCreate'
+        if (hasPending) sessionStorage.setItem(key, JSON.stringify({ creationKey: 'A'.repeat(43), guestName: '原来的客人', note: '原来的备注', items: [{ mealId: '123456789012345678901234', name: '安全提交测试菜', quantity: 1, note: '' }] }))
+        window.__blockPendingRead = true
+        const original = Storage.prototype.getItem
+        Storage.prototype.getItem = function (name) { if (window.__blockPendingRead && this === sessionStorage && name === key) throw new DOMException('blocked', 'SecurityError'); return original.call(this, name) }
+      }, { hasPending })
+      let blockedWrites = 0
+      await readBlocked.route('**/guest-orders/public/**', route => {
+        if (route.request().method() === 'GET') return route.fulfill({ json: { session: { ...session, supportsIdempotentCreate: true }, meals: [safeMeal] } })
+        blockedWrites++
+        return route.fulfill({ status: 500, json: { error: 'unexpected request' } })
+      })
+      await readBlocked.goto(`http://127.0.0.1:${server.address().port}/guest-order/read-blocked`)
+      await readBlocked.getByRole('button', { name: '查看 / 核对' }).click()
+      await readBlocked.getByText('浏览器暂时无法读取安全提交凭证', { exact: false }).waitFor()
+      assert.equal(await readBlocked.getByRole('button', { name: '安全重试原提交' }).isDisabled(), true)
+      assert.equal(await readBlocked.getByRole('button', { name: '放弃安全重试' }).isDisabled(), true)
+      assert.equal(await readBlocked.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+      await readBlocked.getByRole('button', { name: '重新读取凭证' }).click()
+      await readBlocked.getByText('仍无法读取凭证', { exact: false }).waitFor()
+      await readBlocked.evaluate(() => { window.__blockPendingRead = false })
+      await readBlocked.getByRole('button', { name: '重新读取凭证' }).click()
+      if (hasPending) {
+        await readBlocked.getByText('这份点菜单需要核对或保存凭证', { exact: false }).waitFor()
+        assert.equal(await readBlocked.locator('#guestName').inputValue(), '原来的客人')
+        assert.equal(await readBlocked.locator('#orderNote').inputValue(), '原来的备注')
+        assert.equal(await readBlocked.getByRole('button', { name: '安全重试原提交' }).isEnabled(), true)
+      } else {
+        await readBlocked.getByText('已重新读取存储', { exact: false }).waitFor()
+        assert.equal(await readBlocked.locator('#guestName').isDisabled(), false)
+      }
+      assert.equal(blockedWrites, 0, 'reading a credential must not submit an order')
+      await readBlocked.close()
+    }
     const closedPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await closedPage.addInitScript(() => localStorage.setItem('eatwhat.guestOrder.closed-test', 'closed-access'))
     await closedPage.route('**/guest-orders/public/**', async route => {
