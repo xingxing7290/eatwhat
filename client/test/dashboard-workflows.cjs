@@ -88,6 +88,7 @@ async function main () {
     await page.getByRole('button', { name: '安排晚餐' }).click()
     for (let i = 0; i < 100 && !release; i++) await new Promise(resolve => setTimeout(resolve, 50))
     assert.equal(typeof release, 'function')
+    assert.equal(await page.getByRole('button', { name: '安排2026-10-29早餐' }).isDisabled(), true)
     await page.evaluate(() => { void document.querySelector('#app').__vue_app__.config.globalProperties.$router.push('/wishlist') })
     await page.waitForURL('**/wishlist')
     const response = page.waitForResponse(result => new URL(result.url()).pathname === '/api/dashboard/summary')
@@ -101,6 +102,23 @@ async function main () {
     assert.deepEqual(days, [...days].sort(), 'week dates must be displayed in chronological order')
     assert.equal(await page.getByRole('link', { name: /查看 2026-10-29 的日历安排/ }).getAttribute('aria-current'), 'date')
     for (const link of await page.locator('.week-day').all()) assert.ok((await link.boundingBox()).height >= 44)
+    date = '2026-10-30'
+    await page.getByRole('button', { name: '安排2026-10-29早餐' }).click()
+    await page.getByText('日期或餐次安排已变化', { exact: false }).waitFor()
+    assert.equal(new URL(page.url()).pathname, '/dashboard', 'a stale day must not navigate silently')
+    meals.breakfast = [{ meal: { _id: 'meal-a', name: '家常菜' } }]
+    await page.getByRole('button', { name: '安排2026-10-30早餐' }).click()
+    await page.getByRole('button', { name: '查看2026-10-30早餐' }).waitFor()
+    assert.equal(new URL(page.url()).pathname, '/dashboard', 'a newly filled slot must not navigate to stale empty selection')
+    await page.getByRole('button', { name: '查看2026-10-30早餐' }).click()
+    await page.waitForURL('**/calendar?date=2026-10-30')
+    meals.breakfast = []
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('button', { name: '安排2026-10-30早餐' }).click()
+    await page.waitForURL('**/selection?date=2026-10-30&mealType=breakfast')
+    date = '2026-10-29'
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('link', { name: /查看 2026-10-30 的日历安排/ }).waitFor()
     await page.getByRole('link', { name: /查看 2026-10-30 的日历安排/ }).click()
     await page.waitForURL('**/calendar?date=2026-10-30')
     assert.deepEqual(errors, [])

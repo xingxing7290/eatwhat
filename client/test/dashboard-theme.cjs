@@ -55,7 +55,7 @@ async function main() {
       ['eyebrow', '.eyebrow'], ['title', '.hero-panel h1'], ['accent title', '.hero-panel h1 span'],
       ['summary text', '.hero-panel > div:first-child > p:last-of-type'], ['section label', '.section-heading small'],
       ['section title', '.section-heading h2'], ['card title', '.today-card .card-title span'],
-      ['meal tag', '.today-card .meal-tags .el-tag'], ['warning tag', '.today-card .hint-list .el-tag'],
+      ['meal tag', '.today-card .meal-tags .el-tag'], ['today action', '.today-slot-action'], ['warning tag', '.today-card .hint-list .el-tag'],
       ['metric number', '.metric-row strong'], ['week label', '.week-day span'], ['week date', '.week-day strong'],
       ['partner title', '.wishlist-row strong'], ['partner detail', '.wishlist-row p'],
       ['missing photo', '.photo-unavailable'], ['quick link', '.quick-links a']
@@ -100,6 +100,12 @@ async function main() {
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '打开导航菜单');
     assert.equal(await page.locator('#mobile-navigation').getAttribute('aria-hidden'), 'true');
     await page.setViewportSize({ width: 390, height: 844 });
+
+    assert.ok((await page.getByRole('button', { name: '查看2026-10-29晚餐' }).boundingBox()).height >= 44);
+    await page.getByRole('button', { name: '查看2026-10-29晚餐' }).click();
+    await page.waitForURL('**/calendar?date=2026-10-29');
+    await page.goto(`${base}/dashboard`);
+    await page.getByRole('link', { name: '前往饭桌相册：温暖晚餐' }).waitFor();
 
     await page.getByRole('link', { name: '前往饭桌相册：温暖晚餐' }).focus();
     await page.keyboard.press('Enter');

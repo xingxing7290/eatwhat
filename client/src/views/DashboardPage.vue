@@ -60,6 +60,20 @@ const arrangeWishlistDinner = async (item) => {
     return router.push({ name: 'MealSelection', query: { date: fresh.today, mealType: 'dinner', suggestedMealId: id, wishlistId: wishId } });
   } finally { arranging.value = ''; }
 };
+const openTodaySlot = async type => {
+  if (!summary.value || loading.value || arranging.value || !mealTypeText[type]) return;
+  const shownDate = summary.value.today;
+  const hadMeals = summary.value.todaySchedule.meals[type].length > 0;
+  arranging.value = `slot:${type}`;
+  try {
+    const fresh = await load();
+    if (!active || !fresh) return;
+    const hasMeals = fresh.todaySchedule.meals[type].length > 0;
+    if (fresh.today !== shownDate || hasMeals !== hadMeals) return ElMessage.warning('日期或餐次安排已变化，请先核对首页后再操作');
+    if (hasMeals) return router.push({ name: 'calendar', query: { date: fresh.today } });
+    return router.push({ name: 'MealSelection', query: { date: fresh.today, mealType: type } });
+  } finally { arranging.value = ''; }
+};
 const photoKey = (photo, index) => `${photo.memoryId || ''}:${index}:${photo.photo || ''}`;
 const photoLink = photo => {
   if (!validDate(photo?.date)) return { name: 'photoAlbum' };
@@ -98,6 +112,7 @@ onBeforeUnmount(() => { active = false; });
             <el-tag v-for="(item, index) in summary.todaySchedule?.meals?.[type] || []" :key="item?.meal?._id || item?._id || `unavailable-${index}`" effect="plain">{{ mealName(item) }}</el-tag>
             <span v-if="!summary.todaySchedule?.meals?.[type]?.length" class="muted">还没安排</span>
           </div>
+          <el-button link type="primary" class="today-slot-action" :loading="arranging === `slot:${type}`" :disabled="loading || !!arranging" :aria-label="`${summary.todaySchedule.meals[type].length ? '查看' : '安排'}${summary.today}${label}`" @click="openTodaySlot(type)">{{ summary.todaySchedule.meals[type].length ? '查看' : '安排' }}</el-button>
         </div>
         <div v-if="summary.todayHints?.length" class="hint-list"><el-tag v-for="hint in summary.todayHints" :key="hint" type="warning">{{ hint }}</el-tag></div>
       </el-card>
@@ -170,6 +185,12 @@ h1 span { color: var(--dashboard-accent-ink); }
 .card-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 700; }.card-title .el-icon { color: var(--secondary-color); }.card-title .el-tag { margin-left: auto; }
 .meal-row, .wishlist-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-light); }
 .meal-tags, .hint-list { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.meal-tags { flex: 1; min-width: 0; align-items: center; }
+.meal-tags :deep(.el-tag) { max-width: 100%; height: auto; }
+.meal-tags :deep(.el-tag__content) { white-space: normal; overflow-wrap: anywhere; }
+.meal-row > strong { flex: 0 0 auto; }
+.today-slot-action { flex: 0 0 auto; min-width: 44px; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.today-slot-action:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .muted, .wishlist-row p { color: var(--text-secondary); font-size: 13px; margin: 4px 0 0; }
 .metric-row { display: flex; align-items: baseline; gap: 8px; margin-bottom: 12px; color: var(--text-secondary); }
 .metric-row strong { font-size: 32px; color: var(--dashboard-accent-ink); }
