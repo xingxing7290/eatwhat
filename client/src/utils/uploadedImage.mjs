@@ -13,3 +13,33 @@ export function resolveUploadedImage (value, origin = window.location.origin) {
   } catch (_) { /* Invalid URLs remain unchanged. */ }
   return value
 }
+
+// Recipe cards accept web URLs and site-relative paths, not arbitrary schemes.
+export function resolveRecipeImage (value, fallback, origin = window.location.origin) {
+  if (typeof value !== 'string' || !value || !(/^(https?:)?\/\//i.test(value) || value.startsWith('/'))) return fallback
+  try {
+    const url = new URL(value, origin)
+    if (!['http:', 'https:'].includes(url.protocol)) return fallback
+    return resolveUploadedImage(value, origin)
+  } catch (_) { return fallback }
+}
+
+// Only retry our own legacy /uploads path; a failed external image must never
+// be substituted with an unrelated local image bearing the same path.
+export function handleUploadedImageError (event, fallback, origin = window.location.origin) {
+  const image = event?.target
+  if (!image) return
+  try {
+    const url = new URL(image.src, origin)
+    if (url.origin === new URL(origin).origin && url.pathname.startsWith('/uploads/') && image.dataset.retry !== '1') {
+      image.dataset.retry = '1'
+      image.src = `${new URL(origin).origin}/api${url.pathname}${url.search}${url.hash}`
+      return
+    }
+  } catch (_) { /* Fall through to the placeholder. */ }
+  if (image.dataset.placeholder !== '1') {
+    image.dataset.placeholder = '1'
+    image.src = fallback
+    image.alt = '图片暂不可用'
+  }
+}

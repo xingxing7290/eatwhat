@@ -5,7 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Edit, Star, Clock, Bowl, Picture, Check, Warning } from '@element-plus/icons-vue';
 import api from '@/services/api';
 import defaultImage from '@/assets/meal-placeholder.svg';
-import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
+import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
 
@@ -148,7 +148,7 @@ const load = async () => {
   } catch (e) { if (sequence === loadSequence) mealError.value = e?.error || e?.message || '加载菜品详情失败'; }
   finally { if (sequence === loadSequence) loading.value = false; }
 };
-const fallbackImage = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = defaultImage; event.target.alt = '图片暂不可用'; } };
+const fallbackImage = event => handleUploadedImageError(event, defaultImage);
 const showPhoto = (images, index, title) => { if (images.length && index >= 0 && index < images.length) viewedPhoto.value = { images, index, title }; };
 const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.images.length) viewedPhoto.value.index = next; };
 const onPhotoKey = event => { if (!viewedPhoto.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1); };
@@ -185,7 +185,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
     <el-alert v-if="meal?.archived" type="info" :closable="false" show-icon title="这道菜已移入回收站；历史记录仍然保留，可在菜品管理的回收站中恢复。" />
     <template v-if="meal && !mealError">
       <section class="hero">
-        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`)"><img :src="coverImage" :alt="meal.name" @error="fallbackImage" /></button>
+        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`)"><img :key="coverImage" :src="coverImage" :alt="meal.name" @error="fallbackImage" /></button>
         <div class="hero-info">
           <div class="title-row">
             <h1>{{ meal.name }}</h1>
@@ -223,7 +223,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <div v-else class="steps-list">
             <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
-              <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`)" ><img :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
+              <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`)" ><img :key="imageFor(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
               <p>{{ typeof step === 'string' ? step : step?.description }}</p>
             </div>
           </div>

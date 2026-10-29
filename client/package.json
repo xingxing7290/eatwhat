@@ -54,6 +54,7 @@
     "test:anniversary-edit": "node test/anniversary-edit-workflows.cjs",
     "test:anniversary-unavailable": "node test/anniversary-unavailable-workflows.cjs",
     "test:meal-theme": "node test/meal-theme.cjs",
+    "test:recipe-image": "node test/recipe-image-workflows.cjs",
     "test:dashboard-theme": "node test/dashboard-theme.cjs",
     "test:dashboard": "node test/dashboard-workflows.cjs",
     "test:dashboard-photo": "node test/dashboard-photo-navigation.cjs",

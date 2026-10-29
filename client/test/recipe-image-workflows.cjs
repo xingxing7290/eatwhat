@@ -1,0 +1,58 @@
+const assert = require('node:assert/strict')
+const { chromium } = require('playwright')
+const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
+if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Recipe image tests require a local server')
+const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="green"/></svg>'
+async function main () {
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
+  try {
+    const page = await browser.newPage({ viewport: { width: 1280, height: 900 } }); page.setDefaultTimeout(12000)
+    await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
+    const images = []; const errors = []; page.on('pageerror', error => errors.push(error.message))
+    const meals = [
+      { _id: 'local', name: '旧地址图片', category: '家常', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo', ingredients: [], steps: [], tags: [], photos: [] },
+      { _id: 'external', name: '外部图片', category: '家常', imageUrl: 'https://cdn.example.test/uploads/external.png?v=4', ingredients: [], steps: [], tags: [], photos: [] },
+      { _id: 'invalid', name: '异常图片', category: '家常', imageUrl: { bad: true }, ingredients: [], steps: [], tags: [], photos: [] }
+    ]
+    await page.route('**/uploads/**', route => {
+      const url = new URL(route.request().url()); images.push(url.href)
+      if (url.origin === base && url.pathname === '/api/uploads/local.png') return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: svg })
+      if (url.origin === base && url.pathname === '/api/uploads/external.png') return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: svg })
+      return route.fulfill({ status: 404, body: '' })
+    })
+    await page.route('**/api/**', route => {
+      const url = new URL(route.request().url()); const path = url.pathname.replace(/^\/api/, '')
+      if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
+      if (path === '/meals') return route.fulfill({ json: { data: meals, total: meals.length, page: 1, limit: 8 } })
+      if (path === '/meals/categories') return route.fulfill({ json: [{ category: '家常' }] })
+      if (path === '/meals/tags' || path === '/wishlist' || path === '/memories') return route.fulfill({ json: [] })
+      if (path === '/meals/local') return route.fulfill({ json: meals[0] })
+      return route.fulfill({ json: {} })
+    })
+    await page.route('**/api/uploads/**', route => {
+      const url = new URL(route.request().url()); images.push(url.href)
+      return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: svg })
+    })
+    await page.goto(`${base}/meals`)
+    const card = name => page.locator('.meal-card-wrapper').filter({ hasText: name })
+    await card('旧地址图片').locator('img').waitFor()
+    await page.waitForFunction(() => { const image = [...document.querySelectorAll('.meal-card-wrapper')].find(item => item.textContent.includes('旧地址图片'))?.querySelector('img'); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') })
+    await card('外部图片').locator('img[alt="图片暂不可用"]').waitFor()
+    await card('异常图片').locator('img').waitFor()
+    assert.ok(images.some(url => url.startsWith(`${base}/uploads/local.png?v=2`)))
+    assert.ok(images.some(url => url.startsWith(`${base}/api/uploads/local.png?v=2`)))
+    assert.equal(images.some(url => url.includes('/api/uploads/external.png')), false, 'external failures must not load a local image with the same name')
+    await page.getByRole('radio', { name: '列表视图' }).focus(); await page.keyboard.press('Space')
+    await page.waitForFunction(() => { const image = [...document.querySelectorAll('.meal-list-item')].find(item => item.textContent.includes('旧地址图片'))?.querySelector('img'); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') })
+    await page.locator('.meal-list-item').filter({ hasText: '外部图片' }).locator('img[alt="图片暂不可用"]').waitFor()
+    await page.getByRole('radio', { name: '表格视图' }).focus(); await page.keyboard.press('Space')
+    await page.waitForFunction(() => [...document.querySelectorAll('.table-image img')].some(image => image.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2')))
+    await page.getByRole('radio', { name: '网格视图' }).focus(); await page.keyboard.press('Space')
+    await page.getByRole('button', { name: '查看旧地址图片' }).first().click()
+    await page.waitForFunction(() => { const image = document.querySelector('.hero img'); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') })
+    assert.equal(images.some(url => url.includes('/api/uploads/external.png')), false)
+    assert.deepEqual(errors, [])
+    console.log('Recipe image checks passed: legacy URLs, local retry, external isolation and view consistency')
+  } finally { await browser.close() }
+}
+main().catch(error => { console.error(error); process.exitCode = 1 })

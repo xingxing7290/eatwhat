@@ -6,6 +6,7 @@ import api from '../services/api';
 import MealCard from '../components/MealCard.vue';
 import { useDraftGuard } from '../composables/useDraftGuard';
 import { readCatalogQuery, buildCatalogQuery } from '../utils/catalogQuery.mjs';
+import { resolveRecipeImage, handleUploadedImageError } from '../utils/uploadedImage.mjs';
 import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { ElMessageBox, ElMessage } from 'element-plus';
 import { Search, Plus, Upload, Delete, Food, Grid, List, Document, Edit, Menu, Filter, View, Present } from '@element-plus/icons-vue';
@@ -154,47 +155,10 @@ const allTags = computed(() => {
 });
 
 // 获取菜品图片
-const getMealImage = (meal) => {
-  const imagePath = meal.imageUrl || meal.image;
-  if (!imagePath) {
-    return defaultImageSrc;
-  }
-  if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
-    try {
-      if (imagePath.startsWith('http')) {
-        const u = new URL(imagePath);
-        const isUploads = u.pathname.startsWith('/uploads/');
-        const sameHost = u.hostname === window.location.hostname;
-        const hasPort = !!u.port;
-        if (isUploads && sameHost && !hasPort) {
-          return `${window.location.origin}${u.pathname}`;
-        }
-      }
-    } catch (_) {}
-    return imagePath;
-  }
-  return defaultImageSrc;
-};
+const getMealImage = meal => resolveRecipeImage(meal.imageUrl || meal.image, defaultImageSrc);
 
 // 图片加载错误处理
-const handleImageError = (e) => {
-  const img = e.target;
-  const src = img?.src || '';
-  const hasRetried = img?.dataset?.retry === '1';
-  try {
-    const u = new URL(src, window.location.origin);
-    const isUploads = u.pathname.startsWith('/uploads/');
-    if (isUploads && !hasRetried) {
-      img.dataset.retry = '1';
-      img.src = `${window.location.origin}/api${u.pathname}`;
-      return;
-    }
-  } catch (_) {}
-  if (img.dataset.placeholder !== '1') {
-    img.dataset.placeholder = '1';
-    img.src = defaultImageSrc;
-  }
-};
+const handleImageError = event => handleUploadedImageError(event, defaultImageSrc);
 
 const legacyCatalogMatches = meal => {
   const query = searchQuery.value.trim().toLocaleLowerCase();
@@ -871,6 +835,7 @@ onBeforeUnmount(() => {
         >
           <div class="meal-list-image">
             <img
+              :key="getMealImage(meal)"
               :src="getMealImage(meal)"
               :alt="meal.name"
               @error="handleImageError"
@@ -965,6 +930,7 @@ onBeforeUnmount(() => {
             <template #default="{ row }">
               <div class="table-image">
                 <img
+                  :key="getMealImage(row)"
                   :src="getMealImage(row)"
                   :alt="row.name"
                   @error="handleImageError"
@@ -1187,7 +1153,7 @@ onBeforeUnmount(() => {
       <el-alert v-if="archiveError" type="error" :closable="false" show-icon :title="`回收站暂不可用：${archiveError}`"><el-button link type="primary" @click="archiveSupported ? loadArchived() : openArchive()">重试</el-button></el-alert>
       <p v-else-if="archiveLoading" class="archive-intro">正在加载回收站…</p>
       <el-empty v-else-if="archiveSupported && !archiveRows.length" description="回收站里没有符合条件的菜品" />
-      <div v-else class="archive-list"><div v-for="meal in archiveRows" :key="meal._id || meal.id" class="archive-row"><img :src="getMealImage(meal)" :alt="meal.name" @error="handleImageError" /><div><strong>{{ meal.name }}</strong><p>{{ meal.category || '未分类' }}</p></div><el-button type="primary" plain :disabled="archiveBusy || archiveLoading" :aria-label="`恢复${meal.name}`" @click="restoreMeal(meal)">恢复</el-button></div></div>
+      <div v-else class="archive-list"><div v-for="meal in archiveRows" :key="meal._id || meal.id" class="archive-row"><img :key="getMealImage(meal)" :src="getMealImage(meal)" :alt="meal.name" @error="handleImageError" /><div><strong>{{ meal.name }}</strong><p>{{ meal.category || '未分类' }}</p></div><el-button type="primary" plain :disabled="archiveBusy || archiveLoading" :aria-label="`恢复${meal.name}`" @click="restoreMeal(meal)">恢复</el-button></div></div>
       <div v-if="archiveSupported && archiveTotal > archiveLimit && !archiveError" class="archive-pagination"><el-button :disabled="archiveLoading || archiveBusy || archivePage <= 1" @click="archivePage--; loadArchived()">上一页</el-button><span>第 {{ archivePage }} / {{ archiveLastPage }} 页</span><el-button :disabled="archiveLoading || archiveBusy || archivePage >= archiveLastPage" @click="archivePage++; loadArchived()">下一页</el-button></div>
       <template #footer><el-button :disabled="archiveBusy" @click="archiveDialog = false">关闭</el-button></template>
     </el-dialog>

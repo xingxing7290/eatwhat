@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import defaultImageSrc from '../assets/meal-placeholder.svg';
+import { resolveRecipeImage, handleUploadedImageError } from '../utils/uploadedImage.mjs';
 import { Check, Edit, Delete, View, Present, Warning } from '@element-plus/icons-vue';
 
 const props = defineProps({
@@ -39,26 +40,7 @@ const emit = defineEmits(['edit', 'delete', 'select', 'view', 'share', 'imageIss
 const defaultImage = ref(defaultImageSrc);
 
 // 图片加载错误处理
-const handleImageError = (e) => {
-  const img = e.target;
-  const src = img?.src || '';
-  const hasRetried = img?.dataset?.retry === '1';
-  // 若是/uploads路径且尚未重试，则尝试切换到/api/uploads再试一次
-  try {
-    const u = new URL(src, window.location.origin);
-    const isUploads = u.pathname.startsWith('/uploads/');
-    if (isUploads && !hasRetried) {
-      img.dataset.retry = '1';
-      img.src = `${window.location.origin}/api${u.pathname}`;
-      return;
-    }
-  } catch (_) {}
-  // 最终回退到占位图
-  if (img.dataset.placeholder !== '1') {
-    img.dataset.placeholder = '1';
-    img.src = defaultImage.value;
-  }
-};
+const handleImageError = event => handleUploadedImageError(event, defaultImage.value);
 
 // handle card click
 const handleCardClick = () => {
@@ -89,28 +71,7 @@ const cardClass = computed(() => ({
 }));
 
 // 计算图片URL
-const imageUrl = computed(() => {
-  const imagePath = props.meal.imageUrl || props.meal.image;
-  if (!imagePath) return defaultImage.value;
-
-  // 支持绝对URL或以/开头的相对路径（例如 /uploads/xxx.jpg）
-  if (imagePath.startsWith('http') || imagePath.startsWith('/')) {
-    try {
-      // 若为绝对URL但缺失端口且指向当前主机的 /uploads，规范化为当前origin
-      if (imagePath.startsWith('http')) {
-        const u = new URL(imagePath);
-        const isUploads = u.pathname.startsWith('/uploads/');
-        const sameHost = u.hostname === window.location.hostname;
-        const hasPort = !!u.port;
-        if (isUploads && sameHost && !hasPort) {
-          return `${window.location.origin}${u.pathname}`;
-        }
-      }
-    } catch (_) {}
-    return imagePath;
-  }
-  return defaultImage.value;
-});
+const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.meal.image, defaultImage.value));
 </script>
 
 <template>
@@ -128,6 +89,7 @@ const imageUrl = computed(() => {
     <div class="meal-card-content">
       <div class="meal-image-container">
         <img
+          :key="imageUrl"
           :src="imageUrl"
           :alt="meal.name"
           class="meal-image"
