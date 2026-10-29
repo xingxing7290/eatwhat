@@ -22,10 +22,11 @@ async function main () {
     let issueSuccess = false
     let holdIssue = false; let releaseIssue
     const profile = { user: { id: 'u1', householdId: 'home-a' }, household: { id: 'home-a', name: '甲家庭', inviteCode: 'CODE', members: [{ _id: 'u1' }] } }
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'home-a' } })
       if (path === '/api/auth/me') return profileFailed ? route.fulfill({ status: 503, json: { error: '资料不可用' } }) : route.fulfill({ json: profile })
+      if (path === '/api/meals/0123456789abcdef01234567') return route.fulfill({ json: { _id: '0123456789abcdef01234567', name: '测试菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [] } })
       if (path === '/api/default-meals/status') return route.fulfill({ json: invalid ? { total: 3, imported: 2, missing: 2 } : { total: 3, imported: 3 - missing, missing } })
       if (path === '/api/meal-image-issues') return route.fulfill({ json: invalid ? { items: [] } : issues })
       if (path === '/api/default-meals/import-missing') { importCalls++; missing = 0; return route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
@@ -83,20 +84,28 @@ async function main () {
     await page.getByText('菜品管理操作结果未确认').waitFor({ state: 'hidden' })
     assert.equal(restoreCalls, 1)
     issues = [
-      { _id: 'issue-1', mealId: { name: '测试菜', imageUrl: '/uploads/missing.jpg' }, note: '图片不符' + '长内容'.repeat(100) },
+      { _id: 'issue-1', mealId: { _id: '0123456789abcdef01234567', name: '测试菜', imageUrl: '/uploads/missing.jpg' }, note: '图片不符' + '长内容'.repeat(100) },
       { _id: 'issue-deleted', mealId: null, note: '已删除菜品' },
-      { _id: 'issue-invalid', mealId: { name: '地址异常', imageUrl: 'javascript:alert(1)' } }
+      { _id: 'issue-invalid', mealId: { _id: 'invalid/id', name: '地址异常', imageUrl: 'javascript:alert(1)' } }
     ]
     await page.locator('.settings-card').filter({ hasText: '用户设置' }).getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByText('已删除菜品').waitFor()
     await page.locator('.issue-item').filter({ hasText: '测试菜' }).getByText('图片不可用').waitFor()
     assert.equal(await page.getByText('未知菜品').isVisible(), true)
     assert.equal(await page.getByText('无图片', { exact: true }).isVisible(), true)
+    const recipeLink = page.getByRole('link', { name: '在新标签页核对菜谱：测试菜' })
+    assert.equal(await recipeLink.getAttribute('href'), '/meals/detail/0123456789abcdef01234567')
+    assert.equal(await recipeLink.getAttribute('rel'), 'noopener noreferrer')
+    assert.equal(await page.locator('.issue-item').filter({ hasText: '已删除菜品' }).getByRole('link').count(), 0)
+    assert.equal(await page.locator('.issue-item').filter({ hasText: '地址异常' }).getByRole('link').count(), 0)
+    const popupPromise = page.waitForEvent('popup'); await recipeLink.click(); const popup = await popupPromise
+    await popup.getByRole('heading', { name: '测试菜' }).waitFor(); await popup.close()
+    assert.equal(new URL(page.url()).pathname, '/settings', 'opening the recipe keeps settings available')
     assert.ok(imageRequests.includes('/uploads/missing.jpg') && imageRequests.includes('/api/uploads/missing.jpg'))
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 844 })
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
-      for (const selector of ['.issue-placeholder', '.issue-main strong', '.issue-main span']) {
+      for (const selector of ['.issue-placeholder', '.issue-main strong', '.issue-main span', '.issue-recipe-link']) {
         const result = await contrast(page, selector)
         assert.ok(result.ratio >= 4.5, `${width} ${selector}: ${result.ratio}`)
       }

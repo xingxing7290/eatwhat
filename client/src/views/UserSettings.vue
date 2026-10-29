@@ -102,6 +102,8 @@
           <div class="issue-main">
             <strong>{{ issue.mealId?.name || '未知菜品' }}</strong>
             <span>{{ issue.note || '图片与菜名不匹配' }}</span>
+            <router-link v-if="issueMealId(issue)" class="issue-recipe-link" :to="{ name: 'MealDetail', params: { id: issueMealId(issue) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页核对菜谱：${issue.mealId.name}`">核对菜谱 ↗</router-link>
+            <span v-else>菜谱不可用，请核对后处理反馈。</span>
           </div>
           <el-button size="small" type="success" :disabled="!!resolvingIssue || joining || joinUncertain" :aria-label="`标记已修正：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'fixed', $event)">标记已修正</el-button>
           <el-button size="small" :disabled="!!resolvingIssue || joining || joinUncertain" :aria-label="`忽略图片反馈：${issue.mealId?.name || '未知菜品'}`" @click="resolveIssue(issue, 'ignored', $event)">忽略</el-button>
@@ -418,6 +420,10 @@ const selectTheme = (theme) => {
 };
 const chooseFile = () => fileInputRef.value?.click();
 const issueImageSrc = issue => resolveRecipeImage(issue?.mealId?.imageUrl, '');
+const issueMealId = issue => {
+  const meal = issue?.mealId; const id = meal?._id || meal?.id;
+  return typeof id === 'string' && /^[a-f\d]{24}$/i.test(id) && typeof meal?.name === 'string' && meal.name.trim() ? id : '';
+};
 const issueImageKey = issue => `${issue._id}:${issueImageSrc(issue)}`;
 const onIssueImageError = (event, issue) => {
   if (retryLocalUpload(event)) return;
@@ -549,6 +555,8 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .issue-item img { width: 64px; height: 52px; object-fit: cover; border-radius: 10px; }
 .issue-placeholder { width: 64px; height: 52px; display: grid; place-items: center; border-radius: 10px; background: var(--bg-primary); color: var(--text-secondary); font-size: 12px; }
 .issue-main { display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.issue-recipe-link { display: inline-flex; align-items: center; align-self: flex-start; min-height: 44px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.issue-recipe-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .theme-settings-card { overflow: hidden; }
 .theme-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .theme-card {
