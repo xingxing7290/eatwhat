@@ -15,6 +15,9 @@ async function main () {
       if (path === '/api/auth/me') return route.fulfill({ json: { user: { id: 'u1', householdId: 'home-a' }, household: { id: 'home-a', name: '小家', inviteCode: 'CODE', members: [{ _id: 'u1' }] } } })
       if (path === '/api/default-meals/status') return route.fulfill({ json: { total: 0, imported: 0, missing: 0 } })
       if (path === '/api/meal-image-issues') return route.fulfill({ json: [] })
+      if (path === '/api/schedules/day/2026-10-28') return route.fulfill({ json: { date: '2026-10-28', scheduleExists: false, scheduleVersion: null, meals: { breakfast: [], lunch: [], dinner: [] } } })
+      if (path === '/api/meals') return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 8 } })
+      if (path === '/api/meals/categories' || path === '/api/meals/tags') return route.fulfill({ json: [] })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/guest-orders`)
@@ -50,9 +53,31 @@ async function main () {
     const meals = page.locator('.desktop-nav').getByRole('link', { name: '菜品' })
     assert.equal(await meals.getAttribute('aria-current'), 'location')
     assert.equal(await meals.evaluate(node => node.classList.contains('section-active')), true)
+    await page.evaluate(async () => { const { default: router } = await import('/src/router/index.js'); await router.push('/selection?date=2026-10-28&mealType=dinner') })
+    await page.waitForURL('**/selection?date=2026-10-28&mealType=dinner')
+    const calendar = page.locator('.desktop-nav').getByRole('link', { name: '日历' })
+    assert.equal(await calendar.getAttribute('aria-current'), 'location')
+    assert.equal(await calendar.evaluate(node => node.classList.contains('section-active')), true)
+    assert.equal(await meals.getAttribute('aria-current'), null)
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        const result = await contrast(page, '.desktop-nav .nav-link.section-active')
+        assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} selected calendar: ${result.ratio}`)
+      }
+    }
     await page.setViewportSize({ width: 390, height: 844 })
     await page.getByRole('button', { name: '打开导航菜单' }).click()
-    assert.equal(await page.locator('.mobile-nav').getByRole('link', { name: '菜品' }).getAttribute('aria-current'), 'location')
+    assert.equal(await page.locator('.mobile-nav').getByRole('link', { name: '日历' }).getAttribute('aria-current'), 'location')
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        const result = await contrast(page, '.mobile-nav-link.section-active')
+        assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} mobile selected calendar: ${result.ratio}`)
+      }
+    }
     await page.locator('.mobile-nav').getByRole('link', { name: '菜品' }).click()
     await page.waitForURL('**/meals')
     await page.waitForFunction(() => document.querySelector('.mobile-nav')?.getAttribute('aria-hidden') === 'true')

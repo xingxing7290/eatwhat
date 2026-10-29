@@ -16,6 +16,7 @@ const router = useRouter();
 const moreSections = { '/wishlist': '想吃清单', '/guest-orders': '宴请点菜', '/memories': '饭后回忆', '/photo-album': '饭桌相册', '/review': '饭桌回顾', '/anniversaries': '纪念日', '/settings': '设置' };
 const currentMoreSection = computed(() => moreSections[route.path] || '');
 const mealSubpage = computed(() => route.path.startsWith('/meals/'));
+const calendarSubpage = computed(() => route.name === 'MealSelection');
 const isDarkMode = ref(localStorage.getItem('darkMode') === 'true');
 const selectedColorTheme = ref(localStorage.getItem('colorTheme') || 'cream');
 const locale = ref(zhCn);
@@ -279,7 +280,7 @@ onBeforeUnmount(() => {
           <!-- 桌面端导航 -->
           <nav class="main-nav desktop-nav" aria-label="主导航">
             <router-link to="/dashboard" class="nav-link" @click="closeMobileMenu">首页</router-link>
-            <router-link to="/calendar" class="nav-link" @click="closeMobileMenu">日历</router-link>
+            <router-link to="/calendar" class="nav-link" :class="{ 'section-active': calendarSubpage }" :aria-current="calendarSubpage ? 'location' : route.path === '/calendar' ? 'page' : undefined" @click="closeMobileMenu">日历</router-link>
             <router-link to="/weekly-plan" class="nav-link" @click="closeMobileMenu">周计划</router-link>
             <router-link to="/meals" class="nav-link" :class="{ 'section-active': mealSubpage }" :aria-current="mealSubpage ? 'location' : route.path === '/meals' ? 'page' : undefined" @click="closeMobileMenu">菜品</router-link>
             <router-link to="/shopping-list" class="nav-link" @click="closeMobileMenu">购物清单</router-link>
@@ -394,7 +395,7 @@ onBeforeUnmount(() => {
             <el-icon><Calendar /></el-icon>
             <span>首页</span>
           </router-link>
-          <router-link to="/calendar" class="mobile-nav-link" @click="closeSamePageMenu($event, '/calendar')">
+          <router-link to="/calendar" class="mobile-nav-link" :class="{ 'section-active': calendarSubpage }" :aria-current="calendarSubpage ? 'location' : route.path === '/calendar' ? 'page' : undefined" @click="closeSamePageMenu($event, '/calendar')">
             <el-icon><Calendar /></el-icon>
             <span>日历</span>
           </router-link>
