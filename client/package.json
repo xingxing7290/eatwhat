@@ -41,6 +41,7 @@
     "test:meal-editor": "node test/meal-editor-switch-workflows.cjs",
     "test:meal-archive": "node test/meal-archive-workflows.cjs",
     "test:guest-order": "node test/guest-order-workflows.cjs",
+    "test:guest-order-limits": "node test/guest-order-limits-workflows.cjs",
     "test:guest-menu": "node test/guest-menu-workflows.cjs",
     "test:guest-host": "node test/guest-host-workflows.cjs",
     "test:guest-host-theme": "node test/guest-host-theme.cjs",
