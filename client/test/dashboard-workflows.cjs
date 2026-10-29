@@ -9,11 +9,11 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
-    let date = '2026-10-28'; let suggested = 'meal-a'; let mode = 'valid'; let calls = 0; let release
+    let date = '2026-10-28'; let suggested = 'meal-a'; let wishTitle = '家人想吃的菜'; let archived = false; let mode = 'valid'; let calls = 0; let release
     const meals = { breakfast: [], lunch: [], dinner: [] }
     const summary = () => {
       const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals }))
-      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: [], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: '家人想吃的菜', mealId: suggested ? { _id: suggested, name: '家常菜' } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
+      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: [], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
     }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -30,15 +30,29 @@ async function main () {
     await page.goto(`${base}/dashboard`)
     await page.getByText('家人想吃的菜').waitFor()
     assert.equal(calls, 1)
-    date = '2026-10-29'; suggested = 'meal-b'
+    date = '2026-10-29'
+    await page.getByRole('button', { name: '安排晚餐' }).click()
+    await page.getByText('日期或想吃内容已变化', { exact: false }).waitFor()
+    assert.equal(new URL(page.url()).pathname, '/dashboard', 'a new date requires renewed intent')
+    suggested = 'meal-b'
+    const changedResponse = page.waitForResponse(result => new URL(result.url()).pathname === '/api/dashboard/summary')
+    await page.getByRole('button', { name: '安排晚餐' }).click()
+    await changedResponse
+    await page.waitForFunction(() => document.querySelector('.dashboard-page')?.getAttribute('aria-busy') === 'false')
+    assert.equal(new URL(page.url()).pathname, '/dashboard', 'a changed linked meal requires renewed intent')
+    wishTitle = '更新后的想吃'
+    await page.getByRole('button', { name: '安排晚餐' }).click()
+    await page.getByText('更新后的想吃').waitFor()
+    assert.equal(new URL(page.url()).pathname, '/dashboard', 'a changed wish title requires renewed intent')
     await page.getByRole('button', { name: '安排晚餐' }).click()
     await page.waitForURL('**/selection?*')
     let url = new URL(page.url())
     assert.equal(url.searchParams.get('date'), '2026-10-29')
     assert.equal(url.searchParams.get('suggestedMealId'), 'meal-b')
     assert.equal(url.searchParams.get('wishlistId'), 'wish-a')
-    assert.equal(calls, 2, 'the action must refresh stale data before navigation')
+    assert.equal(calls, 5, 'each action must refresh data before navigation')
 
+    wishTitle = '家人想吃的菜'
     await page.goto(`${base}/dashboard`)
     await page.getByText('家人想吃的菜').waitFor()
     mode = 'removed'
@@ -77,9 +91,18 @@ async function main () {
     mode = 'valid'; suggested = ''
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByRole('button', { name: '查看心愿' }).waitFor()
+    await page.getByText('尚无法安排，请在想吃清单中核对菜品').waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.getByRole('button', { name: '查看心愿' }).click()
     await page.waitForURL('**/wishlist')
+
+    suggested = 'meal-a'; archived = true
+    await page.goto(`${base}/dashboard`)
+    await page.getByText('关联菜品已移入回收站，请先核对').waitFor()
+    assert.equal(await page.getByRole('button', { name: '安排晚餐' }).count(), 0)
+    await page.getByRole('button', { name: '查看心愿' }).click()
+    await page.waitForURL('**/wishlist')
+    archived = false
 
     mode = 'valid'; suggested = 'meal-a'
     await page.goto(`${base}/dashboard`)
