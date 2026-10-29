@@ -121,6 +121,21 @@ async function main() {
     failSummary = false;
     await page.getByRole('button', { name: '重新加载' }).click();
     await page.getByText('家人想吃的菜').waitFor();
+    await page.setViewportSize({ width: 320, height: 844 });
+    summary.todayHints = ['提醒'.repeat(100)];
+    summary.todaySchedule.meals.dinner[0].meal.name = '长菜名'.repeat(60);
+    summary.partnerWishlist[0].title = '长心愿'.repeat(60);
+    await page.getByRole('button', { name: '刷新饭桌' }).click();
+    await page.locator('.hint-list .el-tag').getByText(summary.todayHints[0]).waitFor();
+    await page.waitForFunction(() => document.querySelectorAll('.hint-list .el-tag').length === 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'long content must not cause horizontal page overflow');
+    for (const selector of ['.hint-list .el-tag', '.today-recipe-link', '.wishlist-row strong']) {
+      assert.equal(await page.locator(selector).first().evaluate(node => {
+        const rect = node.getBoundingClientRect(); const card = node.closest('.el-card').getBoundingClientRect();
+        return rect.left >= card.left && rect.right <= card.right;
+      }), true, `${selector} must stay within its card`);
+    }
+    assert.equal(await page.locator('.hint-list .el-tag__content').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'long hints must remain readable instead of clipping');
     assert.deepEqual(errors, []);
     console.log('Dashboard themes, mobile navigation, keyboard photo links and retry checks passed');
     await context.close();

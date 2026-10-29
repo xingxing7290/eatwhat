@@ -249,6 +249,8 @@ h1 span { color: var(--dashboard-accent-ink); }
 .today-recipe-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .meal-tags :deep(.el-tag) { max-width: 100%; height: auto; }
 .meal-tags :deep(.el-tag__content) { white-space: normal; overflow-wrap: anywhere; }
+.hint-list :deep(.el-tag) { box-sizing: border-box; max-width: 100%; height: auto; }
+.hint-list :deep(.el-tag__content) { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
 .meal-row > strong { flex: 0 0 auto; }
 .today-slot-action { flex: 0 0 auto; min-width: 44px; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .today-slot-action:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
