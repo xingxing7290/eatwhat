@@ -283,7 +283,7 @@
   <div class="cart-bar" id="cartBar">
     <div class="cart-icon" aria-hidden="true">🧺<span class="cart-badge" id="cartBadge">0</span></div>
     <div class="cart-copy" role="status" aria-live="polite" aria-atomic="true"><strong id="cartTitle">还没选菜</strong><small id="cartHint">看到喜欢的就点“想吃”</small></div>
-    <button id="openCart" disabled>查看菜单</button>
+    <button id="openCart" disabled>查看点菜单</button>
   </div>
 
   <div class="overlay" id="overlay" aria-hidden="true">
@@ -563,7 +563,7 @@
         if ($('cartTitle').textContent !== title) $('cartTitle').textContent = title;
         renderDraftStatus();
         $('openCart').disabled = !total.dishes && !state.order && !state.uncertain && !state.conflict && !state.pending;
-        $('openCart').textContent = state.uncertain || state.conflict || state.pending ? '查看 / 核对' : state.order ? (canOrder() ? '查看 / 修改' : '查看点菜单') : '查看菜单';
+        $('openCart').textContent = state.uncertain || state.conflict || state.pending ? '查看 / 核对' : state.order ? (canOrder() ? '查看 / 修改' : '查看点菜单') : '查看点菜单';
       }
 
       function renderCartList() {

@@ -1508,7 +1508,7 @@ async function main() {
       });
       await guestPage.goto(`${base}/guest-order/browser-local-guest-token`);
       await guestPage.locator('.meal').filter({ hasText: '访客浏览器测试菜' }).getByRole('button', { name: '＋ 想吃' }).click();
-      await guestPage.getByRole('button', { name: '查看菜单' }).click();
+      await guestPage.getByRole('button', { name: '查看点菜单' }).click();
       await guestPage.locator('#guestName').fill('浏览器客人');
       await guestPage.locator('#orderNote').fill('请保留此备注');
       const guestMealVersion = (await request(`/meals/${guestBrowserMeal._id}`, { token: tokenA })).data.archiveVersion;

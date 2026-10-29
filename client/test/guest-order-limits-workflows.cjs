@@ -35,7 +35,7 @@ async function main () {
     await page.locator('.meal').nth(0).getByRole('button', { name: '减少测试菜00' }).click()
     await page.locator('.meal').nth(0).getByRole('button', { name: '减少测试菜00' }).click()
     await page.locator('.meal').nth(50).getByRole('button', { name: '＋ 想吃' }).click()
-    await page.getByRole('button', { name: '查看菜单' }).click()
+    await page.getByRole('button', { name: '查看点菜单' }).click()
     await page.locator('#guestName').fill('访客')
     await page.getByRole('button', { name: '提交给主人' }).click()
     await page.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor()
