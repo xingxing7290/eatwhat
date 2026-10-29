@@ -113,7 +113,7 @@ const loadRememberedLogin = () => {
       }
     }
   } catch (_) {
-    localStorage.removeItem(REMEMBER_LOGIN_KEY)
+    try { localStorage.removeItem(REMEMBER_LOGIN_KEY) } catch (_) { /* The optional preference is unavailable. */ }
   }
 
   const usernameFromApply = typeof route.query.username === 'string' ? route.query.username : ''
@@ -157,8 +157,10 @@ const onSubmit = async () => {
       localStorage.setItem('token', res.token)
       localStorage.setItem('user', JSON.stringify(res.user))
       adoptSession(res.token)
-      persistRememberedLogin()
-      ElMessage.success('登录成功')
+      let preferenceSaved = true
+      try { persistRememberedLogin() } catch (_) { preferenceSaved = false }
+      if (preferenceSaved) ElMessage.success('登录成功')
+      else ElMessage.warning('登录成功，但无法更新本浏览器的记住账号设置，请检查浏览器存储。')
       const requested = typeof route.query.redirect === 'string' ? route.query.redirect : ''
       const redirect = requested.startsWith('/') && !requested.startsWith('//') && !/[\\\r\n]/.test(requested) && router.resolve(requested).matched.length ? requested : '/'
       await router.replace(redirect)

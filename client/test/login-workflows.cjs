@@ -76,9 +76,38 @@ async function main () {
         }
       }
     }
+    await page.getByText('记住账号', { exact: true }).click()
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem
+      window.__originalStorageSetItem = original
+      Storage.prototype.setItem = function (key, value) {
+        if (key === 'eatwhat_remember_login') throw new DOMException('Blocked', 'QuotaExceededError')
+        return original.call(this, key, value)
+      }
+    })
     mode = 'ok'; await password.press('Enter')
     await page.waitForURL('**/dashboard')
     assert.equal(await page.evaluate(() => localStorage.getItem('token')), 'token')
+    await page.getByText('登录成功，但无法更新本浏览器的记住账号设置', { exact: false }).waitFor()
+    await page.evaluate(() => {
+      Storage.prototype.setItem = window.__originalStorageSetItem
+      localStorage.setItem('eatwhat_remember_login', JSON.stringify({ remember: true, username: 'test' }))
+    })
+    await page.goto(`${base}/login`)
+    assert.equal(await page.getByRole('textbox', { name: '用户名' }).inputValue(), 'test')
+    await page.getByText('记住账号', { exact: true }).click()
+    await page.evaluate(() => {
+      const original = Storage.prototype.removeItem
+      Storage.prototype.removeItem = function (key) {
+        if (key === 'eatwhat_remember_login') throw new DOMException('Blocked', 'SecurityError')
+        return original.call(this, key)
+      }
+    })
+    await page.getByLabel('密码', { exact: true }).fill('new-password')
+    await page.getByLabel('密码', { exact: true }).press('Enter')
+    await page.waitForURL('**/dashboard')
+    await page.getByText('登录成功，但无法更新本浏览器的记住账号设置', { exact: false }).waitFor()
+    assert.ok(await page.evaluate(() => localStorage.getItem('eatwhat_remember_login')), 'failed removal must not be reported as successful')
     console.log('Login checks passed: labels, validation, errors, responsive themes and success')
   } finally { await browser.close() }
 }
