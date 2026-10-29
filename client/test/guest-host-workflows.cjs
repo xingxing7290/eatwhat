@@ -12,13 +12,13 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const home = '111111111111111111111111'; const id = '222222222222222222222222'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''; let rotateFails = true
+    let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''; let rotateFails = true; let capabilitiesMode = 'ok'
     const version = value => ({ revision: `v${value}`, updatedAt: `2026-10-29T00:00:0${value}.000Z` })
     const detail = () => ({ ...current, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, guestNames: ['测试客人'], notes: ['测试客人：少盐'] }] }, orders: [{ id: 'order-1', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, note: '少盐' }], note: '整单备注' }] })
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
-      if (req.method() === 'GET' && pathname === '/guest-orders/capabilities') return route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true } })
+      if (req.method() === 'GET' && pathname === '/guest-orders/capabilities') return capabilitiesMode === 'error' ? route.fulfill({ status: 503, json: { error: '能力检查暂不可用' } }) : route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: capabilitiesMode === 'ok' } })
       if (req.method() === 'GET' && pathname === '/guest-orders') return route.fulfill({ json: { sessions: current ? [{ ...current, guestCount: 1, totalQuantity: 2 }] : [] } })
       if (req.method() === 'GET' && pathname === `/guest-orders/${id}`) {
         if (detailMissing) return route.fulfill({ status: 404, json: { code: 'GUEST_SESSION_NOT_FOUND', error: '未找到宴请' } })
@@ -84,6 +84,31 @@ async function main () {
     assert.equal(createCount, 1)
     await page.reload()
     await page.getByText('有一份宴请的创建结果待核对', { exact: false }).waitFor()
+    const refreshCapabilities = async () => {
+      const response = page.waitForResponse(value => new URL(value.url()).pathname === '/api/guest-orders/capabilities')
+      await page.getByRole('button', { name: '刷新', exact: true }).click()
+      await response
+      await page.waitForFunction(() => !document.querySelector('.hero-actions button')?.disabled)
+    }
+    capabilitiesMode = 'error'
+    await refreshCapabilities()
+    await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '安全重试', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: '放弃安全重试' }).isDisabled(), true)
+    assert.ok(await page.evaluate(key => sessionStorage.getItem(key), `eatwhat.hostGuest.create.${home}`), 'capability failure must retain the recovery credential')
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+    assert.equal(createRequests, 1)
+    capabilitiesMode = 'unsupported'
+    await refreshCapabilities()
+    await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '安全重试', exact: true }).isDisabled(), true)
+    await page.reload()
+    await page.getByText('有一份宴请的创建结果待核对', { exact: false }).waitFor()
+    await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '安全重试', exact: true }).isDisabled(), true)
+    capabilitiesMode = 'ok'
+    await refreshCapabilities()
+    await page.getByText('暂时无法确认当前家庭的安全创建能力', { exact: false }).waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: '安全重试', exact: true }).click()
     const dialog = page.getByRole('dialog', { name: '宴请详情' })
     await dialog.getByRole('heading', { name: '周末小聚' }).waitFor()
