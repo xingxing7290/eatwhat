@@ -17,7 +17,7 @@ const shoppingWeek = computed(() => validWeekLink(route.query.shoppingWeek) ? ro
 const calendarDate = computed(() => !shoppingWeek.value && validWeekLink(route.query.calendarDate) ? route.query.calendarDate : '');
 const dashboardOrigin = computed(() => !shoppingWeek.value && !calendarDate.value && route.query.fromDashboard === '1');
 const reviewOrigin = computed(() => !shoppingWeek.value && !calendarDate.value && !dashboardOrigin.value ? readReviewOrigin(route.query) : null);
-const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : calendarDate.value ? { name: 'calendar', query: { date: calendarDate.value } } : dashboardOrigin.value ? { name: 'dashboard' } : reviewOrigin.value ? reviewDestination(reviewOrigin.value) : { name: 'meals', query: filterCatalogQuery(route.query) });
+const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : calendarDate.value ? { name: 'calendar', query: { date: calendarDate.value } } : dashboardOrigin.value ? { name: 'dashboard' } : reviewOrigin.value ? reviewDestination(reviewOrigin.value) : { name: 'meals', query: filterCatalogQuery(route.query), state: { catalogReturnMeal: String(route.params.id || '') } });
 const editorQuery = computed(() => ({ ...filterCatalogQuery(route.query), ...(shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : calendarDate.value ? { calendarDate: calendarDate.value } : dashboardOrigin.value ? { fromDashboard: '1' } : reviewOrigin.value || {}) }));
 const meal = ref(null);
 const memories = ref([]);

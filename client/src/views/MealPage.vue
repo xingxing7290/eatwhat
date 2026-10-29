@@ -30,6 +30,8 @@ const currentPage = ref(initialCatalog.page);
 const pageSize = ref(8);
 const catalogContent = ref(null);
 let restoreCatalogFocus = false;
+let returnMealFocus = typeof history.state?.catalogReturnMeal === 'string' && /^[a-z\d_-]{1,128}$/i.test(history.state.catalogReturnMeal) ? history.state.catalogReturnMeal : '';
+if (returnMealFocus) { const state = { ...history.state }; delete state.catalogReturnMeal; history.replaceState(state, ''); }
 const loading = ref(false);
 const loadError = ref('');
 const categoryLoadFailed = ref(false);
@@ -258,10 +260,15 @@ const fetchMeals = async () => {
       loading.value = false;
       const restore = restoreCatalogFocus;
       restoreCatalogFocus = false;
-      if (restore) {
+      if (restore || returnMealFocus) {
         await nextTick();
+        if (returnMealFocus) await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const focused = document.activeElement;
-        if (sequence === fetchSequence && (!focused || focused === document.body || !focused.isConnected)) catalogContent.value?.focus();
+        if (sequence === fetchSequence && (!focused || focused === document.body || !focused.isConnected)) {
+          const target = returnMealFocus && [...(catalogContent.value?.querySelectorAll('[data-catalog-id]') || [])].find(node => node.dataset.catalogId === returnMealFocus && node.getClientRects().length);
+          (target || catalogContent.value)?.focus();
+        }
+        if (sequence === fetchSequence) returnMealFocus = '';
       }
     }
   }
@@ -878,6 +885,7 @@ onBeforeUnmount(() => {
                   <MealCard
                     v-for="meal in sub.meals"
                     :key="meal._id || meal.id"
+                    :data-catalog-id="meal._id || meal.id"
                     :meal="meal"
                     :archive-disabled="archiveBusy || !!archiveProblem || !canArchive(meal)"
                     :share-pending="!!sharingMealIds[String(meal._id || meal.id)]"
@@ -900,6 +908,7 @@ onBeforeUnmount(() => {
         <MealCard
           v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
+          :data-catalog-id="meal._id || meal.id"
           :meal="meal"
           :archive-disabled="archiveBusy || !!archiveProblem || !canArchive(meal)"
           :share-pending="!!sharingMealIds[String(meal._id || meal.id)]"
@@ -918,6 +927,7 @@ onBeforeUnmount(() => {
           v-for="meal in displayedMeals"
           :key="meal._id || meal.id"
           class="meal-list-item"
+          :data-catalog-id="meal._id || meal.id"
           role="button"
           tabindex="0"
           :aria-label="`查看${meal.name}`"
@@ -1090,6 +1100,7 @@ onBeforeUnmount(() => {
                   type="info"
                   size="small"
                   circle
+                  :data-catalog-id="row._id || row.id"
                   :aria-label="`查看${row.name}`"
                   @click="handleViewMeal(row)"
                 >
