@@ -14,6 +14,7 @@ const weekChoice = ref('');
 const changingWeek = ref(false);
 const mutationIssue = ref('');
 const generationNotice = ref('');
+const generationDates = ref([]);
 let loadSequence = 0;
 const form = reactive({ name: '', amount: '', category: 'other' });
 const search = ref('');
@@ -73,7 +74,7 @@ const changeWeek = async () => {
       try { await ElMessageBox.confirm('切换周会清除当前输入及未确认操作提示，请先核对。', '切换购物清单？', { type: 'warning', confirmButtonText: '切换并清除', cancelButtonText: '继续编辑' }); }
       catch (_) { weekChoice.value = weekStart.value; return; }
     }
-    clearForm(); mutationIssue.value = ''; generationNotice.value = ''; weekStart.value = weekChoice.value; await load();
+    clearForm(); mutationIssue.value = ''; generationNotice.value = ''; generationDates.value = []; weekStart.value = weekChoice.value; await load();
   } finally { changingWeek.value = false; }
 };
 const mutate = async (action, onSuccess, verify) => {
@@ -86,7 +87,10 @@ const mutate = async (action, onSuccess, verify) => {
     list.value = next;
     if (onSuccess) onSuccess();
   } catch (e) {
-    if (e?.code === 'SCHEDULE_MEAL_UNAVAILABLE') { generationNotice.value = '本周排餐包含不可用的菜品，本次未生成购物清单，现有清单保持不变。请先在日历中核对相应餐次。'; return; }
+    if (e?.code === 'SCHEDULE_MEAL_UNAVAILABLE') {
+      generationDates.value = [...new Set((Array.isArray(e.unavailableDates) ? e.unavailableDates : []).filter(date => typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(`${date}T00:00:00Z`)) && new Date(`${date}T00:00:00Z`).toISOString().slice(0, 10) === date && monday(date) === monday(requestedWeek)))].sort();
+      generationNotice.value = '本周排餐包含不可用的菜品，本次未生成购物清单，现有清单保持不变。请先在日历中核对相应餐次。'; return;
+    }
     mutationIssue.value = e?.code === 'SHOPPING_LIST_CONFLICT'
       ? '其他成员更新了购物清单。请重新加载并核对，未提交的输入会保留。'
       : '操作结果未确认，请重新加载并核对后再操作；未提交的输入会保留。';
@@ -95,6 +99,7 @@ const mutate = async (action, onSuccess, verify) => {
 const generate = async () => {
   if (!weekStart.value || disabled.value) return;
   generationNotice.value = '';
+  generationDates.value = [];
   working.value = true;
   try {
     if ((list.value.items || []).some(item => !item.manual)) {
@@ -137,7 +142,7 @@ onBeforeUnmount(() => { loadSequence++; });
     <template v-else>
     <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
     <el-alert v-else-if="!loading && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，购物清单暂时只能查看。" />
-    <el-alert v-if="generationNotice" class="generation-alert" type="warning" :closable="false" show-icon :title="generationNotice"><router-link class="calendar-link" to="/calendar">前往日历核对</router-link><el-button link @click="generationNotice = ''">关闭提示</el-button></el-alert>
+    <el-alert v-if="generationNotice" class="generation-alert" type="warning" :closable="false" show-icon :title="generationNotice"><p v-if="generationDates.length">需核对的日期：{{ generationDates.join('、') }}。</p><p v-else>本周可能跨月，请核对整周的安排。</p><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: generationDates[0] || monday(weekStart) } }">前往日历核对</router-link><el-button link @click="generationNotice = ''; generationDates = []">关闭提示</el-button></el-alert>
     <div class="progress-card"><div><span>采购进度</span><strong>{{ purchased }} / {{ list.items?.length || 0 }}</strong><small>项已买好</small></div><el-progress :percentage="list.items?.length ? Math.round(purchased / list.items.length * 100) : 0" :show-text="false" /></div>
     <el-card><div class="add-row"><el-input v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keyup.enter="addItem" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keyup.enter="addItem" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
 import api from '../services/api';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -10,9 +10,16 @@ import { useDraftGuard } from '@/composables/useDraftGuard';
 import { ArrowLeft, ArrowRight, Edit, Delete, Plus, Sunrise, Sunny, Sunset } from '@element-plus/icons-vue';
 
 const router = useRouter();
+const route = useRoute();
 const scheduleStore = useScheduleStore();
 
-const currentDate = ref(new Date());
+const linkedDate = typeof route.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : '';
+const linkedParts = linkedDate ? linkedDate.split('-').map(Number) : [];
+const parsedLinkedDate = linkedParts.length ? new Date(linkedParts[0], linkedParts[1] - 1, linkedParts[2]) : null;
+const validLinkedDate = parsedLinkedDate && parsedLinkedDate.getFullYear() === linkedParts[0] && parsedLinkedDate.getMonth() + 1 === linkedParts[1] && parsedLinkedDate.getDate() === linkedParts[2];
+const targetedDate = ref(validLinkedDate ? linkedDate : '');
+const invalidDateLink = ref(route.query.date !== undefined && !validLinkedDate);
+const currentDate = ref(validLinkedDate ? parsedLinkedDate : new Date());
 const isLoading = ref(false);
 const loadError = ref('');
 const deleting = ref(false);
@@ -205,6 +212,8 @@ const navigateToMealSelection = (date, type) => {
 
 // 切换月份
 const changeMonth = (delta) => {
+  targetedDate.value = '';
+  invalidDateLink.value = false;
   currentDate.value = delta > 0 
     ? addMonths(currentDate.value, 1)
     : subMonths(currentDate.value, 1);
@@ -250,6 +259,8 @@ const tryScrollToToday = (attempt = 0) => {
 
 // 切换到今天
 const goToToday = async () => {
+  targetedDate.value = '';
+  invalidDateLink.value = false;
   currentDate.value = new Date();
   shouldScrollToToday.value = true;
   await nextTick();
@@ -381,8 +392,13 @@ watch(
   }
 );
 
-onMounted(() => {
-  fetchMonthSchedules();
+onMounted(async () => {
+  await fetchMonthSchedules();
+  if (active && targetedDate.value && !loadError.value) {
+    await nextTick();
+    const target = [...document.querySelectorAll('.calendar-page .target-date')].find(element => element.getClientRects().length);
+    if (target) scrollElementIntoView(target, { containerSelector: target.classList.contains('date-cell') ? '.calendar-grid' : null });
+  }
 });
 onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
 </script>
@@ -426,6 +442,9 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
         </div>
       </div>
     </div>
+
+    <div v-if="targetedDate" class="calendar-notice" role="status">已定位到 {{ targetedDate }}，请核对相应餐次。</div>
+    <div v-else-if="invalidDateLink" class="calendar-notice" role="status">日历链接中的日期无效，已打开当前月份。</div>
 
     <el-alert v-if="deleteIssue" class="delete-review" type="warning" :closable="false" show-icon :title="deleteIssue.conflict ? '安排已被其他成员修改，本次没有删除。' : '删除结果未确认，请先核对最新安排。'">
       <p>{{ deleteIssue.date }} {{ mealTypes.find(type => type.key === deleteIssue.type)?.label }}：{{ deleteIssue.checked ? (deleteIssue.count ? `当前有 ${deleteIssue.count} 道菜` : '当前没有安排') : '尚未核对' }}</p>
@@ -507,6 +526,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
               :class="{
                 'empty-cell': !day,
                 'today': day && format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd'),
+                'target-date': day && format(day, 'yyyy-MM-dd') === targetedDate,
                 'different-month': day && getMonth(day) !== getMonth(currentDate)
               }"
             >
@@ -616,7 +636,8 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
               v-if="day && getMonth(day) === getMonth(currentDate)"
               class="mobile-date-card"
               :class="{
-                'today': format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+                'today': format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd'),
+                'target-date': format(day, 'yyyy-MM-dd') === targetedDate
               }"
             >
               <!-- 日期头部 -->
@@ -1498,6 +1519,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
   border-color: rgba(255, 180, 162, 0.82);
   box-shadow: 0 0 0 3px rgba(255, 180, 162, 0.18), 0 18px 38px rgba(255, 180, 162, 0.18);
 }
+.calendar-grid .calendar-body .date-cell.target-date, .mobile-date-list .mobile-date-card.target-date { outline: 3px solid var(--secondary-color); outline-offset: 2px; }
 
 .mobile-add-meal,
 .mobile-meal-item {

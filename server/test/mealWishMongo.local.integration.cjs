@@ -284,6 +284,7 @@ async function main() {
     const rejectedGeneration = await request('/shopping-list/generate', { method: 'POST', token: scopedToken, body: { weekStart: scopeToday, expectedVersion: scopedShopping.data.listVersion } });
     assert.equal(rejectedGeneration.status, 409);
     assert.equal(rejectedGeneration.data.code, 'SCHEDULE_MEAL_UNAVAILABLE');
+    assert.deepEqual(rejectedGeneration.data.unavailableDates, [scopeToday]);
     const unchangedShopping = await request(`/shopping-list?weekStart=${scopeToday}`, { token: scopedToken });
     assert.equal(unchangedShopping.data.listVersion, scopedShopping.data.listVersion);
     assert.deepEqual(unchangedShopping.data.items, scopedShopping.data.items);

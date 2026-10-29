@@ -94,7 +94,8 @@ exports.generate = async (req, res, next) => {
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const dates = weekDates(weekStart);
     const schedules = await Schedule.find({ householdId: household._id, date: { $in: dates } }).populate(schedulePopulation(household._id, { includeAuthors: false }));
-    if (schedules.some(schedule => ['breakfast', 'lunch', 'dinner'].some(type => (schedule.meals?.[type] || []).some(entry => !entry?.meal)))) return res.status(409).json({ code: 'SCHEDULE_MEAL_UNAVAILABLE', error: '本周排餐包含不可用的菜品，未生成购物清单。请先在日历中核对。' });
+    const unavailableDates = [...new Set(schedules.filter(schedule => ['breakfast', 'lunch', 'dinner'].some(type => (schedule.meals?.[type] || []).some(entry => !entry?.meal))).map(schedule => schedule.date))].sort();
+    if (unavailableDates.length) return res.status(409).json({ code: 'SCHEDULE_MEAL_UNAVAILABLE', error: '本周排餐包含不可用的菜品，未生成购物清单。请先在日历中核对。', unavailableDates });
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
     if (!checkVersion(req, res, list)) return;
     const checkedMap = new Map((list.items || []).filter(item => !item.manual).map(item => [itemKey(item), !!item.checked]));
