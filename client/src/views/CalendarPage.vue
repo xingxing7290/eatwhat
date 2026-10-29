@@ -337,6 +337,11 @@ const findMealById = (id) => {
   }
   return meals.value.find(meal => String(meal._id || meal.id) === String(id)) || { name: '菜品不可用' };
 };
+const calendarRecipeId = item => {
+  const meal = findMealById(item);
+  const id = meal?._id || meal?.id;
+  return typeof id === 'string' && /^[a-z\d_-]{1,128}$/i.test(id) && typeof meal.name === 'string' && meal.name.trim() ? id : '';
+};
 
 const getAddedBy = (item) => {
   if (item && typeof item === 'object') {
@@ -647,7 +652,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
                           </span>
                           <span v-else class="added-by-avatar placeholder" role="img" :aria-label="getAddedByLabel(item)" :title="getAddedByLabel(item)">{{ getAddedByInitial(item) || '?' }}</span>
                           <span class="food-dot">●</span>
-                          {{ findMealById(item).name }}
+                          <router-link v-if="calendarRecipeId(item)" class="calendar-recipe-link" :to="{ name: 'MealDetail', params: { id: calendarRecipeId(item) }, query: { calendarDate: format(day, 'yyyy-MM-dd') } }" :aria-label="`查看${format(day, 'yyyy-MM-dd')}${mealType.label}的${findMealById(item).name}菜谱`">{{ findMealById(item).name }}</router-link><span v-else>{{ findMealById(item).name }}</span>
                         </div>
                       </div>
                     </div>
@@ -748,7 +753,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
                         <img :src="resolveUploadedImage(getAddedBy(item).avatarUrl)" :alt="getAddedByLabel(item)" />
                       </span>
                       <span v-else class="added-by-avatar placeholder" role="img" :aria-label="getAddedByLabel(item)" :title="getAddedByLabel(item)">{{ getAddedByInitial(item) || '?' }}</span>
-                      <span class="meal-name">{{ findMealById(item).name }}</span>
+                      <router-link v-if="calendarRecipeId(item)" class="calendar-recipe-link meal-name" :to="{ name: 'MealDetail', params: { id: calendarRecipeId(item) }, query: { calendarDate: format(day, 'yyyy-MM-dd') } }" :aria-label="`查看${format(day, 'yyyy-MM-dd')}${mealType.label}的${findMealById(item).name}菜谱`">{{ findMealById(item).name }}</router-link><span v-else class="meal-name">{{ findMealById(item).name }}</span>
                     </div>
                   </div>
 
@@ -1597,6 +1602,9 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
   }
 }
 
+.calendar-recipe-link { display: inline-flex; align-items: center; min-width: 0; max-width: 100%; padding: 4px 8px; border-radius: 8px; background: #fffaf5; color: #43251c; font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.calendar-recipe-link:focus-visible { outline: 3px solid #43251c; outline-offset: 2px; }
+@media (max-width: 768px) { .calendar-recipe-link { min-height: 44px; } }
 .partner-wishlist-banner { display: block; padding: 16px; }
 .partner-wishlist-banner .wishlist-banner-heading { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .partner-wishlist-banner a { color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }

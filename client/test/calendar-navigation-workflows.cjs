@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Calendar navigation tests require a local server')
 async function main () {
@@ -9,18 +10,59 @@ async function main () {
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const errors = []; const reads = []; page.on('pageerror', error => errors.push(error.message))
+    let recipeWrites = 0
+    const recipe = { _id: 'recipe-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } }
     await page.route('**/api/**', route => {
       const url = new URL(route.request().url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === '/schedules') { reads.push(`${url.searchParams.get('year')}-${url.searchParams.get('month')}`); return route.fulfill({ json: [] }) }
+      if (path === '/schedules') {
+        reads.push(`${url.searchParams.get('year')}-${url.searchParams.get('month')}`)
+        const rows = url.searchParams.get('year') === '2026' && url.searchParams.get('month') === '12' ? [{ date: '2026-12-31', scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: { _id: 'recipe-a', name: '家常菜' } }, { meal: null }] } }] : []
+        return route.fulfill({ json: rows })
+      }
       if (path.startsWith('/schedules/day/')) return route.fulfill({ json: { date: path.split('/').pop(), scheduleExists: false, scheduleVersion: null, meals: { breakfast: [], lunch: [], dinner: [] } } })
       if (path === '/meals') return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 8 } })
+      if (path === '/meals/recipe-a') { if (route.request().method() === 'PUT') recipeWrites++; return route.fulfill({ json: recipe }) }
+      if (path === '/memories') return route.fulfill({ json: [] })
       if (path === '/wishlist' || path === '/meals/categories' || path === '/meals/tags') return route.fulfill({ json: [] })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/calendar?date=2026-12-31`)
     await page.getByText('已定位到 2026-12-31', { exact: false }).waitFor()
     await page.locator('.mobile-date-card.target-date').waitFor()
+    const recipeLink = page.getByRole('link', { name: '查看2026-12-31晚餐的家常菜菜谱' })
+    await recipeLink.waitFor()
+    assert.equal(await recipeLink.getAttribute('href'), '/meals/detail/recipe-a?calendarDate=2026-12-31')
+    assert.ok((await recipeLink.boundingBox()).height >= 44)
+    assert.equal(await page.locator('.mobile-date-card.target-date').getByText('菜品不可用').count(), 1)
+    assert.equal(await page.getByRole('link', { name: /菜品不可用/ }).count(), 0)
+    await page.setViewportSize({ width: 320, height: 844 })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        const result = await contrast(page, '.mobile-date-card.target-date .calendar-recipe-link')
+        assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme}: ${result.ratio}`)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await page.setViewportSize({ width: 1280, height: 844 })
+    await page.getByRole('link', { name: '查看2026-12-31晚餐的家常菜菜谱' }).waitFor()
+    await page.setViewportSize({ width: 390, height: 844 })
+    await recipeLink.click()
+    await page.getByRole('heading', { name: '家常菜' }).waitFor()
+    await page.getByRole('button', { name: '返回日历' }).click()
+    await page.waitForURL('**/calendar?date=2026-12-31')
+    await recipeLink.click()
+    await page.getByRole('button', { name: '编辑菜品' }).click()
+    await page.getByText('保存后返回 2026-12-31 的日历', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await page.waitForURL('**/meals/detail/recipe-a?calendarDate=2026-12-31')
+    await page.getByRole('button', { name: '编辑菜品' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForURL('**/calendar?date=2026-12-31')
+    assert.equal(recipeWrites, 1)
     const weekLink = page.getByRole('link', { name: '查看该日期所在周计划' })
     assert.equal(await weekLink.getAttribute('href'), '/weekly-plan?week=2026-12-31')
     assert.ok((await weekLink.boundingBox()).height >= 44)
@@ -53,8 +95,11 @@ async function main () {
     assert.equal(new URL(page.url()).searchParams.get('month'), '2027-02')
     assert.ok(reads.includes('2027-4'))
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.goto(`${base}/meals/detail/recipe-a?calendarDate=2026-02-31`)
+    await page.getByRole('button', { name: '返回', exact: true }).click()
+    await page.waitForURL('**/meals')
     assert.deepEqual(errors, [])
-    console.log('Calendar navigation checks passed: retained month, dated selection, history and invalid links')
+    console.log('Calendar navigation checks passed: recipe details and editing, themes, dated selection, history and invalid links')
   } finally { await browser.close() }
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })
