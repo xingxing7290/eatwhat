@@ -9,14 +9,14 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let version = 1; let writes = 0; let holdInitial = true; let releaseInitial
+    let version = 1; let writes = 0; let holdInitial = true; let releaseInitial; let generatedFrom = `week:2026-10-26:${new Date(2026, 9, 28, 10, 15).getTime()}`
     let items = [
       { _id: 'egg', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: true },
       { _id: 'milk', name: '牛奶', amount: '1L', category: 'other', checked: true, manual: true },
       { _id: 'spinach', name: '菠菜', amount: '1把', category: 'vegetable', checked: false, manual: false, quantityComplete: false },
       { _id: 'rice', name: '大米', amount: '2斤', category: 'staple', checked: false, manual: true }
     ]
-    const snapshot = () => ({ weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: version, items })
+    const snapshot = () => ({ weekStart: '2026-10-26', generatedFrom, supportsConditionalUpdates: true, listVersion: version, items })
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
@@ -34,6 +34,8 @@ async function main () {
     assert.equal(typeof releaseInitial, 'function')
     holdInitial = false; releaseInitial()
     await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
+    await page.getByText('最近从排餐生成：2026-10-28 10:15（本机时间）').waitFor()
+    await page.getByText('排餐变动不会自动更新清单', { exact: false }).waitFor()
     assert.match(await page.locator('.progress-card').innerText(), /2\s*\/\s*4/)
     await page.locator('.item-row').filter({ hasText: '菠菜' }).getByText('用量待核对').waitFor()
     await page.getByRole('button', { name: '从排餐生成' }).click()
@@ -85,8 +87,10 @@ async function main () {
     await page.getByText('菠菜', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     items.push({ _id: 'legacy', name: '旧分类食材', amount: '', category: 'constructor', checked: false, manual: true }); version++
+    generatedFrom = `week:2026-10-19:${new Date(2026, 9, 28, 10, 15).getTime()}`
     await page.reload()
     await page.getByText('旧分类食材', { exact: true }).waitFor()
+    await page.getByText('暂无可识别的排餐生成时间').waitFor()
     await page.getByRole('textbox', { name: '搜索购物食材' }).fill('其他')
     await page.getByText('旧分类食材', { exact: true }).waitFor()
     await page.getByRole('textbox', { name: '搜索购物食材' }).fill('旧分类食材')

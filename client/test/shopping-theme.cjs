@@ -28,7 +28,7 @@ async function main () {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.shopping-page .eyebrow', '.shopping-page h1', '.page-header p', '.week-link', '.progress-card strong', '.list-heading h2', '.list-heading p', '.filter-buttons button.active', '.filter-buttons button:not(.active)', '.group-heading strong', '.group-heading span', '.item-row:not(.checked) .el-checkbox__label strong', '.item-row.checked .el-checkbox__label strong', '.quantity-notice']) {
+          for (const selector of ['.shopping-page .eyebrow', '.shopping-page h1', '.page-header p', '.week-link', '.generation-context strong', '.generation-context p', '.progress-card strong', '.list-heading h2', '.list-heading p', '.filter-buttons button.active', '.filter-buttons button:not(.active)', '.group-heading strong', '.group-heading span', '.item-row:not(.checked) .el-checkbox__label strong', '.item-row.checked .el-checkbox__label strong', '.quantity-notice']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`)
           }

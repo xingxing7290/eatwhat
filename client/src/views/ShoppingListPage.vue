@@ -35,6 +35,17 @@ let weekClockTimer = null;
 const refreshCurrentWeek = () => { thisWeek.value = monday(); };
 const shiftedWeek = (value, offset) => { const [year, month, day] = monday(value).split('-').map(Number); const date = new Date(year, month - 1, day + offset * 7); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
 const weekRange = computed(() => { if (!weekStart.value) return ''; const [year, month, day] = monday(weekStart.value).split('-').map(Number); const end = new Date(year, month - 1, day + 6); return `${monday(weekStart.value)} — ${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`; });
+const generationTime = computed(() => {
+  if (!weekStart.value || typeof list.value.generatedFrom !== 'string') return '';
+  const match = /^week:(\d{4}-\d{2}-\d{2}):(\d+)$/.exec(list.value.generatedFrom);
+  if (!match || match[1] !== monday(weekStart.value)) return '';
+  const milliseconds = Number(match[2]);
+  if (!Number.isSafeInteger(milliseconds) || milliseconds <= 0) return '';
+  const date = new Date(milliseconds);
+  if (!Number.isFinite(date.getTime())) return '';
+  const pad = value => String(value).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+});
 const purchased = computed(() => (list.value.items || []).filter(item => item.checked).length);
 const filtersActive = computed(() => !!search.value.trim() || statusFilter.value !== 'all');
 const filteredItems = computed(() => {
@@ -173,6 +184,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     <div class="page-header"><div><span class="eyebrow">SHOPPING LIST · 一周采购</span><h1>好好买菜，轻松做饭</h1><p>从排餐汇总食材，也可以补充自己需要的东西。</p><small v-if="list.weekStart">{{ list.weekStart }} 开始的一周 · {{ weekRange }}</small></div><div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || working || changingWeek" aria-label="选择购物清单日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换购物清单日期"><el-button :disabled="loading || working || changingWeek" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || working || changingWeek || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || working || changingWeek" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="disabled" @click="generate"><el-icon><ShoppingCart /></el-icon>从排餐生成</el-button><el-button :disabled="!purchased || disabled" @click="clearPurchased">清空已购</el-button></div></div>
     <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
     <router-link v-if="weekStart" class="week-link" :to="{ name: 'weeklyPlan', query: { week: monday(weekStart) } }">查看所选周计划 →</router-link>
+    <div v-if="!loading && !loadError" class="generation-context"><strong>{{ generationTime ? `最近从排餐生成：${generationTime}（本机时间）` : '暂无可识别的排餐生成时间' }}</strong><p>排餐变动不会自动更新清单；请按需重新生成并核对食材。</p></div>
     <div v-if="loadError" class="load-error" role="alert">{{ loadError }} <el-button link type="primary" @click="load">重试</el-button></div>
     <template v-else>
     <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
@@ -199,6 +211,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 .progress-loading { padding: 18px 24px; border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-secondary); color: var(--text-primary); }
 .filter-reset { min-height: 44px; margin-top: 8px; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .filter-reset:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.generation-context { padding: 14px 20px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; }
+.generation-context p { margin: 5px 0 0; color: var(--text-secondary); line-height: 1.6; }
 .item-row :deep(.el-checkbox__label .quantity-notice) { display: inline-block; color: var(--text-primary); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }
