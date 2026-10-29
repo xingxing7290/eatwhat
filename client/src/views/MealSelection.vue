@@ -672,7 +672,7 @@ onBeforeUnmount(() => {
         <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button ref="metadataRetryButton" type="button" :disabled="metadataLoading" @click="loadMetadata">{{ metadataLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
     <section ref="catalogContent" class="meals-container" aria-label="可选菜品" tabindex="-1">
-      <el-alert v-if="catalogError && !catalogLoading" type="error" :closable="false" show-icon :title="`无法加载菜品：${catalogError}`"><el-button link type="primary" @click="fetchCatalog">重新加载菜品</el-button></el-alert>
+      <el-alert v-if="catalogError && !catalogLoading" type="error" :closable="false" show-icon :title="`无法加载菜品：${catalogError}`"><el-button link type="primary" @click="fetchCatalog">重新加载菜品</el-button><el-button v-if="currentPage > 1" link type="primary" @click="handlePageChange(1)">返回筛选结果第一页</el-button></el-alert>
       <el-skeleton v-else :loading="catalogLoading || isInitializing" animated :count="4" :throttle="500">
         <template #default>
           <div v-if="displayedMeals.length === 0" class="empty-state">

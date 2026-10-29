@@ -31,7 +31,7 @@ async function main () {
     let malformedSchedule = false
     let saveMode = 'uncertain'
     let releaseSlow
-    let holdPage = false; let releasePage
+    let holdPage = false; let releasePage; let failThirdPage = false
     let wishMode = 'done'
     let suggestionFailure = false
     const wishWrites = []
@@ -58,6 +58,7 @@ async function main () {
             (!query || meal.name.includes(query)) && (!url.searchParams.get('category') || meal.category === url.searchParams.get('category')))
           const current = Number(url.searchParams.get('page') || 1)
           const limit = Number(url.searchParams.get('limit') || 8)
+          if (failThirdPage && current === 3) return route.fulfill({ status: 503, json: { error: '该页暂时不可用' } })
           if (holdPage && current === 3) await new Promise(resolve => { releasePage = resolve })
           if (query === '坏页') data = { data: [meals[0]], total: 1, page: 2, limit }
           else if (query === '重复') data = { data: [meals[0], meals[0]], total: 2, page: 1, limit }
@@ -289,6 +290,20 @@ async function main () {
     await page.getByRole('button', { name: '移除测试菜01' }).waitFor()
     await page.getByRole('button', { name: '移除测试菜09' }).waitFor()
     const search = page.getByRole('textbox', { name: '搜索可选菜品' })
+    await search.fill('测试菜')
+    await page.getByRole('button', { name: '选择测试菜01' }).waitFor()
+    await page.getByRole('button', { name: '下一页', exact: true }).click()
+    await page.getByRole('button', { name: '选择测试菜09' }).waitFor()
+    failThirdPage = true
+    await page.getByRole('button', { name: '下一页', exact: true }).click()
+    await page.getByText('无法加载菜品：该页暂时不可用').waitFor()
+    await page.getByRole('button', { name: '返回筛选结果第一页' }).click()
+    await page.getByRole('button', { name: '选择测试菜01' }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '可选菜品')
+    assert.equal(await search.inputValue(), '测试菜', 'page recovery must preserve the search')
+    assert.equal(await page.getByRole('button', { name: '移除测试菜09' }).count(), 1, 'page recovery must preserve selected meals')
+    assert.equal(writes.length, 0, 'page recovery must not save the selection')
+    failThirdPage = false
     await search.fill('slow')
     await page.waitForFunction(() => document.querySelector('input[aria-label="搜索可选菜品"]')?.value === 'slow')
     await page.waitForTimeout(250)
