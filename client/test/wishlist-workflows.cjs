@@ -29,13 +29,13 @@ async function main () {
         if (voteMode === 'hold') await new Promise(resolve => { releaseVote = resolve })
         items = items.map(item => item._id === 'wish-a' ? { ...item, votedByMe: voted, votes: voted ? [{ _id: 'u1' }] : [], editVersion: version(voted ? 'v2' : 'v3') } : item)
         if (voteMode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
-        data = items[0]
+        data = voteMode === 'malformed' ? { _id: 'other', votedByMe: voted } : items[0]
       } else if (req.method() === 'PATCH' && path === '/wishlist/wish-a/status') {
         assert.deepEqual(req.postDataJSON().expectedEditVersion, items[0].editVersion)
         if (statusMode === 'conflict') { items = items.map(item => item._id === 'wish-a' ? { ...item, status: 'done', editVersion: version('external') } : item); return route.fulfill({ status: 409, json: { code: 'WISH_CONFLICT', error: '发生冲突' } }) }
         items = items.map(item => item._id === 'wish-a' ? { ...item, status: req.postDataJSON().status, editVersion: version('status') } : item)
         if (statusMode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
-        data = items[0]
+        data = statusMode === 'malformed' ? { _id: 'wish-a', status: 'unknown' } : items[0]
       } else if (req.method() === 'DELETE' && path === '/wishlist/wish-a') {
         assert.deepEqual(JSON.parse(url.searchParams.get('expectedEditVersion')), items[0].editVersion)
         if (deleteMode === 'conflict') { items = items.map(item => item._id === 'wish-a' ? { ...item, note: '家人刚修改', editVersion: version('external-delete') } : item); return route.fulfill({ status: 409, json: { code: 'WISH_CONFLICT', error: '发生冲突' } }) }
@@ -69,6 +69,13 @@ async function main () {
     releaseVote()
     await page.getByRole('button', { name: '我想吃想吃面条' }).waitFor()
     assert.deepEqual(writes.slice(0, 2).map(item => item.voted), [true, false])
+    voteMode = 'malformed'
+    await page.getByRole('button', { name: '我想吃想吃面条' }).click()
+    await page.getByText('投票结果未确认', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '刷新清单并核对' }).click()
+    voteMode = 'valid'
+    await page.getByRole('button', { name: '取消想吃想吃面条' }).click()
+    await page.getByRole('button', { name: '我想吃想吃面条' }).waitFor()
     await page.getByRole('button', { name: '关联已有菜谱' }).first().click()
     const dialog = page.getByRole('dialog', { name: '关联已有菜谱' })
     const search = dialog.getByRole('combobox', { name: '搜索并选择菜谱' })
@@ -89,15 +96,22 @@ async function main () {
     await dialog.getByRole('button', { name: '确认关联' }).click()
     await page.getByRole('button', { name: '安排今天晚餐' }).waitFor()
     assert.equal(writes.find(item => item.path.endsWith('/meal')).body.mealId, 'meal-75')
+    statusMode = 'malformed'
+    await page.locator('.wish-card').filter({ hasText: '想吃面条' }).getByRole('button', { name: '标记已安排' }).click()
+    await page.getByText('状态更新结果未确认', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '刷新清单并核对' }).click()
+    statusMode = 'valid'
+    await page.getByRole('button', { name: '重新想吃' }).click()
+    await page.locator('.wish-card').filter({ hasText: '想吃面条' }).getByRole('button', { name: '标记已安排' }).waitFor()
     statusMode = 'conflict'
-    await page.getByRole('button', { name: '标记已安排' }).first().click()
+    await page.locator('.wish-card').filter({ hasText: '想吃面条' }).getByRole('button', { name: '标记已安排' }).click()
     await page.getByText('这条想吃已被其他成员修改或删除', { exact: false }).waitFor()
     await page.getByRole('button', { name: '刷新清单并核对' }).click()
     statusMode = 'unknown'
     await page.getByRole('button', { name: '重新想吃' }).click()
     await page.getByText('状态更新结果未确认', { exact: false }).waitFor()
     await page.getByRole('button', { name: '刷新清单并核对' }).click()
-    await page.getByRole('button', { name: '标记已安排' }).first().waitFor()
+    await page.locator('.wish-card').filter({ hasText: '想吃面条' }).getByRole('button', { name: '标记已安排' }).waitFor()
     deleteMode = 'conflict'
     await page.getByRole('button', { name: '删除想吃面条' }).click()
     await page.getByRole('button', { name: '确定', exact: true }).click()

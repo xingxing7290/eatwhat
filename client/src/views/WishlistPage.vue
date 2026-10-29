@@ -241,11 +241,11 @@ const save = async () => {
   }
   finally { saving.value = false; }
 };
-const runAction = async (item, label, action) => {
+const runAction = async (item, label, action, verify = null) => {
   if (!item?._id || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
   const hadFocus = document.activeElement?.closest('.wish-card')?.dataset.wishId === item._id;
   actionId.value = item._id;
-  try { await action(); await load(); }
+  try { const result = await action(); if (verify && !verify(result)) throw new Error('操作响应不完整'); await load(); }
   catch (e) { actionIssue.value = e?.code === 'WISH_CONFLICT' ? '这条想吃已被其他成员修改或删除，本次未操作；请刷新清单并核对。' : `${label}结果未确认，请刷新清单并核对后再操作；先前请求仍可能稍后完成。`; }
   finally { actionId.value = ''; }
   if (hadFocus && !loadError.value && !filteredItems.value.some(row => row._id === item._id)) {
@@ -255,11 +255,12 @@ const runAction = async (item, label, action) => {
 };
 const vote = item => {
   if (!item.supportsSetVote || typeof item.votedByMe !== 'boolean') return ElMessage.warning('服务器未提供安全投票能力，请稍后重试');
-  return runAction(item, '投票', () => api.wishlist.setVote(item._id, !item.votedByMe));
+  const target = !item.votedByMe;
+  return runAction(item, '投票', () => api.wishlist.setVote(item._id, target), result => result?._id === item._id && result.votedByMe === target);
 };
 const setStatus = (item, status) => {
   if (!validWishVersion(item)) return ElMessage.warning('服务器未提供有效的记录版本，暂时不能安全修改状态');
-  return runAction(item, '状态更新', () => api.wishlist.updateStatus(item._id, status, item.editVersion));
+  return runAction(item, '状态更新', () => api.wishlist.updateStatus(item._id, status, item.editVersion), result => result?._id === item._id && result.status === status);
 };
 const remove = async (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
