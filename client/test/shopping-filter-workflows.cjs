@@ -9,7 +9,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let version = 1; let writes = 0
+    let version = 1; let writes = 0; let holdInitial = true; let releaseInitial
     let items = [
       { _id: 'egg', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: true },
       { _id: 'milk', name: '牛奶', amount: '1L', category: 'other', checked: true, manual: true },
@@ -17,16 +17,21 @@ async function main () {
       { _id: 'rice', name: '大米', amount: '2斤', category: 'staple', checked: false, manual: true }
     ]
     const snapshot = () => ({ weekStart: '2026-10-26', supportsConditionalUpdates: true, listVersion: version, items })
-    await page.route('**/api/**', route => {
+    await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === '/shopping-list' && request.method() === 'GET') return route.fulfill({ json: snapshot() })
+      if (path === '/shopping-list' && request.method() === 'GET') { if (holdInitial) await new Promise(resolve => { releaseInitial = resolve }); return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/items' && request.method() === 'POST') { const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = [...items, { _id: 'new-item', name: body.name, amount: body.amount, category: body.category, checked: false, manual: true }]; return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/purchased' && request.method() === 'DELETE') { assert.equal(Number(url.searchParams.get('expectedVersion')), version); writes++; version++; items = items.filter(item => !item.checked); return route.fulfill({ json: snapshot() }) }
       if (path.startsWith('/shopping-list/items/') && request.method() === 'PATCH') { const id = path.split('/').pop(); const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = items.map(item => item._id === id ? { ...item, checked: body.checked } : item); return route.fulfill({ json: snapshot() }) }
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/shopping-list`)
+    await page.getByText('正在读取所选周采购进度…').waitFor()
+    assert.equal(await page.locator('.progress-card').count(), 0, 'loading must not look like an empty list')
+    for (let i = 0; i < 100 && !releaseInitial; i++) await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(typeof releaseInitial, 'function')
+    holdInitial = false; releaseInitial()
     await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
     assert.match(await page.locator('.progress-card').innerText(), /2\s*\/\s*4/)
     await page.getByRole('button', { name: '待买', exact: true }).click()
@@ -37,10 +42,16 @@ async function main () {
     await search.fill('蔬菜')
     await page.getByText('显示 1 / 4 项 · 本周待买 2 项').waitFor()
     await page.getByText('菠菜', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '清除筛选', exact: true }).click()
+    await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
+    assert.equal(await search.inputValue(), '')
+    assert.equal(await search.evaluate(node => document.activeElement === node), true)
+    await page.getByRole('button', { name: '待买', exact: true }).click()
     await search.fill('没有匹配')
     await page.getByText('没有符合条件的食材').waitFor()
     await page.getByRole('button', { name: '清除筛选' }).click()
     await page.getByText('显示 4 / 4 项 · 本周待买 2 项').waitFor()
+    assert.equal(await search.evaluate(node => document.activeElement === node), true)
     await page.getByRole('button', { name: '已买', exact: true }).click()
     await search.fill('鸡蛋')
     await page.getByText('显示 1 / 4 项 · 本周待买 2 项').waitFor()

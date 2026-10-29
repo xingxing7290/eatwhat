@@ -10,7 +10,7 @@ import { validWeekLink } from '@/utils/weekLink.mjs';
 const route = useRoute();
 const router = useRouter();
 const weekLinkNotice = ref('');
-const loading = ref(false);
+const loading = ref(true);
 const working = ref(false);
 const loadError = ref('');
 const list = ref({ items: [] });
@@ -26,6 +26,7 @@ const search = ref('');
 const statusFilter = ref('all');
 const groupGrid = ref(null);
 const filterGroup = ref(null);
+const searchInput = ref(null);
 const categoryText = { vegetable: '蔬菜', meat_egg: '肉蛋', staple: '主食', seasoning: '调料', other: '其他' };
 const categoryKey = item => Object.prototype.hasOwnProperty.call(categoryText, item.category) ? item.category : 'other';
 const monday = value => { const d = value ? new Date(...value.split('-').map((part, index) => index === 1 ? Number(part) - 1 : Number(part))) : new Date(); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -45,7 +46,7 @@ const filteredItems = computed(() => {
   });
 });
 const groups = computed(() => Object.keys(categoryText).map(key => ({ key, label: categoryText[key], items: filteredItems.value.filter(item => categoryKey(item) === key) })).filter(group => group.items.length));
-const resetFilters = () => { search.value = ''; statusFilter.value = 'all'; };
+const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; await nextTick(); searchInput.value?.focus(); };
 const draftDirty = computed(() => !!(form.name.trim() || form.amount.trim() || form.category !== 'other'));
 const uncertain = computed(() => !!mutationIssue.value);
 const versionAvailable = computed(() => list.value.supportsConditionalUpdates === true && Number.isSafeInteger(list.value.listVersion) && list.value.listVersion >= 0);
@@ -177,11 +178,13 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
     <el-alert v-else-if="!loading && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，购物清单暂时只能查看。" />
     <el-alert v-if="generationNotice" class="generation-alert" type="warning" :closable="false" show-icon :title="generationNotice"><p v-if="generationDates.length">需核对的日期：{{ generationDates.join('、') }}。</p><p v-else>{{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}可能跨月，请核对整周的安排。</p><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: generationDates[0] || monday(weekStart) } }">前往日历核对</router-link><el-button link @click="generationNotice = ''; generationDates = []">关闭提示</el-button><nav v-if="generationDates.length > 1" class="affected-dates" aria-label="按日期核对购物清单"><span>逐日核对：</span><router-link v-for="date in generationDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
-    <div class="progress-card"><div><span>采购进度</span><strong>{{ purchased }} / {{ list.items?.length || 0 }}</strong><small>项已买好</small></div><el-progress :percentage="list.items?.length ? Math.round(purchased / list.items.length * 100) : 0" :show-text="false" /></div>
+    <div v-if="loading" class="progress-loading" role="status">正在读取所选周采购进度…</div>
+    <div v-else class="progress-card"><div><span>采购进度</span><strong>{{ purchased }} / {{ list.items?.length || 0 }}</strong><small>项已买好</small></div><el-progress :percentage="list.items?.length ? Math.round(purchased / list.items.length * 100) : 0" :show-text="false" /></div>
     <el-card><div class="add-row"><el-input v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keyup.enter="addItem" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keyup.enter="addItem" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">
-      <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p></div><el-input v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
+      <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p></div><el-input ref="searchInput" v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
       <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'pending', label: '待买' }, { value: 'purchased', label: '已买' }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button></div>
+      <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
     </section>
     <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加" />
     <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
@@ -193,6 +196,9 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 <style scoped>
 .shopping-page { --shopping-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }.page-header{display:flex;justify-content:space-between;gap:20px;align-items:center;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:26px;padding:clamp(22px,3vw,36px);box-shadow:0 12px 28px var(--shadow-color)}h1{margin:8px 0;font-family:Georgia,'Songti SC',serif;font-size:clamp(26px,3vw,36px);color:var(--text-primary)}.eyebrow{color:var(--shopping-accent);font-size:11px;letter-spacing:.14em;font-weight:800}.page-header p,.page-header small{color:var(--text-secondary)}.actions,.add-row{display:flex;gap:10px;flex-wrap:wrap}.actions .el-button,.add-row .el-button{margin:0}.add-row .el-input{flex:1;min-width:160px}.progress-card{display:flex;align-items:center;gap:24px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:20px;padding:18px 24px}.progress-card>div:first-child{display:flex;align-items:baseline;gap:8px;white-space:nowrap;color:var(--text-secondary)}.progress-card strong{color:var(--shopping-accent);font-size:26px}.progress-card .el-progress{flex:1}.load-error{padding:18px;border:1px solid var(--border-color);border-radius:18px;background:var(--bg-primary);color:var(--text-secondary)}.group-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));gap:14px}.item-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--border-light)}.item-row :deep(.el-checkbox){height:auto;min-width:0;flex:1}.item-row :deep(.el-checkbox__label){white-space:normal;overflow-wrap:anywhere}.item-row.checked :deep(.el-checkbox__label){color:var(--text-secondary);text-decoration:line-through}.item-row :deep(.el-checkbox__label span){margin-left:8px;color:var(--text-secondary)}.item-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}.item-actions .el-button{min-width:44px;min-height:44px}@media(max-width:720px){.page-header{flex-direction:column;align-items:stretch}.add-row{flex-direction:column}.add-row :deep(.el-input__wrapper),.add-row :deep(.el-select__wrapper),.add-row .el-button,.actions .el-button{min-height:44px}.progress-card{align-items:stretch;flex-direction:column;gap:12px}.group-grid{grid-template-columns:1fr}}
 .list-tools { padding: 20px 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; }
+.progress-loading { padding: 18px 24px; border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-secondary); color: var(--text-primary); }
+.filter-reset { min-height: 44px; margin-top: 8px; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.filter-reset:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }
 .list-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; }

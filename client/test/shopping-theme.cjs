@@ -24,7 +24,7 @@ async function main () {
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
-      for (const width of [390, 1280]) {
+      for (const width of [320, 390, 1280]) {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
@@ -34,6 +34,15 @@ async function main () {
           }
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
+      }
+    }
+    await page.getByRole('button', { name: '待买', exact: true }).click()
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        const result = await contrast(page, '.filter-reset')
+        assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} reset: ${result.ratio}`)
       }
     }
     console.log('Shopping theme checks passed: contrast and mobile layout')

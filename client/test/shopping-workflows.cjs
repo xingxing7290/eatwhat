@@ -63,6 +63,7 @@ async function main () {
     await page.locator('.mobile-nav').getByRole('link', { name: '首页' }).click()
     await page.getByRole('button', { name: '继续编辑' }).click()
     assert.match(await input.inputValue(), /很长的测试食材/)
+    await page.locator('.mobile-nav').getByRole('button', { name: '关闭导航菜单' }).click()
     assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
     await page.getByRole('button', { name: '添加食材' }).click()
     await page.getByText('操作结果未确认', { exact: false }).waitFor()
