@@ -22,6 +22,7 @@
     "test:memory": "node test/memory-workflows.cjs",
     "test:memory-timeline": "node test/memory-timeline-workflows.cjs",
     "test:memory-edit": "node test/memory-edit-workflows.cjs",
+    "test:memory-unavailable": "node test/memory-unavailable-workflows.cjs",
     "test:wishlist": "node test/wishlist-workflows.cjs",
     "test:wishlist-filter": "node test/wishlist-filter-workflows.cjs",
     "test:wishlist-board": "node test/wishlist-board-workflows.cjs",

@@ -45,6 +45,7 @@ const editing = ref(null);
 const editIssue = ref('');
 const editReviewed = ref(false);
 const checkingEdit = ref(false);
+const confirmingMeals = ref(false);
 const latestEdit = ref(null);
 const latestError = ref('');
 const linkedId = ref('');
@@ -56,11 +57,15 @@ const photoFiles = ref([]);
 const viewedPhoto = ref(null);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
+const unavailableMealCount = ref(0);
+const clearedUnavailableMeals = ref(false);
+const originalAvailableMeals = ref([]);
+const mealVisibilityVerified = ref(false);
 const initialForm = ref(JSON.stringify(form));
-const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
+const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0 || clearedUnavailableMeals.value);
 const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => resetForm(), reopen: () => { dialogVisible.value = true; }, label: '回忆' });
 const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
-const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || checkingDelete.value || linkedLoading.value || !!deletingId.value);
+const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || checkingDelete.value || confirmingMeals.value || linkedLoading.value || !!deletingId.value);
 const uncertain = computed(() => saveUncertain.value || !!editIssue.value || !!deleteIssue.value);
 useDraftGuard({ dirty, busy, uncertain, label: '饭后回忆' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
@@ -199,16 +204,38 @@ const resetForm = () => {
   Object.assign(form, { date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
   photoFiles.value = [];
   selectedMeals.value = [];
+  unavailableMealCount.value = 0; clearedUnavailableMeals.value = false; originalAvailableMeals.value = []; mealVisibilityVerified.value = false;
   editing.value = null; editIssue.value = ''; editReviewed.value = false; latestEdit.value = null; latestError.value = '';
   initialForm.value = JSON.stringify(form);
 };
 const fillEdit = item => {
-  if (!(item?._id || item?.id) || !validVersion(item) || typeof item.date !== 'string' || !Object.prototype.hasOwnProperty.call(mealTypeText, item.mealType) || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || !Array.isArray(item.mealIds) || item.mealIds.some(meal => !mealId(meal) || typeof meal.name !== 'string')) throw new Error('回忆数据或版本不完整，请刷新后重试');
-  Object.assign(form, { date: item.date, mealType: item.mealType, title: item.title || '', mood: item.mood || '', rating: item.rating || 0, note: item.note || '', actualCookTime: item.actualCookTime || 0, nextImprovement: item.nextImprovement || '', mealIds: item.mealIds.map(mealId), existingPhotos: [...item.photos] });
-  selectedMeals.value = [...item.mealIds]; photoFiles.value = [];
+  if (!(item?._id || item?.id) || !validVersion(item) || typeof item.date !== 'string' || !Object.prototype.hasOwnProperty.call(mealTypeText, item.mealType) || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || !Array.isArray(item.mealIds) || item.mealIds.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string'))) throw new Error('回忆数据或版本不完整，请刷新后重试');
+  unavailableMealCount.value = item.mealIds.filter(meal => meal === null).length;
+  clearedUnavailableMeals.value = false; mealVisibilityVerified.value = item.supportsUnavailableMealVisibility === true;
+  originalAvailableMeals.value = item.mealIds.filter(Boolean);
+  Object.assign(form, { date: item.date, mealType: item.mealType, title: item.title || '', mood: item.mood || '', rating: item.rating || 0, note: item.note || '', actualCookTime: item.actualCookTime || 0, nextImprovement: item.nextImprovement || '', mealIds: originalAvailableMeals.value.map(mealId), existingPhotos: [...item.photos] });
+  selectedMeals.value = [...originalAvailableMeals.value]; photoFiles.value = [];
   editing.value = { id: String(item._id || item.id), version: { ...item.editVersion } };
   editIssue.value = ''; editReviewed.value = false; latestEdit.value = null; latestError.value = '';
   initialForm.value = JSON.stringify(form);
+};
+const clearUnavailableMeals = async () => {
+  if (!editing.value || !mealVisibilityVerified.value || !unavailableMealCount.value || clearedUnavailableMeals.value || busy.value) return;
+  confirmingMeals.value = true;
+  try { await ElMessageBox.confirm(`保存后会从这条回忆中移除 ${unavailableMealCount.value} 条不可用菜品引用，不会删除菜谱。`, '清除不可用菜品？', { type: 'warning', confirmButtonText: '确认清除并编辑', cancelButtonText: '保留原记录' }); }
+  catch (_) { return; } finally { confirmingMeals.value = false; }
+  clearedUnavailableMeals.value = true;
+};
+const undoClearUnavailableMeals = async () => {
+  if (!clearedUnavailableMeals.value || busy.value) return;
+  const original = JSON.parse(initialForm.value).mealIds;
+  if (JSON.stringify(form.mealIds) !== JSON.stringify(original)) {
+    confirmingMeals.value = true;
+    try { await ElMessageBox.confirm('撤销清除会放弃当前相关菜品的调整。', '撤销清除？', { type: 'warning', confirmButtonText: '放弃调整并撤销', cancelButtonText: '继续编辑' }); } catch (_) { return; } finally { confirmingMeals.value = false; }
+  }
+  form.mealIds = [...original];
+  selectedMeals.value = [...selectedMeals.value, ...originalAvailableMeals.value];
+  rememberMeals(form.mealIds); clearedUnavailableMeals.value = false;
 };
 const confirmReplaceDraft = async () => {
   if (!dirty.value) return true;
@@ -232,7 +259,7 @@ const checkLatest = async () => {
   if (!editing.value || checkingEdit.value) return;
   checkingEdit.value = true; editReviewed.value = false; latestError.value = ''; latestEdit.value = null;
   try {
-    const item = await api.memory.get(editing.value.id);
+    const item = await api.memory.get(editing.value.id, { params: { view: 'editor' } });
     if (!item || String(item._id || item.id) !== editing.value.id || !validVersion(item)) throw new Error('最新回忆数据或版本不完整');
     latestEdit.value = item; editReviewed.value = true;
   } catch (e) {
@@ -259,7 +286,7 @@ const openLinkedMemory = async id => {
   if (!await confirmReplaceDraft()) return;
   linkedId.value = id; linkedLoading.value = true; linkedError.value = '';
   try {
-    const item = await api.memory.get(id);
+    const item = await api.memory.get(id, { params: { view: 'editor' } });
     if (!alive) return;
     if (!item || String(item._id || item.id) !== id) throw new Error('回忆数据不完整');
     fillEdit(item); dialogVisible.value = true; linkedId.value = '';
@@ -272,10 +299,10 @@ const load = async () => {
   loading.value = true;
   loadError.value = '';
   try {
-    const query = { view: 'timeline', page: timelinePage.value, limit: timelineLimit, search: timelineSearch.value.trim(), mealType: timelineMealType.value, photos: timelinePhotos.value, ...(timelineMonth.value ? { month: timelineMonth.value } : {}) };
+    const query = { view: 'timeline', mealVisibility: 'preserve', page: timelinePage.value, limit: timelineLimit, search: timelineSearch.value.trim(), mealType: timelineMealType.value, photos: timelinePhotos.value, ...(timelineMonth.value ? { month: timelineMonth.value } : {}) };
     const memoryData = await api.memory.list(query);
     if (!alive || sequence !== memorySequence) return;
-    const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && item._id && typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)) && new Set(rows.map(item => item._id)).size === rows.length;
+    const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && item._id && typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && (item.mealIds === undefined || (Array.isArray(item.mealIds) && item.mealIds.every(meal => meal === null || (!!mealId(meal) && typeof meal.name === 'string')))) && (item.photos === undefined || (Array.isArray(item.photos) && item.photos.every(photo => typeof photo === 'string')))) && new Set(rows.map(item => item._id)).size === rows.length;
     if (memoryData?.supportsMemoryTimeline === true) {
       if (memoryData.page !== query.page || memoryData.limit !== timelineLimit || memoryData.search !== query.search || memoryData.month !== (query.month || '') || memoryData.mealType !== query.mealType || memoryData.photos !== query.photos || !Number.isSafeInteger(memoryData.total) || memoryData.total < 0 || !validItems(memoryData.items) || memoryData.items.length !== Math.min(timelineLimit, Math.max(0, memoryData.total - (query.page - 1) * timelineLimit))) throw new Error('回忆分页数据不完整');
       timelineCapable.value = true; timelineTotal.value = memoryData.total;
@@ -322,7 +349,8 @@ watch([timelineSearch, timelineMonth, timelineMealType, timelinePhotos], () => {
 }, { flush: 'sync' });
 const save = async () => {
   if (!form.date) return ElMessage.warning('请选择日期');
-  if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value) return;
+  if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value || confirmingMeals.value) return;
+  if (editing.value && (!mealVisibilityVerified.value || (unavailableMealCount.value && !clearedUnavailableMeals.value)) && (clearedUnavailableMeals.value || JSON.stringify(form.mealIds) !== JSON.stringify(JSON.parse(initialForm.value).mealIds))) return ElMessage.warning('请先核对菜品完整性，再修改相关菜品');
   try {
     const invalidPhoto = photoFiles.value.find(file => !isSupportedPhoto(file.raw || file));
     if (invalidPhoto) {
@@ -337,7 +365,7 @@ const save = async () => {
     const original = editing.value ? JSON.parse(initialForm.value) : null;
     Object.entries(form).forEach(([key, value]) => {
       if (!editing.value && key === 'existingPhotos') return;
-      if (editing.value && JSON.stringify(value) === JSON.stringify(original[key])) return;
+      if (editing.value && JSON.stringify(value) === JSON.stringify(original[key]) && !(key === 'mealIds' && clearedUnavailableMeals.value)) return;
       fd.append(key, Array.isArray(value) ? JSON.stringify(value) : value);
     });
     if (editing.value) fd.append('expectedEditVersion', JSON.stringify(editing.value.version));
@@ -425,29 +453,31 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
             <div class="meta"><span>{{ item.mood || '日常' }}</span><el-rate :model-value="item.rating || 0" disabled size="small" /></div>
             <p v-if="item.actualCookTime || item.nextImprovement" class="cooking-note"><span v-if="item.actualCookTime">用时 {{ item.actualCookTime }} 分钟</span><span v-if="item.nextImprovement">下次改进：{{ item.nextImprovement }}</span></p>
             <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="memory-photo" :aria-label="`查看${item.title || '回忆'}的第 ${index + 1} 张照片`" @click="openMemoryPhoto(item, index)"><img :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
-            <div class="meal-names"><el-tag v-for="meal in item.mealIds || []" :key="meal._id" effect="plain">{{ meal.name }}</el-tag></div>
+            <p v-if="item.supportsUnavailableMealVisibility && item.mealIds?.some(meal => meal === null)" class="unavailable-note">部分相关菜品不可用，原有引用仍保留在回忆中。</p>
+            <div class="meal-names"><el-tag v-for="(meal, index) in item.mealIds || []" :key="meal?._id || `unavailable-${index}`" effect="plain">{{ meal?.name || '菜品不可用' }}</el-tag></div>
           </el-card>
         </div>
       </section>
     </div>
     <nav v-if="timelineCapable && !loadError && timelineTotal > timelineLimit" class="timeline-pagination" aria-label="回忆分页"><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage <= 1" @click="changeTimelinePage(timelinePage - 1)">上一页</el-button><span aria-live="polite">第 {{ timelinePage }} / {{ timelinePages }} 页</span><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage >= timelinePages" @click="changeTimelinePage(timelinePage + 1)">下一页</el-button></nav>
 
-    <el-dialog v-model="dialogVisible" :title="editing ? '编辑饭后回忆' : '记录饭后回忆'" width="min(560px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
+    <el-dialog v-model="dialogVisible" :title="editing ? '编辑饭后回忆' : '记录饭后回忆'" width="min(560px, 92vw)" :close-on-click-modal="!saving && !confirmingMeals" :close-on-press-escape="!saving && !confirmingMeals" :show-close="!saving && !confirmingMeals">
       <CreateRecoveryNotice v-if="saveUncertain" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
       <el-alert v-if="editIssue" type="warning" :closable="false" show-icon :title="editIssue === 'conflict' ? '回忆已被修改或删除，本次未保存。' : '编辑结果未确认，请先核对最新回忆。'">
         <p>你的草稿和所选照片仍在本页。载入最新内容会放弃当前草稿。</p>
         <el-button link type="primary" :loading="checkingEdit" @click="checkLatest">读取最新回忆并核对</el-button>
         <p v-if="latestError">{{ latestError }}</p>
         <div v-if="editReviewed" class="latest-summary">
-          <template v-if="latestEdit"><strong>{{ latestEdit.title || '温馨一餐' }} · {{ latestEdit.date }}</strong><p>{{ mealTypeText[latestEdit.mealType] || latestEdit.mealType }} · {{ latestEdit.mood || '日常' }} · {{ latestEdit.rating || 0 }} 分 · {{ latestEdit.photos?.length || 0 }} 张照片</p><p>{{ latestEdit.note || '无备注' }}</p><p>菜品：{{ (latestEdit.mealIds || []).map(meal => meal.name).join('、') || '未关联' }}</p><p v-if="latestEdit.actualCookTime || latestEdit.nextImprovement">用时 {{ latestEdit.actualCookTime || 0 }} 分钟 · {{ latestEdit.nextImprovement || '无改进记录' }}</p><el-button link type="primary" @click="reloadLatest">放弃草稿并载入最新</el-button><el-button v-if="editIssue === 'unknown' && sameVersion(editing?.version, latestEdit.editVersion)" link type="primary" @click="retryEdit">已核对，允许重试</el-button></template>
+          <template v-if="latestEdit"><strong>{{ latestEdit.title || '温馨一餐' }} · {{ latestEdit.date }}</strong><p>{{ mealTypeText[latestEdit.mealType] || latestEdit.mealType }} · {{ latestEdit.mood || '日常' }} · {{ latestEdit.rating || 0 }} 分 · {{ latestEdit.photos?.length || 0 }} 张照片</p><p>{{ latestEdit.note || '无备注' }}</p><p>菜品：{{ (latestEdit.mealIds || []).map(meal => meal?.name || '菜品不可用').join('、') || '未关联' }}</p><p v-if="latestEdit.actualCookTime || latestEdit.nextImprovement">用时 {{ latestEdit.actualCookTime || 0 }} 分钟 · {{ latestEdit.nextImprovement || '无改进记录' }}</p><el-button link type="primary" @click="reloadLatest">放弃草稿并载入最新</el-button><el-button v-if="editIssue === 'unknown' && sameVersion(editing?.version, latestEdit.editVersion)" link type="primary" @click="retryEdit">已核对，允许重试</el-button></template>
           <p v-else>这条回忆已不存在或不属于当前家庭。</p>
           <el-button link type="danger" @click="discardEditDraft">放弃编辑草稿</el-button>
         </div>
       </el-alert>
+      <el-alert v-if="editing && !mealVisibilityVerified" class="meal-integrity-alert" type="warning" :closable="false" show-icon title="当前服务器未提供菜品完整性核验，暂不能修改相关菜品；文字和照片仍可编辑。" />
       <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" type="date" /></el-form-item>
         <el-form-item label="餐次"><el-select v-model="form.mealType"><el-option v-for="(label, key) in mealTypeText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
-        <el-form-item label="相关菜品"><el-select v-model="form.mealIds" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" aria-label="搜索相关菜品" placeholder="搜索菜名或食材" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select><small v-if="!mealError && mealTotal > 50" class="meal-help">仅显示前 50 道，请输入菜名或食材缩小范围。</small><el-alert v-if="mealError" type="warning" :closable="false" show-icon :title="`菜品暂时无法加载：${mealError}`"><el-button link type="primary" @click="searchMealCatalog">重试</el-button></el-alert></el-form-item>
+        <el-form-item label="相关菜品"><div v-if="editing && unavailableMealCount" class="unavailable-meals" role="status"><span v-if="!clearedUnavailableMeals">有 {{ unavailableMealCount }} 条相关菜品不可用；原引用将保留。</span><span v-else>保存后将清除这条回忆中的不可用引用。</span><el-button v-if="mealVisibilityVerified && !clearedUnavailableMeals" link type="primary" :disabled="busy" @click="clearUnavailableMeals">清除并编辑相关菜品</el-button><el-button v-else-if="clearedUnavailableMeals" link :disabled="busy" @click="undoClearUnavailableMeals">撤销清除</el-button></div><el-select v-model="form.mealIds" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" :disabled="!!editing && (!mealVisibilityVerified || (!!unavailableMealCount && !clearedUnavailableMeals))" aria-label="搜索相关菜品" placeholder="搜索菜名或食材" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select><small v-if="!mealError && mealTotal > 50" class="meal-help">仅显示前 50 道，请输入菜名或食材缩小范围。</small><el-alert v-if="mealError" type="warning" :closable="false" show-icon :title="`菜品暂时无法加载：${mealError}`"><el-button link type="primary" @click="searchMealCatalog">重试</el-button></el-alert></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" placeholder="比如：周五晚上的番茄牛腩" /></el-form-item>
         <el-form-item label="心情"><el-input v-model="form.mood" placeholder="开心、满足、想再吃一次..." /></el-form-item>
         <el-form-item label="评分"><el-rate v-model="form.rating" /></el-form-item>
@@ -456,7 +486,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         <el-form-item label="下次改进"><el-input v-model="form.nextImprovement" type="textarea" rows="2" placeholder="下次想调整什么？" /></el-form-item>
         <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="form.existingPhotos.splice(index, 1)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload><small class="meal-help">每次最多上传 12 张 JPG、PNG、GIF 或 WebP，单张不超过 5MB。移除已有照片需保存才生效。</small></el-form-item>
       </el-form>
-      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue" :loading="saving" @click="save">保存</el-button></template>
+      <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || confirmingMeals" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || confirmingMeals" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
     <el-dialog :model-value="!!viewedPhoto" title="饭后照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img :key="`${viewedPhoto.index}-${viewedPhoto.photos[viewedPhoto.index]}`" class="photo-preview" :src="imageFor(viewedPhoto.photos[viewedPhoto.index])" :alt="viewedPhoto.title" @error="imageError" /><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张回忆照片" @click="moveMemoryPhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.photos.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.photos.length - 1" aria-label="下一张回忆照片" @click="moveMemoryPhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
@@ -508,5 +538,11 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .timeline-pagination :deep(.el-button) { min-height: 44px; }
 :global(html.dark .memory-filters) { --memory-accent: var(--secondary-color); }
 .meal-names { justify-content: flex-start; flex-wrap: wrap; margin-top: 10px; }
+.unavailable-note { color: var(--text-primary) !important; font-size: 13px; line-height: 1.5; }
+.unavailable-meals { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; }
+.unavailable-meals :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.meal-integrity-alert { --notice-ink: #623a10; margin-bottom: 14px; background: #fff1db; color: var(--notice-ink); }
+.meal-integrity-alert :deep(.el-alert__title), .meal-integrity-alert :deep(.el-alert__icon) { color: var(--notice-ink); }
+:global(html.dark) .meal-integrity-alert { --notice-ink: #ffe4bd; background: #543b29; }
 @media (max-width: 640px) { .page-header { flex-direction: column; align-items: stretch; } .memory-filters { padding: 18px; } .filter-heading { align-items: stretch; flex-direction: column; } .search-field { width: 100%; } }
 </style>

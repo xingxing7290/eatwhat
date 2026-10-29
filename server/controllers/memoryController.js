@@ -22,12 +22,12 @@ function stringArray(value) {
 function photoUrls(req) {
   return (req.files || []).map(file => buildImageUrl(req, file.filename));
 }
-function populateQuery(q, householdId) {
-  return q.populate({ path: 'mealIds', match: { householdId } }).populate({ path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' }).populate({ path: 'participants', match: { householdId }, select: 'username displayName avatarUrl' });
+function populateQuery(q, householdId, preserveMissing = false) {
+  return q.populate({ path: 'mealIds', match: { householdId }, retainNullValues: preserveMissing }).populate({ path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' }).populate({ path: 'participants', match: { householdId }, select: 'username displayName avatarUrl' });
 }
 function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
-function present(item) {
-  return { ...(item.toObject ? item.toObject() : item), supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
+function present(item, preserveMissing = false) {
+  return { ...(item.toObject ? item.toObject() : item), supportsConditionalEdit: true, supportsConditionalDelete: true, ...(preserveMissing ? { supportsUnavailableMealVisibility: true } : {}), editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
 }
 function parseEditVersion(value) {
   let version = value;
@@ -64,6 +64,7 @@ exports.list = async (req, res, next) => {
     if (req.query.month) { if (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month)) return res.status(400).json({ error: '月份无效' }); query.date = { $regex: `^${req.query.month}` }; }
     if (req.query.mealId) { if (typeof req.query.mealId !== 'string' || !mongoose.isValidObjectId(req.query.mealId)) return res.status(400).json({ error: '菜品无效' }); query.mealIds = req.query.mealId; }
     if (req.query.view === 'timeline') {
+      const preserveMissing = req.query.mealVisibility === 'preserve';
       const { page: pageInput = '1', limit: limitInput = '12', search = '', mealType = 'all', photos = 'all' } = req.query;
       if (typeof pageInput !== 'string' || !/^[1-9]\d*$/.test(pageInput) || typeof limitInput !== 'string' || !/^[1-9]\d*$/.test(limitInput) || typeof search !== 'string' || search.length > 100 || typeof mealType !== 'string' || !['all', 'breakfast', 'lunch', 'dinner', 'snack', 'other'].includes(mealType) || typeof photos !== 'string' || !['all', 'yes', 'no'].includes(photos)) return res.status(400).json({ error: '回忆筛选或分页参数无效' });
       const page = Number(pageInput); const limit = Number(limitInput); const skip = (page - 1) * limit; const term = search.trim();
@@ -74,11 +75,11 @@ exports.list = async (req, res, next) => {
       if (term) { const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); query.$or = [{ title: regex }, { note: regex }, { mood: regex }, { nextImprovement: regex }]; }
       const [result] = await MealMemory.aggregate([{ $match: query }, { $facet: { items: [{ $sort: { date: -1, createdAt: -1, _id: -1 } }, { $skip: skip }, { $limit: limit }], count: [{ $count: 'total' }] } }]);
       const items = result?.items || [];
-      await MealMemory.populate(items, [{ path: 'mealIds', match: { householdId: household._id } }, { path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' }, { path: 'participants', match: { householdId: household._id }, select: 'username displayName avatarUrl' }]);
-      return res.json({ supportsMemoryTimeline: true, page, limit, search: term, month: req.query.month || '', mealId: req.query.mealId || '', mealType, photos, total: result?.count?.[0]?.total || 0, items: items.map(present) });
+      await MealMemory.populate(items, [{ path: 'mealIds', match: { householdId: household._id }, retainNullValues: preserveMissing }, { path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' }, { path: 'participants', match: { householdId: household._id }, select: 'username displayName avatarUrl' }]);
+      return res.json({ supportsMemoryTimeline: true, page, limit, search: term, month: req.query.month || '', mealId: req.query.mealId || '', mealType, photos, total: result?.count?.[0]?.total || 0, items: items.map(item => present(item, preserveMissing)) });
     }
     const memories = await populateQuery(MealMemory.find(query).sort({ date: -1, createdAt: -1 }).limit(200), household._id);
-    res.json(memories.map(present));
+    res.json(memories.map(item => present(item)));
   } catch (err) { next(err); }
 };
 
@@ -86,9 +87,10 @@ exports.get = async (req, res, next) => {
   try {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     if (!mongoose.isValidObjectId(req.params.id)) return res.status(400).json({ error: '回忆编号无效' });
-    const memory = await populateQuery(MealMemory.findOne({ _id: req.params.id, householdId: household._id }), household._id);
+    const preserveMissing = req.query.view === 'editor';
+    const memory = await populateQuery(MealMemory.findOne({ _id: req.params.id, householdId: household._id }), household._id, preserveMissing);
     if (!memory) return res.status(404).json({ code: 'MEMORY_NOT_FOUND', error: '未找到回忆记录' });
-    res.json(present(memory));
+    res.json(present(memory, preserveMissing));
   } catch (err) { next(err); }
 };
 
