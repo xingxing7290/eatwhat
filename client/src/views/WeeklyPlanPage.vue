@@ -92,7 +92,8 @@ const hasReadableMeal = item => {
 };
 const unavailableMeal = item => !!item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'meal') && item.meal === null;
 const unavailableCount = computed(() => (current.value?.days || []).reduce((total, day) => total + Object.keys(mealTypes).reduce((sum, type) => sum + (day.meals?.[type] || []).filter(unavailableMeal).length, 0), 0));
-const firstUnavailableDate = computed(() => current.value?.days.find(day => Object.keys(mealTypes).some(type => (day.meals?.[type] || []).some(unavailableMeal)))?.date || weekStart.value);
+const unavailableDates = computed(() => (current.value?.days || []).filter(day => Object.keys(mealTypes).some(type => (day.meals?.[type] || []).some(unavailableMeal))).map(day => day.date));
+const firstUnavailableDate = computed(() => unavailableDates.value[0] || weekStart.value);
 const validateCurrent = (result, requestedWeek) => {
   const dates = datesFor(requestedWeek);
   if (!result || result.weekStart !== dates[0] || !Array.isArray(result.days) || result.days.length !== 7 ||
@@ -275,7 +276,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
-    <el-alert v-if="unavailableCount" class="unavailable-alert" type="warning" :closable="false" show-icon :title="`当前周有 ${unavailableCount} 条菜品不可用的排餐，暂不能应用草稿，以免覆盖原有安排。`"><span>请先在日历中核对并清除相应餐次，再重新安排。</span><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: firstUnavailableDate } }">前往日历</router-link></el-alert>
+    <el-alert v-if="unavailableCount" class="unavailable-alert" type="warning" :closable="false" show-icon :title="`当前周有 ${unavailableCount} 条菜品不可用的排餐，暂不能应用草稿，以免覆盖原有安排。`"><span>请先在日历中核对并清除相应餐次，再重新安排。</span><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: firstUnavailableDate } }">前往日历</router-link><nav v-if="unavailableDates.length > 1" class="affected-dates" aria-label="按日期核对周计划"><span>逐日核对：</span><router-link v-for="date in unavailableDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
     <el-card v-if="draft" class="draft-card"><template #header><div class="draft-heading"><div><strong>规则生成草稿</strong><span>可逐餐调整，应用后才会写入日历</span></div><el-button :disabled="loading || busy" @click="discardDraft">放弃草稿</el-button></div></template>
       <div v-if="draftImpact" class="impact-summary" aria-label="草稿对当前安排的影响"><div><span>新增</span><strong>{{ draftImpact.added }}</strong><small>餐</small></div><div><span>替换</span><strong>{{ draftImpact.replaced }}</strong><small>餐</small></div><div :class="{ caution: draftImpact.cleared > 0 }"><span>清空</span><strong>{{ draftImpact.cleared }}</strong><small>餐</small></div><div><span>菜品相同</span><strong>{{ draftImpact.same }}</strong><small>餐</small></div><p>按当前读取的菜品和顺序比较，“菜品相同”包括均为空的餐次；应用仍会写入全部七天，其他排餐信息也可能变化。</p></div>
       <div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)">{{ meal.name }}</el-tag><span v-if="!day.meals[type]?.length && !slotChange(day.date, type)" class="muted">空</span><span v-if="slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
@@ -312,6 +313,7 @@ h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-fam
 .unavailable-alert { --notice-ink: #623a10; background: #fff1db; color: var(--notice-ink); }
 .unavailable-alert :deep(.el-alert__title), .unavailable-alert :deep(.el-alert__description), .unavailable-alert :deep(.el-alert__icon) { color: var(--notice-ink); }
 .calendar-link { display: inline-flex; align-items: center; min-height: 44px; margin-left: 12px; color: var(--notice-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.affected-dates { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; color: var(--notice-ink); }.affected-dates a { display: inline-flex; align-items: center; min-height: 44px; color: var(--notice-ink); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.affected-dates a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 :global(html.dark) .unavailable-alert { --notice-ink: #ffe4bd; background: #543b29; }
 .draft-slot { flex-wrap: nowrap; align-items: flex-start; }
 .draft-slot strong { padding-top: 7px; }

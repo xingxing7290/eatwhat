@@ -281,10 +281,14 @@ async function main() {
     assert.equal(emptyScopedShopping.status, 200);
     const scopedShopping = await request('/shopping-list/items', { method: 'POST', token: scopedToken, body: { weekStart: scopeToday, expectedVersion: emptyScopedShopping.data.listVersion, name: '保留的手动食材', amount: '1份' } });
     assert.equal(scopedShopping.status, 201);
+    const scopeWeek = require('../utils/week').weekDates(require('../utils/week').startOfWeek(scopeToday));
+    const otherUnavailableDate = scopeWeek.find(date => date !== scopeToday);
+    const otherUnavailableSchedule = await Schedule.create({ householdId: scopedHome._id, date: otherUnavailableDate, meals: { breakfast: [{ meal: secretMeal._id }], lunch: [{ meal: secretMeal._id }], dinner: [] } });
     const rejectedGeneration = await request('/shopping-list/generate', { method: 'POST', token: scopedToken, body: { weekStart: scopeToday, expectedVersion: scopedShopping.data.listVersion } });
     assert.equal(rejectedGeneration.status, 409);
     assert.equal(rejectedGeneration.data.code, 'SCHEDULE_MEAL_UNAVAILABLE');
-    assert.deepEqual(rejectedGeneration.data.unavailableDates, [scopeToday]);
+    assert.deepEqual(rejectedGeneration.data.unavailableDates, [scopeToday, otherUnavailableDate].sort(), 'each affected household date is returned once in chronological order');
+    await Schedule.deleteOne({ _id: otherUnavailableSchedule._id });
     const unchangedShopping = await request(`/shopping-list?weekStart=${scopeToday}`, { token: scopedToken });
     assert.equal(unchangedShopping.data.listVersion, scopedShopping.data.listVersion);
     assert.deepEqual(unchangedShopping.data.items, scopedShopping.data.items);

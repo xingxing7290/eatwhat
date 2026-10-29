@@ -13,7 +13,7 @@ async function main () {
     const errors = []; let writes = 0; let legacyUnavailable = false; page.on('pageerror', error => errors.push(error.message))
     const dates = Array.from({ length: 7 }, (_, i) => new Date(Date.UTC(2026, 9, 26 + i)).toISOString().slice(0, 10))
     const slots = () => ({ breakfast: [], lunch: [], dinner: [] })
-    const days = dates.map(date => ({ date, meals: date === '2026-10-28' ? { ...slots(), dinner: [{ meal: null, addedBy: null }] } : slots(), scheduleExists: date === '2026-10-28', scheduleVersion: date === '2026-10-28' ? '2026-10-28T08:00:00.000Z' : null, hints: [] }))
+    const days = dates.map(date => ({ date, meals: ['2026-10-28', '2026-11-01'].includes(date) ? { ...slots(), dinner: [{ meal: null, addedBy: null }] } : slots(), scheduleExists: ['2026-10-28', '2026-11-01'].includes(date), scheduleVersion: ['2026-10-28', '2026-11-01'].includes(date) ? '2026-10-28T08:00:00.000Z' : null, hints: [] }))
     const list = { weekStart: dates[0], supportsConditionalUpdates: true, listVersion: 1, items: [{ _id: 'manual', name: '手动牛奶', amount: '1盒', category: 'other', manual: true, checked: false }] }
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -29,13 +29,13 @@ async function main () {
       }
       if (path === '/weekly-plans/apply' || path.startsWith('/schedules/2026-10-28/')) { writes++; return route.fulfill({ json: {} }) }
       if (path === '/shopping-list' && req.method() === 'GET') return route.fulfill({ json: list })
-      if (path === '/shopping-list/generate') return route.fulfill({ status: 409, json: { code: 'SCHEDULE_MEAL_UNAVAILABLE', error: '本周排餐包含不可用的菜品', ...(legacyUnavailable ? {} : { unavailableDates: ['2026-11-01', '2027-01-01', '2026-02-30'] }) } })
+      if (path === '/shopping-list/generate') return route.fulfill({ status: 409, json: { code: 'SCHEDULE_MEAL_UNAVAILABLE', error: '本周排餐包含不可用的菜品', ...(legacyUnavailable ? {} : { unavailableDates: ['2026-11-01', '2026-10-28', '2026-11-01', '2027-01-01', '2026-02-30'] }) } })
       if (path === '/meals') return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 8 } })
       if (path === '/meals/categories' || path === '/meals/tags' || path === '/wishlist') return route.fulfill({ json: [] })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/dashboard`)
-    await page.getByText('菜品不可用', { exact: true }).waitFor()
+    await page.getByText('菜品不可用', { exact: true }).first().waitFor()
     await page.goto(`${base}/calendar`)
     await page.getByText('部分菜品已不可用', { exact: false }).waitFor()
     await page.getByText('菜品不可用', { exact: true }).first().waitFor()
@@ -47,12 +47,22 @@ async function main () {
     await page.locator('.meal-selection').getByText('现有安排中有不可用的菜品', { exact: false }).waitFor()
     assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
     await page.goto(`${base}/weekly-plan`)
-    await page.getByText('当前周有 1 条菜品不可用的排餐', { exact: false }).waitFor()
+    await page.getByText('当前周有 2 条菜品不可用的排餐', { exact: false }).waitFor()
     assert.equal(await page.getByRole('link', { name: '前往日历', exact: true }).getAttribute('href'), '/calendar?date=2026-10-28')
-    await page.getByText('菜品不可用', { exact: true }).waitFor()
+    const weeklyDates = page.getByRole('navigation', { name: '按日期核对周计划' })
+    assert.equal(await weeklyDates.getByRole('link').count(), 2)
+    assert.equal(await weeklyDates.getByRole('link', { name: '查看 2026-11-01 的排餐' }).getAttribute('href'), '/calendar?date=2026-11-01')
+    await weeklyDates.getByRole('link', { name: '查看 2026-11-01 的排餐' }).click()
+    await page.getByText('已定位到 2026-11-01', { exact: false }).waitFor()
+    await page.goBack()
+    await page.getByText('当前周有 2 条菜品不可用的排餐', { exact: false }).waitFor()
+    await page.getByText('菜品不可用', { exact: true }).first().waitFor()
     await page.getByRole('button', { name: '生成草稿' }).click()
     await page.getByText('规则生成草稿').waitFor()
     assert.equal(await page.getByRole('button', { name: '应用到日历' }).isDisabled(), true)
+    await weeklyDates.getByRole('link', { name: '查看 2026-11-01 的排餐' }).click()
+    await page.getByRole('dialog', { name: '放弃未保存的内容？' }).getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(await page.getByText('规则生成草稿').count(), 1, 'date links must retain the existing draft when navigation is cancelled')
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const width of [390, 1280]) {
@@ -61,6 +71,8 @@ async function main () {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
           const result = await contrast(page, '.calendar-link')
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme}: ${JSON.stringify(result)}`)
+          const dateResult = await contrast(page, '.unavailable-alert .affected-dates a')
+          assert.ok(dateResult.ratio >= 4.5, `weekly date links: ${JSON.stringify(dateResult)}`)
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
       }
@@ -70,8 +82,9 @@ async function main () {
     await page.getByText('手动牛奶').waitFor()
     await page.getByRole('button', { name: '从排餐生成' }).click()
     await page.getByText('本次未生成购物清单，现有清单保持不变', { exact: false }).waitFor()
-    await page.getByText('需核对的日期：2026-11-01。').waitFor()
-    assert.equal(await page.getByRole('link', { name: '前往日历核对' }).getAttribute('href'), '/calendar?date=2026-11-01')
+    await page.getByText('需核对的日期：2026-10-28、2026-11-01。').waitFor()
+    assert.equal(await page.getByRole('link', { name: '前往日历核对' }).getAttribute('href'), '/calendar?date=2026-10-28')
+    assert.equal(await page.getByRole('navigation', { name: '按日期核对购物清单' }).getByRole('link').count(), 2)
     await page.getByText('手动牛奶').waitFor()
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
@@ -79,6 +92,8 @@ async function main () {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
         const result = await contrast(page, '.generation-alert .calendar-link')
         assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} shopping ${theme}: ${JSON.stringify(result)}`)
+        const dateResult = await contrast(page, '.generation-alert .affected-dates a')
+        assert.ok(dateResult.ratio >= 4.5, `shopping date links: ${JSON.stringify(dateResult)}`)
       }
     }
     assert.equal(await page.getByRole('button', { name: '添加食材' }).isDisabled(), false, 'a confirmed rejection is not an uncertain write')
@@ -88,8 +103,8 @@ async function main () {
     assert.equal(await page.getByRole('link', { name: '前往日历核对' }).getAttribute('href'), '/calendar?date=2026-10-26')
     legacyUnavailable = false
     await page.getByRole('button', { name: '从排餐生成' }).click()
-    await page.getByText('需核对的日期：2026-11-01。').waitFor()
-    await page.getByRole('link', { name: '前往日历核对' }).click()
+    await page.getByText('需核对的日期：2026-10-28、2026-11-01。').waitFor()
+    await page.getByRole('navigation', { name: '按日期核对购物清单' }).getByRole('link', { name: '查看 2026-11-01 的排餐' }).click()
     await page.getByText('已定位到 2026-11-01', { exact: false }).waitFor()
     assert.equal(await page.locator('.mobile-date-card.target-date .date-number').textContent(), '1')
     await page.goto(`${base}/calendar?date=2026-02-30`)
