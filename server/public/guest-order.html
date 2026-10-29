@@ -273,8 +273,8 @@
   </main>
 
   <div class="cart-bar" id="cartBar">
-    <div class="cart-icon">🧺<span class="cart-badge" id="cartBadge">0</span></div>
-    <div class="cart-copy"><strong id="cartTitle">还没选菜</strong><small id="cartHint">看到喜欢的就点“想吃”</small></div>
+    <div class="cart-icon" aria-hidden="true">🧺<span class="cart-badge" id="cartBadge">0</span></div>
+    <div class="cart-copy" role="status" aria-live="polite" aria-atomic="true"><strong id="cartTitle">还没选菜</strong><small id="cartHint">看到喜欢的就点“想吃”</small></div>
     <button id="openCart" disabled>查看菜单</button>
   </div>
 
@@ -520,14 +520,16 @@
         const needsReview = !!state.pending || state.uncertain || !!state.conflict;
         const changed = draftChanged();
         const status = state.busy ? '正在提交' : needsReview ? '结果待核对' : state.order ? (changed ? '修改尚未保存' : '已提交') : '尚未提交';
-        $('cartHint').textContent = total.dishes ? `合计 ${total.quantity} 份 · ${status}` : (changed || needsReview ? status : '看到喜欢的就点“想吃”');
+        const hint = total.dishes ? `合计 ${total.quantity} 份 · ${status}` : (changed || needsReview ? status : '看到喜欢的就点“想吃”');
+        if ($('cartHint').textContent !== hint) $('cartHint').textContent = hint;
         $('success').textContent = changed ? '上次的点菜单已提交给主人；本页修改尚未保存，请再次提交。' : '上次的点菜单已提交给主人，当前内容与已提交版本一致。';
       }
 
       function renderCartBar() {
         const total = totals();
         $('cartBadge').textContent = total.quantity;
-        $('cartTitle').textContent = total.dishes ? `已选 ${total.dishes} 道菜` : '还没选菜';
+        const title = total.dishes ? `已选 ${total.dishes} 道菜` : '还没选菜';
+        if ($('cartTitle').textContent !== title) $('cartTitle').textContent = title;
         renderDraftStatus();
         $('openCart').disabled = !total.dishes && !state.order && !state.uncertain && !state.conflict && !state.pending;
         $('openCart').textContent = state.uncertain || state.conflict || state.pending ? '查看 / 核对' : state.order ? (canOrder() ? '查看 / 修改' : '查看点菜单') : '查看菜单';
