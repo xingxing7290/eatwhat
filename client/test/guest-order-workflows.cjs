@@ -147,9 +147,10 @@ async function main () {
     assert.deepEqual(errors, [])
     const blockedStorage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await blockedStorage.addInitScript(() => {
+      window.__blockGuestStorage = true
       const original = Storage.prototype.setItem
       Storage.prototype.setItem = function (key, value) {
-        if (this === localStorage && key.startsWith('eatwhat.guestOrder.')) throw new DOMException('blocked', 'SecurityError')
+        if (window.__blockGuestStorage && this === localStorage && key.startsWith('eatwhat.guestOrder.')) throw new DOMException('blocked', 'SecurityError')
         return original.call(this, key, value)
       }
     })
@@ -170,8 +171,25 @@ async function main () {
     await blockedStorage.waitForFunction(() => document.querySelector('#submitOrder').textContent === '保存修改' && !document.querySelector('#submitOrder').disabled)
     assert.deepEqual(methods.filter(method => method !== 'GET'), ['POST', 'PUT'], 'blocked local storage must not cause a duplicate create')
     assert.equal(await blockedStorage.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true, 'the warning remains while the browser cannot retain the credential')
+    await blockedStorage.getByRole('button', { name: '重新保存凭证' }).click()
+    await blockedStorage.getByText('仍无法保存凭证', { exact: false }).waitFor()
+    assert.deepEqual(methods.filter(method => method !== 'GET'), ['POST', 'PUT'], 'retrying storage must not send an order')
+    await blockedStorage.evaluate(() => { window.__blockGuestStorage = false })
+    await blockedStorage.getByRole('button', { name: '重新保存凭证' }).click()
+    await blockedStorage.getByText('订单凭证已保存在本浏览器').waitFor()
+    assert.equal(await blockedStorage.evaluate(() => localStorage.getItem('eatwhat.guestOrder.storage-blocked')), 'access')
+    assert.equal(await blockedStorage.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false)
+    assert.deepEqual(methods.filter(method => method !== 'GET'), ['POST', 'PUT'], 'successful storage recovery must not resubmit')
     await blockedStorage.close()
     const safePage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await safePage.addInitScript(() => {
+      window.__blockGuestStorage = true
+      const original = Storage.prototype.setItem
+      Storage.prototype.setItem = function (key, value) {
+        if (window.__blockGuestStorage && this === localStorage && key === 'eatwhat.guestOrder.safe-test') throw new DOMException('blocked', 'SecurityError')
+        return original.call(this, key, value)
+      }
+    })
     const safeMeal = { _id: '123456789012345678901234', name: '安全提交测试菜', category: '家常菜' }
     let safeRequests = 0; let logicalOrders = 0; let firstBody; let sessionOpen = true
     await safePage.route('**/guest-orders/public/**', async route => {
@@ -212,8 +230,13 @@ async function main () {
     await safePage.getByText('上次的点菜单已提交给主人', { exact: false }).waitFor()
     assert.equal(safeRequests, 4)
     assert.equal(logicalOrders, 1)
+    assert.notEqual(await safePage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.safe-test.pendingCreate')), null, 'safe retry key remains until access storage is verified')
+    await safePage.evaluate(() => { window.__blockGuestStorage = false })
+    await safePage.getByRole('button', { name: '重新保存凭证' }).click()
+    await safePage.getByText('订单凭证已保存在本浏览器').waitFor()
     assert.equal(await safePage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.safe-test.pendingCreate')), null)
     assert.equal(await safePage.evaluate(() => localStorage.getItem('eatwhat.guestOrder.safe-test')), 'safe-access')
+    assert.equal(safeRequests, 4, 'credential recovery must not repeat a safe order request')
     await safePage.close()
     const closedPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await closedPage.addInitScript(() => localStorage.setItem('eatwhat.guestOrder.closed-test', 'closed-access'))
