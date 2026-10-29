@@ -23,8 +23,10 @@ const canMoveMonth = offset => {
 const disabledMonth = date => date.getFullYear() < 100 || date.getFullYear() > 9998;
 const data = ref({ photos: [], total: 0 });
 const failedPhotos = ref(new Set());
+const failedPreviews = ref(new Set());
 const retryingPhotos = ref(new Set());
 const photoAttempts = ref({});
+const gridAttempts = ref({});
 const page = ref(1);
 const loadedPage = ref(1);
 const pageSize = 24;
@@ -63,6 +65,7 @@ const schedulePhotoFocus = async () => { await nextTick(); focusPhoto(); };
 const openPhoto = index => { clearLocationLink(); viewerEpoch++; returnFocusIndex.value = index; selectedIndex.value = index; };
 const closeViewer = () => {
   if (selectedIndex.value === null) return;
+  cancelPhotoRetry(selected.value);
   returnFocusIndex.value = selectedIndex.value;
   viewerEpoch++;
   selectedIndex.value = null;
@@ -125,9 +128,10 @@ const changePage = next => { if (loading.value || next < 1 || next > lastPage.va
 const navigatePhoto = async direction => {
   if (loading.value || selectedIndex.value === null) return;
   const next = selectedIndex.value + direction;
-  if (next >= 0 && next < data.value.photos.length) { selectedIndex.value = next; clearLocationLink(); return; }
+  if (next >= 0 && next < data.value.photos.length) { cancelPhotoRetry(selected.value); selectedIndex.value = next; clearLocationLink(); return; }
   const targetPage = page.value + direction;
   if (targetPage < 1 || targetPage > lastPage.value) return;
+  cancelPhotoRetry(selected.value);
   page.value = targetPage;
   clearLocationLink();
   await load(direction < 0 ? 'last' : 'first', viewerEpoch);
@@ -140,25 +144,43 @@ const onKey = event => {
 const photoKey = item => JSON.stringify([item.memoryId, item.photoIndex ?? null, item.photo]);
 const imageFor = item => resolveUploadedImage(item.photo) || placeholder;
 const imageVersion = item => `${photoKey(item)}:${photoAttempts.value[photoKey(item)] || 0}`;
+const gridImageVersion = item => `${photoKey(item)}:${gridAttempts.value[photoKey(item)] || 0}`;
+const cancelPhotoRetry = item => {
+  if (!item) return;
+  const next = new Set(retryingPhotos.value); next.delete(photoKey(item)); retryingPhotos.value = next;
+};
 const imageError = event => {
   const image = event.target;
   const key = image?.dataset.photoKey;
-  if (!image?.isConnected || !key || Number(image.dataset.photoAttempt) !== (photoAttempts.value[key] || 0)) return;
+  const preview = image?.dataset.photoSurface === 'preview';
+  const attempts = preview ? photoAttempts.value : gridAttempts.value;
+  if (!image?.isConnected || !key || Number(image.dataset.photoAttempt) !== (attempts[key] || 0)) return;
   handleUploadedImageError(event, placeholder);
   if (image.dataset.placeholder === '1') {
-    failedPhotos.value = new Set([...failedPhotos.value, key]);
-    const next = new Set(retryingPhotos.value); next.delete(key); retryingPhotos.value = next;
+    if (preview) {
+      failedPreviews.value = new Set([...failedPreviews.value, key]);
+      const next = new Set(retryingPhotos.value); next.delete(key); retryingPhotos.value = next;
+    } else failedPhotos.value = new Set([...failedPhotos.value, key]);
   }
 };
 const imageLoaded = async event => {
   const image = event.target;
   const key = image?.dataset.photoKey;
-  if (image?.isConnected && key && Number(image.dataset.photoAttempt) === (photoAttempts.value[key] || 0) && image.dataset.placeholder !== '1' && failedPhotos.value.has(key)) {
+  const preview = image?.dataset.photoSurface === 'preview';
+  const attempts = preview ? photoAttempts.value : gridAttempts.value;
+  if (!image?.isConnected || !key || Number(image.dataset.photoAttempt) !== (attempts[key] || 0) || image.dataset.placeholder === '1') return;
+  if (!preview) {
+    if (failedPhotos.value.has(key)) { const next = new Set(failedPhotos.value); next.delete(key); failedPhotos.value = next; }
+    return;
+  }
+  if (failedPreviews.value.has(key)) {
     const previousFocus = document.activeElement;
     const restoreViewerFocus = !!previousFocus?.closest('.photo-load-alert') && selected.value && photoKey(selected.value) === key;
     const viewerToken = viewerEpoch;
-    const next = new Set(failedPhotos.value); next.delete(key); failedPhotos.value = next;
+    const wasRetry = retryingPhotos.value.has(key);
+    const next = new Set(failedPreviews.value); next.delete(key); failedPreviews.value = next;
     const retries = new Set(retryingPhotos.value); retries.delete(key); retryingPhotos.value = retries;
+    if (wasRetry && failedPhotos.value.has(key)) gridAttempts.value = { ...gridAttempts.value, [key]: (gridAttempts.value[key] || 0) + 1 };
     if (restoreViewerFocus) {
       await nextTick();
       if (viewerToken === viewerEpoch && selected.value && photoKey(selected.value) === key && (!document.activeElement || document.activeElement === document.body || document.activeElement === previousFocus || !document.activeElement.isConnected)) viewerPreview.value?.focus();
@@ -174,6 +196,7 @@ const retryPhoto = item => {
 const loadLocation = async () => {
   const requestedMonth = route.query.month;
   const hasLocation = ['memoryId', 'photoIndex', 'fingerprint'].some(key => route.query[key] !== undefined);
+  cancelPhotoRetry(selected.value);
   locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; viewerEpoch++; selectedIndex.value = null;
   if (!validAlbumMonth(requestedMonth)) {
     refreshCurrentMonth(); month.value = currentMonth.value; page.value = 1; data.value = { photos: [], total: 0 };
@@ -223,8 +246,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', on
     <el-alert v-if="locateNotice" type="warning" :closable="false" show-icon :title="locateNotice"><el-button v-if="locateRetry" link type="primary" :loading="loading" @click="loadLocation">重新定位</el-button></el-alert>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`相册暂时无法加载：${loadError}`"><el-button ref="retryButton" link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-empty v-else-if="!loading && !data.photos.length" description="这个月还没有饭桌照片" />
-    <template v-else-if="!loading"><div ref="photoGrid" class="album-grid"><button v-for="(item, index) in data.photos" :key="`${item.memoryId}-${item.photoIndex ?? index}-${item.photo}`" class="photo-card" type="button" :aria-label="`查看${item.date} ${item.title || '饭桌照片'}，第 ${(page - 1) * pageSize + index + 1} 张${failedPhotos.has(photoKey(item)) ? '，照片暂不可用' : ''}`" @click="openPhoto(index)"><img :key="imageVersion(item)" :data-photo-key="photoKey(item)" :data-photo-attempt="photoAttempts[photoKey(item)] || 0" :src="imageFor(item)" :alt="item.title || item.date" @load="imageLoaded" @error="imageError" /><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span><span v-if="failedPhotos.has(photoKey(item))" class="photo-error">照片暂不可用</span></button></div><nav v-if="data.total > pageSize" class="pagination" aria-label="相册分页"><el-button :disabled="loading || page <= 1" @click="changePage(page - 1)">上一页</el-button><span aria-live="polite" aria-atomic="true">第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="loading || page >= lastPage" @click="changePage(page + 1)">下一页</el-button></nav></template>
-    <el-dialog :model-value="!!selected" title="饭桌回忆" width="min(680px, 92vw)" @update:model-value="val => { if (!val) closeViewer() }" @close="closeViewer" @close-auto-focus="schedulePhotoFocus"><template v-if="selected"><img ref="viewerPreview" :key="imageVersion(selected)" :data-photo-key="photoKey(selected)" :data-photo-attempt="photoAttempts[photoKey(selected)] || 0" class="preview" tabindex="-1" :src="imageFor(selected)" :alt="selected.title || '饭桌照片'" @load="imageLoaded" @error="imageError" /><el-alert v-if="failedPhotos.has(photoKey(selected))" class="photo-load-alert" type="warning" :closable="false" show-icon :title="retryingPhotos.has(photoKey(selected)) ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button link type="primary" :aria-disabled="retryingPhotos.has(photoKey(selected))" @click="retryPhoto(selected)">{{ retryingPhotos.has(photoKey(selected)) ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="viewer-nav"><el-button :disabled="loading || photoPosition <= 1" aria-label="上一张照片" @click="navigatePhoto(-1)">上一张</el-button><span aria-live="polite">{{ photoPosition }} / {{ data.total }}</span><el-button :disabled="loading || photoPosition >= data.total" aria-label="下一张照片" @click="navigatePhoto(1)">下一张</el-button></div><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="meal in selected.meals || []" :key="meal._id || meal.id">{{ meal.name }}</el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /><div class="memory-link"><router-link :to="{ name: 'memories', query: { edit: selected.memoryId, month } }">编辑这条饭后回忆 →</router-link></div></template></el-dialog>
+    <template v-else-if="!loading"><div ref="photoGrid" class="album-grid"><button v-for="(item, index) in data.photos" :key="`${item.memoryId}-${item.photoIndex ?? index}-${item.photo}`" class="photo-card" type="button" :aria-label="`查看${item.date} ${item.title || '饭桌照片'}，第 ${(page - 1) * pageSize + index + 1} 张${failedPhotos.has(photoKey(item)) ? '，照片暂不可用' : ''}`" @click="openPhoto(index)"><img :key="gridImageVersion(item)" data-photo-surface="grid" :data-photo-key="photoKey(item)" :data-photo-attempt="gridAttempts[photoKey(item)] || 0" :src="imageFor(item)" :alt="item.title || item.date" @load="imageLoaded" @error="imageError" /><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span><span v-if="failedPhotos.has(photoKey(item))" class="photo-error">照片暂不可用</span></button></div><nav v-if="data.total > pageSize" class="pagination" aria-label="相册分页"><el-button :disabled="loading || page <= 1" @click="changePage(page - 1)">上一页</el-button><span aria-live="polite" aria-atomic="true">第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="loading || page >= lastPage" @click="changePage(page + 1)">下一页</el-button></nav></template>
+    <el-dialog :model-value="!!selected" title="饭桌回忆" width="min(680px, 92vw)" @update:model-value="val => { if (!val) closeViewer() }" @close="closeViewer" @close-auto-focus="schedulePhotoFocus"><template v-if="selected"><img ref="viewerPreview" :key="imageVersion(selected)" data-photo-surface="preview" :data-photo-key="photoKey(selected)" :data-photo-attempt="photoAttempts[photoKey(selected)] || 0" class="preview" tabindex="-1" :src="imageFor(selected)" :alt="selected.title || '饭桌照片'" @load="imageLoaded" @error="imageError" /><el-alert v-if="failedPreviews.has(photoKey(selected))" class="photo-load-alert" type="warning" :closable="false" show-icon :title="retryingPhotos.has(photoKey(selected)) ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button link type="primary" :aria-disabled="retryingPhotos.has(photoKey(selected))" @click="retryPhoto(selected)">{{ retryingPhotos.has(photoKey(selected)) ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="viewer-nav"><el-button :disabled="loading || photoPosition <= 1" aria-label="上一张照片" @click="navigatePhoto(-1)">上一张</el-button><span aria-live="polite">{{ photoPosition }} / {{ data.total }}</span><el-button :disabled="loading || photoPosition >= data.total" aria-label="下一张照片" @click="navigatePhoto(1)">下一张</el-button></div><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="meal in selected.meals || []" :key="meal._id || meal.id">{{ meal.name }}</el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /><div class="memory-link"><router-link :to="{ name: 'memories', query: { edit: selected.memoryId, month } }">编辑这条饭后回忆 →</router-link></div></template></el-dialog>
   </div>
 </template>
 

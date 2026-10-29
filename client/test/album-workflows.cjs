@@ -74,12 +74,35 @@ async function main () {
     await page.keyboard.press('Enter')
     await photoDialog.getByText('正在重试这张照片，回忆记录仍然保留。').waitFor()
     assert.equal(await photoDialog.getByRole('button', { name: '正在重试…' }).getAttribute('aria-disabled'), 'true')
+    await page.evaluate(() => {
+      const image = document.querySelector('.photo-card img[alt="图片暂不可用"]')
+      image.dataset.placeholder = '0'
+      image.dispatchEvent(new Event('load'))
+    })
+    await photoDialog.getByText('正在重试这张照片，回忆记录仍然保留。').waitFor()
+    assert.equal(await photoDialog.getByRole('button', { name: '正在重试…' }).getAttribute('aria-disabled'), 'true', 'a thumbnail result must not settle the preview retry')
+    await page.evaluate(() => {
+      const image = document.querySelector('.photo-card img[alt="图片暂不可用"]')
+      image.dataset.placeholder = '1'
+      image.dispatchEvent(new Event('error'))
+    })
     for (let i = 0; i < 100 && !releasePhotos.length; i++) await new Promise(resolve => setTimeout(resolve, 20))
     assert.ok(releasePhotos.length > 0)
     photoHold = false; releasePhotos.forEach(resolve => resolve())
     await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
     assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), '重试这张照片', 'a failed retry keeps its keyboard focus')
+    releasePhotos = []; photoHold = true
+    await page.keyboard.press('Enter')
+    for (let i = 0; i < 100 && !releasePhotos.length; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.ok(releasePhotos.length > 0)
+    await page.keyboard.press('Escape')
+    await photoDialog.waitFor({ state: 'hidden' })
+    photoHold = false; releasePhotos.forEach(resolve => resolve())
+    await page.getByRole('button', { name: /第 4 张/ }).click()
+    await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    assert.equal(await photoDialog.getByRole('button', { name: '重试这张照片' }).getAttribute('aria-disabled'), 'false', 'closing the viewer must not leave retry stuck')
     photoUnavailable = false
+    await photoDialog.getByRole('button', { name: '重试这张照片' }).focus()
     await page.keyboard.press('Enter')
     await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor({ state: 'hidden' })
     await photoDialog.locator('img.preview').waitFor()
