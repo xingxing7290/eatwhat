@@ -5,6 +5,7 @@ if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Album te
 const image = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%2280%22%3E%3Crect width=%22100%22 height=%2280%22 fill=%22%23d49a75%22/%3E%3C/svg%3E'
 const photos = Array.from({ length: 30 }, (_, index) => ({ memoryId: 'memory-a', photoIndex: index, date: '2026-10-28', mealType: 'dinner', title: `照片${index + 1}`, photo: index === 3 ? '/broken-photo.png' : `${image}#${index}`, meals: [] }))
 photos[3].meals = [{ _id: 'meal-a', name: '家常菜' }, null, { _id: 'bad/id', name: '异常菜品' }]
+photos[10].title = 'LongMemoryTitle'.repeat(8)
 
 async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
@@ -58,6 +59,14 @@ async function main () {
     await page.goBack()
     await page.getByText('2026-10 · 30 张照片').waitFor()
     assert.equal(await page.locator('.photo-card').count(), 24)
+    assert.equal(await page.locator('.photo-card').first().locator('.photo-title').textContent(), '照片1')
+    assert.equal(await page.locator('.photo-card').nth(10).locator('.photo-title').getAttribute('title'), photos[10].title)
+    await page.setViewportSize({ width: 320, height: 844 })
+    await page.locator('.photo-card').nth(10).click()
+    const longTitleDialog = page.getByRole('dialog', { name: '饭桌回忆' })
+    await longTitleDialog.getByRole('heading', { name: photos[10].title }).waitFor()
+    assert.equal(await longTitleDialog.locator('.el-dialog__body').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'long titles must fit the preview')
+    await page.keyboard.press('Escape'); await longTitleDialog.waitFor({ state: 'hidden' })
     await page.getByRole('status').filter({ hasText: '2026-10，共 30 张照片，第 1 / 2 页' }).waitFor()
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 844 })
