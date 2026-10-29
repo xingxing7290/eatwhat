@@ -26,6 +26,9 @@ const saved = ref(false);
 const imageFile = ref(null);
 const imagePreview = ref('');
 const photoFiles = ref([]);
+const removedPhotos = ref([]);
+const existingPhotoGrid = ref(null);
+const undoPhotoButton = ref(null);
 const editMode = computed(() => !!route.params.id);
 const pageTitle = computed(() => editMode.value ? '编辑菜品' : '创建菜品');
 const versionAvailable = computed(() => !editMode.value || (supportsConditionalEdit.value && editVersion.value &&
@@ -92,7 +95,23 @@ const onPhotosChange = async (_file, files) => {
 };
 const onNewStepImage = (file) => { const error = photoError(file); if (error) return ElMessage.warning(error); newStep.imageFile = file; newStep.imagePreview = makePreview(file); };
 const onStepImage = (index, file) => { const error = photoError(file); if (error) return ElMessage.warning(error); form.steps[index].imageFile = file; form.steps[index].imageUrl = makePreview(file); };
-const removeExistingPhoto = index => { form.existingPhotos.splice(index, 1); };
+const removeExistingPhoto = async (index, event) => {
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  const [photo] = form.existingPhotos.splice(index, 1);
+  if (photo === undefined) return;
+  removedPhotos.value.push({ photo, index });
+  await nextTick();
+  if (hadFocus && (!document.activeElement || document.activeElement === document.body || document.activeElement === source || !document.activeElement.isConnected)) undoPhotoButton.value?.$el?.focus();
+};
+const undoPhotoRemoval = async () => {
+  const removed = removedPhotos.value.pop();
+  if (!removed) return;
+  const index = Math.min(removed.index, form.existingPhotos.length);
+  form.existingPhotos.splice(index, 0, removed.photo);
+  await nextTick();
+  if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) existingPhotoGrid.value?.querySelectorAll('.photo-item button')[index]?.focus();
+};
 
 const fillForm = (meal) => {
   Object.assign(form, {
@@ -113,6 +132,7 @@ const load = async () => {
   for (const url of previews) URL.revokeObjectURL(url);
   previews.clear();
   Object.assign(form, emptyForm());
+  removedPhotos.value = [];
   Object.assign(newIngredient, { name: '', amount: '' });
   Object.assign(newStep, { description: '', imageFile: null, imagePreview: '' });
   imageFile.value = null; imagePreview.value = ''; photoFiles.value = [];
@@ -247,7 +267,7 @@ watch(() => route.params.id, load, { immediate: true });
 
       <aside class="side-column">
         <el-card><template #header>封面照片</template><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onCoverChange"><div class="cover-box"><img v-if="imagePreview" :key="imagePreview" :src="imageFor(imagePreview)" alt="菜品封面预览" @error="imageError" /><div v-else><el-icon><Upload /></el-icon><p>上传封面</p></div></div></el-upload><p class="photo-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30MB；实际以上传服务器设置为准。</p></el-card>
-        <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
+        <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" ref="existingPhotoGrid" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
       </aside>
     </el-form>
   </div>
@@ -283,6 +303,8 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .photo-item { position: relative; }
 .photo-item img { width: 100%; height: 100px; object-fit: cover; border-radius: 8px; }
 .photo-item .el-button { margin-top: 4px; width: 100%; }
+.photo-undo { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; margin-bottom: 12px; color: var(--text-primary); font-size: 13px; }
+.photo-undo :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 980px) { .editor-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) { .page-header { flex-direction:column; align-items:stretch; } .header-actions .el-button{flex:1}.two-cols, .inline-form, .step-editor, .step-item { grid-template-columns: 1fr; } .step-actions { flex-direction: row; flex-wrap: wrap; } }
 </style>

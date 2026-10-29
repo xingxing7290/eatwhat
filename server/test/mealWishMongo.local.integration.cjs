@@ -1238,6 +1238,9 @@ async function main() {
       await namePageA.getByRole('textbox', { name: '第 2 步描述' }).fill('翻炒至熟');
       await namePageA.getByRole('button', { name: '上移第 2 步' }).click();
       await namePageA.getByRole('button', { name: '移除已有菜品照片 1' }).click();
+      await namePageA.getByRole('button', { name: '撤销最近移除' }).click();
+      assert.equal(await namePageA.locator('.photo-item').count(), 3);
+      await namePageA.getByRole('button', { name: '移除已有菜品照片 1' }).click();
       const editorUpdateResponse = namePageA.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/meals/${editorMealB._id}`);
       await namePageA.getByRole('button', { name: '保存', exact: true }).click();
       const editorUpdate = await editorUpdateResponse;

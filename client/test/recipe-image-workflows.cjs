@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Recipe image tests require a local server')
 const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="green"/></svg>'
@@ -10,7 +11,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const images = []; const errors = []; let savedFields; page.on('pageerror', error => errors.push(error.message))
     const meals = [
-      { _id: 'local', name: '旧地址图片', category: '家常', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo', ingredients: [], steps: [{ description: '第一步', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo' }, { description: '第二步', imageUrl: 'https://cdn.example.test/uploads/external.png?v=4' }], tags: [], photos: Array(3).fill('http://127.0.0.1/uploads/local.png?v=2#photo'), supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } },
+      { _id: 'local', name: '旧地址图片', category: '家常', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo', ingredients: [], steps: [{ description: '第一步', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo' }, { description: '第二步', imageUrl: 'https://cdn.example.test/uploads/external.png?v=4' }], tags: [], photos: [...Array(3).fill('http://127.0.0.1/uploads/local.png?v=2#photo'), 'https://cdn.example.test/uploads/external.png?v=4'], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } },
       { _id: 'external', name: '外部图片', category: '家常', imageUrl: 'https://cdn.example.test/uploads/external.png?v=4', ingredients: [], steps: [], tags: [], photos: [] },
       { _id: 'invalid', name: '异常图片', category: '家常', imageUrl: { bad: true }, ingredients: [], steps: [], tags: [], photos: [] }
     ]
@@ -61,9 +62,31 @@ async function main () {
     await page.waitForFunction(() => ['.cover-box img', '.step-item img', '.photo-item img'].every(selector => { const image = document.querySelector(selector); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') }))
     await page.locator('.step-item').nth(1).locator('img[alt="图片暂不可用"]').waitFor()
     assert.equal(images.some(url => url.includes('/api/uploads/external.png')), false)
-    assert.equal(await page.locator('.photo-item').count(), 3)
+    assert.equal(await page.locator('.photo-item').count(), 4)
+    await page.getByRole('button', { name: '移除已有菜品照片 1' }).focus(); await page.keyboard.press('Enter')
+    assert.equal(await page.locator('.photo-item').count(), 3, 'removing one duplicate must preserve the others')
+    await page.waitForFunction(() => document.activeElement?.textContent?.includes('撤销最近移除'))
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+    await page.keyboard.press('Enter')
+    assert.equal(await page.locator('.photo-item').count(), 4)
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '移除已有菜品照片 1')
+    assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false, 'undo restores the clean draft when it was the only change')
     await page.getByRole('button', { name: '移除已有菜品照片 1' }).click()
-    assert.equal(await page.locator('.photo-item').count(), 2, 'removing one duplicate must preserve the others')
+    await page.getByRole('button', { name: '移除已有菜品照片 3' }).click()
+    await page.getByText('已移除 2 张，保存后生效。').waitFor()
+    await page.getByRole('button', { name: '撤销最近移除' }).click()
+    assert.equal(await page.locator('.photo-item').count(), 3)
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.photo-undo span', '.photo-undo button']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
+        }
+      }
+    }
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.waitForURL('**/meals')
     assert.equal(savedFields.imageUrl, meals[0].imageUrl)
