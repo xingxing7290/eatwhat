@@ -124,6 +124,22 @@ const categoryOptions = computed(() => {
   });
   return Array.from(set);
 });
+const categorySidebar = ref(null);
+const revealActiveCategory = async () => {
+  await nextTick();
+  const sidebar = categorySidebar.value;
+  if (!sidebar) return;
+  const buttons = [...sidebar.querySelectorAll('.category-list button')];
+  const target = selectedCategory.value
+    ? buttons.find(button => button.dataset.sidebarKind === 'category' && button.dataset.category === selectedCategory.value)
+    : buttons.find(button => button.dataset.sidebarKind === (favoriteOnly.value ? 'favorite' : 'all'));
+  if (!target) return;
+  const box = sidebar.getBoundingClientRect(); const bounds = target.getBoundingClientRect();
+  if (bounds.top < box.top + 4) sidebar.scrollTop += bounds.top - box.top - 4;
+  else if (bounds.bottom > box.bottom - 4) sidebar.scrollTop += bounds.bottom - box.bottom + 4;
+};
+watch([selectedCategory, favoriteOnly, categoryOptions], revealActiveCategory, { flush: 'post' });
+onMounted(revealActiveCategory);
 
 const subcategoryOptions = computed(() => {
   if (!selectedCategory.value) return [];
@@ -785,12 +801,12 @@ onBeforeUnmount(() => {
         </div>
 
     <div class="catalog-layout">
-      <aside class="category-sidebar" aria-label="菜品分类">
+      <aside ref="categorySidebar" class="category-sidebar" aria-label="菜品分类">
         <div class="category-heading">菜品分类</div>
         <nav class="category-list" aria-label="选择菜品分类">
-          <button type="button" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部分类</button>
-          <button type="button" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
-          <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = category">{{ category }}</button>
+          <button type="button" data-sidebar-kind="all" :class="{ active: !selectedCategory && !favoriteOnly }" :aria-pressed="!selectedCategory && !favoriteOnly" @click="selectedCategory = ''; favoriteOnly = false">全部分类</button>
+          <button type="button" data-sidebar-kind="favorite" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; favoriteOnly = !favoriteOnly">我的收藏</button>
+          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="favoriteOnly = false; selectedCategory = category">{{ category }}</button>
         </nav>
         <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button type="button" @click="loadCategories">重试</button></div>
       </aside>

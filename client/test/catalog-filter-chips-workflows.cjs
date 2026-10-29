@@ -12,7 +12,7 @@ async function main () {
     await page.route('**/api/**', route => {
       const path = new URL(route.request().url()).pathname
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === '/api/meals/categories') return route.fulfill({ json: [{ category: '家常菜', subcategory: '热菜' }] })
+      if (path === '/api/meals/categories') return route.fulfill({ json: [{ category: '家常菜', subcategory: '热菜' }, ...Array.from({ length: 30 }, (_, index) => ({ category: `分类${String(index + 1).padStart(2, '0')}`, subcategory: '' }))] })
       if (path === '/api/meals/tags') return route.fulfill({ json: ['清淡'] })
       if (path === '/api/meals') return route.fulfill({ json: { data: [], total: 0, page: 1, limit: 8 } })
       return route.fulfill({ json: {} })
@@ -76,6 +76,21 @@ async function main () {
     await page.getByRole('button', { name: '清除', exact: true }).click()
     assert.equal(await search.inputValue(), '')
     assert.equal(await search.evaluate(node => document.activeElement === node), true, 'clearing from toolbar focuses search')
+    for (const width of [320, 1280]) {
+      await page.setViewportSize({ width, height: 600 })
+      await page.goto(`${base}/meals?category=${encodeURIComponent('分类30')}`)
+      const sidebar = page.getByRole('complementary', { name: '菜品分类' })
+      const selected = sidebar.getByRole('button', { name: '分类30', exact: true })
+      await selected.waitFor({ state: 'attached' })
+      await page.waitForFunction(() => {
+        const box = document.querySelector('.category-sidebar'); const item = box?.querySelector('[data-category="分类30"]')
+        if (!box || !item) return false
+        const outer = box.getBoundingClientRect(); const inner = item.getBoundingClientRect()
+        return box.scrollTop > 0 && inner.top >= outer.top && inner.bottom <= outer.bottom
+      })
+      assert.equal(await selected.getAttribute('aria-pressed'), 'true')
+      assert.equal(await page.evaluate(() => window.scrollY), 0, 'revealing a sidebar category must not scroll the page')
+    }
     console.log('Catalog chips passed: visible filters, individual removal, URL, keyboard focus and themes')
   } finally { await browser.close() }
 }
