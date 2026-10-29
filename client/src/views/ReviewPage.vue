@@ -1,11 +1,18 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Calendar, Picture, Food, ChatDotRound, Refresh } from '@element-plus/icons-vue';
+import { useRoute, useRouter } from 'vue-router';
 import api from '@/services/api';
 import placeholder from '@/assets/meal-placeholder.svg';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 
 const today = new Date();
+const route = useRoute();
+const router = useRouter();
+const routeNotice = ref('');
+let applyingRoute = false;
+let routeInitialized = false;
+let preserveInvalidRoute = false;
 const clock = ref(today);
 let clockTimer = null;
 const mode = ref('month');
@@ -84,17 +91,48 @@ const imageFor = value => {
 const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
 const widthFor = item => `${Math.round((item.count / Math.max(1, ...result.value.categoryStats.map(row => row.count))) * 100)}%`;
 watch(mode, value => {
+  if (applyingRoute) return;
   if (value === 'year') year.value = month.value.slice(0, 4);
   else month.value = `${year.value}-${month.value.slice(5, 7)}`;
 }, { flush: 'sync' });
-watch(periodKey, load);
-onMounted(() => { load(); window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 60000); });
+watch(periodKey, () => {
+  if (preserveInvalidRoute) { preserveInvalidRoute = false; load(); return; }
+  if (route.name === 'review') {
+    const query = mode.value === 'month' ? { month: month.value } : { year: year.value };
+    if (route.query.month !== query.month || route.query.year !== query.year) void router.replace({ name: 'review', query });
+  }
+  routeNotice.value = '';
+  load();
+});
+watch(() => route.fullPath, () => {
+  if (route.name !== 'review') return;
+  const requestedMonth = route.query.month;
+  const requestedYear = route.query.year;
+  const monthValid = typeof requestedMonth === 'string' && !!expectedRange('month', requestedMonth);
+  const yearValid = typeof requestedYear === 'string' && !!expectedRange('year', requestedYear);
+  const invalid = (requestedMonth !== undefined && !monthValid) || (requestedYear !== undefined && !yearValid) || (requestedMonth !== undefined && requestedYear !== undefined);
+  const current = new Date();
+  const targetMode = !invalid && yearValid ? 'year' : 'month';
+  const target = invalid || (requestedMonth === undefined && requestedYear === undefined) ? `${current.getFullYear()}-${String(current.getMonth() + 1).padStart(2, '0')}` : targetMode === 'year' ? requestedYear : requestedMonth;
+  const before = periodKey.value;
+  routeNotice.value = invalid ? '回顾链接中的时间无效，已打开当前月份。' : '';
+  applyingRoute = true;
+  if (targetMode === 'year') { year.value = target; month.value = `${target}-${month.value.slice(5, 7)}`; }
+  else { month.value = target; year.value = target.slice(0, 4); }
+  mode.value = targetMode;
+  applyingRoute = false;
+  if (invalid && before !== periodKey.value) preserveInvalidRoute = true;
+  if (!routeInitialized && before === periodKey.value) load();
+  routeInitialized = true;
+}, { immediate: true });
+onMounted(() => { window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 60000); });
 onBeforeUnmount(() => { alive = false; sequence++; window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); if (clockTimer) clearInterval(clockTimer); });
 </script>
 
 <template>
   <div class="review-page">
     <section class="review-hero"><div><span class="eyebrow">OUR TABLE JOURNAL · 饭桌回顾</span><h1>把日子，慢慢记下来</h1><p>从排餐、回忆和照片里，看看这段时间属于小家的味道。</p></div><div class="period-controls"><el-radio-group v-model="mode" aria-label="回顾周期"><el-radio-button label="month">月度</el-radio-button><el-radio-button label="year">年度</el-radio-button></el-radio-group><el-date-picker v-if="mode === 'month'" v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾月份" /><el-date-picker v-else v-model="year" type="year" value-format="YYYY" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾年份" /><div class="period-navigation" role="group" aria-label="切换回顾时间"><button type="button" :disabled="!canStep(-1)" :aria-label="mode === 'month' ? '上个月' : '上一年'" @click="stepPeriod(-1)">← <span>{{ mode === 'month' ? '上个月' : '上一年' }}</span></button><button type="button" :disabled="!currentInRange || period === currentPeriod()" :title="!currentInRange ? '当前日期超出可查看范围（2000–2100）' : ''" @click="goCurrent">{{ mode === 'month' ? '回到本月' : '回到今年' }}</button><button type="button" :disabled="!canStep(1)" :aria-label="mode === 'month' ? '下个月' : '下一年'" @click="stepPeriod(1)"><span>{{ mode === 'month' ? '下个月' : '下一年' }}</span> →</button></div></div></section>
+    <el-alert v-if="routeNotice" type="warning" :closable="false" show-icon :title="routeNotice" />
     <div v-if="loading" class="state-card" role="status">正在整理 {{ displayPeriod }} 的饭桌记录…</div>
     <div v-else-if="error" class="state-card" role="alert"><strong>暂时无法查看回顾</strong><p>{{ error }}</p><el-button @click="load"><el-icon><Refresh /></el-icon>重新加载</el-button></div>
     <template v-else-if="result">
