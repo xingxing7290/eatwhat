@@ -16,6 +16,12 @@ const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 
 const mealName = (item) => item?.meal?.name || item?.name || '菜品不可用';
 const mealId = (meal) => meal?._id || meal?.id || meal?.mealId || (typeof meal === 'string' ? meal : '');
+const scheduledRecipeId = item => {
+  const meal = item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'meal') ? item.meal : item;
+  if (!meal || typeof meal !== 'object' || typeof meal.name !== 'string' || !meal.name.trim()) return '';
+  const id = mealId(meal);
+  return typeof id === 'string' && /^[a-z\d_-]{1,128}$/i.test(id) ? id : '';
+};
 const wishMealId = item => item?.mealId?.archived === true ? '' : mealId(item?.mealId);
 const wishDescription = item => item?.mealId?.archived === true ? '关联菜品已移入回收站，请先核对' : wishMealId(item) ? (item.mealId?.name || item.note || '可以安排到今天晚餐') : '尚无法安排，请在想吃清单中核对菜品';
 const plannedSlots = computed(() => (summary.value?.week?.days || []).reduce((count, day) => count + Object.keys(mealTypeText).filter(type => day.meals?.[type]?.length).length, 0));
@@ -114,7 +120,7 @@ onBeforeUnmount(() => { active = false; });
         <div v-for="(label, type) in mealTypeText" :key="type" class="meal-row">
           <strong>{{ label }}</strong>
           <div class="meal-tags">
-            <el-tag v-for="(item, index) in summary.todaySchedule?.meals?.[type] || []" :key="item?.meal?._id || item?._id || `unavailable-${index}`" effect="plain">{{ mealName(item) }}</el-tag>
+            <template v-for="(item, index) in summary.todaySchedule?.meals?.[type] || []" :key="item?.meal?._id || item?._id || `unavailable-${index}`"><router-link v-if="scheduledRecipeId(item)" class="today-recipe-link" :to="{ name: 'MealDetail', params: { id: scheduledRecipeId(item) }, query: { fromDashboard: '1' } }" :aria-label="`查看${label}的${mealName(item)}菜谱`">{{ mealName(item) }}</router-link><el-tag v-else effect="plain">{{ mealName(item) }}</el-tag></template>
             <span v-if="!summary.todaySchedule?.meals?.[type]?.length" class="muted">还没安排</span>
           </div>
           <el-button link type="primary" class="today-slot-action" :loading="arranging === `slot:${type}`" :disabled="loading || !!arranging" :aria-label="`${summary.todaySchedule.meals[type].length ? '查看' : '安排'}${summary.today}${label}`" @click="openTodaySlot(type)">{{ summary.todaySchedule.meals[type].length ? '查看' : '安排' }}</el-button>
@@ -195,6 +201,8 @@ h1 span { color: var(--dashboard-accent-ink); }
 .wishlist-row .el-button { flex-shrink: 0; min-height: 44px; }
 .meal-tags, .hint-list { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .meal-tags { flex: 1; min-width: 0; align-items: center; }
+.today-recipe-link { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; padding: 5px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.today-recipe-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .meal-tags :deep(.el-tag) { max-width: 100%; height: auto; }
 .meal-tags :deep(.el-tag__content) { white-space: normal; overflow-wrap: anywhere; }
 .meal-row > strong { flex: 0 0 auto; }

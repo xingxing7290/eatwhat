@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Dashboard checks require a local server')
 
@@ -10,6 +11,8 @@ async function main () {
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
     let date = '2026-10-28'; let suggested = 'meal-a'; let wishTitle = '家人想吃的菜'; let archived = false; let mode = 'valid'; let calls = 0; let release
+    let recipeWrites = 0
+    const recipe = { _id: 'meal-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } }
     const meals = { breakfast: [], lunch: [], dinner: [] }
     const summary = () => {
       const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals }))
@@ -25,6 +28,8 @@ async function main () {
         return route.fulfill({ json: summary() })
       }
       if (path === '/api/wishlist') return route.fulfill({ json: [] })
+      if (path === '/api/memories') return route.fulfill({ json: [] })
+      if (path === '/api/meals/meal-a') { if (route.request().method() === 'PUT') recipeWrites++; return route.fulfill({ json: recipe }) }
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/dashboard`)
@@ -129,10 +134,39 @@ async function main () {
     await page.getByRole('button', { name: '安排2026-10-29早餐' }).click()
     await page.getByText('日期或餐次安排已变化', { exact: false }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/dashboard', 'a stale day must not navigate silently')
-    meals.breakfast = [{ meal: { _id: 'meal-a', name: '家常菜' } }]
+    meals.breakfast = [{ meal: { _id: 'meal-a', name: '家常菜' } }, { meal: null }]
     await page.getByRole('button', { name: '安排2026-10-30早餐' }).click()
     await page.getByRole('button', { name: '查看2026-10-30早餐' }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/dashboard', 'a newly filled slot must not navigate to stale empty selection')
+    const recipeLink = page.getByRole('link', { name: '查看早餐的家常菜菜谱' })
+    assert.equal(await recipeLink.getAttribute('href'), '/meals/detail/meal-a?fromDashboard=1')
+    assert.equal(await page.getByText('菜品不可用', { exact: true }).count(), 1)
+    assert.ok((await recipeLink.boundingBox()).height >= 44)
+    await page.setViewportSize({ width: 320, height: 844 })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        const result = await contrast(page, '.today-recipe-link')
+        assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme}: ${result.ratio}`)
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await recipeLink.click()
+    await page.getByRole('heading', { name: '家常菜' }).waitFor()
+    await page.getByRole('button', { name: '返回首页' }).click()
+    await page.waitForURL('**/dashboard')
+    await page.getByRole('link', { name: '查看早餐的家常菜菜谱' }).click()
+    await page.getByRole('button', { name: '编辑菜品' }).click()
+    await page.getByText('保存后返回首页', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await page.waitForURL('**/meals/detail/meal-a?fromDashboard=1')
+    await page.getByRole('button', { name: '编辑菜品' }).click()
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForURL('**/dashboard')
+    assert.equal(recipeWrites, 1)
     await page.getByRole('button', { name: '查看2026-10-30早餐' }).click()
     await page.waitForURL('**/calendar?date=2026-10-30')
     meals.breakfast = []

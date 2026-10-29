@@ -13,8 +13,9 @@ import { validWeekLink } from '@/utils/weekLink.mjs';
 const route = useRoute();
 const router = useRouter();
 const shoppingWeek = computed(() => validWeekLink(route.query.shoppingWeek) ? route.query.shoppingWeek : '');
-const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : { name: 'meals', query: filterCatalogQuery(route.query) });
-const editorQuery = computed(() => ({ ...filterCatalogQuery(route.query), ...(shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : {}) }));
+const dashboardOrigin = computed(() => !shoppingWeek.value && route.query.fromDashboard === '1');
+const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : dashboardOrigin.value ? { name: 'dashboard' } : { name: 'meals', query: filterCatalogQuery(route.query) });
+const editorQuery = computed(() => ({ ...filterCatalogQuery(route.query), ...(shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : dashboardOrigin.value ? { fromDashboard: '1' } : {}) }));
 const meal = ref(null);
 const memories = ref([]);
 const memoryPage = ref(1);
@@ -177,7 +178,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 <template>
   <div class="meal-detail" v-loading="loading">
     <div class="detail-toolbar">
-      <el-button @click="router.push(detailBack)"><el-icon><ArrowLeft /></el-icon>{{ shoppingWeek ? '返回购物清单' : '返回' }}</el-button>
+      <el-button @click="router.push(detailBack)"><el-icon><ArrowLeft /></el-icon>{{ shoppingWeek ? '返回购物清单' : dashboardOrigin ? '返回首页' : '返回' }}</el-button>
       <div class="toolbar-actions">
         <el-button type="success" :disabled="!meal || loading" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
         <el-button type="warning" :disabled="!meal || loading || reportUncertain || reportSubmitted || reportChecking" :loading="reporting" @click="reportImageIssue"><el-icon><Warning /></el-icon>{{ reportSubmitted ? '已反馈' : '图片不对' }}</el-button>
