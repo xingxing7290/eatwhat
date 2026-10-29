@@ -133,9 +133,9 @@ onBeforeUnmount(() => { active = false; });
         <template #header><div class="card-title"><el-icon><Star /></el-icon><span>TA 想吃提醒</span></div></template>
         <el-empty v-if="!summary.partnerWishlist?.length" description="暂时没有新的想吃提醒" />
         <div v-else class="wishlist-list">
-          <div v-for="item in summary.partnerWishlist" :key="item._id" class="wishlist-row">
+          <div v-for="item in summary.partnerWishlist" :key="item._id || item.id" class="wishlist-row">
             <div><strong>{{ item.title }}</strong><p>{{ item.mealId?.name || item.note || '可以安排到今天晚餐' }}</p></div>
-            <el-button size="small" type="primary" :loading="arranging === String(item._id || item.id)" :disabled="loading || !!arranging" @click="arrangeWishlistDinner(item)">{{ mealId(item.mealId) ? '安排晚餐' : '查看心愿' }}</el-button>
+            <el-button size="small" type="primary" :loading="arranging === String(item._id || item.id)" :disabled="loading || !!arranging" :aria-label="`${mealId(item.mealId) ? '安排晚餐' : '查看心愿'}：${item.title}`" @click="arrangeWishlistDinner(item)">{{ mealId(item.mealId) ? '安排晚餐' : '查看心愿' }}</el-button>
           </div>
         </div>
       </el-card>
@@ -184,6 +184,8 @@ h1 span { color: var(--dashboard-accent-ink); }
 .dashboard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .card-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 700; }.card-title .el-icon { color: var(--secondary-color); }.card-title .el-tag { margin-left: auto; }
 .meal-row, .wishlist-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-light); }
+.wishlist-row > div { min-width: 0; overflow-wrap: anywhere; }
+.wishlist-row .el-button { flex-shrink: 0; min-height: 44px; }
 .meal-tags, .hint-list { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .meal-tags { flex: 1; min-width: 0; align-items: center; }
 .meal-tags :deep(.el-tag) { max-width: 100%; height: auto; }

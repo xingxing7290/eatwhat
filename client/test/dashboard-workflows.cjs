@@ -13,7 +13,7 @@ async function main () {
     const meals = { breakfast: [], lunch: [], dinner: [] }
     const summary = () => {
       const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals }))
-      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: [], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : [{ _id: 'wish-a', title: '家人想吃的菜', mealId: suggested ? { _id: suggested, name: '家常菜' } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
+      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: [], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: '家人想吃的菜', mealId: suggested ? { _id: suggested, name: '家常菜' } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
     }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -121,6 +121,18 @@ async function main () {
     await page.getByRole('link', { name: /查看 2026-10-30 的日历安排/ }).waitFor()
     await page.getByRole('link', { name: /查看 2026-10-30 的日历安排/ }).click()
     await page.waitForURL('**/calendar?date=2026-10-30')
+    mode = 'long'
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('button', { name: '安排晚餐：另一道想吃的菜' }).waitFor()
+    assert.equal(await page.locator('.wishlist-row').count(), 2)
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `long wish must not overflow at ${width}px`)
+      for (const button of await page.locator('.wishlist-row button').all()) assert.ok((await button.boundingBox()).height >= 44)
+    }
+    await page.getByRole('button', { name: '安排晚餐：另一道想吃的菜' }).click()
+    await page.waitForURL('**/selection?*')
+    assert.equal(new URL(page.url()).searchParams.get('wishlistId'), 'wish-b')
     assert.deepEqual(errors, [])
     console.log('Dashboard checks passed: refreshed date and wish, unavailable and malformed data, and retry')
   } finally { await browser.close() }
