@@ -143,6 +143,13 @@ const validLoginResponse = result => {
   return !(user.householdId && user.household?.id && String(user.householdId).toLowerCase() !== String(user.household.id).toLowerCase())
 }
 
+const storedSessionIdentity = () => {
+  const token = localStorage.getItem('token') || ''
+  let user = null
+  try { user = JSON.parse(localStorage.getItem('user') || 'null') } catch (_) { /* Treat malformed data as an unknown identity. */ }
+  return JSON.stringify([token, user?.id || user?._id || '', user?.householdId || user?.household?.id || ''])
+}
+
 const persistSession = result => {
   const previousToken = localStorage.getItem('token')
   const previousUser = localStorage.getItem('user')
@@ -177,8 +184,13 @@ const onSubmit = async () => {
     try { valid = await formRef.value.validate() } catch (_) { return }
     if (!valid) return
     try {
+      const startingSession = storedSessionIdentity()
       const res = await api.auth.login({ username: form.value.username.trim(), password: form.value.password })
       if (!validLoginResponse(res)) throw new Error('登录响应不完整，无法确认账号和小家，请联系管理员检查服务器。')
+      if (storedSessionIdentity() !== startingSession) {
+        markSessionStale()
+        throw new Error('登录期间其他标签页切换了账号或小家，本次登录未覆盖现有状态。请确认后重新登录。')
+      }
       persistSession(res)
       adoptSession(res.token)
       let preferenceSaved = true

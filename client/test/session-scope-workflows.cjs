@@ -87,6 +87,31 @@ async function main () {
     assert.equal(dashboardAuth, 'Bearer login-token', 'normal same-tab login must bind its new token')
     assert.equal(await page.locator('.session-warning').count(), 0)
     await loginContext.close()
+    const raceContext = await browser.newContext()
+    const slowLogin = await raceContext.newPage()
+    let releaseLogin; let announceLogin
+    const loginStarted = new Promise(resolve => { announceLogin = resolve })
+    await raceContext.route('**/api/**', async route => {
+      if (new URL(route.request().url()).pathname === '/api/auth/login') {
+        announceLogin(); await new Promise(resolve => { releaseLogin = resolve })
+        return route.fulfill({ json: { token: 'slow-token', user: { id: 'slow', householdId: 'home-slow' } } })
+      }
+      return route.fulfill({ json: {} })
+    })
+    await slowLogin.goto(`${base}/login`)
+    await slowLogin.getByPlaceholder('请输入用户名').fill('slow')
+    await slowLogin.getByPlaceholder('请输入密码').fill('test-only')
+    await slowLogin.getByRole('button', { name: '立即登录' }).click()
+    await loginStarted
+    const otherLogin = await raceContext.newPage()
+    await otherLogin.goto(`${base}/login`)
+    await otherLogin.evaluate(() => { localStorage.setItem('token', 'newer-token'); localStorage.setItem('user', JSON.stringify({ id: 'newer', householdId: 'home-newer' })) })
+    releaseLogin()
+    await slowLogin.getByRole('alert').getByText('登录期间其他标签页切换了账号或小家', { exact: false }).waitFor()
+    assert.equal(await slowLogin.evaluate(() => localStorage.getItem('token')), 'newer-token', 'a late login must not overwrite the newer session')
+    assert.equal(await slowLogin.evaluate(() => JSON.parse(localStorage.getItem('user')).householdId), 'home-newer')
+    assert.equal(new URL(slowLogin.url()).pathname, '/login')
+    await raceContext.close()
     console.log('Session checks passed: cross-tab switch, pending response, draft safety and normal login')
   } finally { await browser.close() }
 }
