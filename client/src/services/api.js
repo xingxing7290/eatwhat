@@ -297,12 +297,14 @@ export const mealApi = {
 				if (Array.isArray(data)) {
 					return {
 						data,
-						total: data.length
+						total: data.length,
+						legacyArray: true
 					};
 				}
 
-				const list = Array.isArray(data?.data) ? data.data : [];
-				const total = typeof data?.total === 'number' ? data.total : list.length;
+				if (!data || !Array.isArray(data.data) || !Number.isSafeInteger(data.total) || data.total < 0 || data.data.length > data.total || ((data.page == null) !== (data.limit == null))) throw new Error('菜品列表响应不完整');
+				const list = data.data;
+				const total = data.total;
 				return {
 					data: list,
 					total,

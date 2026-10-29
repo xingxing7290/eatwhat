@@ -118,14 +118,14 @@ exports.getAllMeals = async (req, res, next) => {
     const limitNumRaw = Number.parseInt(limit, 10);
     const hasPagination = Number.isFinite(pageNum) || Number.isFinite(limitNumRaw);
     if (!hasPagination) {
-      const rows = await Meal.find(query).sort({ favorite: -1, createdAt: -1 });
+      const rows = await Meal.find(query).sort({ favorite: -1, createdAt: -1, _id: -1 });
       return res.status(200).json(isMobileClient(req) ? rows : rows.map(presentArchive));
     }
     const safePage = Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1;
     const mobile = isMobileClient(req);
     const safeLimit = Math.min(Number.isFinite(limitNumRaw) && limitNumRaw > 0 ? limitNumRaw : 20, mobile ? 12 : 200);
     const total = await Meal.countDocuments(query);
-    let mealQuery = Meal.find(query).sort({ favorite: -1, createdAt: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit);
+    let mealQuery = Meal.find(query).sort({ favorite: -1, createdAt: -1, _id: -1 }).skip((safePage - 1) * safeLimit).limit(safeLimit);
     if (mobile) mealQuery = mealQuery.select('name imageUrl category tags healthTags ingredients cookTime difficulty rating favorite');
     const meals = await mealQuery.lean();
     res.status(200).json({ data: mobile ? meals.map(compactMeal) : meals.map(presentArchive), total, page: safePage, limit: safeLimit, totalPages: Math.ceil(total / safeLimit) || 1 });

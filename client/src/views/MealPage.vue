@@ -196,7 +196,16 @@ const handleImageError = (e) => {
   }
 };
 
-// 加载所有菜品
+const legacyCatalogMatches = meal => {
+  const query = searchQuery.value.trim().toLocaleLowerCase();
+  const tags = Array.isArray(meal.tags) ? meal.tags : [];
+  const ingredients = Array.isArray(meal.ingredients) ? meal.ingredients : [];
+  const steps = Array.isArray(meal.steps) ? meal.steps : [];
+  const fields = [meal.name, meal.description, meal.tips, ...tags, ...ingredients.map(item => item?.name || item), ...steps.map(item => item?.description || item)];
+  return (!query || fields.some(value => String(value || '').toLocaleLowerCase().includes(query))) && (!selectedTag.value || tags.includes(selectedTag.value)) && (!selectedCategory.value || meal.category === selectedCategory.value) && (!selectedSubcategory.value || meal.subcategory === selectedSubcategory.value) && (!selectedDifficulty.value || meal.difficulty === selectedDifficulty.value) && (!favoriteOnly.value || meal.favorite === true);
+};
+
+// 加载菜品；完整数组是旧接口，在本地筛选和分页。
 const fetchMeals = async () => {
   const sequence = ++fetchSequence;
   loading.value = true;
@@ -215,16 +224,23 @@ const fetchMeals = async () => {
     params.page = currentPage.value;
     params.limit = pageSize.value;
 
+    const requestedPage = currentPage.value;
     const result = await api.meal.getAllMeals(params);
     if (sequence !== fetchSequence) return;
-    const lastPage = Math.max(1, Math.ceil(result.total / pageSize.value));
+    let rows = result.data; let total = result.total;
+    if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(item => !item || !(item._id || item.id) || typeof item.name !== 'string' || !item.name.trim()) || new Set(rows.map(item => String(item._id || item.id))).size !== rows.length) throw new Error('菜品列表数据不完整');
+    if (result.legacyArray) { rows = rows.filter(legacyCatalogMatches); total = rows.length; rows = rows.slice((requestedPage - 1) * pageSize.value, requestedPage * pageSize.value); }
+    else if (result.page != null || result.limit != null) {
+      if (result.page !== requestedPage || result.limit !== pageSize.value || rows.length !== Math.min(pageSize.value, Math.max(0, total - (requestedPage - 1) * pageSize.value))) throw new Error('菜品分页数据不完整或已发生变化，请重试');
+    }
+    const lastPage = Math.max(1, Math.ceil(total / pageSize.value));
     if (currentPage.value > lastPage) {
       currentPage.value = lastPage;
       scheduleCatalogUrl();
       return fetchMeals();
     }
-    displayedMeals.value = result.data;
-    totalMeals.value = result.total;
+    displayedMeals.value = rows;
+    totalMeals.value = total;
   } catch (error) {
     if (sequence === fetchSequence) loadError.value = error?.error || error?.message || '获取菜品列表失败';
   } finally {

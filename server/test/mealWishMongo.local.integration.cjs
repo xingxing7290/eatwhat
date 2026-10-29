@@ -459,6 +459,18 @@ async function main() {
     assert.equal((await request('/guest-orders?page=1&limit=51', { token: listToken })).status, 400);
     assert.equal((await request('/guest-orders?page=1&limit=12&status=unknown', { token: listToken })).status, 400);
     assert.equal((await request('/meals/archive-capabilities', { token: tokenA })).data.supportsMealArchive, true);
+    {
+      const sameTime = new Date('2026-05-01T08:00:00.000Z');
+      const fixtures = await Meal.collection.insertMany(Array.from({ length: 19 }, (_, index) => ({ householdId: homeA._id, name: `稳定分页菜-${String(index).padStart(2, '0')}`, favorite: index < 3, archived: false, createdAt: sameTime, updatedAt: sameTime })));
+      const pages = await Promise.all([1, 2, 3].map(page => request(`/meals?search=${encodeURIComponent('稳定分页菜')}&page=${page}&limit=8`, { token: tokenA })));
+      assert.ok(pages.every(result => result.status === 200 && result.data.total === 19));
+      const rows = pages.flatMap(result => result.data.data);
+      assert.equal(new Set(rows.map(row => String(row._id))).size, 19);
+      const expected = Object.values(fixtures.insertedIds).map(String);
+      assert.deepEqual(rows.map(row => String(row._id)), [...expected.slice(0, 3).sort().reverse(), ...expected.slice(3).sort().reverse()]);
+      assert.equal((await request(`/meals?search=${encodeURIComponent('稳定分页菜')}&page=1&limit=8`, { token: tokenB })).data.total, 0);
+      await Meal.deleteMany({ _id: { $in: Object.values(fixtures.insertedIds) } });
+    }
     const archiveFixture = await Meal.create({ householdId: homeA._id, name: '保留历史的归档菜', category: '归档测试', tags: ['归档标签'] });
     const guestSession = await GuestOrderSession.create({ householdId: homeA._id, createdBy: userA._id, shareToken: 'local-test-guest-token', expiresAt: new Date(Date.now() + 3600000) });
     assert.equal((await request('/guest-public/local-test-guest-token')).data.meals.some(meal => String(meal._id) === String(archiveFixture._id)), true);
