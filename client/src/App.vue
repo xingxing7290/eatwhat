@@ -198,6 +198,10 @@ onMounted(async () => {
 // 键盘快捷键处理
 const handleKeyDown = (e) => {
   if (e.key === 'Escape' && showMobileMenu.value) {
+    // A teleported confirmation or other dialog owns Escape while it is open.
+    // Closing the drawer as well would hide the original focus target.
+    const dialogOpen = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].some(dialog => dialog.getClientRects().length && !dialog.closest('[inert], [aria-hidden="true"]'));
+    if (dialogOpen) return;
     e.preventDefault();
     closeMobileMenu(true);
     return;
