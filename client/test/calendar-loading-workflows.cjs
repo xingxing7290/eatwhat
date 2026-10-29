@@ -12,7 +12,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let mode = 'populated'; let failB = true; let wishFailed = false; let release; let catalogCalls = 0; let inflight = 0; let peak = 0; const mealCalls = []
+    let mode = 'populated'; let failB = true; let wishFailed = false; let wishes = []; let release; let catalogCalls = 0; let inflight = 0; let peak = 0; const mealCalls = []
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -35,7 +35,7 @@ async function main () {
         if (id === 'b' && failB) return route.fulfill({ status: 503, json: { error: '单项菜品读取失败' } })
         return route.fulfill({ json: { _id: id, name: mode === 'race' ? (oldRequest ? '旧月份菜名' : '新月份菜名') : id === 'a' ? '旧版菜甲' : '旧版菜乙' } })
       }
-      if (path === '/wishlist') return wishFailed ? route.fulfill({ status: 503, json: { error: '提醒读取失败' } }) : route.fulfill({ json: [] })
+      if (path === '/wishlist') return wishFailed ? route.fulfill({ status: 503, json: { error: '提醒读取失败' } }) : route.fulfill({ json: wishes })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/calendar`)
@@ -44,8 +44,40 @@ async function main () {
     assert.deepEqual(mealCalls, [])
     assert.equal(await page.getByText('无法加载月度安排', { exact: false }).count(), 0)
 
-    mode = 'legacy'; wishFailed = true
+    wishes = [
+      { _id: 'wish-unlinked', title: '先关联菜', partnerSignal: true, mealLinkStatus: 'unlinked' },
+      { _id: 'wish-linked', title: '番茄炒蛋', partnerSignal: true, mealId: { _id: 'meal-b', name: '番茄炒蛋' } },
+      { _id: 'wish-archived', title: '已归档菜', partnerSignal: true, mealId: { _id: 'meal-c', archived: true } }
+    ]
     await page.reload()
+    await page.getByRole('link', { name: '在想吃清单中核对先关联菜' }).waitFor()
+    await page.getByText('菜品已移入回收站').waitFor()
+    assert.equal(await page.getByRole('button', { name: '安排先关联菜到今天晚餐' }).count(), 0)
+    await page.setViewportSize({ width: 390, height: 844 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.wishlist-reminder-title strong', '.wishlist-reminder-title small', '.wishlist-reminders a']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+      }
+    }
+    await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
+    await page.waitForURL('**/selection?*')
+    const target = new URL(page.url())
+    assert.equal(target.searchParams.get('suggestedMealId'), 'meal-b')
+    assert.equal(target.searchParams.get('wishlistId'), 'wish-linked')
+    assert.equal(target.searchParams.get('date'), '2026-10-28')
+    assert.equal(target.searchParams.get('mealType'), 'dinner')
+    wishes = []
+    await page.setViewportSize({ width: 1280, height: 900 })
+
+    mode = 'legacy'; wishFailed = true
+    await page.goto(`${base}/calendar`)
+    catalogCalls = 0
     await page.locator('.desktop-only .meal-item').filter({ hasText: '旧版菜甲' }).waitFor()
     await page.getByText('部分菜品已不可用或名称暂时无法读取', { exact: false }).waitFor()
     await page.getByText('暂时无法读取想吃提醒，不影响查看日历。').waitFor()

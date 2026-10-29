@@ -112,9 +112,11 @@ const loadPartnerWishlist = async (sequence = monthSequence) => {
     partnerWishlist.value = items.filter(item => item?.partnerSignal).slice(0, 3);
   } catch (_) { if (active && sequence === monthSequence) wishlistError.value = '暂时无法读取想吃提醒'; }
 };
+const wishlistMealId = item => item?.mealId && typeof item.mealId === 'object' && !item.mealId.archived ? item.mealId._id || item.mealId.id : '';
+const wishlistNeedsRecipe = item => item?.mealId?.archived ? '菜品已移入回收站' : item?.mealLinkStatus === 'unavailable' ? '关联菜品不可用' : item?.mealLinkStatus === 'unlinked' ? '尚未关联菜品' : '请先核对关联菜品';
 const arrangeWishlistDinner = (item) => {
-  const id = item.mealId?._id || item.mealId?.id;
-  if (!id) return ElMessage.warning('这个想吃项还没有关联菜品');
+  const id = wishlistMealId(item);
+  if (!id || !item?._id) return ElMessage.warning('请先在想吃清单中核对关联菜品');
   return router.push({ name: 'MealSelection', query: {
     date: format(new Date(), 'yyyy-MM-dd'), mealType: 'dinner', suggestedMealId: id, wishlistId: item._id
   } });
@@ -484,10 +486,10 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
     </div>
     <div v-if="!isLoading && !loadError && wishlistError" class="calendar-notice" role="status"><span>{{ wishlistError }}，不影响查看日历。</span><el-button link type="primary" @click="loadPartnerWishlist()">重试提醒</el-button></div>
 
-    <div v-if="partnerWishlist.length" class="partner-wishlist-banner">
-      <div><strong>TA 最近想吃</strong><span v-for="item in partnerWishlist" :key="item._id">{{ item.title }}</span></div>
-      <el-button size="small" type="primary" @click="arrangeWishlistDinner(partnerWishlist[0])">安排今天晚餐</el-button>
-    </div>
+    <section v-if="partnerWishlist.length" class="partner-wishlist-banner" aria-label="家人最近想吃">
+      <div class="wishlist-banner-heading"><strong>家人最近想吃</strong><router-link :to="{ name: 'wishlist' }">查看全部想吃 →</router-link></div>
+      <ul class="wishlist-reminders"><li v-for="item in partnerWishlist" :key="item._id"><div class="wishlist-reminder-title"><strong>{{ item.title || '未命名想吃' }}</strong><small v-if="!wishlistMealId(item) || !item._id">{{ wishlistNeedsRecipe(item) }}</small></div><el-button v-if="wishlistMealId(item) && item._id" size="small" type="primary" :aria-label="`安排${item.title || '这道菜'}到今天晚餐`" @click="arrangeWishlistDinner(item)">安排今天晚餐</el-button><router-link v-else :to="{ name: 'wishlist' }" :aria-label="`在想吃清单中核对${item.title || '这条想吃'}`">前往核对 →</router-link></li></ul>
+    </section>
 
     <!-- 移动端月份导航 - 只在移动端显示 -->
     <div class="mobile-month-nav">
@@ -1575,4 +1577,16 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
   }
 }
 
+.partner-wishlist-banner { display: block; padding: 16px; }
+.partner-wishlist-banner .wishlist-banner-heading { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.partner-wishlist-banner a { color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.partner-wishlist-banner a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.wishlist-reminders { display: grid; gap: 8px; padding: 0; margin: 12px 0 0; list-style: none; }
+.wishlist-reminders li { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-width: 0; padding: 10px 12px; border-radius: 12px; background: var(--bg-secondary); }
+.partner-wishlist-banner .wishlist-reminder-title { display: grid; gap: 3px; min-width: 0; }
+.wishlist-reminder-title strong { overflow-wrap: anywhere; }
+.wishlist-reminder-title small { color: var(--text-primary); font-size: 12px; }
+.wishlist-reminders .el-button, .wishlist-reminders a { flex-shrink: 0; min-height: 44px; }
+.wishlist-reminders a { display: inline-flex; align-items: center; }
+@media (max-width: 400px) { .wishlist-reminders li { flex-wrap: wrap; } }
 </style>
