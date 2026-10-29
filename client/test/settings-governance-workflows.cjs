@@ -20,6 +20,7 @@ async function main () {
     let restoreCalls = 0
     let issueCalls = 0
     let issueSuccess = false
+    let holdIssue = false; let releaseIssue
     const profile = { user: { id: 'u1', householdId: 'home-a' }, household: { id: 'home-a', name: '甲家庭', inviteCode: 'CODE', members: [{ _id: 'u1' }] } }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -29,7 +30,7 @@ async function main () {
       if (path === '/api/meal-image-issues') return route.fulfill({ json: invalid ? { items: [] } : issues })
       if (path === '/api/default-meals/import-missing') { importCalls++; missing = 0; return route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
       if (path === '/api/default-meals/restore-images') { restoreCalls++; return route.fulfill({ json: {} }) }
-      if (path === '/api/meal-image-issues/issue-1') { issueCalls++; issues = []; return issueSuccess ? route.fulfill({ json: { _id: 'issue-1', status: 'fixed' } }) : route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
+      if (path === '/api/meal-image-issues/issue-1') { issueCalls++; if (holdIssue) await new Promise(resolve => { releaseIssue = resolve }); issues = issueSuccess ? issues.filter(issue => issue._id !== 'issue-1') : []; return issueSuccess ? route.fulfill({ json: { _id: 'issue-1', status: 'fixed' } }) : route.fulfill({ status: 503, json: { error: '响应丢失' } }) }
       return route.fulfill({ json: {} })
     })
     const imageRequests = []
@@ -121,6 +122,22 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '待修正图片')
     assert.equal(issueCalls, 2)
     assert.equal(await page.getByText('图片反馈操作结果未确认').count(), 0)
+    issues = [{ _id: 'issue-1', mealId: { name: '测试菜' }, note: '待核对' }, { _id: 'issue-2', mealId: { name: '下一道菜' }, note: '第二条反馈' }]
+    await page.locator('.settings-card').filter({ hasText: '用户设置' }).getByRole('button', { name: '刷新', exact: true }).click()
+    await page.getByText('第二条反馈').waitFor()
+    holdIssue = true
+    await page.getByRole('button', { name: '标记已修正：测试菜', exact: true }).focus(); await page.keyboard.press('Enter')
+    for (let i = 0; i < 100 && !releaseIssue; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseIssue, 'function')
+    const nickname = page.getByPlaceholder('请输入昵称'); await nickname.focus()
+    holdIssue = false; releaseIssue()
+    await page.getByRole('button', { name: '标记已修正：测试菜', exact: true }).waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: '标记已修正：下一道菜', exact: true }).waitFor()
+    assert.equal(await nickname.evaluate(node => document.activeElement === node), true, 'late issue updates must not steal focus from another control')
+    issues = [{ _id: 'issue-1', mealId: { name: '测试菜' }, note: '待核对' }, { _id: 'issue-2', mealId: { name: '下一道菜' }, note: '第二条反馈' }]
+    await page.locator('.settings-card').filter({ hasText: '用户设置' }).getByRole('button', { name: '刷新', exact: true }).click()
+    await page.getByRole('button', { name: '标记已修正：测试菜', exact: true }).focus(); await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '标记已修正：下一道菜')
     profileFailed = true
     await page.locator('.settings-card').filter({ hasText: '用户设置' }).getByRole('button', { name: '刷新', exact: true }).click()
     await page.locator('.settings-page').getByText('资料不可用').waitFor()
