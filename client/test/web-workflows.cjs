@@ -890,8 +890,9 @@ async function main () {
   assert.equal(await page.getByRole('button', { name: '加入', exact: true }).isDisabled(), true)
   await page.getByRole('button', { name: '重新核对家庭' }).click()
   await page.getByRole('button', { name: '放弃并刷新' }).click()
-  try { await page.getByText('已切换家庭').waitFor({ timeout: 10000 }) }
+  try { await page.locator('#app-main').getByText('已切换家庭', { exact: true }).waitFor({ timeout: 10000 }) }
   catch (error) { console.error('Household recovery:', await page.locator('body').innerText(), 'errors:', errors); throw error }
+  await page.locator('.user-household').getByText('小家：已切换家庭', { exact: true }).waitFor()
   assert.equal(await page.getByText('家庭切换结果未确认').count(), 0)
   await page.evaluate(() => sessionStorage.setItem('fixture-household', 'home-b'))
   await page.goto(`${base}/apply-account#invite=OTHER2`)
@@ -1023,7 +1024,7 @@ async function main () {
     if (pathname.endsWith('/auth/login')) {
       loginCalls++
       if (delayLogin) await new Promise(resolve => { releaseLogin = resolve })
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'login-token', user: { username: 'old-user', householdId: 'home-a' } }) })
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ token: 'login-token', user: { id: 'login-user', username: 'old-user', householdId: 'home-a' } }) })
     }
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(pathname.endsWith('/weekly-plans') ? { days: [] } : {}) })
   })
@@ -1042,7 +1043,7 @@ async function main () {
   await loginPage.locator('form').evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   assert.equal(loginCalls, 1)
   releaseLogin()
-  await loginPage.waitForURL('**/weekly-plan')
+  await loginPage.waitForURL(url => url.origin === new URL(base).origin && url.pathname === '/weekly-plan')
   assert.equal(await loginPage.evaluate(() => localStorage.getItem('token')), 'login-token')
   delayLogin = false
   await loginPage.goto(`${base}/login?redirect=%2F%2Fevil.example`)
