@@ -37,9 +37,11 @@ const loading = ref(false);
 const loadError = ref('');
 const categoryLoadFailed = ref(false);
 const categoryLoading = ref(false);
+const categoryReady = ref(false);
 const tagLoadFailed = ref(false);
 const tagLoading = ref(false);
 const categoryRetryButton = ref(null);
+const categoryRefreshButton = ref(null);
 const tagRetryButton = ref(null);
 const displayedMeals = ref([]);
 const totalMeals = ref(0);
@@ -135,6 +137,20 @@ const categoryOptions = computed(() => {
     if (r.category) set.add(r.category);
   });
   return Array.from(set);
+});
+const categoryCounts = computed(() => {
+  if (!categoryReady.value || categoryLoadFailed.value || categoryLoading.value || !Array.isArray(mealStore.categories)) return null;
+  const counts = new Map(); const pairs = new Set();
+  for (const row of mealStore.categories) {
+    if (!Number.isSafeInteger(row.count) || row.count < 0) return null;
+    const pair = JSON.stringify([row.category, row.subcategory || '']);
+    if (pairs.has(pair)) return null;
+    pairs.add(pair);
+    const total = (counts.get(row.category) || 0) + row.count;
+    if (!Number.isSafeInteger(total)) return null;
+    counts.set(row.category, total);
+  }
+  return counts;
 });
 const categorySidebar = ref(null);
 const revealActiveCategory = async () => {
@@ -541,6 +557,7 @@ const handleAddMeal = async () => {
 
       // 重新获取菜品列表
       await fetchMeals();
+      await loadCategories();
     } catch (error) {
       ElMessage.error('添加失败');
     } finally {
@@ -632,18 +649,20 @@ watch(archiveDialog, visible => {
 
 const loadCategories = async () => {
   if (categoryLoading.value) return;
-  const restoreFocus = document.activeElement === categoryRetryButton.value;
+  const wasRetry = document.activeElement === categoryRetryButton.value;
+  const wasRefresh = document.activeElement === categoryRefreshButton.value;
   categoryLoading.value = true;
   try {
     await mealStore.fetchMealCategories();
+    categoryReady.value = true;
     categoryLoadFailed.value = false;
   } catch (_) {
     categoryLoadFailed.value = true;
   } finally {
     categoryLoading.value = false;
-    if (restoreFocus) {
+    if (wasRetry || wasRefresh) {
       await nextTick();
-      if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) (categoryLoadFailed.value ? categoryRetryButton.value : filterToggleButton.value?.$el)?.focus();
+      if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) (categoryLoadFailed.value ? categoryRetryButton.value : wasRefresh ? categoryRefreshButton.value : filterToggleButton.value?.$el)?.focus();
     }
   }
 };
@@ -863,9 +882,11 @@ onBeforeUnmount(() => {
         <nav class="category-list" aria-label="选择菜品分类">
           <button type="button" data-sidebar-kind="all" :class="{ active: !selectedCategory && !uncategorized && !favoriteOnly }" :aria-pressed="!selectedCategory && !uncategorized && !favoriteOnly" @click="selectedCategory = ''; uncategorized = false; favoriteOnly = false">全部分类</button>
           <button type="button" data-sidebar-kind="favorite" :class="{ active: favoriteOnly }" :aria-pressed="favoriteOnly" @click="selectedCategory = ''; uncategorized = false; favoriteOnly = !favoriteOnly">我的收藏</button>
-          <button type="button" data-sidebar-kind="uncategorized" :class="{ active: uncategorized }" :aria-pressed="uncategorized" @click="selectedCategory = ''; uncategorized = true; favoriteOnly = false">未分类</button>
-          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="uncategorized = false; favoriteOnly = false; selectedCategory = category">{{ category }}</button>
+          <button type="button" data-sidebar-kind="uncategorized" :class="{ active: uncategorized }" :aria-pressed="uncategorized" aria-label="未分类" :aria-description="categoryCounts ? `分类总数 ${categoryCounts.get('') || 0} 道` : undefined" @click="selectedCategory = ''; uncategorized = true; favoriteOnly = false"><span>未分类</span><small v-if="categoryCounts" aria-hidden="true">{{ categoryCounts.get('') || 0 }}</small></button>
+          <button v-for="category in categoryOptions" :key="category" type="button" data-sidebar-kind="category" :data-category="category" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" :aria-label="category" :aria-description="categoryCounts && categoryCounts.has(category) ? `分类总数 ${categoryCounts.get(category)} 道` : undefined" @click="uncategorized = false; favoriteOnly = false; selectedCategory = category"><span>{{ category }}</span><small v-if="categoryCounts && categoryCounts.has(category)" aria-hidden="true">{{ categoryCounts.get(category) }}</small></button>
         </nav>
+        <p v-if="categoryCounts" class="category-count-note">数字为上次更新时的分类总数，不随搜索和筛选变化。</p>
+        <button v-if="!categoryLoadFailed" ref="categoryRefreshButton" class="category-refresh" type="button" :disabled="categoryLoading" @click="loadCategories">{{ categoryLoading ? '正在更新' : '更新分类' }}</button>
         <div v-if="categoryLoadFailed" class="category-error" role="status">分类可能不完整<button ref="categoryRetryButton" type="button" :disabled="categoryLoading" @click="loadCategories">{{ categoryLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
       <section ref="catalogContent" class="catalog-content" aria-label="菜品列表" tabindex="-1">
@@ -2349,6 +2370,12 @@ onBeforeUnmount(() => {
 .category-heading { padding: 0 10px 12px; color: var(--text-secondary); font-size: 12px; font-weight: 700; letter-spacing: .08em; }
 .category-list { display: flex; flex-direction: column; gap: 5px; }
 .category-list button { width: 100%; border: 0; border-radius: 14px; background: transparent; color: var(--text-secondary); padding: 11px 12px; text-align: left; font: inherit; font-size: 14px; cursor: pointer; overflow-wrap: anywhere; }
+.category-list button[data-sidebar-kind="category"], .category-list button[data-sidebar-kind="uncategorized"] { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 4px; }
+.category-list button span { min-width: 0; }
+.category-list button small { font-size: 11px; font-weight: 600; }
+.category-count-note { margin: 10px 6px 0; color: var(--text-secondary); font-size: 11px; line-height: 1.5; }
+.category-refresh { min-height: 44px; padding: 4px 6px; border: 0; background: none; color: var(--text-primary); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+.category-refresh:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .category-list button:hover { background: var(--bg-tertiary); color: var(--text-primary); }
 .category-list button.active { color: #713d30; background: #f9e6dc; font-weight: 700; box-shadow: inset 3px 0 0 #c77c5c; }
 .category-list button:focus-visible, .meal-list-item:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
