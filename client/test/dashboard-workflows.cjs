@@ -133,6 +133,24 @@ async function main () {
     await page.getByRole('button', { name: '安排晚餐：另一道想吃的菜' }).click()
     await page.waitForURL('**/selection?*')
     assert.equal(new URL(page.url()).searchParams.get('wishlistId'), 'wish-b')
+    mode = 'removed'
+    await page.goto(`${base}/dashboard`)
+    await page.getByText('暂时没有新的想吃提醒').waitFor()
+    await page.getByText('还没有饭后照片').waitFor()
+    for (const [name, target] of [['查看想吃清单', '/wishlist'], ['打开饭桌相册', '/photo-album'], ['记录饭后回忆', '/memories']]) {
+      const link = page.getByRole('link', { name })
+      assert.equal(await link.getAttribute('href'), target)
+      assert.ok((await link.boundingBox()).height >= 44, `${name} must be easy to tap`)
+    }
+    await page.getByRole('link', { name: '记录饭后回忆' }).focus()
+    await page.keyboard.press('Enter')
+    await page.waitForURL('**/memories')
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('link', { name: '打开饭桌相册' }).click()
+    await page.waitForURL('**/photo-album')
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('link', { name: '查看想吃清单' }).click()
+    await page.waitForURL('**/wishlist')
     assert.deepEqual(errors, [])
     console.log('Dashboard checks passed: refreshed date and wish, unavailable and malformed data, and retry')
   } finally { await browser.close() }

@@ -138,6 +138,7 @@ onBeforeUnmount(() => { active = false; });
             <el-button size="small" type="primary" :loading="arranging === String(item._id || item.id)" :disabled="loading || !!arranging" :aria-label="`${mealId(item.mealId) ? '安排晚餐' : '查看心愿'}：${item.title}`" @click="arrangeWishlistDinner(item)">{{ mealId(item.mealId) ? '安排晚餐' : '查看心愿' }}</el-button>
           </div>
         </div>
+        <div class="card-links"><router-link :to="{ name: 'wishlist' }">查看想吃清单 <span aria-hidden="true">→</span></router-link></div>
       </el-card>
 
       <el-card>
@@ -149,6 +150,7 @@ onBeforeUnmount(() => { active = false; });
             <span v-else class="photo-unavailable">照片暂不可用</span>
           </router-link>
         </div>
+        <div class="card-links"><router-link :to="{ name: 'photoAlbum' }">打开饭桌相册 <span aria-hidden="true">→</span></router-link><router-link v-if="!summary.recentPhotos.length" :to="{ name: 'memories' }">记录饭后回忆 <span aria-hidden="true">→</span></router-link></div>
       </el-card>
 
       <el-card>
@@ -207,6 +209,9 @@ h1 span { color: var(--dashboard-accent-ink); }
 .photo-tile:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 3px; }
 .photo-strip img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .photo-unavailable { display: flex; align-items: center; justify-content: center; height: 100%; padding: 4px; text-align: center; color: var(--text-primary); font-size: 12px; }
+.card-links { display: flex; flex-wrap: wrap; gap: 0 18px; margin-top: 12px; }
+.card-links a { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.card-links a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; border-radius: 2px; }
 .status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 14px; }
 .status-grid div { background: var(--bg-secondary); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 6px; }
 .status-grid span { color: var(--text-secondary); font-size: 13px; }
