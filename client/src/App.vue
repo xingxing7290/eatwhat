@@ -95,6 +95,9 @@ const closeMobileMenu = (restoreFocus = false) => {
   showMobileMenu.value = false;
   if (restoreFocus === true) nextTick(() => mobileMenuButton.value?.$el?.focus());
 };
+const closeSamePageMenu = (event, path) => {
+  if (event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && route.fullPath === path) closeMobileMenu(true);
+};
 
 // 监听暗黑模式变化
 watch(isDarkMode, () => {
@@ -107,7 +110,9 @@ watch(selectedColorTheme, () => {
 
 watch(() => route.fullPath, () => {
   loadAuthState();
+  const wasOpen = showMobileMenu.value;
   closeMobileMenu();
+  if (wasOpen) nextTick(focusMain);
 });
 
 const appName = "安排吃啥"
@@ -196,6 +201,14 @@ const handleKeyDown = (e) => {
     e.preventDefault();
     closeMobileMenu(true);
     return;
+  }
+  if (e.key === 'Tab' && showMobileMenu.value) {
+    const panel = document.getElementById('mobile-navigation');
+    if (panel?.contains(document.activeElement)) {
+      const items = [...panel.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter(item => item.getClientRects().length && !item.closest('[inert]'));
+      if (items.length && e.shiftKey && document.activeElement === items[0]) { e.preventDefault(); items[items.length - 1].focus(); }
+      else if (items.length && !e.shiftKey && document.activeElement === items[items.length - 1]) { e.preventDefault(); items[0].focus(); }
+    }
   }
   if (!showDevTools) return;
 
@@ -367,52 +380,52 @@ onBeforeUnmount(() => {
           </el-button>
         </div>
         
-        <nav class="mobile-nav-links">
-          <router-link to="/dashboard" class="mobile-nav-link" @click="closeMobileMenu">
+        <nav class="mobile-nav-links" aria-label="移动端导航">
+          <router-link to="/dashboard" class="mobile-nav-link" @click="closeSamePageMenu($event, '/dashboard')">
             <el-icon><Calendar /></el-icon>
             <span>首页</span>
           </router-link>
-          <router-link to="/calendar" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/calendar" class="mobile-nav-link" @click="closeSamePageMenu($event, '/calendar')">
             <el-icon><Calendar /></el-icon>
             <span>日历</span>
           </router-link>
-          <router-link to="/weekly-plan" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/weekly-plan" class="mobile-nav-link" @click="closeSamePageMenu($event, '/weekly-plan')">
             <el-icon><Calendar /></el-icon>
             <span>周计划</span>
           </router-link>
-          <router-link to="/shopping-list" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/shopping-list" class="mobile-nav-link" @click="closeSamePageMenu($event, '/shopping-list')">
             <el-icon><Food /></el-icon>
             <span>购物清单</span>
           </router-link>
-          <router-link to="/meals" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/meals" class="mobile-nav-link" @click="closeSamePageMenu($event, '/meals')">
             <el-icon><Food /></el-icon>
             <span>菜品</span>
           </router-link>
-          <router-link to="/memories" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/memories" class="mobile-nav-link" @click="closeSamePageMenu($event, '/memories')">
             <el-icon><ChatDotRound /></el-icon>
             <span>回忆</span>
           </router-link>
-          <router-link to="/photo-album" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/photo-album" class="mobile-nav-link" @click="closeSamePageMenu($event, '/photo-album')">
             <el-icon><ChatDotRound /></el-icon>
             <span>相册</span>
           </router-link>
-          <router-link to="/review" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/review" class="mobile-nav-link" @click="closeSamePageMenu($event, '/review')">
             <el-icon><Calendar /></el-icon>
             <span>饭桌回顾</span>
           </router-link>
-          <router-link to="/wishlist" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/wishlist" class="mobile-nav-link" @click="closeSamePageMenu($event, '/wishlist')">
             <el-icon><Star /></el-icon>
             <span>想吃</span>
           </router-link>
-          <router-link to="/guest-orders" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/guest-orders" class="mobile-nav-link" @click="closeSamePageMenu($event, '/guest-orders')">
             <el-icon><Food /></el-icon>
             <span>宴请点菜</span>
           </router-link>
-          <router-link to="/anniversaries" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/anniversaries" class="mobile-nav-link" @click="closeSamePageMenu($event, '/anniversaries')">
             <el-icon><Present /></el-icon>
             <span>纪念日</span>
           </router-link>
-          <router-link to="/settings" class="mobile-nav-link" @click="closeMobileMenu">
+          <router-link to="/settings" class="mobile-nav-link" @click="closeSamePageMenu($event, '/settings')">
             <el-icon><User /></el-icon>
             <span>设置</span>
           </router-link>

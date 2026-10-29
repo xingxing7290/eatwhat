@@ -916,6 +916,8 @@ async function main () {
   await page.getByRole('heading', { name: /好好吃饭/ }).waitFor()
   await page.getByRole('button', { name: '打开导航菜单' }).click()
   await page.locator('.mobile-nav').getByRole('link', { name: '购物清单' }).click()
+  await page.waitForURL('**/shopping-list')
+  await page.waitForFunction(() => document.querySelector('.mobile-nav')?.getAttribute('aria-hidden') === 'true')
   assert.equal(await page.locator('.mobile-nav').getAttribute('aria-hidden'), 'true')
   await page.getByText('鸡蛋', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth), false, 'mobile shopping list should not overflow horizontally')
