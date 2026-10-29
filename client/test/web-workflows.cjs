@@ -81,7 +81,7 @@ async function main () {
   })
   await page.addInitScript(() => {
     localStorage.setItem('token', 'test-token')
-    localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户', householdId: 'home-a' }))
+    localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户', householdId: sessionStorage.getItem('fixture-household') || 'home-a' }))
     const createObjectURL = URL.createObjectURL.bind(URL)
     window.__testObjectUrlNames = {}
     URL.createObjectURL = blob => { const url = createObjectURL(blob); window.__testObjectUrlNames[url] = blob.name; return url }
@@ -889,6 +889,7 @@ async function main () {
   try { await page.getByText('已切换家庭').waitFor({ timeout: 10000 }) }
   catch (error) { console.error('Household recovery:', await page.locator('body').innerText(), 'errors:', errors); throw error }
   assert.equal(await page.getByText('家庭切换结果未确认').count(), 0)
+  await page.evaluate(() => sessionStorage.setItem('fixture-household', 'home-b'))
   await page.goto(`${base}/apply-account#invite=OTHER2`)
   await page.getByRole('button', { name: '使用当前账号加入' }).click()
   await page.waitForURL('**/settings')

@@ -2,12 +2,13 @@
   <div class="settings-page">
     <header class="settings-intro"><div><span class="eyebrow">YOUR HOME, YOUR WAY</span><h1>小家设置</h1><p>管理个人资料、家庭成员和餐桌的样子。</p></div><span class="intro-badge">把日常过成喜欢的模样</span></header>
     <el-alert v-if="profileError" :title="profileError" type="error" :closable="false" show-icon><el-button link type="primary" :loading="profileLoading" @click="reload">重新加载</el-button></el-alert>
+    <el-alert v-if="profileUncertain" class="name-alert profile-uncertain-alert" title="个人资料更新结果未确认" type="warning" :closable="false" show-icon>请先重新加载并核对昵称或头像；刷新会放弃本页未保存的输入。<el-button link type="primary" :loading="profileLoading" @click="reload">重新核对资料</el-button></el-alert>
     <el-alert v-if="joinUncertain" title="家庭切换结果未确认" type="warning" :closable="false" show-icon>请先重新核对当前家庭，再决定是否重试；如果家庭已切换，请按提示重新登录。在确认前本页的家庭操作暂不可用。 <el-button link type="primary" :loading="profileLoading" @click="reload">重新核对家庭</el-button></el-alert>
     <el-alert v-if="inviteUncertain" title="邀请码刷新结果未确认" type="warning" :closable="false" show-icon>旧邀请码可能已经失效，请重新核对后再复制或分享。 <el-button link type="primary" :loading="profileLoading" @click="reload">重新核对邀请码</el-button></el-alert>
     <el-alert v-if="invalidInviteLink" title="邀请链接中的邀请码过长，请向家人重新确认。" type="warning" :closable="false" show-icon />
     <el-card class="settings-card">
       <template #header><div class="card-header"><span>用户设置</span></div></template>
-      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="头像">
           <div class="avatar-row">
             <div class="avatar-preview"><img v-if="avatarPreview || user.avatarUrl" :src="avatarPreview || resolveUploadedImage(user.avatarUrl)" alt="头像预览" /><div v-else class="avatar-placeholder">{{ initial }}</div></div>
@@ -97,7 +98,7 @@
         <el-button link type="primary" :loading="nameChecking" @click="reviewHouseholdName">核对最新名称</el-button>
         <div v-if="latestName !== null" class="name-review"><span>最新名称：{{ latestName }}</span><el-button link type="primary" @click="useLatestName">采用最新名称</el-button><el-button link type="primary" @click="keepNameDraft">保留我的名称</el-button></div>
       </el-alert>
-      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
         <el-form-item label="小家名称"><el-input v-model="householdName" placeholder="给你们的小家取个名字" maxlength="40" show-word-limit /></el-form-item>
         <el-form-item label="邀请码">
           <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
@@ -121,7 +122,7 @@ import api from '@/services/api';
 import { useMealStore } from '@/stores/meal';
 import { useScheduleStore } from '@/stores/schedule';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
-import { replaceSessionUser } from '@/services/sessionScope';
+import { currentSessionScope, replaceSessionUser, sessionIsCurrent } from '@/services/sessionScope';
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router';
 
 const mealStore = useMealStore();
@@ -170,11 +171,12 @@ const resolvingIssue = ref('');
 const profileLoading = ref(false);
 const profileReady = ref(false);
 const profileError = ref('');
+const profileUncertain = ref(false);
 const avatarPreview = ref('');
 const fileInputRef = ref(null);
 const initial = computed(() => memberInitial(user.value));
 const memberInitial = (member) => ((member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase());
-const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value));
+const dirty = computed(() => profileReady.value && (displayName.value !== (user.value.displayName || '') || householdName.value !== (household.value.name || '') || !!avatarFile.value || !!nameIssue.value || profileUncertain.value));
 const validNameVersion = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && (value.revision === null || (typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128));
 const nameVersionAvailable = computed(() => household.value.supportsConditionalNameUpdate === true && validNameVersion(household.value.nameVersion));
 const mutationPending = computed(() => saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value || defaultLoading.value || !!resolvingIssue.value);
@@ -184,11 +186,22 @@ if (rawInvitedCode) {
   router.replace({ path: route.path, query: route.query, hash: rest ? `#${rest}` : '' });
 }
 
-const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true } = {}) => {
+const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true, allowHouseholdChange = false } = {}) => {
+  const nextUser = res?.user;
+  const nextHousehold = res?.household || nextUser?.household;
+  const scope = currentSessionScope();
+  const id = String(nextUser?.id || '');
+  const householdId = String(nextHousehold?.id || '');
+  const code = nextHousehold?.inviteCode;
+  if (!id || !householdId || (scope.userId && scope.userId !== id) || String(nextUser?.householdId || '') !== householdId ||
+      (!allowHouseholdChange && scope.householdId && scope.householdId !== householdId) ||
+      (nextUser.household?.id && String(nextUser.household.id) !== householdId) ||
+      typeof code !== 'string' || !code || code.length > 20 || code.trim() !== code ||
+      !Array.isArray(nextHousehold.members) || !nextHousehold.members.some(member => String(member?._id || member?.id || member) === id)) throw new Error('家庭信息不完整，请重试');
   const previousHousehold = household.value;
   const nameDraftDirty = householdName.value !== (previousHousehold.name || '');
-  user.value = res.user || user.value;
-  const nextHousehold = res.household || res.user?.household || previousHousehold;
+  replaceSessionUser(nextUser);
+  user.value = nextUser;
   const sameHousehold = !!previousHousehold.id && String(previousHousehold.id) === String(nextHousehold?.id || '');
   if (!syncHouseholdName && sameHousehold && nameDraftDirty) {
     // Keep the version that the unsaved name was based on, even if an
@@ -200,7 +213,6 @@ const applyProfile = (res, { syncDisplayName = true, syncHouseholdName = true } 
   }
   if (syncDisplayName) displayName.value = user.value.displayName || '';
   if (syncHouseholdName) householdName.value = household.value.name || '';
-  replaceSessionUser(user.value);
 };
 const loadGovernance = async () => {
   if (governanceLoading.value) return;
@@ -231,12 +243,13 @@ const reload = async () => {
     const actualHousehold = profile?.household || profile?.user?.household;
     if (!profile?.user?.id || !actualHousehold?.id || typeof actualHousehold.inviteCode !== 'string' || !actualHousehold.inviteCode ||
         ((joinUncertain.value || inviteUncertain.value) && String(profile.user.householdId || '') !== String(actualHousehold.id))) throw new Error('家庭信息不完整，请重试');
-    applyProfile(profile);
+    applyProfile(profile, { allowHouseholdChange: joinUncertain.value });
     profileReady.value = true;
     clearAvatarFile();
     if (joinUncertain.value) { mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; }
     joinUncertain.value = false;
     inviteUncertain.value = false;
+    profileUncertain.value = false;
     nameIssue.value = ''; latestName.value = null;
     await loadGovernance();
   } catch (e) {
@@ -244,9 +257,9 @@ const reload = async () => {
   } finally { profileLoading.value = false; }
 };
 const saveProfile = async () => {
-  if (saving.value || avatarUploading.value || nameIssue.value || nameChecking.value) return;
+  if (saving.value || avatarUploading.value || profileUncertain.value || nameIssue.value || nameChecking.value) return;
   try { saving.value = true; applyProfile(await api.auth.updateProfile({ displayName: displayName.value }), { syncHouseholdName: false }); ElMessage.success('保存成功'); }
-  catch (e) { ElMessage.error(e?.error || '保存失败'); }
+  catch (_) { profileUncertain.value = true; }
   finally { saving.value = false; }
 };
 const saveHousehold = async () => {
@@ -288,7 +301,7 @@ const keepNameDraft = async () => {
   latestName.value = null; nameIssue.value = '';
 };
 const refreshInvite = async () => {
-  if (refreshing.value || joining.value || saving.value || avatarUploading.value || householdSaving.value || nameIssue.value || nameChecking.value || inviteUncertain.value || joinUncertain.value || profileLoading.value || !profileReady.value || profileError.value) return;
+  if (refreshing.value || joining.value || saving.value || avatarUploading.value || householdSaving.value || profileUncertain.value || nameIssue.value || nameChecking.value || inviteUncertain.value || joinUncertain.value || profileLoading.value || !profileReady.value || profileError.value) return;
   refreshing.value = true;
   try {
     try { await ElMessageBox.confirm('刷新后原邀请码将失效，已加入的家庭成员不受影响。', '刷新邀请码', { type: 'warning', confirmButtonText: '刷新邀请码', cancelButtonText: '取消' }); } catch (_) { return; }
@@ -303,7 +316,7 @@ const refreshInvite = async () => {
   finally { refreshing.value = false; }
 };
 const joinHousehold = async () => {
-  if (joining.value || saving.value || avatarUploading.value || householdSaving.value || nameIssue.value || nameChecking.value || refreshing.value || inviteUncertain.value || joinUncertain.value || defaultLoading.value || resolvingIssue.value || governanceLoading.value) return;
+  if (joining.value || saving.value || avatarUploading.value || householdSaving.value || profileUncertain.value || nameIssue.value || nameChecking.value || refreshing.value || inviteUncertain.value || joinUncertain.value || defaultLoading.value || resolvingIssue.value || governanceLoading.value) return;
   if (!joinCode.value.trim()) return ElMessage.warning('请输入邀请码');
   const requestedCode = joinCode.value.trim().toUpperCase();
   if (requestedCode.length > 20) return ElMessage.warning('邀请码过长，请重新确认');
@@ -314,7 +327,7 @@ const joinHousehold = async () => {
     if (!result?.user?.id || String(result.user.id) !== String(user.value.id) || !result?.household?.id || String(result.user.householdId || '') !== String(result.household.id) ||
         typeof result.household.inviteCode !== 'string' || result.household.inviteCode.toUpperCase() !== requestedCode ||
         !Array.isArray(result.household.members) || !result.household.members.some(member => String(member?._id || member?.id || member) === String(result.user.id))) throw new Error('家庭切换响应不完整');
-    applyProfile(result); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; await loadGovernance(); ElMessage.success('已加入小家');
+    applyProfile(result, { allowHouseholdChange: true }); clearAvatarFile(); mealStore.$reset(); scheduleStore.$reset(); joinCode.value = ''; defaultStatus.value = null; imageIssues.value = null; await loadGovernance(); ElMessage.success('已加入小家');
   } catch (e) {
     if (e?.error === '邀请码无效' || e?.error === '请输入邀请码') ElMessage.error(e.error);
     else { joinUncertain.value = true; mealStore.$reset(); scheduleStore.$reset(); defaultStatus.value = null; imageIssues.value = null; }
@@ -322,12 +335,12 @@ const joinHousehold = async () => {
   finally { joining.value = false; }
 };
 const copyInvite = async () => {
-  if (inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode) return;
+  if (!profileReady.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode || !sessionIsCurrent()) return;
   try { await navigator.clipboard.writeText(household.value.inviteCode || ''); ElMessage.success('邀请码已复制'); }
   catch (_) { ElMessage.warning(`邀请码：${household.value.inviteCode}`); }
 };
 const copyInviteLink = async () => {
-  if (inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode) return;
+  if (!profileReady.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode || !sessionIsCurrent()) return;
   // URL fragments are not sent in the HTTP request or server access logs.
   const href = router.resolve({ name: 'accountApply', hash: `#invite=${encodeURIComponent(household.value.inviteCode)}` }).href;
   const link = new URL(href, window.location.origin).href;
@@ -370,7 +383,7 @@ const resolveIssue = async (issue, status) => {
   finally { resolvingIssue.value = ''; }
 };
 const uploadAvatar = async () => {
-  if (!avatarFile.value || nameIssue.value || nameChecking.value) return;
+  if (!avatarFile.value || profileUncertain.value || nameIssue.value || nameChecking.value) return;
   try {
     avatarUploading.value = true;
     const fd = new FormData();
@@ -378,7 +391,7 @@ const uploadAvatar = async () => {
     applyProfile(await api.auth.uploadAvatar(fd), { syncDisplayName: false, syncHouseholdName: false });
     clearAvatarFile();
     ElMessage.success('头像已更新');
-  } catch (e) { ElMessage.error(e?.error || '上传失败'); }
+  } catch (_) { profileUncertain.value = true; }
   finally { avatarUploading.value = false; }
 };
 const warnBeforeUnload = event => {
@@ -389,7 +402,7 @@ const warnBeforeUnload = event => {
 onBeforeRouteLeave(async () => {
   if (mutationPending.value) { ElMessage.warning('操作正在进行，请稍候'); return false; }
   if (!dirty.value) return true;
-  try { await ElMessageBox.confirm('昵称、小家名称或头像尚未保存，离开后会丢失。', '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
+  try { await ElMessageBox.confirm(profileUncertain.value ? '个人资料更新结果尚未确认，离开后本页输入与核对提示会丢失。' : '昵称、小家名称或头像尚未保存，离开后会丢失。', '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
 });
 onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); reload(); });
 onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); clearAvatarFile(); });
