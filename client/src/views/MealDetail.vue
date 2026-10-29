@@ -8,9 +8,13 @@ import defaultImage from '@/assets/meal-placeholder.svg';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import { useDraftGuard } from '@/composables/useDraftGuard';
 import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
+import { validWeekLink } from '@/utils/weekLink.mjs';
 
 const route = useRoute();
 const router = useRouter();
+const shoppingWeek = computed(() => validWeekLink(route.query.shoppingWeek) ? route.query.shoppingWeek : '');
+const detailBack = computed(() => shoppingWeek.value ? { name: 'shoppingList', query: { week: shoppingWeek.value } } : { name: 'meals', query: filterCatalogQuery(route.query) });
+const editorQuery = computed(() => ({ ...filterCatalogQuery(route.query), ...(shoppingWeek.value ? { shoppingWeek: shoppingWeek.value } : {}) }));
 const meal = ref(null);
 const memories = ref([]);
 const memoryPage = ref(1);
@@ -173,11 +177,11 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 <template>
   <div class="meal-detail" v-loading="loading">
     <div class="detail-toolbar">
-      <el-button @click="router.push({ name: 'meals', query: filterCatalogQuery(route.query) })"><el-icon><ArrowLeft /></el-icon>返回</el-button>
+      <el-button @click="router.push(detailBack)"><el-icon><ArrowLeft /></el-icon>{{ shoppingWeek ? '返回购物清单' : '返回' }}</el-button>
       <div class="toolbar-actions">
         <el-button type="success" :disabled="!meal || loading" @click="doneOnce"><el-icon><Check /></el-icon>记录做过</el-button>
         <el-button type="warning" :disabled="!meal || loading || reportUncertain || reportSubmitted || reportChecking" :loading="reporting" @click="reportImageIssue"><el-icon><Warning /></el-icon>{{ reportSubmitted ? '已反馈' : '图片不对' }}</el-button>
-        <el-button type="primary" :disabled="!meal || loading" @click="router.push({ name: 'MealEditor', params: { id: route.params.id }, query: filterCatalogQuery(route.query) })">
+        <el-button type="primary" :disabled="!meal || loading" @click="router.push({ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery })">
           <el-icon><Edit /></el-icon>编辑菜品
         </el-button>
       </div>

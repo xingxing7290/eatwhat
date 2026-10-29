@@ -274,7 +274,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
       <div v-if="editingItem && !editingItem.manual && !loading && !loadError" class="source-recipes">
         <strong>来源菜谱</strong>
         <p v-if="!editSourceMeals.length">没有可用的来源菜谱信息，请从菜谱列表查找。</p>
-        <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id } }" :aria-label="`查看来源菜谱 ${index + 1}`">查看来源菜谱 {{ index + 1 }} →</router-link></nav></template>
+        <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id }, query: { shoppingWeek: monday(weekStart) } }" :aria-label="`查看来源菜谱 ${index + 1}`">查看来源菜谱 {{ index + 1 }} →</router-link></nav></template>
       </div>
       <el-form label-position="top" :disabled="disabled">
         <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" maxlength="100" /></el-form-item>
