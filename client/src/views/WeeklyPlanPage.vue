@@ -272,7 +272,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
     </div>
 
     <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
-    <router-link v-if="weekStart" class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link>
+    <div v-if="weekStart" class="shopping-context"><router-link class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link><p>购物清单不会随排餐变动自动更新，请在清单中点击“从排餐生成”。<span v-if="draft">草稿尚未写入日历，不会计入生成结果。</span></p></div>
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
     <el-alert v-if="current && !versionsAvailable" type="warning" :closable="false" show-icon title="服务器未提供完整的安排版本，暂不能安全应用周计划。" />
@@ -288,6 +288,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 </template>
 
 <style scoped>
+.shopping-context p { margin: 2px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .weekly-page { --weekly-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 20px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 26px; padding: clamp(22px, 3vw, 36px); box-shadow: 0 12px 28px var(--shadow-color); }
 h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-family: Georgia, 'Songti SC', serif; font-size: clamp(26px, 3vw, 36px); } .eyebrow { color: var(--weekly-accent); font-size: 11px; letter-spacing: .14em; font-weight: 800; } .page-header p,.muted{color:var(--text-secondary)}
