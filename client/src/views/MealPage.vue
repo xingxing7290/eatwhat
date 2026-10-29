@@ -597,8 +597,6 @@ watch(selectedCategory, () => {
 
 watch(currentView, () => {
   if (applyingCatalogRoute) return;
-  currentPage.value = 1;
-  scheduleFetch(0);
   scheduleCatalogUrl();
 }, { flush: 'sync' });
 watch(() => route.fullPath, () => {

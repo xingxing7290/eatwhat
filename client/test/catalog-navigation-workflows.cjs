@@ -56,6 +56,14 @@ async function main () {
     await page.getByRole('button', { name: '查看家常菜09' }).first().waitFor()
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '菜品列表')
     await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('q') === '家常菜' && q.get('category') === '家常菜' && q.get('page') === '2' })
+    const requestCountBeforeViewChange = requests.length
+    await page.getByRole('radio', { name: '列表视图' }).focus(); await page.keyboard.press('Space')
+    await page.locator('.meals-list').getByRole('button', { name: '查看家常菜09' }).first().waitFor()
+    await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('page') === '2' && q.get('view') === 'list' })
+    assert.equal(requests.length, requestCountBeforeViewChange, 'changing presentation must not reload or reset the current page')
+    await page.getByRole('radio', { name: '网格视图' }).focus(); await page.keyboard.press('Space')
+    await page.locator('.meals-grid').getByRole('button', { name: '查看家常菜09' }).first().waitFor()
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('page') === '2' && !new URL(location.href).searchParams.has('view'))
     mode = 'page-hold'
     await page.getByLabel('菜品分页').getByRole('button', { name: '下一页' }).focus()
     await page.keyboard.press('Enter')
