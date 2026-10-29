@@ -77,6 +77,19 @@ async function main () {
     archiveMode = 'success'
     await dialog.getByRole('button', { name: '恢复测试面条' }).click()
     await dialog.getByText('回收站里没有符合条件的菜品').waitFor()
+    await dialog.getByRole('button', { name: '清除搜索' }).click()
+    const archiveSearch = dialog.getByRole('textbox', { name: '搜索回收站菜品' })
+    assert.equal(await archiveSearch.inputValue(), '')
+    assert.equal(await archiveSearch.evaluate(node => document.activeElement === node), true)
+    await dialog.getByRole('button', { name: '恢复历史菜01' }).waitFor()
+    const savedMeals = meals
+    meals = meals.filter(meal => !meal.archived)
+    await archiveSearch.fill('不存在的菜')
+    await dialog.getByText('回收站里没有符合条件的菜品').waitFor()
+    await dialog.getByRole('button', { name: '清除搜索' }).click()
+    await dialog.getByText('回收站里还没有菜品').waitFor()
+    assert.equal(await dialog.getByRole('button', { name: '清除搜索' }).count(), 0)
+    meals = savedMeals
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
     await page.getByText('测试面条', { exact: true }).waitFor()
     archiveMode = 'missing'

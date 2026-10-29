@@ -54,6 +54,8 @@ const archiveRows = ref([]);
 const archiveTotal = ref(0);
 const archivePage = ref(1);
 const archiveSearch = ref('');
+const archiveSearchInput = ref(null);
+const clearArchiveSearch = async () => { archiveSearch.value = ''; await nextTick(); archiveSearchInput.value?.focus(); };
 const archiveLimit = 24;
 const archiveActionId = ref('');
 const archiveProblem = ref(null);
@@ -1284,10 +1286,10 @@ onBeforeUnmount(() => {
     </el-dialog>
     <el-dialog v-model="archiveDialog" title="菜品回收站" width="min(640px, 92vw)" :close-on-click-modal="!archiveBusy" :close-on-press-escape="!archiveBusy" :show-close="!archiveBusy">
       <p class="archive-intro">回收站中的菜品不会出现在菜谱或新推荐里，历史排餐、回忆和图片仍会保留。</p>
-      <el-input v-if="archiveSupported" v-model="archiveSearch" clearable aria-label="搜索回收站菜品" placeholder="搜索菜名或食材" />
+      <el-input v-if="archiveSupported" ref="archiveSearchInput" v-model="archiveSearch" clearable aria-label="搜索回收站菜品" placeholder="搜索菜名或食材" />
       <el-alert v-if="archiveError" type="error" :closable="false" show-icon :title="`回收站暂不可用：${archiveError}`"><el-button link type="primary" @click="archiveSupported ? loadArchived() : openArchive()">重试</el-button></el-alert>
       <p v-else-if="archiveLoading" class="archive-intro">正在加载回收站…</p>
-      <el-empty v-else-if="archiveSupported && !archiveRows.length" description="回收站里没有符合条件的菜品" />
+      <el-empty v-else-if="archiveSupported && !archiveRows.length" :description="archiveSearch.trim() ? '回收站里没有符合条件的菜品' : '回收站里还没有菜品'"><el-button v-if="archiveSearch.trim()" @click="clearArchiveSearch">清除搜索</el-button></el-empty>
       <div v-else class="archive-list"><div v-for="meal in archiveRows" :key="meal._id || meal.id" class="archive-row"><img :key="getMealImage(meal)" :src="getMealImage(meal)" :alt="meal.name" @error="handleImageError" /><div><strong>{{ meal.name }}</strong><p>{{ meal.category || '未分类' }}</p></div><el-button type="primary" plain :disabled="archiveBusy || archiveLoading" :aria-label="`恢复${meal.name}`" @click="restoreMeal(meal)">恢复</el-button></div></div>
       <div v-if="archiveSupported && archiveTotal > archiveLimit && !archiveError" class="archive-pagination"><el-button :disabled="archiveLoading || archiveBusy || archivePage <= 1" @click="archivePage--; loadArchived()">上一页</el-button><span>第 {{ archivePage }} / {{ archiveLastPage }} 页</span><el-button :disabled="archiveLoading || archiveBusy || archivePage >= archiveLastPage" @click="archivePage++; loadArchived()">下一页</el-button></div>
       <template #footer><el-button :disabled="archiveBusy" @click="archiveDialog = false">关闭</el-button></template>
