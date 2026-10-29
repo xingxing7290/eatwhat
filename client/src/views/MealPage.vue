@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount, computed, reactive, watch } from 'vue';
+import { ref, onMounted, onBeforeUnmount, computed, reactive, watch, nextTick } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useMealStore } from '../stores/meal';
 import api from '../services/api';
@@ -73,6 +73,28 @@ const scheduleCatalogUrl = () => { if (catalogUrlTimer) clearTimeout(catalogUrlT
 const hasActiveFilters = computed(() => {
   return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value || selectedDifficulty.value || favoriteOnly.value);
 });
+const activeFilterContainer = ref(null);
+const filterToggleButton = ref(null);
+const activeFilters = computed(() => [
+  searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
+  selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
+  selectedSubcategory.value && { key: 'subcategory', label: `子类：${selectedSubcategory.value}` },
+  selectedTag.value && { key: 'tag', label: `标签：${selectedTag.value}` },
+  selectedDifficulty.value && { key: 'difficulty', label: `难度：${({ easy: '简单', medium: '中等', hard: '进阶' })[selectedDifficulty.value] || selectedDifficulty.value}` },
+  favoriteOnly.value && { key: 'favorite', label: '只看收藏' }
+].filter(Boolean));
+const removeActiveFilter = async key => {
+  const index = activeFilters.value.findIndex(item => item.key === key);
+  if (key === 'search') searchQuery.value = '';
+  else if (key === 'category') selectedCategory.value = '';
+  else if (key === 'subcategory') selectedSubcategory.value = '';
+  else if (key === 'tag') selectedTag.value = '';
+  else if (key === 'difficulty') selectedDifficulty.value = '';
+  else if (key === 'favorite') favoriteOnly.value = false;
+  await nextTick();
+  const buttons = activeFilterContainer.value?.querySelectorAll('button') || [];
+  (buttons[Math.min(index, buttons.length - 1)] || filterToggleButton.value?.$el)?.focus();
+};
 
 // 状态 - 新增菜品对话框
 const addMealDialogVisible = ref(false);
@@ -684,7 +706,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="toolbar-actions">
-          <el-button size="small" @click="showAdvancedFilters = !showAdvancedFilters">
+          <el-button ref="filterToggleButton" size="small" :aria-expanded="showAdvancedFilters" aria-controls="catalog-advanced-filters" @click="showAdvancedFilters = !showAdvancedFilters">
             <el-icon><Filter /></el-icon>
             筛选
           </el-button>
@@ -695,7 +717,7 @@ onBeforeUnmount(() => {
       </div>
 
       <el-collapse-transition>
-        <div v-show="showAdvancedFilters" class="advanced-filters">
+        <div id="catalog-advanced-filters" v-show="showAdvancedFilters" class="advanced-filters">
           <div class="filter-item">
             <el-select v-model="selectedTag" placeholder="选择标签" clearable class="tag-select">
               <el-option
@@ -748,6 +770,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </el-collapse-transition>
+      <div v-if="activeFilters.length" ref="activeFilterContainer" class="active-filters" role="group" aria-label="当前筛选条件">
+        <span class="active-filters-label">当前筛选</span>
+        <button v-for="filter in activeFilters" :key="filter.key" type="button" class="active-filter-chip" :aria-label="`移除${filter.label}筛选`" @click="removeActiveFilter(filter.key)"><span>{{ filter.label }}</span><span aria-hidden="true">×</span></button>
+      </div>
       <div v-if="!loading && !loadError" class="results-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
         </div>
 
@@ -1328,6 +1354,11 @@ onBeforeUnmount(() => {
 .clear-filters-btn {
           font-size: 14px;
 }
+.active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 14px; min-width: 0; }
+.active-filters-label { color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+.active-filter-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.active-filter-chip span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.active-filter-chip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
 /* 加载状态 */
 .loading-container {
