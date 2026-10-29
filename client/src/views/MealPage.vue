@@ -680,7 +680,7 @@ onBeforeUnmount(() => {
       <div class="header-content">
         <div>
           <h1 class="page-title">菜品管理</h1>
-          <p class="page-subtitle">两个人的小小菜谱手账，收藏每一顿日常的好味道</p>
+          <p class="page-subtitle">属于小家的菜谱手账，收藏每一顿日常的好味道</p>
         </div>
         <div class="header-actions">
           <el-button :disabled="archiveBusy || !!archiveProblem" @click="openArchive">菜品回收站</el-button>

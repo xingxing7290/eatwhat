@@ -171,7 +171,8 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', refr
       </el-card>
 
       <el-card>
-        <template #header><div class="card-title"><el-icon><Star /></el-icon><span>TA 想吃提醒</span></div></template>
+        <template #header><div class="card-title"><el-icon><Star /></el-icon><span>家人想吃提醒</span></div></template>
+        <p class="wishlist-context">家人提出或支持的待完成心愿，最多显示 6 条。</p>
         <el-empty v-if="!summary.partnerWishlist?.length" description="暂时没有新的想吃提醒" />
         <div v-else class="wishlist-list">
           <div v-for="item in summary.partnerWishlist" :key="item._id || item.id" class="wishlist-row">
@@ -228,6 +229,7 @@ h1 span { color: var(--dashboard-accent-ink); }
 .card-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 700; }.card-title .el-icon { color: var(--secondary-color); }.card-title .el-tag { margin-left: auto; }
 .meal-row, .wishlist-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-light); }
 .wishlist-row > div { min-width: 0; overflow-wrap: anywhere; }
+.wishlist-context { margin: 0 0 4px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .wishlist-row .el-button { flex-shrink: 0; min-height: 44px; }
 .meal-tags, .hint-list { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .meal-tags { flex: 1; min-width: 0; align-items: center; }

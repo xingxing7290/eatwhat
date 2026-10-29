@@ -60,7 +60,7 @@ async function main () {
     })
     await page.goto(`${base}/settings`)
     await page.getByText('家庭信息不完整，请重试').waitFor()
-    const card = page.locator('.settings-card').filter({ hasText: '情侣小家' })
+    const card = page.locator('.settings-card').filter({ hasText: '小家与成员' })
     assert.equal(await card.getByRole('button', { name: '复制邀请链接' }).isDisabled(), true)
     for (const fault of ['wrong-user', 'foreign-home', 'not-member', 'long-code']) {
       profileFault = fault

@@ -35,6 +35,7 @@ async function main () {
     })
     await page.goto(`${base}/dashboard`)
     await page.getByText('家人想吃的菜').waitFor()
+    await page.getByText('家人提出或支持的待完成心愿，最多显示 6 条。').waitFor()
     assert.equal(calls, 1)
     date = '2026-10-29'
     await page.getByRole('button', { name: '安排晚餐' }).click()

@@ -52,7 +52,7 @@ async function main () {
     await page.getByRole('button', { name: '上传头像' }).click()
     await page.getByText('头像已更新').waitFor()
     assert.equal(await page.getByPlaceholder('给你们的小家取个名字').inputValue(), '我的小家名称')
-    const householdCard = page.locator('.settings-card').filter({ hasText: '情侣小家' })
+    const householdCard = page.locator('.settings-card').filter({ hasText: '小家与成员' })
     await householdCard.getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByRole('button', { name: '刷新邀请码' }).click()
     await page.getByText('邀请码已刷新').waitFor()

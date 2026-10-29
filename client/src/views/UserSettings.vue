@@ -106,7 +106,7 @@
     </el-card>
 
     <el-card class="settings-card">
-      <template #header><div class="card-header"><span>情侣小家</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
+      <template #header><div class="card-header"><span>小家与成员</span><el-tag>{{ household.name || '未设置' }}</el-tag></div></template>
       <el-alert v-if="profileReady && !nameVersionAvailable && !nameIssue" class="name-alert" title="服务器未提供安全的小家名称版本，暂时不能保存名称。" type="warning" :closable="false" show-icon />
       <el-alert v-if="nameIssue" class="name-alert" :title="nameIssue === 'conflict' ? '小家名称已被修改，本次没有保存。' : '小家名称保存结果未确认。'" type="warning" :closable="false" show-icon>
         <p>你的输入和其他未保存设置仍在，请先核对最新名称。已发送的请求可能仍在处理。</p>
@@ -147,7 +147,7 @@ const route = useRoute();
 
 const themeOptions = [
   { value: 'cream', label: '奶油原木', desc: '温柔奶白与焦糖木色', colors: ['#FDFBF7', '#F5EBE6', '#FFB4A2', '#E09F67'] },
-  { value: 'peach', label: '蜜桃日常', desc: '适合记录甜一点的两人餐', colors: ['#FFF9F5', '#FFECE7', '#FF9D8F', '#F0786F'] },
+  { value: 'peach', label: '蜜桃日常', desc: '适合记录甜一点的家常时光', colors: ['#FFF9F5', '#FFECE7', '#FF9D8F', '#F0786F'] },
   { value: 'caramel', label: '焦糖餐桌', desc: '像晚饭后的灯光和木桌', colors: ['#FFFAF0', '#F3E5D2', '#E7BD73', '#B97842'] },
   { value: 'matcha', label: '抹茶和风', desc: '清爽平和的日式小家感', colors: ['#FBFBF4', '#EDF1E3', '#B5C99A', '#6F8F62'] },
   { value: 'azuki', label: '红豆复古', desc: '偏轻复古的温暖手账色', colors: ['#FFF8F4', '#F3E4DF', '#D79A8F', '#8D5654'] },

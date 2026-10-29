@@ -57,7 +57,7 @@ async function main() {
       ['section title', '.section-heading h2'], ['card title', '.today-card .card-title span'],
       ['meal link', '.today-card .today-recipe-link'], ['today action', '.today-slot-action'], ['warning tag', '.today-card .hint-list .el-tag'],
       ['metric number', '.metric-row strong'], ['weekday label', '.week-day-label'], ['week meal count', '.week-day span:last-child'], ['week date', '.week-day strong'],
-      ['partner title', '.wishlist-row strong'], ['partner detail', '.wishlist-row p'],
+      ['partner title', '.wishlist-row strong'], ['partner detail', '.wishlist-row p'], ['wishlist context', '.wishlist-context'],
       ['missing photo', '.photo-unavailable'], ['favorite action', '.status-grid a small'], ['quick link', '.quick-links a'], ['card link', '.card-links a']
     ];
     for (const mode of ['light', 'dark']) {

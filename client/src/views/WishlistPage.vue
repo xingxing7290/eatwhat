@@ -433,7 +433,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 <template>
   <div class="wishlist-page">
     <div class="page-header">
-      <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、对方提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可选择日期和餐次安排。</small></div>
+      <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、家人提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可选择日期和餐次安排。</small></div>
       <el-button ref="addWishButton" type="primary" :disabled="loading || !!loadError || reviewing || !!actionIssue || !!actionId || !!confirmingId || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>添加想吃</el-button>
     </div>
 
