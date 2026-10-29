@@ -1,12 +1,16 @@
 <script setup>
-import { computed, nextTick, onMounted, onBeforeUnmount, ref } from 'vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import api from '@/services/api';
 import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const loading = ref(false);
+const route = useRoute();
+const router = useRouter();
 const now = new Date();
-const month = ref(`${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`);
+const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+const month = ref(defaultMonth);
 const data = ref({ photos: [], total: 0 });
 const page = ref(1);
 const loadedPage = ref(1);
@@ -22,6 +26,10 @@ const selected = computed(() => selectedIndex.value === null ? null : data.value
 const lastPage = computed(() => Math.max(1, Math.ceil(data.value.total / pageSize)));
 const photoPosition = computed(() => selectedIndex.value === null ? 0 : (loadedPage.value - 1) * pageSize + selectedIndex.value + 1);
 const loadError = ref('');
+const locateNotice = ref('');
+const locateRetry = ref(false);
+let locatedTarget = null;
+let initialized = false;
 let loadSequence = 0;
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
 const focusPhoto = (onlyIfUnfocused = false) => {
@@ -61,7 +69,12 @@ const load = async (openAt = null, viewerToken = null) => {
     if (rows.length !== Math.min(pageSize, Math.max(0, total - (requestedPage - 1) * pageSize))) throw new Error('相册分页数据不完整');
     data.value = { photos: rows, total };
     loadedPage.value = requestedPage;
-    const target = rows.length && ['first', 'last'].includes(openAt) ? (openAt === 'last' ? rows.length - 1 : 0) : null;
+    let target = rows.length && ['first', 'last'].includes(openAt) ? (openAt === 'last' ? rows.length - 1 : 0) : null;
+    if (openAt === 'located' && locatedTarget) {
+      const index = rows.findIndex(item => String(item.memoryId) === locatedTarget.memoryId && item.photoIndex === locatedTarget.photoIndex && item.photo === locatedTarget.photo);
+      if (index < 0) { locateNotice.value = '照片位置或内容已发生变化，请重新定位或手动查找。'; locateRetry.value = true; }
+      else target = index;
+    }
     if (target !== null && viewerToken !== viewerEpoch) { selectedIndex.value = null; returnFocusIndex.value = target; focusAfterLoad = true; }
     else selectedIndex.value = target;
   } catch(e) {
@@ -73,7 +86,8 @@ const load = async (openAt = null, viewerToken = null) => {
     }
   }
 };
-const changeMonth = () => { page.value = 1; selectedIndex.value = null; data.value = { photos: [], total: 0 }; load(); };
+const clearLocationLink = () => { if (Object.keys(route.query).length) void router.replace({ name: 'photoAlbum' }); locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; };
+const changeMonth = () => { clearLocationLink(); page.value = 1; selectedIndex.value = null; data.value = { photos: [], total: 0 }; load(); };
 const moveMonth = offset => {
   if (loading.value) return;
   const [year, currentMonth] = month.value.split('-').map(Number);
@@ -81,7 +95,7 @@ const moveMonth = offset => {
   month.value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
   changeMonth();
 };
-const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; selectedIndex.value = null; load(); };
+const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; clearLocationLink(); page.value = next; selectedIndex.value = null; load(); };
 const navigatePhoto = async direction => {
   if (loading.value || selectedIndex.value === null) return;
   const next = selectedIndex.value + direction;
@@ -98,7 +112,41 @@ const onKey = event => {
 };
 const imageFor = item => resolveUploadedImage(item.photo) || placeholder;
 const imageError = event => { if (event.target.dataset.fallback !== '1') { event.target.dataset.fallback = '1'; event.target.src = placeholder; event.target.alt = '图片暂不可用'; } };
-onMounted(load);
+const loadLocation = async () => {
+  const requestedMonth = route.query.month;
+  const hasLocation = ['memoryId', 'photoIndex', 'fingerprint'].some(key => route.query[key] !== undefined);
+  locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; viewerEpoch++; selectedIndex.value = null;
+  if (typeof requestedMonth !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth)) {
+    month.value = defaultMonth; page.value = 1; data.value = { photos: [], total: 0 };
+    if (requestedMonth !== undefined || hasLocation) locateNotice.value = '相册链接中的月份无效，已打开当前月份。';
+    await load(); return;
+  }
+  month.value = requestedMonth; page.value = 1; data.value = { photos: [], total: 0 };
+  if (!hasLocation) { await load(); return; }
+  const { memoryId, photoIndex, fingerprint } = route.query;
+  if (typeof memoryId !== 'string' || !/^[a-f\d]{24}$/i.test(memoryId) || typeof photoIndex !== 'string' || !/^(0|[1-9]\d*)$/.test(photoIndex) || !Number.isSafeInteger(Number(photoIndex)) || typeof fingerprint !== 'string' || !/^[a-f\d]{64}$/i.test(fingerprint)) {
+    locateNotice.value = '照片链接信息不完整，已打开对应月份。'; await load(); return;
+  }
+  const sequence = ++loadSequence; const viewerToken = viewerEpoch;
+  loading.value = true; loadError.value = '';
+  try {
+    const result = await api.photoAlbum.locate(requestedMonth, { memoryId, photoIndex, fingerprint });
+    if (sequence !== loadSequence) return;
+    if (result?.supportsPhotoLocate !== true) { locateNotice.value = '当前服务器不支持精确定位，请在本月相册中手动查找。'; await load(); return; }
+    if (result.month !== requestedMonth || result.memoryId !== memoryId.toLowerCase() || result.photoIndex !== Number(photoIndex) || result.fingerprint !== fingerprint.toLowerCase() || typeof result.photo !== 'string' || !result.photo || !Number.isSafeInteger(result.position) || result.position < 1 || result.limit !== pageSize || result.page !== Math.ceil(result.position / pageSize)) throw new Error('照片定位信息不完整');
+    locatedTarget = { memoryId: result.memoryId, photoIndex: result.photoIndex, photo: result.photo };
+    page.value = result.page;
+    await load('located', viewerToken);
+  } catch (e) {
+    if (sequence !== loadSequence) return;
+    locateNotice.value = e?.error || e?.message || '无法定位照片，请稍后重试。'; locateRetry.value = true;
+    await load();
+  } finally { if (sequence === loadSequence) loading.value = false; }
+};
+watch(() => route.fullPath, () => {
+  if (route.name !== 'photoAlbum') return;
+  if (!initialized || Object.keys(route.query).length) { initialized = true; loadLocation(); }
+}, { immediate: true });
 onMounted(() => window.addEventListener('keydown', onKey));
 onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', onKey); });
 </script>
@@ -106,6 +154,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', on
 <template>
   <div class="album-page" v-loading="loading" element-loading-text="正在加载照片" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header"><div><span class="eyebrow">TABLE STORIES · 饭桌故事</span><h1>饭桌相册</h1><p>把饭后回忆里的照片按月份收起来。</p><span v-if="!loading && !loadError" class="photo-count">{{ month }} · {{ data.total }} 张照片</span></div><div class="month-actions"><el-button ref="previousMonthButton" :disabled="loading" aria-label="上个月" @click="moveMonth(-1)">上个月</el-button><el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled="loading" aria-label="选择相册月份" @change="changeMonth" /><el-button :disabled="loading" aria-label="下个月" @click="moveMonth(1)">下个月</el-button></div></div>
+    <el-alert v-if="locateNotice" type="warning" :closable="false" show-icon :title="locateNotice"><el-button v-if="locateRetry" link type="primary" :loading="loading" @click="loadLocation">重新定位</el-button></el-alert>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`相册暂时无法加载：${loadError}`"><el-button ref="retryButton" link type="primary" @click="load">重新加载</el-button></el-alert>
     <el-empty v-else-if="!loading && !data.photos.length" description="这个月还没有饭桌照片" />
     <template v-else-if="!loading"><div ref="photoGrid" class="album-grid"><button v-for="(item, index) in data.photos" :key="`${item.memoryId}-${item.photoIndex ?? index}-${item.photo}`" class="photo-card" type="button" :aria-label="`查看${item.date} ${item.title || '饭桌照片'}，第 ${(page - 1) * pageSize + index + 1} 张`" @click="openPhoto(index)"><img :src="imageFor(item)" :alt="item.title || item.date" @error="imageError" /><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span></button></div><div v-if="data.total > pageSize" class="pagination"><el-button :disabled="loading || page <= 1" @click="changePage(page - 1)">上一页</el-button><span>第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="loading || page >= lastPage" @click="changePage(page + 1)">下一页</el-button></div></template>

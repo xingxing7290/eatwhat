@@ -59,6 +59,12 @@ const arrangeWishlistDinner = async (item) => {
   } finally { arranging.value = ''; }
 };
 const photoKey = (photo, index) => `${photo.memoryId || ''}:${index}:${photo.photo || ''}`;
+const photoLink = photo => {
+  if (!validDate(photo?.date)) return { name: 'photoAlbum' };
+  const query = { month: photo.date.slice(0, 7) };
+  if (typeof photo.memoryId === 'string' && /^[a-f\d]{24}$/i.test(photo.memoryId) && Number.isSafeInteger(photo.photoIndex) && photo.photoIndex >= 0 && typeof photo.fingerprint === 'string' && /^[a-f\d]{64}$/i.test(photo.fingerprint)) Object.assign(query, { memoryId: photo.memoryId, photoIndex: String(photo.photoIndex), fingerprint: photo.fingerprint });
+  return { name: 'photoAlbum', query };
+};
 
 onMounted(load);
 onBeforeUnmount(() => { active = false; });
@@ -121,7 +127,7 @@ onBeforeUnmount(() => { active = false; });
         <template #header><div class="card-title"><el-icon><Picture /></el-icon><span>最近饭桌照片</span></div></template>
         <el-empty v-if="!summary.recentPhotos?.length" description="还没有饭后照片" />
         <div v-else class="photo-strip">
-          <router-link v-for="(photo, index) in summary.recentPhotos" :key="photoKey(photo, index)" to="/photo-album" class="photo-tile" :aria-label="`前往饭桌相册：${photo.title || photo.date || '饭桌照片'}`">
+          <router-link v-for="(photo, index) in summary.recentPhotos" :key="photoKey(photo, index)" :to="photoLink(photo)" class="photo-tile" :aria-label="`前往饭桌相册：${photo.title || photo.date || '饭桌照片'}`">
             <img v-if="!failedPhotos.has(photoKey(photo, index))" :src="resolveUploadedImage(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="failedPhotos.add(photoKey(photo, index))" />
             <span v-else class="photo-unavailable">照片暂不可用</span>
           </router-link>

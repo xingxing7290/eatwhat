@@ -464,7 +464,8 @@ export const shoppingListApi = {
 
 // 饭桌相册API
 export const photoAlbumApi = {
-	month: (month, pagination = {}) => api.get('/photo-album', { params: { month, ...pagination } })
+	month: (month, pagination = {}) => api.get('/photo-album', { params: { month, ...pagination } }),
+	locate: (month, params) => api.get('/photo-album', { params: { month, view: 'locate', ...params }, suppressErrorToast: true })
 };
 
 // 默认菜品管理API

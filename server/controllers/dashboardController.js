@@ -5,6 +5,7 @@ const MealMemory = require('../models/memoryModel');
 const MealImageIssue = require('../models/mealImageIssueModel');
 const User = require('../models/userModel');
 const mongoose = require('mongoose');
+const { createHash } = require('crypto');
 const { ensureUserHousehold } = require('../utils/household');
 const { dateKey, startOfWeek, weekDates } = require('../utils/week');
 const { _statusFor } = require('./defaultMealController');
@@ -14,7 +15,7 @@ function mealCount(schedule) {
   return ['breakfast', 'lunch', 'dinner'].reduce((sum, type) => sum + (schedule?.meals?.[type]?.length || 0), 0);
 }
 function photosFromMemory(memory) {
-  return (memory.photos || []).map(photo => ({ photo, memoryId: memory._id, date: memory.date, title: memory.title, mood: memory.mood, meals: memory.mealIds || [] }));
+  return (memory.photos || []).map((photo, photoIndex) => ({ photo, photoIndex })).filter(({ photo }) => typeof photo === 'string' && photo).map(({ photo, photoIndex }) => ({ photo, photoIndex, fingerprint: createHash('sha256').update(photo).digest('hex'), memoryId: memory._id, date: memory.date, title: memory.title, mood: memory.mood, meals: memory.mealIds || [] }));
 }
 function partnerWishlistQuery(memberIds) {
   return { $or: [
@@ -57,7 +58,7 @@ exports.summary = async (req, res, next) => {
     ]);
     const [wishlist, recentMemories, defaultStatus, openImageIssues, mealStats] = await Promise.all([
       partnerWishlistFor(household._id, req.user.uid),
-      MealMemory.find({ householdId: household._id, photos: { $exists: true, $ne: [] } }).populate('mealIds').sort({ date: -1, createdAt: -1 }).limit(6),
+      MealMemory.find({ householdId: household._id, photos: { $exists: true, $ne: [] } }).populate({ path: 'mealIds', match: { householdId: household._id } }).sort({ date: -1, createdAt: -1 }).limit(6),
       _statusFor(household._id),
       MealImageIssue.countDocuments({ householdId: household._id, status: 'open' }),
       Promise.all([

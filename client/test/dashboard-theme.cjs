@@ -103,7 +103,7 @@ async function main() {
 
     await page.getByRole('link', { name: '前往饭桌相册：温暖晚餐' }).focus();
     await page.keyboard.press('Enter');
-    await page.waitForURL('**/photo-album');
+    await page.waitForURL('**/photo-album?month=2026-10');
     await page.goto(`${base}/wishlist`);
     await page.getByText('高优先级').waitFor();
     const orderedWishes = await page.locator('.status-column').first().locator('.wish-title strong').allTextContents();
