@@ -9,6 +9,14 @@ test('legacy full lists filter across all recipes before limiting results', () =
   assert.equal(normalizeMealSearch({ data: meals, total: 60 }, '').rows.length, 50)
 })
 
+test('uncategorized searches require server support or a complete legacy list', () => {
+  const rows = [{ _id: 'a', name: '空', category: '' }, { _id: 'b', name: '正常', category: '家常' }, { _id: 'c', name: '缺省' }]
+  assert.deepEqual(normalizeMealSearch({ data: rows, total: 3 }, '', 8, { uncategorized: true }).rows, [rows[0], rows[2]])
+  assert.throws(() => normalizeMealSearch({ data: rows, total: 3, page: 1, limit: 8 }, '', 8, { uncategorized: true }), /不支持未分类/)
+  assert.throws(() => normalizeMealSearch({ data: rows, total: 3, page: 1, limit: 8, supportsUncategorizedFilter: true }, '', 8, { uncategorized: true }), /结果不完整/)
+  assert.deepEqual(normalizeMealSearch({ data: [rows[0], rows[2]], total: 2, page: 1, limit: 8, supportsUncategorizedFilter: true }, '', 8, { uncategorized: true }).rows, [rows[0], rows[2]])
+})
+
 test('paginated results must be complete, unique and on the requested page', () => {
   const valid = { data: meals.slice(0, 50), total: 60, page: 1, limit: 50 }
   assert.equal(normalizeMealSearch(valid, '').total, 60)

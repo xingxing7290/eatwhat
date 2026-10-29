@@ -14,6 +14,7 @@ const initialIds = selected.value.map(idOf);
 const dirty = computed(() => JSON.stringify(selected.value.map(idOf)) !== JSON.stringify(initialIds));
 const query = ref('');
 const category = ref('');
+const uncategorized = ref(false);
 const categories = ref([]);
 const metadataError = ref(false);
 const meals = ref([]);
@@ -36,9 +37,10 @@ const load = async () => {
     const params = { page: page.value, limit };
     if (query.value.trim()) params.search = query.value.trim();
     if (category.value) params.category = category.value;
+    if (uncategorized.value) params.uncategorized = '1';
     const result = await api.meal.getAllMeals(params);
     if (!alive || ticket !== sequence) return;
-    const { rows, total: count } = normalizeMealSearch(result, query.value, limit, { page: page.value, category: category.value });
+    const { rows, total: count } = normalizeMealSearch(result, query.value, limit, { page: page.value, category: category.value, uncategorized: uncategorized.value });
     if (page.value > Math.max(1, Math.ceil(count / limit))) { page.value = Math.max(1, Math.ceil(count / limit)); return load(); }
     meals.value = rows;
     total.value = count;
@@ -52,7 +54,7 @@ const queueLoad = delay => {
   if (timer) clearTimeout(timer);
   timer = setTimeout(load, delay);
 };
-watch([query, category], () => { page.value = 1; queueLoad(180); });
+watch([query, category, uncategorized], () => { page.value = 1; queueLoad(180); });
 const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; queueLoad(0); };
 const loadCategories = async () => {
   try {
@@ -91,8 +93,9 @@ onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer
     <el-input v-model="query" clearable placeholder="搜索菜名、食材或做法" aria-label="搜索周计划菜品" />
     <div class="picker-layout">
       <aside aria-label="周计划菜品分类" class="category-list">
-        <button type="button" :class="{ active: !category }" :aria-pressed="!category" @click="category = ''">全部</button>
-        <button v-for="item in categories" :key="item" type="button" :class="{ active: category === item }" :aria-pressed="category === item" @click="category = item">{{ item }}</button>
+        <button type="button" :class="{ active: !category && !uncategorized }" :aria-pressed="!category && !uncategorized" @click="category = ''; uncategorized = false">全部</button>
+        <button type="button" :class="{ active: uncategorized }" :aria-pressed="uncategorized" @click="category = ''; uncategorized = true">未填写分类</button>
+        <button v-for="item in categories" :key="item" type="button" :class="{ active: category === item }" :aria-pressed="category === item" @click="uncategorized = false; category = item">{{ item === '未填写分类' ? '分类：未填写分类' : item }}</button>
         <div v-if="metadataError" class="metadata-note">分类暂不可用 <button type="button" @click="loadCategories">重试</button></div>
       </aside>
       <section aria-label="可选菜品" class="catalog">

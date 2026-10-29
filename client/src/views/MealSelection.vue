@@ -66,6 +66,15 @@ let restoreCatalogFocus = false;
 const pageSize = ref(8);
 const selectedTag = ref('');
 const selectedCategory = ref('');
+const uncategorized = ref(false);
+const uncategorizedChoice = Object.freeze({ kind: 'uncategorized' });
+const categorySelection = computed({
+  get: () => uncategorized.value ? uncategorizedChoice : selectedCategory.value,
+  set: value => {
+    if (value === uncategorizedChoice) { selectedCategory.value = ''; uncategorized.value = true; }
+    else { uncategorized.value = false; selectedCategory.value = typeof value === 'string' ? value : ''; }
+  }
+});
 const selectedSubcategory = ref('');
 const currentView = ref('grid');
 const showAdvancedFilters = ref(false);
@@ -89,13 +98,14 @@ const selectionSearch = ref(null);
 useDraftGuard({ dirty: selectionDirty, busy: isSaving, uncertain: saveUncertain, label: '餐食安排' });
 
 const hasActiveFilters = computed(() => {
-  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value);
+  return !!(searchQuery.value || selectedTag.value || selectedCategory.value || uncategorized.value || selectedSubcategory.value);
 });
 const activeFilterContainer = ref(null);
 const filterToggleButton = ref(null);
 const activeFilters = computed(() => [
   searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
   selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
+  uncategorized.value && { key: 'uncategorized', label: '分类：未填写分类（空值）' },
   selectedSubcategory.value && { key: 'subcategory', label: `子类：${selectedSubcategory.value}` },
   selectedTag.value && { key: 'tag', label: `标签：${selectedTag.value}` }
 ].filter(Boolean));
@@ -103,6 +113,7 @@ const removeActiveFilter = async key => {
   const index = activeFilters.value.findIndex(item => item.key === key);
   if (key === 'search') searchQuery.value = '';
   else if (key === 'category') selectedCategory.value = '';
+  else if (key === 'uncategorized') uncategorized.value = false;
   else if (key === 'subcategory') selectedSubcategory.value = '';
   else if (key === 'tag') selectedTag.value = '';
   await nextTick();
@@ -282,6 +293,7 @@ const clearFilters = () => {
   searchQuery.value = '';
   selectedTag.value = '';
   selectedCategory.value = '';
+  uncategorized.value = false;
   selectedSubcategory.value = '';
   showAdvancedFilters.value = false;
   currentPage.value = 1;
@@ -294,13 +306,14 @@ const handlePageChange = (page) => {
   scheduleCatalogFetch(0);
 };
 
-watch([searchQuery, selectedTag, selectedCategory, selectedSubcategory], () => {
+watch([searchQuery, selectedTag, selectedCategory, uncategorized, selectedSubcategory], () => {
   restoreCatalogFocus = false;
   currentPage.value = 1;
   scheduleCatalogFetch();
 });
 
 watch(selectedCategory, () => {
+  if (selectedCategory.value) uncategorized.value = false;
   selectedSubcategory.value = '';
 });
 
@@ -317,11 +330,12 @@ const fetchCatalog = async () => {
     const params = { page: currentPage.value, limit: pageSize.value };
     if (searchQuery.value.trim()) params.search = searchQuery.value.trim();
     if (selectedCategory.value) params.category = selectedCategory.value;
+    if (uncategorized.value) params.uncategorized = '1';
     if (selectedSubcategory.value) params.subcategory = selectedSubcategory.value;
     if (selectedTag.value) params.tag = selectedTag.value;
     const result = await api.meal.getAllMeals(params);
     if (sequence !== catalogSequence) return;
-    const { rows, total } = normalizeMealSearch(result, searchQuery.value, pageSize.value, { page: currentPage.value, category: selectedCategory.value, subcategory: selectedSubcategory.value, tag: selectedTag.value });
+    const { rows, total } = normalizeMealSearch(result, searchQuery.value, pageSize.value, { page: currentPage.value, category: selectedCategory.value, uncategorized: uncategorized.value, subcategory: selectedSubcategory.value, tag: selectedTag.value });
     const lastPage = Math.max(1, Math.ceil(total / pageSize.value));
     if (currentPage.value > lastPage) {
       currentPage.value = lastPage;
@@ -578,11 +592,12 @@ onBeforeUnmount(() => {
         <div id="selection-advanced-filters" v-show="showAdvancedFilters" class="advanced-filters">
           <div class="filter-item">
             <span class="filter-field-label" aria-hidden="true">分类</span>
-            <el-select v-model="selectedCategory" aria-label="分类" placeholder="选择分类" clearable style="width: 100%;">
+            <el-select v-model="categorySelection" value-key="kind" aria-label="分类" placeholder="选择分类" clearable style="width: 100%;">
+              <el-option label="未填写分类" :value="uncategorizedChoice" />
               <el-option
                 v-for="c in categoryOptions"
                 :key="c"
-                :label="c"
+                :label="c === '未填写分类' ? '分类：未填写分类' : c"
                 :value="c"
               />
             </el-select>
@@ -632,8 +647,9 @@ onBeforeUnmount(() => {
       <aside class="category-sidebar" aria-label="菜品分类">
         <div class="category-heading">菜品分类</div>
         <nav class="category-list" aria-label="选择菜品分类">
-          <button type="button" :class="{ active: !selectedCategory }" :aria-pressed="!selectedCategory" @click="selectedCategory = ''">全部分类</button>
-          <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="selectedCategory = category">{{ category }}</button>
+          <button type="button" :class="{ active: !selectedCategory && !uncategorized }" :aria-pressed="!selectedCategory && !uncategorized" @click="selectedCategory = ''; uncategorized = false">全部分类</button>
+          <button type="button" :class="{ active: uncategorized }" :aria-pressed="uncategorized" @click="selectedCategory = ''; uncategorized = true">未填写分类</button>
+          <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="uncategorized = false; selectedCategory = category">{{ category === '未填写分类' ? '分类：未填写分类' : category }}</button>
         </nav>
         <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button ref="metadataRetryButton" type="button" :disabled="metadataLoading" @click="loadMetadata">{{ metadataLoading ? '正在重试' : '重试' }}</button></div>
       </aside>
