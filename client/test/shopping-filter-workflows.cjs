@@ -45,7 +45,7 @@ async function main () {
     await search.fill('鸡蛋')
     await page.getByText('显示 1 / 4 项 · 本周待买 2 项').waitFor()
     await page.getByRole('button', { name: '清空已购' }).click()
-    await page.getByText('此操作作用于本周全部已购食材，包括筛选后未显示的项目。', { exact: false }).waitFor()
+    await page.getByText('此操作作用于所选周全部已购食材，包括筛选后未显示的项目。', { exact: false }).waitFor()
     await page.getByRole('button', { name: '取消', exact: true }).last().click()
     assert.equal(writes, 0)
     await page.getByRole('button', { name: '清空已购' }).click()

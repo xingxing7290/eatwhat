@@ -40,6 +40,9 @@ const monday = value => {
   d.setDate(d.getDate() - day + 1);
   return dateKey(d);
 };
+const thisWeek = ref(monday());
+let weekClockTimer = null;
+const refreshCurrentWeek = () => { thisWeek.value = monday(); };
 const datesFor = value => {
   const [year, month, day] = monday(value).split('-').map(Number);
   return Array.from({ length: 7 }, (_, index) => dateKey(new Date(year, month - 1, day + index)));
@@ -165,7 +168,7 @@ const generate = async () => {
     const result = await api.weeklyPlan.generate(weekStart.value);
     draft.value = validateDraft(result, weekStart.value);
     editedDates.value = [];
-    ElMessage.success('已生成本周菜单草稿');
+    ElMessage.success('已生成所选周的菜单草稿');
   } catch (e) { ElMessage.error(e?.error || e?.message || '生成失败'); }
   finally { loading.value = false; generating.value = false; }
 };
@@ -224,15 +227,22 @@ const changeWeek = async () => {
     draft.value = null; editedDates.value = []; applyIssue.value = ''; weekStart.value = weekChoice.value; await load();
   } finally { changingWeek.value = false; }
 };
-onMounted(() => { weekStart.value = monday(); weekChoice.value = weekStart.value; load(); });
-onBeforeUnmount(() => { loadSequence++; });
+const moveWeek = offset => {
+  if (loading.value || busy.value || !weekStart.value) return;
+  const [year, month, day] = monday(weekStart.value).split('-').map(Number);
+  weekChoice.value = dateKey(new Date(year, month - 1, day + offset * 7));
+  changeWeek();
+};
+const returnToCurrentWeek = () => { if (!loading.value && !busy.value) { weekChoice.value = monday(); changeWeek(); } };
+onMounted(() => { weekStart.value = monday(); weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
+onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
 <template>
   <div class="weekly-page" v-loading="loading" element-loading-text="正在处理周计划" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header">
-      <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>本周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
-      <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
+      <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>一周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
+      <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
@@ -254,6 +264,7 @@ onBeforeUnmount(() => { loadSequence++; });
 h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-family: Georgia, 'Songti SC', serif; font-size: clamp(26px, 3vw, 36px); } .eyebrow { color: var(--weekly-accent); font-size: 11px; letter-spacing: .14em; font-weight: 800; } .page-header p,.muted{color:var(--text-secondary)}
 .week-summary { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 13px; } .week-summary span { border: 1px solid var(--border-light); border-radius: 999px; padding: 5px 10px; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .plan-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 12px; }
 .day-card { background: var(--bg-secondary); border: 1px solid var(--border-light); border-radius: 18px; padding: 16px; display: flex; flex-direction: column; gap: 10px; } .day-card h3 { font-size: 15px; letter-spacing: .02em; display: flex; justify-content: space-between; align-items: baseline; gap: 8px; } .day-card h3 small { color: var(--text-secondary); font-size: 12px; font-weight: 500; }
 .slot { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

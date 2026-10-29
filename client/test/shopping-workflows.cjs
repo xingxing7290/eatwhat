@@ -47,6 +47,10 @@ async function main () {
     await input.waitFor()
     await page.waitForFunction(() => !document.querySelector('input[aria-label="食材名称"]')?.disabled)
     await input.fill('很长的测试食材名称用于检查手机端换行不应该溢出屏幕')
+    await page.getByRole('group', { name: '切换购物清单日期' }).getByRole('button', { name: '下一周' }).click()
+    await page.getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(await page.getByLabel('选择购物清单日期').inputValue(), '2026-10-26')
+    assert.match(await input.inputValue(), /很长的测试食材/)
     const selectNextWeek = async () => {
       await page.getByLabel('选择购物清单日期').click()
       await page.locator('.el-date-picker:visible td.next-month').filter({ hasText: /^2$/ }).click()
@@ -88,6 +92,9 @@ async function main () {
     await page.getByText('2026-11-02 开始的一周').waitFor()
     assert.equal(await input.inputValue(), '')
     assert.equal(await page.getByText('第二项', { exact: true }).count(), 0)
+    await page.getByRole('group', { name: '切换购物清单日期' }).getByRole('button', { name: '回到本周' }).click()
+    await page.getByText('2026-10-26 开始的一周', { exact: false }).waitFor()
+    await page.getByText('第二项', { exact: true }).waitFor()
     legacy = true
     await page.goto(`${base}/shopping-list`)
     await page.getByText('服务器未提供安全版本信息', { exact: false }).waitFor()

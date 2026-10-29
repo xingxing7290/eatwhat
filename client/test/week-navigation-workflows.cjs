@@ -1,0 +1,71 @@
+const assert = require('node:assert/strict')
+const { chromium } = require('playwright')
+const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
+if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Week navigation tests require a local server')
+const empty = () => ({ breakfast: [], lunch: [], dinner: [] })
+const dates = week => Array.from({ length: 7 }, (_, index) => new Date(Date.parse(`${week}T12:00:00Z`) + index * 86400000).toISOString().slice(0, 10))
+async function main () {
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
+  try {
+    const page = await browser.newPage({ viewport: { width: 390, height: 844 } }); page.setDefaultTimeout(12000)
+    await page.clock.setFixedTime(new Date(2026, 11, 30, 12))
+    await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
+    const errors = []; const reads = []; page.on('pageerror', error => errors.push(error.message))
+    await page.route('**/api/**', route => {
+      const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
+      if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
+      if (path === '/weekly-plans' && req.method() === 'GET') {
+        const week = url.searchParams.get('weekStart'); reads.push(`weekly:${week}`)
+        return route.fulfill({ json: { weekStart: week, supportsConditionalApply: true, days: dates(week).map(date => ({ date, meals: empty(), scheduleExists: false, scheduleVersion: null })) } })
+      }
+      if (path === '/weekly-plans/generate') {
+        const week = req.postDataJSON().weekStart
+        const days = dates(week).map(date => ({ date, meals: empty() }))
+        return route.fulfill({ json: { weekStart: week, days, preview: days.map(day => ({ ...day, hints: [] })) } })
+      }
+      if (path === '/shopping-list' && req.method() === 'GET') {
+        const week = url.searchParams.get('weekStart'); reads.push(`shopping:${week}`)
+        return route.fulfill({ json: { weekStart: week, supportsConditionalUpdates: true, listVersion: 0, items: [] } })
+      }
+      return route.fulfill({ json: {} })
+    })
+    await page.goto(`${base}/weekly-plan`)
+    await page.getByText('2026-12-28 — 2027-01-03').waitFor()
+    const weekly = page.getByRole('group', { name: '切换周计划日期' })
+    assert.equal(await weekly.getByRole('button', { name: '回到本周' }).isDisabled(), true)
+    await page.clock.setFixedTime(new Date(2027, 0, 4, 12)); await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    assert.equal(await weekly.getByRole('button', { name: '回到本周' }).isEnabled(), true, 'current week must refresh when the page remains open across a week boundary')
+    await page.clock.setFixedTime(new Date(2026, 11, 30, 12)); await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await weekly.getByRole('button', { name: '下一周' }).click()
+    await page.getByText('2027-01-04 — 2027-01-10').waitFor()
+    await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByText('规则生成草稿').waitFor()
+    await weekly.getByRole('button', { name: '回到本周' }).click()
+    await page.getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(await page.getByText('规则生成草稿').count(), 1)
+    assert.equal(await page.getByLabel('选择周计划日期').inputValue(), '2027-01-04')
+    await weekly.getByRole('button', { name: '回到本周' }).click()
+    await page.getByRole('button', { name: '切换并放弃' }).click()
+    await page.getByText('2026-12-28 — 2027-01-03').waitFor()
+    await weekly.getByRole('button', { name: '上一周' }).click()
+    await page.getByText('2026-12-21 — 2026-12-27').waitFor()
+    await page.goto(`${base}/shopping-list`)
+    await page.getByText('2026-12-28 — 2027-01-03', { exact: false }).waitFor()
+    const shopping = page.getByRole('group', { name: '切换购物清单日期' })
+    await shopping.getByRole('button', { name: '下一周' }).click()
+    await page.getByText('2027-01-04 — 2027-01-10', { exact: false }).waitFor()
+    await page.getByRole('textbox', { name: '食材名称' }).fill('保留的输入')
+    await shopping.getByRole('button', { name: '回到本周' }).click()
+    await page.getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(await page.getByRole('textbox', { name: '食材名称' }).inputValue(), '保留的输入')
+    await shopping.getByRole('button', { name: '回到本周' }).click()
+    await page.getByRole('button', { name: '切换并清除' }).click()
+    await page.getByText('2026-12-28 — 2027-01-03', { exact: false }).waitFor()
+    assert.ok(reads.includes('weekly:2027-01-04'))
+    assert.ok(reads.includes('shopping:2027-01-04'))
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    assert.deepEqual(errors, [])
+    console.log('Week navigation checks passed: year boundary, draft guards and mobile layout')
+  } finally { await browser.close() }
+}
+main().catch(error => { console.error(error); process.exitCode = 1 })
