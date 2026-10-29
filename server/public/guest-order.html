@@ -115,13 +115,15 @@
     .count { color: var(--muted); font-size: 13px; font-weight: 800; }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
     .meal {
+      display: flex;
+      flex-direction: column;
       overflow: hidden;
       border: 1px solid var(--line);
       border-radius: 22px;
       background: var(--paper);
       box-shadow: 0 9px 24px rgba(91, 58, 47, .07);
     }
-    .photo { position: relative; aspect-ratio: 4 / 3; background: linear-gradient(135deg, #f7e6d8, #e5f0df); overflow: hidden; }
+    .photo { position: relative; flex: none; aspect-ratio: 4 / 3; background: linear-gradient(135deg, #f7e6d8, #e5f0df); overflow: hidden; }
     .photo img { width: 100%; height: 100%; display: block; object-fit: cover; }
     .photo .fallback { position: absolute; inset: 0; display: grid; place-items: center; font-size: 48px; }
     .selected-badge {
@@ -140,7 +142,7 @@
       box-shadow: 0 5px 14px rgba(214, 77, 53, .28);
     }
     .meal.selected .selected-badge { display: grid; }
-    .meal-body { padding: 12px; }
+    .meal-body { display: flex; flex: 1; flex-direction: column; min-width: 0; padding: 12px; }
     .meal h3 { margin: 0; min-height: 43px; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
     .meal-meta { min-height: 19px; margin: 5px 0 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 12px; font-weight: 750; }
     .add, .primary, .secondary, .danger, .stepper button {
@@ -149,9 +151,10 @@
       cursor: pointer;
       font-weight: 900;
     }
-    .add { width: 100%; min-height: 44px; color: var(--peach-dark); background: #ffe8de; }
+    .add { width: 100%; min-height: 44px; margin-top: auto; color: var(--peach-dark); background: #ffe8de; }
     .add:disabled, button:disabled { opacity: .48; cursor: not-allowed; }
     .stepper { display: none; align-items: center; justify-content: space-between; gap: 7px; }
+    .meal-body > .stepper { margin-top: auto; }
     .meal.selected .add { display: none; }
     .meal.selected .stepper { display: flex; }
     .stepper button { width: 44px; height: 44px; color: var(--peach-dark); background: #ffe8de; font-size: 20px; }
