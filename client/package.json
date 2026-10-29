@@ -21,6 +21,7 @@
     "test:memory": "node test/memory-workflows.cjs",
     "test:memory-edit": "node test/memory-edit-workflows.cjs",
     "test:wishlist": "node test/wishlist-workflows.cjs",
+    "test:wishlist-filter": "node test/wishlist-filter-workflows.cjs",
     "test:wishlist-edit": "node test/wishlist-edit-workflows.cjs",
     "test:meal-detail": "node test/meal-detail-workflows.cjs",
     "test:meal-editor": "node test/meal-editor-switch-workflows.cjs",

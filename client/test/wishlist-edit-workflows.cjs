@@ -60,7 +60,7 @@ async function main () {
     await page.getByRole('button', { name: '已核对，允许重试', exact: true }).last().click()
     await dialog.locator('textarea').fill('多加醋')
     await dialog.locator('.el-select').click()
-    await page.getByRole('option', { name: '超想吃', exact: true }).click()
+    await page.locator('.el-select-dropdown:visible').getByRole('option', { name: '超想吃', exact: true }).click()
     mode = 'success'
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })

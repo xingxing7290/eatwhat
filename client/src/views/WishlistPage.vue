@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { useRouter } from 'vue-router';
 import { Plus, Delete, Check, Star, Calendar, Edit } from '@element-plus/icons-vue';
@@ -41,6 +41,11 @@ let linkTimer = null;
 let listSequence = 0;
 let alive = true;
 const form = reactive({ title: '', note: '', category: '', priority: 'normal' });
+const search = ref('');
+const selectedStatus = ref('all');
+const selectedPriority = ref('all');
+const statusFilterGroup = ref(null);
+const addWishButton = ref(null);
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value);
 const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '想吃记录' });
@@ -49,10 +54,11 @@ const busy = computed(() => saving.value || !!convertingId.value || !!actionId.v
 const uncertain = computed(() => saveUncertain.value || !!actionIssue.value || !!editIssue.value || Object.keys(pendingLinks).length > 0 || Object.keys(uncertainCreates).length > 0);
 const actionLocked = computed(() => !!editIssue.value || (!!editing.value && dirty.value));
 useDraftGuard({ dirty, busy, uncertain, label: '想吃记录' });
-const statusText = { open: '想吃', planned: '已安排', done: '已完成' };
+const statusText = { open: '想吃', planned: '已安排', done: '已完成', unknown: '状态待核对' };
 const priorityText = { low: '随缘', normal: '普通', high: '超想吃' };
 const priorityRank = { low: 0, normal: 1, high: 2 };
 const rankOf = item => Object.prototype.hasOwnProperty.call(priorityRank, item.priority) ? priorityRank[item.priority] : priorityRank.normal;
+const priorityBucket = item => Object.prototype.hasOwnProperty.call(priorityText, item.priority) ? item.priority : 'unset';
 const canEdit = item => item?.supportsWishEdit === true && validWishVersion(item);
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealId = meal => String(meal?._id || meal?.id || '');
@@ -60,9 +66,32 @@ const linkOptions = computed(() => {
   const seen = new Set();
   return [selectedMeal.value, ...availableMeals.value].filter(meal => { const id = mealId(meal); if (!id || seen.has(id)) return false; seen.add(id); return true; });
 });
-const grouped = computed(() => ['open', 'planned', 'done'].map(status => ({
+const statusBucket = item => ['open', 'planned', 'done'].includes(item.status) ? item.status : 'unknown';
+const statusOptions = computed(() => [
+  { key: 'all', label: '全部' }, { key: 'open', label: '想吃' },
+  { key: 'planned', label: '已安排' }, { key: 'done', label: '已完成' },
+  ...(items.value.some(item => statusBucket(item) === 'unknown') ? [{ key: 'unknown', label: '待核对' }] : [])
+]);
+const filterActive = computed(() => !!search.value.trim() || selectedStatus.value !== 'all' || selectedPriority.value !== 'all');
+const filteredItems = computed(() => {
+  const query = search.value.trim().toLocaleLowerCase();
+  return items.value.filter(item => {
+    if (selectedStatus.value !== 'all' && statusBucket(item) !== selectedStatus.value) return false;
+    if (selectedPriority.value !== 'all' && priorityBucket(item) !== selectedPriority.value) return false;
+    const linkedName = typeof item.mealId === 'object' ? item.mealId?.name : '';
+    return !query || [item.title, item.note, item.category, linkedName].some(value => String(value || '').toLocaleLowerCase().includes(query));
+  });
+});
+const resetFilters = () => { search.value = ''; selectedStatus.value = 'all'; selectedPriority.value = 'all'; };
+const hiddenPendingCount = computed(() => {
+  if (!filterActive.value) return 0;
+  const visible = new Set(filteredItems.value.map(item => item._id));
+  return items.value.filter(item => !visible.has(item._id) && (pendingLinks[item._id] || uncertainCreates[item._id])).length;
+});
+const grouped = computed(() => ['open', 'planned', 'done', 'unknown'].filter(status => (status !== 'unknown' || items.value.some(item => statusBucket(item) === 'unknown')) && (selectedStatus.value === 'all' || status === selectedStatus.value)).map(status => ({
   status,
-  items: items.value.filter(item => item.status === status).sort((a, b) => rankOf(b) - rankOf(a) || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
+  total: items.value.filter(item => statusBucket(item) === status).length,
+  items: filteredItems.value.filter(item => statusBucket(item) === status).sort((a, b) => rankOf(b) - rankOf(a) || (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))
 })));
 
 const load = async () => {
@@ -72,7 +101,7 @@ const load = async () => {
   try {
     const result = await api.wishlist.list();
     if (!alive || sequence !== listSequence) return;
-    if (!Array.isArray(result)) throw new Error('清单数据不完整');
+    if (!Array.isArray(result) || result.some(item => !item || typeof item._id !== 'string' || !item._id || typeof item.title !== 'string' || !item.title.trim()) || new Set(result.map(item => item._id)).size !== result.length) throw new Error('清单数据不完整');
     items.value = result;
     for (const item of items.value) if (item.mealId) { delete pendingLinks[item._id]; delete uncertainCreates[item._id]; }
     actionIssue.value = '';
@@ -165,10 +194,15 @@ const save = async () => {
 };
 const runAction = async (item, label, action) => {
   if (!item?._id || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
+  const hadFocus = document.activeElement?.closest('.wish-card')?.dataset.wishId === item._id;
   actionId.value = item._id;
   try { await action(); await load(); }
   catch (e) { actionIssue.value = e?.code === 'WISH_CONFLICT' ? '这条想吃已被其他成员修改或删除，本次未操作；请刷新清单并核对。' : `${label}结果未确认，请刷新清单并核对后再操作；先前请求仍可能稍后完成。`; }
   finally { actionId.value = ''; }
+  if (hadFocus && !loadError.value && !filteredItems.value.some(row => row._id === item._id)) {
+    await nextTick();
+    if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) (statusFilterGroup.value?.querySelector('button[aria-pressed="true"]') || addWishButton.value?.$el)?.focus();
+  }
 };
 const vote = item => {
   if (!item.supportsSetVote || typeof item.votedByMe !== 'boolean') return ElMessage.warning('服务器未提供安全投票能力，请稍后重试');
@@ -277,7 +311,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
   <div class="wishlist-page">
     <div class="page-header">
       <div><span class="eyebrow">LITTLE WISHES · 想吃灵感</span><h1>想吃清单</h1><p>把突然想吃的、对方提到的、周末想试的都先记下来。</p><small>手动标记状态不会自动写入日历；关联菜谱后可安排到今天晚餐。</small></div>
-      <el-button type="primary" :disabled="loading || !!loadError || reviewing || !!actionIssue || !!actionId || !!confirmingId || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>添加想吃</el-button>
+      <el-button ref="addWishButton" type="primary" :disabled="loading || !!loadError || reviewing || !!actionIssue || !!actionId || !!confirmingId || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>添加想吃</el-button>
     </div>
 
     <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="想吃记录" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -285,13 +319,21 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 
     <el-alert v-if="actionIssue" type="warning" :closable="false" show-icon :title="actionIssue"><el-button link type="primary" :loading="loading" @click="load">刷新清单并核对</el-button></el-alert>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-    <div v-else v-loading="loading" class="board">
+    <section v-if="!loadError && !loading && items.length" class="wish-filters" aria-label="查找想吃记录">
+      <div class="filter-heading"><div><h2>查找心愿</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ items.length }} 条记录</p></div><el-input v-model="search" clearable placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
+      <div class="filter-controls"><div ref="statusFilterGroup" class="status-filters" role="group" aria-label="按状态筛选"><button v-for="option in statusOptions" :key="option.key" type="button" :class="{ active: selectedStatus === option.key }" :aria-pressed="selectedStatus === option.key" @click="selectedStatus = option.key">{{ option.label }}</button></div><label class="priority-filter">优先级 <select v-model="selectedPriority" aria-label="按优先级筛选"><option value="all">全部优先级</option><option value="high">超想吃</option><option value="normal">普通</option><option value="low">随缘</option><option value="unset">未设置</option></select></label></div>
+    </section>
+    <div v-if="!loadError && !loading && hiddenPendingCount" class="hidden-pending" role="status"><span>有 {{ hiddenPendingCount }} 条关联或创建结果待核对的记录被筛选隐藏。</span><el-button link type="primary" @click="resetFilters">清除筛选并查看</el-button></div>
+    <el-empty v-if="!loadError && !loading && items.length && !filteredItems.length" description="没有符合条件的想吃记录"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
+    <div v-else-if="!loadError" v-loading="loading" class="board" :class="{ 'single-column': selectedStatus !== 'all' }" :aria-busy="loading ? 'true' : 'false'">
       <section v-for="group in grouped" :key="group.status" class="status-column">
-        <h2>{{ statusText[group.status] }} <span>{{ group.items.length }}</span></h2>
-        <p v-if="!group.items.length" class="empty-column">暂时没有{{ statusText[group.status] }}的记录</p>
-        <el-card v-for="item in group.items" :key="item._id" class="wish-card">
-          <div class="wish-title"><strong>{{ item.title }}</strong><el-tag>{{ priorityText[item.priority] }}</el-tag></div>
+        <h2>{{ statusText[group.status] }} <span>{{ filterActive ? `${group.items.length} / ${group.total}` : group.total }}</span></h2>
+        <p v-if="!group.items.length" class="empty-column">{{ filterActive && group.total ? '没有符合条件的记录' : `暂时没有${statusText[group.status]}的记录` }}</p>
+        <el-card v-for="item in group.items" :key="item._id" class="wish-card" :data-wish-id="item._id">
+          <div class="wish-title"><strong>{{ item.title }}</strong><el-tag>{{ priorityText[priorityBucket(item)] || '未设置' }}</el-tag></div>
           <p>{{ item.note || '还没有备注' }}</p>
+          <p v-if="group.status === 'unknown'" class="pending-note">记录状态无法识别，请刷新核对或联系管理员；暂不能操作。</p>
+          <template v-else>
           <p v-if="!item.mealId && !item.supportsSafeMealLink" class="pending-note">服务器未提供安全关联能力，暂不能关联菜谱。</p>
           <p v-if="uncertainCreates[item._id] && !item.mealId" class="pending-note">创建结果不确定，请先搜索并关联已有菜谱，避免重复创建。</p>
           <p v-if="pendingLinks[item._id]" class="pending-note">菜谱已创建，关联尚未确认。请重试关联，避免重复创建。</p>
@@ -309,6 +351,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
             <el-button v-if="item.status !== 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'open')">重新想吃</el-button>
             <el-button size="small" type="danger" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button>
           </div>
+          </template>
         </el-card>
       </section>
     </div>
@@ -340,11 +383,26 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 
 <style scoped>
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
-.wishlist-page { display: flex; flex-direction: column; gap: 18px; }
+.wishlist-page { --wish-accent: color-mix(in srgb, var(--secondary-color) 45%, #33211a); display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 h1, h2 { margin: 0; color: var(--text-primary); }
-h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}.page-header p,.page-header small { color: var(--text-secondary); }.page-header p { margin: 6px 0; }.pending-note { color:var(--secondary-color) !important; font-size:13px; }
+h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--wish-accent);font-size:11px;letter-spacing:.14em;font-weight:800}.page-header p,.page-header small { color: var(--text-secondary); }.page-header p { margin: 6px 0; }.pending-note { color:var(--text-primary) !important; font-size:13px; }
 .board { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.board.single-column { grid-template-columns: minmax(0, 1fr); }
+.wish-filters { padding: 20px 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; }
+.filter-heading, .filter-controls { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; }
+.filter-heading h2 { font-size: 18px; }
+.filter-heading p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; }
+.filter-heading :deep(.el-input) { width: min(100%, 360px); }
+.filter-controls { margin-top: 16px; }
+.status-filters { display: flex; flex-wrap: wrap; gap: 8px; }
+.status-filters button, .priority-filter select { min-height: 44px; padding: 8px 15px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); }
+.status-filters button { cursor: pointer; }
+.status-filters button.active { border: 2px solid var(--wish-accent); background: var(--bg-tertiary); font-weight: 700; }
+.status-filters button:focus-visible, .priority-filter select:focus-visible { outline: 2px solid var(--wish-accent); outline-offset: 3px; }
+.priority-filter { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 13px; }
+.hidden-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
+.hidden-pending :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
 .status-column { background: var(--bg-primary); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px var(--shadow-color); display: flex; flex-direction: column; gap: 12px; }
 .status-column h2 { display: flex; justify-content: space-between; font-size: 18px; }
 .wish-card p { color: var(--text-secondary); }
@@ -358,5 +416,7 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .edit-hint { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .latest-summary { margin-top: 8px; padding: 12px; border-radius: 10px; background: var(--bg-primary); overflow-wrap: anywhere; }
 .latest-summary p { margin: 6px 0; }
+:global(html.dark .wishlist-page) { --wish-accent: var(--secondary-color); }
+@media (max-width: 600px) { .wish-filters { padding: 18px; } .filter-heading { align-items: stretch; flex-direction: column; } .filter-heading :deep(.el-input) { width: 100%; } .filter-heading :deep(.el-input__wrapper) { min-height: 44px; } }
 @media (max-width: 900px) { .board { grid-template-columns: 1fr; } .page-header { flex-direction: column; align-items: stretch; } }
 </style>

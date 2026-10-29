@@ -1205,6 +1205,12 @@ async function main() {
       await pages[0].getByText('心愿已变化，请先在想吃清单中核对').waitFor();
       const browserVote = await WishlistItem.create({ householdId: homeA._id, title: '浏览器协作投票', status: 'open', votes: [], createdBy: userA._id });
       await Promise.all(pages.map(page => page.goto(`${webBase}/wishlist`)));
+      await pages[0].getByRole('textbox', { name: '搜索想吃记录' }).fill('浏览器协作投票');
+      await pages[0].getByText(/显示 1 \/ \d+ 条记录/).waitFor();
+      assert.equal(await pages[0].locator('.wish-card').count(), 1);
+      await pages[0].getByRole('group', { name: '按状态筛选' }).getByRole('button', { name: '已完成', exact: true }).click();
+      await pages[0].getByText('没有符合条件的想吃记录').waitFor();
+      await pages[0].getByRole('button', { name: '清除筛选' }).click();
       await Promise.all(pages.map(page => page.getByRole('button', { name: '我想吃浏览器协作投票' }).click()));
       await Promise.all(pages.map(page => page.getByRole('button', { name: '取消想吃浏览器协作投票' }).waitFor()));
       assert.deepEqual((await WishlistItem.findById(browserVote._id)).votes.map(String).sort(), [String(userA._id), String(partnerA._id)].sort());
