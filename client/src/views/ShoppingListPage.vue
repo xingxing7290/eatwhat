@@ -335,7 +335,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">
       <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p></div><el-input ref="searchInput" v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
       <div class="copy-tools"><el-button :loading="copyingList" :disabled="loading || working || changingWeek || !!loadError || !!mutationIssue || !pendingItems.length" @click="copyPendingList">复制全部待买项</el-button><p>不受筛选影响；复制当前已加载的清单，不含未保存输入。其他成员的更新请先重新核对。</p></div>
-      <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部' }, { value: 'pending', label: '待买' }, { value: 'purchased', label: '已买' }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }}</button></div>
+      <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部', count: list.items.length }, { value: 'pending', label: '待买', count: pendingItems.length }, { value: 'purchased', label: '已买', count: purchased }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-label="option.label" :aria-description="`所选周${option.label} ${option.count} 项，不受其他筛选影响`" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }} <span aria-hidden="true">{{ option.count }}</span></button></div>
+      <p class="filter-count-note">数量为所选周全部食材，不受搜索或其他筛选影响。</p>
       <div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div>
       <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
     </section>
@@ -395,6 +396,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .list-heading p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; }
 .list-heading :deep(.el-input) { width: min(100%, 320px); }
 .filter-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+.filter-count-note { margin: 8px 0 0; color: var(--text-secondary); font-size: 12px; line-height: 1.5; }
 .filter-buttons button { min-height: 44px; padding: 8px 18px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
 .filter-buttons button.active { border: 2px solid var(--shopping-accent); background: var(--bg-tertiary); font-weight: 700; }
 .filter-buttons button:focus-visible { outline: 2px solid var(--shopping-accent); outline-offset: 3px; }
