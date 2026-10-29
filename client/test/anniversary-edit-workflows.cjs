@@ -107,6 +107,16 @@ async function main () {
     await page.getByRole('button', { name: '编辑核对后修改' }).click()
     await page.getByText('服务器未提供有效的菜单版本', { exact: false }).waitFor()
     assert.equal(await page.getByRole('dialog', { name: '编辑纪念日菜单' }).count(), 0)
+    compatible = true; mode = 'conflict'
+    await page.reload()
+    await page.getByRole('button', { name: '编辑核对后修改' }).click()
+    await dialog.locator('input[type="file"]').setInputFiles(Array.from({ length: 12 }, (_, index) => ({ name: `new-${index}.png`, mimeType: 'image/png', buffer: Buffer.from('photo') })))
+    await dialog.getByText('已有 1 张，本次选择 12 / 12 张', { exact: false }).waitFor()
+    const previousWrites = writes.length
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await dialog.getByText('菜单已被修改或删除，本次未保存', { exact: false }).waitFor()
+    assert.equal(writes.length, previousWrites + 1, 'existing photos must not count toward the per-request upload limit')
+    assert.equal((writes.at(-1).match(/filename="new-\d+\.png"/g) || []).length, 12, 'all twelve new photos reach the server')
     assert.deepEqual(errors, [])
     console.log('Anniversary edit workflows passed: conflict, recovery, photos, meal preservation and legacy guard')
   } finally { await browser.close() }
