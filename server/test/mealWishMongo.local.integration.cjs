@@ -1586,6 +1586,7 @@ async function main() {
       assert.equal(guestBrowserOrder.status, 201);
       await hostDialog.getByRole('button', { name: '刷新点菜' }).click();
       await hostDialog.getByText('真实浏览器客人', { exact: false }).first().waitFor();
+      assert.equal(await hostDialog.getByText('汇总中的客人或备注与点菜单不一致', { exact: false }).count(), 0, 'matching real guest notes must not trigger a mismatch warning');
       await hostDialog.getByRole('button', { name: '编辑信息' }).click();
       const hostEditInput = hostDialog.locator('.edit-panel input').first();
       await hostEditInput.fill('真实浏览器草稿');

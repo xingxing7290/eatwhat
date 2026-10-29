@@ -22,6 +22,30 @@ const statusTypes = { open: 'success', locked: 'warning', completed: 'info', can
 const dishId = dish => typeof dish?.mealId === 'string' ? dish.mealId.trim() : '';
 const hasDishIdentifiers = item => item.orders.flatMap(order => order.items).every(dishId) && item.summary.dishes.every(dishId);
 const summaryNeedsManualReview = computed(() => !!detail.value?.orders?.length && !hasDishIdentifiers(detail.value));
+const summaryDetailsMismatch = computed(() => {
+  const item = detail.value;
+  if (!item?.orders?.length || !hasDishIdentifiers(item)) return false;
+  const clean = (value, limit) => String(value || '').trim().replace(/\s+/g, ' ').slice(0, limit);
+  const byDish = new Map();
+  for (const order of item.orders) {
+    const guest = clean(order.guestName, 30) || '客人';
+    for (const dish of order.items) {
+      const id = dishId(dish); const row = byDish.get(id) || { guests: new Set(), notes: [] };
+      row.guests.add(guest);
+      const note = clean(dish.note, 120);
+      if (note) row.notes.push(`${guest}：${note}`);
+      byDish.set(id, row);
+    }
+  }
+  const equal = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+  const seen = new Set();
+  return item.summary.dishes.some(dish => {
+    const id = dishId(dish); const expected = byDish.get(id);
+    if (!expected || seen.has(id)) return true;
+    seen.add(id);
+    return !equal(dish.guestNames, expected.guests) || !equal(dish.notes, expected.notes);
+  });
+});
 const visibleSessions = computed(() => paginationAvailable.value ? sessions.value : sessions.value.filter(item => (!statusFilter.value || effectiveStatus(item) === statusFilter.value) && (!search.value.trim() || item.title.toLowerCase().includes(search.value.trim().toLowerCase()))));
 const hasFilters = computed(() => !!(search.value.trim() || statusFilter.value));
 const safeCreate = computed(() => capabilities.value?.supportsIdempotentSessionCreate === true && /^[a-f0-9]{24}$/.test(capabilities.value?.householdId || ''));
@@ -300,7 +324,7 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
         <el-alert v-if="!validVersion(detail)" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，详情暂时只能查看。" />
         <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input ref="shareInput" :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
         <div class="status-actions"><el-button v-if="detailStatus === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detailStatus === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
-        <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><p v-if="summaryNeedsManualReview" class="dialog-note" role="status">部分旧点单缺少菜品标识，无法逐菜自动核对，请对照下方客人点菜单确认。</p><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
+        <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><p v-if="summaryNeedsManualReview" class="dialog-note" role="status">部分旧点单缺少菜品标识，无法逐菜自动核对，请对照下方客人点菜单确认。</p><p v-else-if="summaryDetailsMismatch" class="dialog-note" role="alert">汇总中的客人或备注与点菜单不一致，请以下方客人点菜单为准并重新核对。</p><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
         <section v-if="detail.orders.length" class="orders"><h3>客人点菜单</h3><el-collapse><el-collapse-item v-for="order in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
       </template>
     </el-dialog>
