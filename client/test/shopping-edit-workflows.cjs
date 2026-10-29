@@ -27,7 +27,7 @@ async function main () {
         if (sourceHold) await new Promise(resolve => { releaseSource = resolve })
         return sourceFails ? route.fulfill({ status: 503, json: { error: '菜谱暂不可用' } }) : route.fulfill({ json: recipe })
       }
-      if (path === `/meals/${sourceId}` && req.method() === 'PUT') { recipeWrites++; assert.match(req.postData(), /2把/); return route.fulfill({ json: recipe }) }
+      if (path === `/meals/${sourceId}` && req.method() === 'PUT') { recipeWrites++; assert.match(req.postData(), /2把/); return route.fulfill({ json: { ...recipe, ingredients: [{ name: '菠菜', amount: '2把' }] } }) }
       if (path === '/memories' && req.method() === 'GET') return route.fulfill({ json: [] })
       if (path === '/shopping-list' && req.method() === 'GET') return reloadFails ? route.fulfill({ status: 503, json: { error: '读取失败' } }) : route.fulfill({ json: snapshot() })
       if (path.startsWith('/shopping-list/items/') && req.method() === 'PATCH') {

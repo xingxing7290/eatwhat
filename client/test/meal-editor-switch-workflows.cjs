@@ -34,7 +34,7 @@ async function main () {
         submittedIngredients = match && JSON.parse(match[1])
         const stepMatch = request.postData()?.match(/name="steps"\r\n\r\n([^\r]*)/)
         submittedSteps = stepMatch && JSON.parse(stepMatch[1])
-        return route.fulfill({ json: meal('b') })
+        return route.fulfill({ json: { ...meal('b'), ingredients: submittedIngredients, steps: submittedSteps } })
       }
       if (request.method() !== 'GET') writes++
       return route.fulfill({ json: path === '/meal-image-issues' ? [] : {} })
@@ -124,6 +124,11 @@ async function main () {
     await page.getByRole('img', { name: '待添加步骤图' }).waitFor()
     await page.getByRole('button', { name: '移除待添加步骤图' }).click()
     assert.equal(await page.getByRole('img', { name: '待添加步骤图' }).count(), 0)
+    await stepUpload.setInputFiles(photo)
+    await page.getByRole('button', { name: '添加步骤', exact: true }).click()
+    await page.getByRole('img', { name: '步骤 3 图片' }).waitFor()
+    assert.equal(await page.getByRole('textbox', { name: '第 3 步描述' }).inputValue(), '', 'image-only steps can be added without text')
+    await page.getByRole('button', { name: '删除第 3 步' }).click()
     assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), false, 'undoing image selections leaves a clean draft')
     await page.getByRole('button', { name: '移除第 2 步图片' }).click()
     await page.getByRole('button', { name: '保存', exact: true }).click()

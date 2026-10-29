@@ -157,7 +157,7 @@ async function main () {
         writes.push({ path, editor: true, body: request.postData() })
         if (failEditorSave) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '编辑器测试保存未确认' }) })
         if (blockEditorSave) await new Promise(resolve => { releaseEditorSave = resolve })
-        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ _id: 'editor-meal', name: '测试菜谱' }) })
+        return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ _id: 'editor-meal', name: '测试菜谱', ingredients: [{ name: '鸡蛋', amount: '' }], steps: [{ description: '煎熟鸡蛋', imageUrl: '' }] }) })
       }
       writes.push({ path, body: request.postDataJSON() })
       if (failMealCreate) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '测试创建结果不确定' }) })
@@ -301,7 +301,7 @@ async function main () {
   assert.equal(await page.locator('.meals-container').getByText('番茄炒蛋').count(), 0)
   assert.equal(reads.some(item => item.includes('/meals?') && item.includes('category=')), true)
   await page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '全部分类' }).click()
-  await page.locator('.meal-card-wrapper').filter({ hasText: '番茄炒蛋' }).first().focus()
+  await page.getByRole('button', { name: '查看番茄炒蛋' }).first().focus()
   await page.keyboard.press('Enter')
   await page.waitForURL('**/meals/detail/meal-a')
   await page.goto(`${base}/meals`)
@@ -405,8 +405,9 @@ async function main () {
   simulateMealPagination = true
   await Promise.all([
     page.waitForRequest(request => new URL(request.url()).pathname.endsWith('/meals') && new URL(request.url()).searchParams.get('limit') === '8'),
-    page.getByText('分组', { exact: true }).click()
+    page.goto(`${base}/meals`)
   ])
+  await page.getByText('分组', { exact: true }).click()
   await page.getByText('按当前页分组', { exact: false }).waitFor()
   assert.equal(await page.locator('.desktop-only .el-pagination').isVisible(), true)
   simulateMealPagination = false

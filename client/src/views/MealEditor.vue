@@ -90,7 +90,7 @@ const addIngredient = () => {
 };
 const removeIngredient = (index) => form.ingredients.splice(index, 1);
 const addStep = () => {
-  if (!newStep.description.trim()) return ElMessage.warning('请输入做法步骤');
+  if (!newStep.description.trim() && !newStep.imageFile) return ElMessage.warning('请输入做法步骤或选择步骤图');
   form.steps.push({ description: newStep.description.trim(), imageUrl: newStep.imagePreview || '', imageFile: newStep.imageFile || null });
   newStep.description = ''; newStep.imageFile = null; newStep.imagePreview = '';
 };
@@ -238,11 +238,15 @@ const submit = async () => {
       const expectedId = editMode.value ? String(route.params.id) : '';
       const expectedName = form.name.trim();
       const expectedHousehold = currentSessionScope().householdId;
+      const expectedIngredients = form.ingredients.map(item => ({ name: item.name.trim(), amount: item.amount.trim() }));
+      const expectedSteps = form.steps.map(step => ({ description: step.description.trim(), uploaded: !!step.imageFile?.raw, imageUrl: String(step.imageUrl || '').trim() }));
       const validateReceipt = meal => {
         const id = meal?._id || meal?.id;
         const household = meal?.householdId?._id || meal?.householdId?.id || meal?.householdId;
         const normalizeId = value => /^[a-f\d]{24}$/i.test(value) ? value.toLowerCase() : value;
-        if (!meal || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id) || (expectedId && normalizeId(id) !== normalizeId(expectedId)) || typeof meal.name !== 'string' || meal.name.trim() !== expectedName || (household != null && expectedHousehold && normalizeId(String(household)) !== normalizeId(expectedHousehold))) {
+        const ingredientsMatch = Array.isArray(meal?.ingredients) && meal.ingredients.length === expectedIngredients.length && meal.ingredients.every((item, index) => item && typeof item.name === 'string' && typeof item.amount === 'string' && item.name === expectedIngredients[index].name && item.amount === expectedIngredients[index].amount);
+        const stepsMatch = Array.isArray(meal?.steps) && meal.steps.length === expectedSteps.length && meal.steps.every((step, index) => step && typeof step.description === 'string' && typeof step.imageUrl === 'string' && step.description === expectedSteps[index].description && (expectedSteps[index].uploaded ? !!step.imageUrl.trim() : step.imageUrl === expectedSteps[index].imageUrl));
+        if (!meal || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id) || (expectedId && normalizeId(id) !== normalizeId(expectedId)) || typeof meal.name !== 'string' || meal.name.trim() !== expectedName || (household != null && expectedHousehold && normalizeId(String(household)) !== normalizeId(expectedHousehold)) || !ingredientsMatch || !stepsMatch) {
           throw { code: 'MEAL_RECEIPT_UNCONFIRMED', message: '菜品保存回执不完整或不一致' };
         }
       };

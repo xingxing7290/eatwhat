@@ -37,7 +37,7 @@ function normalizeSteps(value) {
   return arr.map(item => {
     if (typeof item === 'string') return { description: item.trim(), imageUrl: '' };
     return { description: String(item?.description || '').trim(), imageUrl: String(item?.imageUrl || '').trim() };
-  }).filter(item => item.description || item.imageUrl);
+  });
 }
 function collectFileUrls(req, field) {
   const files = (req.files && req.files[field]) || [];
@@ -239,6 +239,8 @@ function mealPayloadFromRequest(req, existingMeal = null) {
       }
     });
   }
+  // Keep original positions until uploaded step images have been attached.
+  if (hasField('steps') || stepImages.length) payload.steps = payload.steps.filter(item => item && (item.description || item.imageUrl));
   return payload;
 }
 
