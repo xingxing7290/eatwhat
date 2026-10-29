@@ -23,9 +23,10 @@ async function main () {
       if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/api/dashboard/summary') {
         calls++
+        const snapshot = summary()
         if (mode === 'hold') await new Promise(resolve => { release = resolve })
         if (mode === 'failed') return route.fulfill({ status: 503, json: { error: '饭桌暂时不可用' } })
-        return route.fulfill({ json: summary() })
+        return route.fulfill({ json: snapshot })
       }
       if (path === '/api/wishlist') return route.fulfill({ json: [] })
       if (path === '/api/memories') return route.fulfill({ json: [] })
@@ -208,6 +209,35 @@ async function main () {
     await page.goto(`${base}/dashboard`)
     await page.getByRole('link', { name: '查看想吃清单' }).click()
     await page.waitForURL('**/wishlist')
+    await page.clock.setFixedTime(new Date(2026, 9, 28, 23, 59))
+    mode = 'valid'; date = '2026-10-28'
+    await page.goto(`${base}/dashboard`)
+    await page.getByRole('button', { name: '安排2026-10-28早餐' }).waitFor()
+    const callsBeforeFocus = calls
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    assert.equal(calls, callsBeforeFocus, 'same-day focus must not refresh repeatedly')
+    date = '2026-10-29'
+    await page.clock.setFixedTime(new Date(2026, 9, 29, 0, 1))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    await page.getByRole('button', { name: '安排2026-10-29早餐' }).waitFor()
+    assert.equal(calls, callsBeforeFocus + 1, 'cross-day focus refreshes the displayed server date')
+    const beforePending = calls
+    release = null; mode = 'hold'
+    await page.getByRole('button', { name: '刷新饭桌' }).click()
+    for (let i = 0; i < 100 && !release; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof release, 'function')
+    date = '2026-10-30'; mode = 'valid'
+    await page.clock.setFixedTime(new Date(2026, 9, 30, 0, 1))
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+    release()
+    await page.getByRole('button', { name: '安排2026-10-30早餐' }).waitFor()
+    assert.equal(calls, beforePending + 2, 'cross-day refresh must follow an already-running request')
+    date = '2026-10-31'
+    await page.getByRole('button', { name: '安排今天', exact: true }).click()
+    await page.getByText('日期已变化，请核对更新后的首页再安排').waitFor()
+    assert.equal(new URL(page.url()).pathname, '/dashboard')
+    await page.getByRole('button', { name: '安排今天', exact: true }).click()
+    await page.waitForURL('**/calendar?date=2026-10-31')
     assert.deepEqual(errors, [])
     console.log('Dashboard checks passed: refreshed date and wish, unavailable and malformed data, and retry')
   } finally { await browser.close() }

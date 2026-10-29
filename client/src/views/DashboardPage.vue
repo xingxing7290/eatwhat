@@ -28,6 +28,9 @@ const plannedSlots = computed(() => (summary.value?.week?.days || []).reduce((co
 const loadError = ref('');
 let loadRequest = null;
 let active = true;
+let dayTimer = null;
+let lastLocalDay = '';
+const localDay = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const validMeals = value => value && typeof value === 'object' && Object.keys(mealTypeText).every(type => Array.isArray(value[type]));
 const validCount = value => Number.isSafeInteger(value) && value >= 0;
@@ -85,6 +88,25 @@ const openTodaySlot = async type => {
     return router.push({ name: 'MealSelection', query: { date: fresh.today, mealType: type } });
   } finally { arranging.value = ''; }
 };
+const openTodayCalendar = async () => {
+  if (!summary.value || loading.value || arranging.value) return;
+  const shownDate = summary.value.today;
+  arranging.value = 'calendar';
+  try {
+    const fresh = await load();
+    if (!active || !fresh) return;
+    if (fresh.today !== shownDate) return ElMessage.warning('日期已变化，请核对更新后的首页再安排');
+    return router.push({ name: 'calendar', query: { date: fresh.today } });
+  } finally { arranging.value = ''; }
+};
+const refreshAfterLocalDayChange = async () => {
+  const today = localDay();
+  if (!active || today === lastLocalDay) return;
+  lastLocalDay = today;
+  if (loadRequest) await loadRequest;
+  if (active) await load();
+};
+const onVisibility = () => { if (!document.hidden) void refreshAfterLocalDayChange(); };
 const photoKey = (photo, index) => `${photo.memoryId || ''}:${index}:${photo.photo || ''}`;
 const photoLink = photo => {
   if (!validDate(photo?.date)) return { name: 'photoAlbum' };
@@ -93,8 +115,14 @@ const photoLink = photo => {
   return { name: 'photoAlbum', query };
 };
 
-onMounted(load);
-onBeforeUnmount(() => { active = false; });
+onMounted(() => {
+  lastLocalDay = localDay();
+  window.addEventListener('focus', refreshAfterLocalDayChange);
+  document.addEventListener('visibilitychange', onVisibility);
+  dayTimer = setInterval(refreshAfterLocalDayChange, 60000);
+  load();
+});
+onBeforeUnmount(() => { active = false; window.removeEventListener('focus', refreshAfterLocalDayChange); document.removeEventListener('visibilitychange', onVisibility); if (dayTimer) clearInterval(dayTimer); });
 </script>
 
 <template>
@@ -105,7 +133,7 @@ onBeforeUnmount(() => { active = false; });
         <h1>好好吃饭，<br /><span>慢慢生活。</span></h1>
         <p>把每天的饭菜、想吃的灵感和一起度过的时光，收进属于你们的小家。</p>
         <div class="hero-actions">
-          <el-button type="primary" size="large" @click="router.push('/calendar')"><el-icon><Calendar /></el-icon>安排今天</el-button>
+          <el-button type="primary" size="large" :disabled="!summary || !!loadError || loading || !!arranging" :loading="arranging === 'calendar'" @click="openTodayCalendar"><el-icon><Calendar /></el-icon>安排今天</el-button>
           <el-button size="large" @click="router.push('/meals')"><el-icon><Food /></el-icon>逛逛菜谱</el-button>
         </div>
       </div>
@@ -113,7 +141,7 @@ onBeforeUnmount(() => { active = false; });
     </section>
 
     <div v-if="loadError && !loading" class="load-error" role="alert"><div><strong>暂时没有加载出饭桌信息</strong><p>{{ loadError }}</p></div><el-button @click="load">重新加载</el-button></div>
-    <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><div class="summary-controls"><span>{{ summary.today }}</span><el-button size="small" plain :disabled="loading || !!arranging" @click="load">刷新饭桌</el-button></div></div>
+    <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><div class="summary-controls"><span>{{ summary.today }}（服务器日期）</span><el-button size="small" plain :disabled="loading || !!arranging" @click="load">刷新饭桌</el-button></div></div>
     <section class="dashboard-grid" v-if="summary && !loadError">
       <el-card class="today-card">
         <template #header><div class="card-title"><el-icon><Food /></el-icon><span>今天吃什么</span><el-tag>{{ summary.today }}</el-tag></div></template>
