@@ -13,7 +13,7 @@ async function main () {
     let writes = 0; let invalid = false
     let items = [
       { _id: 'a', title: '火锅', note: '香辣', category: '聚餐', priority: 'high', status: 'open', votes: [], votedByMe: false, supportsSetVote: true, supportsConditionalActions: true, editVersion: version, mealId: { _id: 'm1', name: '豆腐锅' } },
-      { _id: 'b', title: '番茄', note: '', category: '家常', priority: 'normal', status: 'open', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked' },
+      { _id: 'b', title: '番茄', note: `https://example.com/${'a'.repeat(300)}`, category: `分类${'x'.repeat(200)}`, priority: 'normal', status: 'open', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked' },
       { _id: 'c', title: '牛肉', note: '', category: '家常', priority: 'normal', status: 'planned', votes: [], mealId: { name: '信息不全' } },
       { _id: 'd', title: '面条', note: '', category: '主食', priority: 'low', status: 'done', votes: [], mealId: 'legacy-id' },
       { _id: 'e', title: '旧状态心愿', note: '', category: '', priority: 'legacy', status: 'unknown-old', votes: [] }
@@ -38,6 +38,12 @@ async function main () {
     })
     await page.goto(`${base}/wishlist`)
     await page.getByText('显示 5 / 5 条记录').waitFor()
+    await page.setViewportSize({ width: 320, height: 844 })
+    const longCard = page.locator('.wish-card').filter({ hasText: '番茄' })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'long notes and categories must wrap on narrow screens')
+    assert.equal(await longCard.getByText(`https://example.com/${'a'.repeat(300)}`).count(), 1, 'long notes remain available without truncation')
+    assert.equal(await longCard.getByRole('button', { name: '关联已有菜谱' }).isVisible(), true)
+    await page.setViewportSize({ width: 390, height: 844 })
     const linked = page.getByRole('link', { name: '查看火锅的关联菜谱：豆腐锅（新标签打开）' })
     assert.equal(await linked.getAttribute('href'), '/meals/detail/m1')
     assert.equal(await linked.getAttribute('target'), '_blank')

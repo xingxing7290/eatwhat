@@ -556,13 +556,14 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .board-pagination :deep(.el-button) { min-height: 44px; }
 .status-column { background: var(--bg-primary); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px var(--shadow-color); display: flex; flex-direction: column; gap: 12px; }
 .status-column h2 { display: flex; justify-content: space-between; font-size: 18px; }
-.wish-card p { color: var(--text-secondary); }
+.wish-card p { color: var(--text-secondary); overflow-wrap: anywhere; }
 .linked-meal { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; color: var(--text-primary); font-size: 13px; overflow-wrap: anywhere; }
 .linked-meal a { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
 .linked-meal a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .linked-meal small { color: var(--text-primary); font-size: 12px; }
 .empty-column { color:var(--text-secondary); font-size:13px; margin:0; padding:12px 0; }
 .wish-title, .vote-row, .actions { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+.vote-row span { min-width: 0; overflow-wrap: anywhere; }
 .wish-title strong { overflow-wrap: anywhere; min-width: 0; }
 .wish-title .el-tag { color: var(--text-primary); min-width: max-content; }
 .actions { justify-content: flex-start; }
