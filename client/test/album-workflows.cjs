@@ -17,7 +17,7 @@ async function main () {
     page.on('pageerror', error => errors.push(error.message))
     let legacy = false
     let photoUnavailable = true; let photoHold = false; let releasePhotos = []
-    let malformed = false
+    let malformed = false; let invalidPhoto = ''
     let failPage = false
     let holdPage = false; let releasePage; let noPhotos = false
     const reads = []
@@ -42,6 +42,7 @@ async function main () {
         if (failPage && current === 2) return route.fulfill({ status: 503, json: { error: '相册读取失败' } })
         const rows = month === '2026-10' && !noPhotos ? photos : []
         data = legacy ? { month, photos: rows } : { month, total: rows.length, page: current, limit, photos: malformed ? [] : rows.slice((current - 1) * limit, current * limit) }
+        if (invalidPhoto && data.photos.length) data.photos = data.photos.map((item, index) => index ? item : { ...item, ...(invalidPhoto === 'date' ? { date: `${month}-32` } : { memoryId: { id: 'invalid' } }) })
       } else if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       await route.fulfill({ status: 200, json: data })
     })
@@ -253,6 +254,13 @@ async function main () {
     await page.getByText('相册分页数据不完整', { exact: false }).waitFor()
     assert.equal(await page.getByText('这个月还没有饭桌照片').count(), 0)
     malformed = false
+    for (const kind of ['date', 'memory']) {
+      invalidPhoto = kind; await page.reload()
+      await page.getByText('相册数据不完整', { exact: false }).waitFor()
+      assert.equal(await page.locator('.photo-card').count(), 0, `${kind} must not produce a clickable broken photo`)
+      assert.equal(await page.getByText('这个月还没有饭桌照片').count(), 0, 'invalid data must not look like an empty album')
+    }
+    invalidPhoto = ''
     await page.goto(`${base}/photo-album?month=1999-01`)
     await page.getByText('这个月还没有饭桌照片').waitFor()
     await page.getByText('饭桌回顾支持 2000 至 2100 年。').waitFor()

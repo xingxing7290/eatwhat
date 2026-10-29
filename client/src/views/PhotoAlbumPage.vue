@@ -10,6 +10,7 @@ const route = useRoute();
 const router = useRouter();
 const monthKey = date => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
 const validAlbumMonth = value => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value) && Number(value.slice(0, 4)) >= 100 && Number(value.slice(0, 4)) <= 9998;
+const validAlbumDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const currentMonth = ref(monthKey(new Date()));
 const month = ref(currentMonth.value);
 let clockTimer = null;
@@ -85,7 +86,7 @@ const load = async (openAt = null, viewerToken = null) => {
   try {
     const result = await api.photoAlbum.month(requestedMonth, { page: requestedPage, limit: pageSize });
     if (sequence !== loadSequence || month.value !== requestedMonth || page.value !== requestedPage) return;
-    if (!result || result.month !== requestedMonth || !Array.isArray(result.photos) || result.photos.some(item => typeof item?.photo !== 'string' || !item.photo || !item.memoryId || typeof item.date !== 'string' || !item.date.startsWith(`${requestedMonth}-`))) throw new Error('相册数据不完整');
+    if (!result || result.month !== requestedMonth || !Array.isArray(result.photos) || result.photos.some(item => typeof item?.photo !== 'string' || !item.photo || typeof item.memoryId !== 'string' || !item.memoryId.trim() || !validAlbumDate(item.date) || !item.date.startsWith(`${requestedMonth}-`))) throw new Error('相册数据不完整');
     let rows = result.photos;
     let total = result.total;
     if (result.page == null && result.limit == null) {
