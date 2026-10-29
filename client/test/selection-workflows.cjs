@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Selection tests require a local test server')
@@ -79,10 +80,36 @@ async function main () {
     await page.goto(`${base}/selection?date=${date}&mealType=dinner&suggestedMealId=meal-20`)
     await page.getByRole('button', { name: '移除测试菜19' }).waitFor()
     await page.getByRole('button', { name: '移除测试菜20' }).waitFor()
+    await page.getByText('选择有变更，尚未保存').waitFor()
+    await page.getByText('切换分类、搜索或翻页不会清除已选菜品', { exact: false }).waitFor()
+    for (const button of await page.locator('.selected-meal-tag').all()) assert.ok((await button.boundingBox()).height >= 44)
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.selection-status', '.selection-hint', '.selected-meal-tag']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+      }
+    }
+    await page.getByRole('button', { name: '移除测试菜20' }).click()
+    await page.getByText('选择有变更，尚未保存').waitFor({ state: 'hidden' })
+    await page.getByText('与当前安排一致', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '移除测试菜19' }).click()
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), '搜索可选菜品')
+    await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('测试菜19')
+    await page.getByRole('button', { name: '选择测试菜19' }).click()
+    await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('测试菜20')
+    await page.getByRole('button', { name: '选择测试菜20' }).click()
+    await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('')
+    await page.getByRole('button', { name: '移除测试菜20' }).waitFor()
     await page.getByText('分类或标签可能不完整').waitFor()
     failCategories = false
     await page.getByRole('button', { name: '重试', exact: true }).click()
     await page.getByText('分类或标签可能不完整').waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.querySelectorAll('.meals-grid .meal-card-wrapper').length === 8)
     assert.equal(await page.locator('.meals-grid .meal-card-wrapper').count(), 8)
     assert.ok(reads.every(read => new URLSearchParams(read).get('limit') === '8' && new URLSearchParams(read).has('page')))
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -99,6 +126,9 @@ async function main () {
     await page.keyboard.press('Space')
     await page.getByRole('button', { name: '选择测试菜01' }).waitFor()
 
+    await page.getByRole('button', { name: '选择测试菜01' }).click()
+    await page.getByRole('button', { name: '移除测试菜01' }).click()
+    assert.equal(await page.evaluate(() => document.activeElement.getAttribute('aria-label')), '移除测试菜20')
     await page.getByRole('button', { name: '选择测试菜01' }).click()
     await page.getByRole('button', { name: '下一页', exact: true }).click()
     await page.getByRole('button', { name: '选择测试菜09' }).waitFor()
@@ -122,11 +152,13 @@ async function main () {
     assert.equal(writes.length, 0)
     await page.getByRole('button', { name: '保存安排' }).click()
     await page.getByText('保存结果未确认，请先核对最新安排').waitFor()
+    await page.getByText('保存结果待核对', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
     assert.deepEqual(writes[0].mealIds, ['meal-19', 'meal-20', 'meal-01', 'meal-09', 'meal-03'])
     await page.getByRole('button', { name: '重新加载最新安排' }).click()
     await page.getByRole('button', { name: '重新加载', exact: true }).click()
     await page.getByText('保存结果未确认，请先核对最新安排').waitFor({ state: 'hidden' })
+    await page.getByText('与当前安排一致', { exact: true }).waitFor()
     await page.getByRole('button', { name: '移除测试菜03' }).waitFor()
 
     saveMode = 'mismatch'
@@ -146,6 +178,7 @@ async function main () {
     malformedSchedule = true
     await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
     await page.getByText('无法读取完整的现有安排').waitFor()
+    await page.getByText('当前安排尚未核实', { exact: true }).waitFor()
     assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
     assert.equal(writes.length, 3)
     malformedSchedule = 'date'

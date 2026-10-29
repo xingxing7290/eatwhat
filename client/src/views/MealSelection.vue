@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router';
 import { useScheduleStore } from '../stores/schedule';
 import MealCard from '../components/MealCard.vue';
@@ -18,7 +18,7 @@ const date = computed(() => route.query.date);
 const mealType = computed(() => route.query.mealType);
 const calendarDestination = () => ({ name: 'calendar', ...(validWeekLink(date.value) ? { query: { date: date.value } } : {}) });
 
-const isInitializing = ref(false);
+const isInitializing = ref(true);
 const isSaving = ref(false);
 const catalogLoading = ref(false);
 const catalogError = ref('');
@@ -50,6 +50,15 @@ let catalogTimer = null;
 
 const idsFor = meals => meals.map(meal => String(meal._id || meal.id)).sort();
 const selectionDirty = computed(() => JSON.stringify(idsFor(selectedMeals.value)) !== JSON.stringify(initialIds.value));
+const selectionStatus = computed(() => {
+  if (isInitializing.value) return '正在核对当前安排';
+  if (saveUncertain.value) return '保存结果待核对';
+  if (loadError.value) return '当前安排尚未核实';
+  if (isSaving.value) return '正在保存安排';
+  return selectionDirty.value ? '选择有变更，尚未保存' : '与当前安排一致';
+});
+const selectedMealContainer = ref(null);
+const selectionSearch = ref(null);
 useDraftGuard({ dirty: selectionDirty, busy: isSaving, uncertain: saveUncertain, label: '餐食安排' });
 
 const hasActiveFilters = computed(() => {
@@ -148,6 +157,15 @@ const toggleMealSelection = (meal) => {
   } else {
     selectedMeals.value.splice(index, 1);
   }
+};
+const removeSelectedMeal = async meal => {
+  const index = selectedMeals.value.findIndex(item => String(item._id || item.id) === String(meal._id || meal.id));
+  if (index < 0 || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
+  toggleMealSelection(meal);
+  await nextTick();
+  const buttons = selectedMealContainer.value?.querySelectorAll('button:not([disabled])') || [];
+  if (buttons.length) buttons[Math.min(index, buttons.length - 1)].focus();
+  else selectionSearch.value?.focus();
 };
 
 // 保存餐食安排
@@ -432,15 +450,17 @@ onBeforeUnmount(() => {
       <div class="selected-count">
         <strong>已选择:</strong> {{ selectedMeals.length }} 个菜品
       </div>
+      <p class="selection-status" role="status">{{ selectionStatus }}</p>
+      <p class="selection-hint">切换分类、搜索或翻页不会清除已选菜品；点击“保存安排”后才会更新日历。</p>
       
-      <div class="selected-meals" v-if="selectedMeals.length > 0">
+      <div class="selected-meals" ref="selectedMealContainer" v-if="selectedMeals.length > 0">
         <button
           v-for="meal in selectedMeals" 
           :key="meal._id || meal.id"
           type="button"
           :aria-label="`移除${meal.name}`"
           :disabled="isInitializing || isSaving || loadError || saveUncertain"
-          @click="toggleMealSelection(meal)"
+          @click="removeSelectedMeal(meal)"
           class="selected-meal-tag"
         >
           {{ meal.name }} <span aria-hidden="true">×</span>
@@ -450,6 +470,7 @@ onBeforeUnmount(() => {
         <div class="filters-container">
       <div class="search-container">
         <el-input
+          ref="selectionSearch"
           v-model="searchQuery"
           placeholder="搜索菜名、食材或做法"
           aria-label="搜索可选菜品"
@@ -655,7 +676,7 @@ onBeforeUnmount(() => {
       font-size: 16px;
       
       strong {
-        color: var(--primary-color);
+        color: var(--text-primary);
       }
     }
     
@@ -665,7 +686,9 @@ onBeforeUnmount(() => {
       gap: 8px;
       
       .selected-meal-tag {
-        min-height: 36px;
+        min-height: 44px;
+        max-width: 100%;
+        overflow-wrap: anywhere;
         padding: 6px 12px;
         border: 1px solid var(--border-color);
         background: var(--bg-tertiary);
@@ -782,6 +805,9 @@ onBeforeUnmount(() => {
 .metadata-warning { padding: 12px 8px 0; color: var(--text-secondary); font-size: 12px; }
 .metadata-warning button { border: 0; background: none; color: var(--text-primary); padding: 6px 0; text-decoration: underline; font: inherit; cursor: pointer; }
 .catalog-summary { color: var(--text-secondary); font-size: 13px; }
+.selection-status, .selection-hint { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.selection-status { font-weight: 700; }
+.selection-hint { color: var(--text-secondary); }
 .meals-container { min-width: 0; }
 .mobile-pagination { display: none; }
 :global(html.dark .meal-selection .category-list button.active) { color: var(--text-primary); background: #604131; box-shadow: inset 3px 0 0 var(--secondary-color); }
