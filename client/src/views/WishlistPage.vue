@@ -70,6 +70,7 @@ const priorityBucket = item => Object.prototype.hasOwnProperty.call(priorityText
 const canEdit = item => item?.supportsWishEdit === true && validWishVersion(item);
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealId = meal => String(meal?._id || meal?.id || '');
+const confirmedLink = (result, wishId, expectedMealId) => result?._id === wishId && String(typeof result.mealId === 'string' ? result.mealId : result.mealId?._id || result.mealId?.id || '') === String(expectedMealId);
 const linkOptions = computed(() => {
   const seen = new Set();
   return [selectedMeal.value, ...availableMeals.value].filter(meal => { const id = mealId(meal); if (!id || seen.has(id)) return false; seen.add(id); return true; });
@@ -281,11 +282,11 @@ const convertToMeal = async (item) => {
     if (!meal?._id && !meal?.id) throw new Error('创建结果缺少菜谱编号');
     pendingLinks[item._id] = meal._id || meal.id;
     try {
-      await api.wishlist.attachMeal(item._id, pendingLinks[item._id], { onlyIfUnlinked: true });
+      const linked = await api.wishlist.attachMeal(item._id, pendingLinks[item._id], { onlyIfUnlinked: true });
+      if (!confirmedLink(linked, item._id, pendingLinks[item._id])) throw new Error('关联响应不完整');
       delete pendingLinks[item._id];
     } catch (error) {
-      if (error?.code === 'WISH_ALREADY_LINKED') delete pendingLinks[item._id];
-      ElMessage.warning('菜谱已创建，但关联未完成；请先检查清单或重试关联，避免重复创建');
+      ElMessage.warning('菜谱已创建，但关联结果尚不确定；请刷新清单核对，避免重复创建');
       await load();
       return;
     }
@@ -335,14 +336,16 @@ const attachExisting = async (item, mealId) => {
   if (!item || !item.supportsSafeMealLink || !mealId || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
   convertingId.value = item._id;
   try {
-    await api.wishlist.attachMeal(item._id, mealId, { onlyIfUnlinked: true });
+    const result = await api.wishlist.attachMeal(item._id, mealId, { onlyIfUnlinked: true });
+    if (!confirmedLink(result, item._id, mealId)) throw new Error('关联响应不完整');
     delete pendingLinks[item._id];
     delete uncertainCreates[item._id];
     linkDialog.value = false;
     ElMessage.success('已关联菜谱');
   } catch (error) {
-    if (error?.code === 'WISH_ALREADY_LINKED') { delete pendingLinks[item._id]; linkDialog.value = false; }
-    else ElMessage.warning('关联未确认，请先刷新清单后检查');
+    pendingLinks[item._id] = mealId;
+    linkDialog.value = false;
+    ElMessage.warning('关联未确认，请先刷新清单后检查');
   } finally { await load(); convertingId.value = ''; }
 };
 const arrangeToday = (item) => {
@@ -388,7 +391,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
           <template v-else>
           <p v-if="!item.mealId && !item.supportsSafeMealLink" class="pending-note">服务器未提供安全关联能力，暂不能关联菜谱。</p>
           <p v-if="uncertainCreates[item._id] && !item.mealId" class="pending-note">创建结果不确定，请先搜索并关联已有菜谱，避免重复创建。</p>
-          <p v-if="pendingLinks[item._id]" class="pending-note">菜谱已创建，关联尚未确认。请重试关联，避免重复创建。</p>
+          <p v-if="pendingLinks[item._id]" class="pending-note">菜谱关联尚未确认，请先刷新清单核对，再决定是否重试。</p>
           <div class="vote-row"><el-button link type="warning" :disabled="busy || loading || !!actionIssue || actionLocked || !item.supportsSetVote || typeof item.votedByMe !== 'boolean'" :aria-pressed="item.votedByMe === true" :aria-label="`${item.votedByMe ? '取消想吃' : '我想吃'}${item.title}`" @click="vote(item)"><el-icon><Star /></el-icon>{{ item.votedByMe ? '已想吃' : '我想吃' }} · {{ item.votes?.length || 0 }} 票</el-button><span>{{ item.category }}</span></div>
           <p v-if="!item.supportsSetVote || typeof item.votedByMe !== 'boolean'" class="pending-note">服务器暂不支持安全投票。</p>
           <p v-if="!validWishVersion(item)" class="pending-note">服务器未提供记录版本，暂不能安全修改状态或删除。</p><p v-else-if="!item.supportsWishEdit" class="pending-note">服务器暂不支持安全编辑想吃内容。</p>

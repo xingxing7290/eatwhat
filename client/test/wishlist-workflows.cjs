@@ -12,7 +12,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const version = revision => ({ revision, updatedAt: '2026-10-28T12:00:00.000Z' })
     let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, supportsSetVote: true, supportsSafeMealLink: true, supportsConditionalActions: true, editVersion: version('v1') }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
-    let voteMode = 'unknown'; let statusMode = 'unknown'; let deleteMode = 'unknown'; let releaseVote; let releaseSlow; const reads = []; const writes = []; const errors = []
+    let voteMode = 'unknown'; let statusMode = 'unknown'; let deleteMode = 'unknown'; let attachMode = 'lost'; let releaseVote; let releaseSlow; const reads = []; const writes = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
@@ -43,8 +43,9 @@ async function main () {
         if (deleteMode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
       } else if (req.method() === 'PATCH' && path === '/wishlist/wish-a/meal') {
         writes.push({ path, body: req.postDataJSON() })
+        if (attachMode === 'lost') return route.fulfill({ status: 503, json: { error: '模拟关联结果丢失' } })
         items = items.map(item => item._id === 'wish-a' ? { ...item, mealId: meals.find(meal => meal._id === req.postDataJSON().mealId), editVersion: version('linked') } : item)
-        data = items[0]
+        data = attachMode === 'malformed' ? { _id: 'wrong-wish', mealId: items[0].mealId } : items[0]
       }
       await route.fulfill({ status: 200, json: data })
     })
@@ -94,7 +95,12 @@ async function main () {
     await page.getByRole('option', { name: '菜品75', exact: true }).waitFor()
     await page.getByRole('option', { name: '菜品75', exact: true }).click()
     await dialog.getByRole('button', { name: '确认关联' }).click()
+    await page.getByText('菜谱关联尚未确认', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '删除想吃面条' }).isDisabled(), true)
+    attachMode = 'malformed'
+    await page.getByRole('button', { name: '重试关联' }).click()
     await page.getByRole('button', { name: '安排今天晚餐' }).waitFor()
+    assert.equal(await page.getByText('菜谱关联尚未确认', { exact: false }).count(), 0, 'a subsequent verified read resolves the uncertain result')
     assert.equal(writes.find(item => item.path.endsWith('/meal')).body.mealId, 'meal-75')
     statusMode = 'malformed'
     await page.locator('.wish-card').filter({ hasText: '想吃面条' }).getByRole('button', { name: '标记已安排' }).click()
