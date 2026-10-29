@@ -76,6 +76,34 @@ async function main () {
         }
       }
     }
+    await page.evaluate(() => {
+      const original = Storage.prototype.setItem
+      window.__sessionOriginalSetItem = original
+      Storage.prototype.setItem = function (key, value) {
+        if (key === 'user') throw new DOMException('Blocked', 'QuotaExceededError')
+        return original.call(this, key, value)
+      }
+    })
+    mode = 'ok'; await password.press('Enter')
+    await page.getByRole('alert').getByText('登录信息无法保存', { exact: false }).waitFor()
+    assert.equal(await page.evaluate(() => localStorage.getItem('token')), null, 'a partial login must not leave a new token behind')
+    assert.equal(await page.evaluate(() => localStorage.getItem('user')), null)
+    await page.evaluate(() => { Storage.prototype.setItem = window.__sessionOriginalSetItem })
+    await page.reload()
+    await username.fill('test'); await password.fill('new-password')
+    await page.evaluate(() => {
+      const originalSet = Storage.prototype.setItem; const originalRemove = Storage.prototype.removeItem
+      window.__sessionOriginalSetItem = originalSet; window.__sessionOriginalRemoveItem = originalRemove
+      Storage.prototype.setItem = function (key, value) { if (key === 'user') throw new DOMException('Blocked', 'QuotaExceededError'); return originalSet.call(this, key, value) }
+      Storage.prototype.removeItem = function (key) { if (key === 'token') throw new DOMException('Blocked', 'SecurityError'); return originalRemove.call(this, key) }
+    })
+    await password.press('Enter')
+    await page.getByRole('alert').getByText('登录状态可能不完整', { exact: false }).waitFor()
+    assert.equal(await page.evaluate(() => localStorage.getItem('token')), 'token', 'failed rollback must be reported as uncertain')
+    assert.equal(new URL(page.url()).pathname, '/login')
+    await page.evaluate(() => { Storage.prototype.setItem = window.__sessionOriginalSetItem; Storage.prototype.removeItem = window.__sessionOriginalRemoveItem; localStorage.removeItem('token') })
+    await page.reload()
+    await username.fill('test'); await password.fill('new-password')
     await page.getByText('记住账号', { exact: true }).click()
     await page.evaluate(() => {
       const original = Storage.prototype.setItem

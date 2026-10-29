@@ -90,7 +90,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import api from '@/services/api'
-import { adoptSession } from '@/services/sessionScope'
+import { adoptSession, markSessionStale } from '@/services/sessionScope'
 
 const REMEMBER_LOGIN_KEY = 'eatwhat_remember_login'
 
@@ -143,6 +143,31 @@ const validLoginResponse = result => {
   return !(user.householdId && user.household?.id && String(user.householdId).toLowerCase() !== String(user.household.id).toLowerCase())
 }
 
+const persistSession = result => {
+  const previousToken = localStorage.getItem('token')
+  const previousUser = localStorage.getItem('user')
+  const nextUser = JSON.stringify(result.user)
+  try {
+    localStorage.setItem('token', result.token)
+    localStorage.setItem('user', nextUser)
+    if (localStorage.getItem('token') !== result.token || localStorage.getItem('user') !== nextUser) throw new Error('session changed')
+  } catch (_) {
+    let restored = false
+    try {
+      // Never overwrite a session that another tab may have changed meanwhile.
+      const token = localStorage.getItem('token'); const user = localStorage.getItem('user')
+      if (token === previousToken && user === previousUser) restored = true
+      else if (token === result.token && (user === previousUser || user === nextUser)) {
+        if (user === nextUser && user !== previousUser) previousUser === null ? localStorage.removeItem('user') : localStorage.setItem('user', previousUser)
+        previousToken === null ? localStorage.removeItem('token') : localStorage.setItem('token', previousToken)
+        restored = localStorage.getItem('token') === previousToken && localStorage.getItem('user') === previousUser
+      }
+    } catch (_) { /* Storage may also reject rollback. */ }
+    markSessionStale()
+    throw new Error(restored ? '登录信息无法保存，原登录状态已恢复。请检查浏览器存储并重新加载后重试。' : '登录状态可能不完整。请关闭其他标签页，清除本站登录数据后重新登录。')
+  }
+}
+
 const onSubmit = async () => {
   if (loading.value || !formRef.value) return
   loginError.value = ''
@@ -154,8 +179,7 @@ const onSubmit = async () => {
     try {
       const res = await api.auth.login({ username: form.value.username.trim(), password: form.value.password })
       if (!validLoginResponse(res)) throw new Error('登录响应不完整，无法确认账号和小家，请联系管理员检查服务器。')
-      localStorage.setItem('token', res.token)
-      localStorage.setItem('user', JSON.stringify(res.user))
+      persistSession(res)
       adoptSession(res.token)
       let preferenceSaved = true
       try { persistRememberedLogin() } catch (_) { preferenceSaved = false }
