@@ -112,6 +112,7 @@ import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditPen, HomeFilled, Key, Lock, User } from '@element-plus/icons-vue'
 import api from '@/services/api'
+import { currentSessionScope, sessionIsCurrent } from '@/services/sessionScope'
 
 const router = useRouter()
 const route = useRoute()
@@ -157,6 +158,8 @@ const continueAfterUncertain = async () => {
 const useCurrentAccount = async () => {
   const code = form.value.inviteCode.trim()
   if (!code || code.length > 20) return ElMessage.warning('请确认邀请码后再加入')
+  const scope = currentSessionScope()
+  if (!scope.token || !scope.userId || !scope.householdId || !sessionIsCurrent(scope)) return ElMessage.warning('当前账号或小家已变化或无法确认，请保留邀请链接并重新登录后再确认。')
   transferringInvite = true
   try { return await router.push({ name: 'settings', hash: `#invite=${encodeURIComponent(code)}` }) } finally { transferringInvite = false }
 }
