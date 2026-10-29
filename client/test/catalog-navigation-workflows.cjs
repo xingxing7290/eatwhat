@@ -57,6 +57,7 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '菜品列表')
     await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('q') === '家常菜' && q.get('category') === '家常菜' && q.get('page') === '2' })
     const requestCountBeforeViewChange = requests.length
+    await page.evaluate(() => { window.__originalCatalogTimeout = window.setTimeout; window.setTimeout = (fn, delay, ...args) => delay === 200 ? window.__originalCatalogTimeout(() => {}, 30000) : window.__originalCatalogTimeout(fn, delay, ...args) })
     await page.getByRole('radio', { name: '列表视图' }).focus(); await page.keyboard.press('Space')
     await page.locator('.meals-list').getByRole('button', { name: '查看家常菜09' }).first().waitFor()
     await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('page') === '2' && q.get('view') === 'list' })
@@ -68,6 +69,8 @@ async function main () {
     await page.getByLabel('菜品分页').getByRole('button', { name: '下一页' }).focus()
     await page.keyboard.press('Enter')
     await page.getByRole('status').getByText('正在加载菜品…').waitFor()
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('page') === '3')
+    await page.evaluate(() => { window.setTimeout = window.__originalCatalogTimeout; delete window.__originalCatalogTimeout })
     await page.waitForFunction(() => document.querySelector('input[aria-label="搜索菜品"]') !== null)
     await search.focus()
     for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 20))

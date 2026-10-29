@@ -248,7 +248,7 @@ const fetchMeals = async () => {
     const lastPage = Math.max(1, Math.ceil(total / pageSize.value));
     if (currentPage.value > lastPage) {
       currentPage.value = lastPage;
-      scheduleCatalogUrl();
+      void syncCatalogUrl();
       return fetchMeals();
     }
     displayedMeals.value = rows;
@@ -568,7 +568,7 @@ const handlePageChange = (page) => {
   restoreCatalogFocus = restoreCatalogFocus || !!document.activeElement?.closest?.('.pagination-container, .mobile-pagination');
   currentPage.value = page;
   scheduleFetch(0);
-  scheduleCatalogUrl();
+  void syncCatalogUrl();
 };
 
 let fetchTimer = null;
@@ -597,7 +597,7 @@ watch(selectedCategory, () => {
 
 watch(currentView, () => {
   if (applyingCatalogRoute) return;
-  scheduleCatalogUrl();
+  void syncCatalogUrl();
 }, { flush: 'sync' });
 watch(() => route.fullPath, () => {
   if (route.name !== 'meals' || internalCatalogUrls.has(catalogKey(route.query))) return;
