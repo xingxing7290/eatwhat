@@ -219,9 +219,19 @@ const removeSelectedMeal = async meal => {
   if (index < 0 || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
   toggleMealSelection(meal);
   await nextTick();
-  const buttons = selectedMealContainer.value?.querySelectorAll('button:not([disabled])') || [];
+  const buttons = selectedMealContainer.value?.querySelectorAll('.selected-meal-tag:not([disabled])') || [];
   if (buttons.length) buttons[Math.min(index, buttons.length - 1)].focus();
   else selectionSearch.value?.focus();
+};
+const moveSelectedMeal = async (index, direction) => {
+  const target = index + direction;
+  if (isInitializing.value || isSaving.value || loadError.value || saveUncertain.value || target < 0 || target >= selectedMeals.value.length) return;
+  const [meal] = selectedMeals.value.splice(index, 1);
+  selectedMeals.value.splice(target, 0, meal);
+  await nextTick();
+  const row = selectedMealContainer.value?.querySelectorAll('.selected-meal-item')[target];
+  const requested = row?.querySelector(direction < 0 ? '.move-up' : '.move-down');
+  (requested && !requested.disabled ? requested : row?.querySelector('.selected-meal-tag'))?.focus();
 };
 
 // 保存餐食安排
@@ -536,12 +546,11 @@ onBeforeUnmount(() => {
         <strong>已选择:</strong> {{ selectedMeals.length }} 个菜品
       </div>
       <p class="selection-status" role="status">{{ selectionStatus }}</p>
-      <p class="selection-hint">点击菜品卡片选择或取消；切换分类、搜索或翻页不会清除已选菜品。点击“保存安排”后才会更新日历。</p>
+      <p class="selection-hint">点击菜品卡片选择或取消；切换分类、搜索或翻页不会清除已选菜品。可调整已选顺序，点击“保存安排”后才会更新日历。</p>
       
       <div class="selected-meals" ref="selectedMealContainer" v-if="selectedMeals.length > 0">
+        <div v-for="(meal, index) in selectedMeals" :key="meal._id || meal.id" class="selected-meal-item" role="group" :aria-label="`第${index + 1}道：${meal.name}`">
         <button
-          v-for="meal in selectedMeals" 
-          :key="meal._id || meal.id"
           type="button"
           :aria-label="`移除${meal.name}`"
           :disabled="isInitializing || isSaving || loadError || saveUncertain"
@@ -550,6 +559,11 @@ onBeforeUnmount(() => {
         >
           {{ meal.name }} <span aria-hidden="true">×</span>
         </button>
+        <template v-if="selectedMeals.length > 1">
+          <button type="button" class="move-selected move-up" :aria-label="`上移${meal.name}`" :disabled="index === 0 || isInitializing || isSaving || loadError || saveUncertain" @click="moveSelectedMeal(index, -1)">↑</button>
+          <button type="button" class="move-selected move-down" :aria-label="`下移${meal.name}`" :disabled="index === selectedMeals.length - 1 || isInitializing || isSaving || loadError || saveUncertain" @click="moveSelectedMeal(index, 1)">↓</button>
+        </template>
+        </div>
       </div>
     </div>
         <div class="filters-container">
@@ -909,6 +923,11 @@ onBeforeUnmount(() => {
 .selection-status, .selection-hint { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .selection-status { font-weight: 700; }
 .selection-hint { color: var(--text-secondary); }
+.selected-meal-item { display: inline-flex; align-items: center; max-width: 100%; gap: 4px; }
+.selected-meal-item .selected-meal-tag { min-width: 0; }
+.move-selected { flex: 0 0 44px; min-height: 44px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 18px; cursor: pointer; }
+.move-selected:disabled { opacity: .45; cursor: not-allowed; }
+.move-selected:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .meals-container { min-width: 0; }
 .mobile-pagination { display: none; }
 :global(html.dark .meal-selection .category-list button.active) { color: var(--text-primary); background: #604131; box-shadow: inset 3px 0 0 var(--secondary-color); }
