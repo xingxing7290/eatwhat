@@ -320,7 +320,7 @@
       function setUncertainty(value) { state.uncertain = value; try { if (value) sessionStorage.setItem(uncertaintyKey, '1'); else sessionStorage.removeItem(uncertaintyKey); } catch (_) { /* Warning remains active in this page. */ } }
       function validPending(value) { return !!value && /^[A-Za-z0-9_-]{43}$/.test(value.creationKey || '') && typeof value.guestName === 'string' && typeof value.note === 'string' && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= MAX_DISHES && value.items.every(item => item && /^[a-f0-9]{24}$/.test(item.mealId || '') && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20 && typeof item.note === 'string' && typeof item.name === 'string'); }
       function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return null; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
-      const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), pending: storedPending(), storageFailed: false, unavailable: new Set() };
+      const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, statusSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: storedAccessToken(), busy: false, conflict: '', uncertain: storedUncertainty(), pending: storedPending(), storageFailed: false, unavailable: new Set() };
       const $ = id => document.getElementById(id);
       let toastTimer; let searchTimer;
 
@@ -354,7 +354,7 @@
       }
 
       function statusCopy(status) {
-        return ({ open: '● 正在点菜', locked: '🔒 主人已锁单', completed: '✓ 宴请已完成', cancelled: '已取消', expired: '链接已过期' })[status] || status;
+        return ({ open: '● 正在点菜', locked: '🔒 主人已锁单', closed: '🔒 暂不接收点单', completed: '✓ 宴请已完成', cancelled: '已取消', expired: '链接已过期' })[status] || status;
       }
 
       function canOrder() { return state.session && state.session.canOrder === true; }
@@ -796,10 +796,11 @@
 
       async function loadSession(first = false) {
         if (first) return loadMenu();
+        const sequence = ++state.statusSequence;
         try {
           const wasOpen = canOrder();
           const data = await jsonRequest(`${apiRoot}?statusOnly=1`);
-          if (!data.session) return;
+          if (!data.session || sequence !== state.statusSequence) return;
           state.session = { ...(state.session || {}), ...data.session };
           renderHeader();
           if (wasOpen !== canOrder()) {
@@ -850,6 +851,11 @@
           if (error.code === 'GUEST_MEAL_UNAVAILABLE') {
             state.unavailable = new Set((Array.isArray(error.unavailableIds) ? error.unavailableIds : []).map(String).filter(id => state.cart.has(id)));
             try { await refreshMenu(); } catch (_) { /* Keep the draft and the last known menu. */ }
+          } else if (error.code === 'GUEST_SESSION_CLOSED' || (error.status === 409 && error.message === '本次点菜已经锁单或结束')) {
+            state.statusSequence++;
+            state.session = { ...(state.session || {}), status: 'closed', canOrder: false };
+            renderHeader();
+            void loadSession(false);
           } else if (error.code === 'GUEST_ORDER_CONFLICT' || /其他设备更新/.test(error.message)) state.conflict = 'changed';
           else if (!safeCreate && (!error.status || error.status === 408 || error.status >= 500)) setUncertainty(true);
           toast(error.message);

@@ -156,8 +156,10 @@ async function mealMapForItems(session, rawItems) {
 function handlePublicOrderError(error, res, next) {
   if (error.code === 'GUEST_MEAL_UNAVAILABLE') return res.status(409).json({ code: error.code, error: error.message, unavailableIds: error.unavailableIds });
   if (error.code === 'GUEST_ORDER_CONFLICT') return res.status(409).json({ code: error.code, error: error.message });
+  if (error.code === 'GUEST_SESSION_CLOSED') return res.status(409).json({ code: error.code, error: error.message });
   return next(error);
 }
+function closedGuestSession() { const error = httpError('本次点菜已经锁单或结束', 409); error.code = 'GUEST_SESSION_CLOSED'; return error; }
 
 function creationIdentity(session, body) {
   const key = body?.creationKey;
@@ -463,7 +465,7 @@ exports.createPublicOrderIdempotent = async (req, res, next) => {
     const identity = creationIdentity(session, req.body);
     let existing = await replayCreatedOrder(session, identity);
     if (existing) return res.status(200).json({ accessToken: existing.accessToken, order: orderPayload(existing), replayed: true });
-    if (!isSessionOpen(session)) throw httpError('本次点菜已经锁单或结束', 409);
+    if (!isSessionOpen(session)) throw closedGuestSession();
     if (await GuestOrder.countDocuments({ sessionId: session._id }) >= 100) throw httpError('本次点菜人数已达上限，请联系主人', 429);
     const mealsById = await mealMapForItems(session, req.body.items);
     try {
@@ -488,7 +490,7 @@ exports.createPublicOrderIdempotent = async (req, res, next) => {
 exports.createPublicOrder = async (req, res, next) => {
   try {
     const session = await publicSessionByToken(req.params.shareToken);
-    if (!isSessionOpen(session)) throw httpError('本次点菜已经锁单或结束', 409);
+    if (!isSessionOpen(session)) throw closedGuestSession();
     const existingOrders = await GuestOrder.countDocuments({ sessionId: session._id });
     if (existingOrders >= 100) throw httpError('本次点菜人数已达上限，请联系主人', 429);
     const mealsById = await mealMapForItems(session, req.body.items);
@@ -527,7 +529,7 @@ exports.publicOrder = async (req, res, next) => {
 exports.updatePublicOrder = async (req, res, next) => {
   try {
     const session = await publicSessionByToken(req.params.shareToken);
-    if (!isSessionOpen(session)) throw httpError('本次点菜已经锁单或结束', 409);
+    if (!isSessionOpen(session)) throw closedGuestSession();
     const token = cleanText(req.params.accessToken, 120);
     const expectedRevision = Number(req.body.revision);
     if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {

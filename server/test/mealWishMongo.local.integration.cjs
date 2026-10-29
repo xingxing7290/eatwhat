@@ -436,6 +436,9 @@ async function main() {
     assert.equal((await request(`/guest-orders/${hostSessionId}/rotate-link`, { method: 'POST', token: tokenPartner, body: { expectedEditVersion: hostLatest.editVersion } })).status, 409);
     assert.equal((await request(`/guest-orders/public/${originalShareToken}`)).status, 404);
     const expiredHost = await GuestOrderSession.create({ householdId: homeA._id, createdBy: userA._id, status: 'locked', shareToken: 'expired-host-fixture', expiresAt: new Date(Date.now() - 10000) });
+    const closedGuestOrder = await request('/guest-orders/public/expired-host-fixture/orders', { method: 'POST', body: { guestName: '测试客人', items: [] } });
+    assert.equal(closedGuestOrder.status, 409);
+    assert.equal(closedGuestOrder.data.code, 'GUEST_SESSION_CLOSED');
     const expiredVersion = (await request(`/guest-orders/${expiredHost._id}`, { token: tokenA })).data.session.editVersion;
     assert.equal((await request(`/guest-orders/${expiredHost._id}`, { method: 'PATCH', token: tokenA, body: { status: 'open', expectedEditVersion: expiredVersion } })).status, 409);
     assert.equal((await request(`/guest-orders/${expiredHost._id}/rotate-link`, { method: 'POST', token: tokenA, body: { expectedEditVersion: expiredVersion } })).status, 409);

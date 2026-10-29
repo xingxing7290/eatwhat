@@ -153,6 +153,43 @@ async function main () {
     assert.equal(await page.getByRole('button', { name: '提交给主人' }).isDisabled(), true, 'an unread existing order must not create a duplicate')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.deepEqual(errors, [])
+    for (const closedMode of ['coded', 'legacy']) {
+      const closedPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      let closedWrites = 0; let statusReads = 0; let releaseOldStatus; let announceStatus
+      const oldStatusStarted = new Promise(resolve => { announceStatus = resolve })
+      await closedPage.addInitScript(() => {
+        const original = window.setInterval
+        window.setInterval = (fn, delay, ...args) => delay === 15000 ? (window.__testStatusPoll = fn, 0) : original(fn, delay, ...args)
+      })
+      await closedPage.route('**/guest-orders/public/**', async route => {
+        const req = route.request(); const url = new URL(req.url())
+        if (req.method() === 'GET' && url.searchParams.has('statusOnly')) {
+          statusReads++
+          if (closedMode === 'coded' && statusReads === 1) { announceStatus(); await new Promise(resolve => { releaseOldStatus = resolve }); return route.fulfill({ json: { session: { status: 'open', canOrder: true } } }) }
+          return route.fulfill({ status: 503, json: { error: '状态暂不可用' } })
+        }
+        if (req.method() === 'GET') return route.fulfill({ json: { session: { title: '测试宴请', status: 'open', canOrder: true }, meals: [meals[1]] } })
+        closedWrites++
+        return route.fulfill({ status: 409, json: closedMode === 'coded' ? { code: 'GUEST_SESSION_CLOSED', error: '本次暂不接收点单' } : { error: '本次点菜已经锁单或结束' } })
+      })
+      await closedPage.goto(`http://127.0.0.1:${server.address().port}/guest-order/closed-${closedMode}`)
+      await closedPage.locator('.meal').getByRole('button', { name: '＋ 想吃' }).click()
+      await closedPage.getByRole('button', { name: '查看点菜单' }).click()
+      await closedPage.locator('#guestName').fill('客人草稿')
+      await closedPage.locator('#orderNote').fill('少辣的备注')
+      if (closedMode === 'coded') { await closedPage.evaluate(() => { void window.__testStatusPoll() }); await oldStatusStarted }
+      await closedPage.getByRole('button', { name: '提交给主人' }).click()
+      await closedPage.getByText('主人暂不接收新点单', { exact: false }).first().waitFor()
+      if (closedMode === 'coded') {
+        const staleResponse = closedPage.waitForResponse(response => response.url().includes('statusOnly=1') && response.status() === 200)
+        releaseOldStatus(); await staleResponse; await closedPage.waitForTimeout(100)
+      }
+      assert.equal(await closedPage.getByRole('button', { name: '提交给主人' }).isDisabled(), true)
+      assert.equal(await closedPage.locator('#guestName').inputValue(), '客人草稿')
+      assert.equal(await closedPage.locator('#orderNote').inputValue(), '少辣的备注')
+      assert.equal(closedWrites, 1)
+      await closedPage.close()
+    }
     const blockedStorage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await blockedStorage.addInitScript(() => {
       window.__blockGuestStorage = true
