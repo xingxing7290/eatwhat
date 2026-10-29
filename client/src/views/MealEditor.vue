@@ -6,6 +6,8 @@ import { Plus, Delete, Upload } from '@element-plus/icons-vue';
 import { useMealStore } from '../stores/meal';
 import api from '@/services/api';
 import { filterCatalogQuery } from '@/utils/catalogQuery.mjs';
+import { resolveRecipeImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
+import placeholder from '@/assets/meal-placeholder.svg';
 
 const route = useRoute();
 const router = useRouter();
@@ -42,6 +44,8 @@ const newStep = reactive({ description: '', imageFile: null, imagePreview: '' })
 const rules = { name: [{ required: true, whitespace: true, message: '请输入菜品名称', trigger: 'blur' }] };
 const initialForm = ref(JSON.stringify(form));
 const previews = new Set();
+const imageFor = value => previews.has(value) || (typeof value === 'string' && /^data:image\//i.test(value)) ? value : resolveRecipeImage(value, placeholder);
+const imageError = event => handleUploadedImageError(event, placeholder);
 const photoAccept = 'image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif';
 const photoExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
 const photoTypes = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream']);
@@ -88,7 +92,7 @@ const onPhotosChange = async (_file, files) => {
 };
 const onNewStepImage = (file) => { const error = photoError(file); if (error) return ElMessage.warning(error); newStep.imageFile = file; newStep.imagePreview = makePreview(file); };
 const onStepImage = (index, file) => { const error = photoError(file); if (error) return ElMessage.warning(error); form.steps[index].imageFile = file; form.steps[index].imageUrl = makePreview(file); };
-const removeExistingPhoto = (photo) => { form.existingPhotos = form.existingPhotos.filter(item => item !== photo); };
+const removeExistingPhoto = index => { form.existingPhotos.splice(index, 1); };
 
 const fillForm = (meal) => {
   Object.assign(form, {
@@ -234,7 +238,7 @@ watch(() => route.params.id, load, { immediate: true });
 
         <el-card><template #header>做法步骤</template>
           <div class="step-editor"><el-input v-model="newStep.description" type="textarea" rows="2" placeholder="写下一个步骤" aria-label="新步骤描述" /><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onNewStepImage"><el-button><el-icon><Upload /></el-icon>步骤图</el-button></el-upload><img v-if="newStep.imagePreview" :src="newStep.imagePreview" alt="待添加步骤图" /><el-button type="primary" @click="addStep">添加步骤</el-button></div>
-          <div v-if="form.steps.length" class="steps"><div v-for="(step, index) in form.steps" :key="index" class="step-item"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :src="step.imageUrl" :alt="`步骤 ${index + 1} 图片`" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index)">删除</el-button></div></div></div>
+          <div v-if="form.steps.length" class="steps"><div v-for="(step, index) in form.steps" :key="index" class="step-item"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :key="step.imageUrl" :src="imageFor(step.imageUrl)" :alt="`步骤 ${index + 1} 图片`" @error="imageError" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index)">删除</el-button></div></div></div>
           <el-empty v-else description="暂无做法步骤" />
         </el-card>
 
@@ -242,8 +246,8 @@ watch(() => route.params.id, load, { immediate: true });
       </section>
 
       <aside class="side-column">
-        <el-card><template #header>封面照片</template><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onCoverChange"><div class="cover-box"><img v-if="imagePreview" :src="imagePreview" alt="菜品封面预览" /><div v-else><el-icon><Upload /></el-icon><p>上传封面</p></div></div></el-upload><p class="photo-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30MB；实际以上传服务器设置为准。</p></el-card>
-        <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" class="photo-grid"><div v-for="photo in form.existingPhotos" :key="photo" class="photo-item"><img :src="photo" alt="已有菜品照片" /><el-button size="small" type="danger" @click="removeExistingPhoto(photo)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
+        <el-card><template #header>封面照片</template><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onCoverChange"><div class="cover-box"><img v-if="imagePreview" :key="imagePreview" :src="imageFor(imagePreview)" alt="菜品封面预览" @error="imageError" /><div v-else><el-icon><Upload /></el-icon><p>上传封面</p></div></div></el-upload><p class="photo-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30MB；实际以上传服务器设置为准。</p></el-card>
+        <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index)">移除</el-button></div></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
       </aside>
     </el-form>
   </div>

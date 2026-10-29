@@ -8,9 +8,9 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } }); page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    const images = []; const errors = []; page.on('pageerror', error => errors.push(error.message))
+    const images = []; const errors = []; let savedFields; page.on('pageerror', error => errors.push(error.message))
     const meals = [
-      { _id: 'local', name: '旧地址图片', category: '家常', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo', ingredients: [], steps: [], tags: [], photos: [] },
+      { _id: 'local', name: '旧地址图片', category: '家常', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo', ingredients: [], steps: [{ description: '第一步', imageUrl: 'http://127.0.0.1/uploads/local.png?v=2#photo' }, { description: '第二步', imageUrl: 'https://cdn.example.test/uploads/external.png?v=4' }], tags: [], photos: Array(3).fill('http://127.0.0.1/uploads/local.png?v=2#photo'), supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } },
       { _id: 'external', name: '外部图片', category: '家常', imageUrl: 'https://cdn.example.test/uploads/external.png?v=4', ingredients: [], steps: [], tags: [], photos: [] },
       { _id: 'invalid', name: '异常图片', category: '家常', imageUrl: { bad: true }, ingredients: [], steps: [], tags: [], photos: [] }
     ]
@@ -26,6 +26,12 @@ async function main () {
       if (path === '/meals') return route.fulfill({ json: { data: meals, total: meals.length, page: 1, limit: 8 } })
       if (path === '/meals/categories') return route.fulfill({ json: [{ category: '家常' }] })
       if (path === '/meals/tags' || path === '/wishlist' || path === '/memories') return route.fulfill({ json: [] })
+      if (path === '/meals/local' && route.request().method() === 'PUT') {
+        const body = route.request().postData()
+        const field = name => body.match(new RegExp(`name="${name}"\\r\\n\\r\\n([^\\r]*)`))?.[1]
+        savedFields = { imageUrl: field('imageUrl'), photos: JSON.parse(field('existingPhotos')), steps: JSON.parse(field('steps')) }
+        return route.fulfill({ json: meals[0] })
+      }
       if (path === '/meals/local') return route.fulfill({ json: meals[0] })
       return route.fulfill({ json: {} })
     })
@@ -51,6 +57,18 @@ async function main () {
     await page.getByRole('button', { name: '查看旧地址图片' }).first().click()
     await page.waitForFunction(() => { const image = document.querySelector('.hero img'); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') })
     assert.equal(images.some(url => url.includes('/api/uploads/external.png')), false)
+    await page.goto(`${base}/meals/editor/local`)
+    await page.waitForFunction(() => ['.cover-box img', '.step-item img', '.photo-item img'].every(selector => { const image = document.querySelector(selector); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') }))
+    await page.locator('.step-item').nth(1).locator('img[alt="图片暂不可用"]').waitFor()
+    assert.equal(images.some(url => url.includes('/api/uploads/external.png')), false)
+    assert.equal(await page.locator('.photo-item').count(), 3)
+    await page.getByRole('button', { name: '移除已有菜品照片 1' }).click()
+    assert.equal(await page.locator('.photo-item').count(), 2, 'removing one duplicate must preserve the others')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.waitForURL('**/meals')
+    assert.equal(savedFields.imageUrl, meals[0].imageUrl)
+    assert.deepEqual(savedFields.photos, meals[0].photos.slice(1))
+    assert.deepEqual(savedFields.steps.map(step => step.imageUrl), meals[0].steps.map(step => step.imageUrl))
     assert.deepEqual(errors, [])
     console.log('Recipe image checks passed: legacy URLs, local retry, external isolation and view consistency')
   } finally { await browser.close() }

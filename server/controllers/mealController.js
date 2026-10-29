@@ -274,7 +274,8 @@ exports.updateMeal = async (req, res, next) => {
     if (!updatedMeal) { await discardNewUploads(req); return res.status(409).json({ code: 'MEAL_CONFLICT', error: '菜谱已被更新，请核对最新内容' }); }
     if (!updatedMeal.imageUrl) {
       const fallbackUrl = ensureMealImage(updatedMeal);
-      const fallbackPhotos = Array.from(new Set([fallbackUrl, ...(updatedMeal.photos || [])].filter(Boolean)));
+      const currentPhotos = updatedMeal.photos || [];
+      const fallbackPhotos = currentPhotos.includes(fallbackUrl) ? [...currentPhotos] : [fallbackUrl, ...currentPhotos];
       const withFallback = await Meal.findOneAndUpdate(
         { _id: updatedMeal._id, householdId: household._id, editRevision: updatedMeal.editRevision, updatedAt: updatedMeal.updatedAt },
         { $set: { imageUrl: fallbackUrl, photos: fallbackPhotos } },

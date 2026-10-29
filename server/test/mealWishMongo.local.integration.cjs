@@ -1220,7 +1220,7 @@ async function main() {
       assert.equal((await Household.findById(nameHome._id)).name, '真实并发名称乙');
       assert.equal(await namePageB.getByPlaceholder('请输入昵称').inputValue(), '重新修改的昵称草稿');
       const editorMealA = await Meal.create({ householdId: nameHome._id, name: '切换测试菜甲' });
-      const editorMealB = await Meal.create({ householdId: nameHome._id, name: '切换测试菜乙', ingredients: [{ name: '鸡蛋', amount: '2个' }], steps: [{ description: '加热' }, { description: '翻炒' }] });
+      const editorMealB = await Meal.create({ householdId: nameHome._id, name: '切换测试菜乙', ingredients: [{ name: '鸡蛋', amount: '2个' }], steps: [{ description: '加热' }, { description: '翻炒' }], photos: ['/api/uploads/duplicate.jpg', '/api/uploads/duplicate.jpg', '/api/uploads/duplicate.jpg'] });
       await namePageA.goto(`${webBase}/meals/editor/${editorMealA._id}`);
       await namePageA.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '切换测试菜甲');
       await namePageA.getByPlaceholder('给这道菜起个名字').fill('需要保护的菜谱草稿');
@@ -1237,6 +1237,7 @@ async function main() {
       await namePageA.getByRole('textbox', { name: '第 1 项食材用量' }).fill('4个');
       await namePageA.getByRole('textbox', { name: '第 2 步描述' }).fill('翻炒至熟');
       await namePageA.getByRole('button', { name: '上移第 2 步' }).click();
+      await namePageA.getByRole('button', { name: '移除已有菜品照片 1' }).click();
       const editorUpdateResponse = namePageA.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/meals/${editorMealB._id}`);
       await namePageA.getByRole('button', { name: '保存', exact: true }).click();
       const editorUpdate = await editorUpdateResponse;
@@ -1246,6 +1247,7 @@ async function main() {
       assert.equal((await Meal.findById(editorMealB._id)).name, '切换后保存菜乙');
       assert.equal((await Meal.findById(editorMealB._id)).ingredients[0].amount, '4个', 'edited ingredient quantity persists in the database');
       assert.deepEqual((await Meal.findById(editorMealB._id)).steps.map(step => step.description), ['翻炒至熟', '加热'], 'edited and reordered steps persist in the database');
+      assert.equal((await Meal.findById(editorMealB._id)).photos.filter(photo => photo === '/api/uploads/duplicate.jpg').length, 2, 'removing one duplicate preserves both remaining images even when a cover is generated');
       await Promise.all(nameContexts.map(context => context.close()));
       const reviewContext = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
       await reviewContext.addInitScript(({ token, user, householdId }) => { localStorage.setItem('token', token); localStorage.setItem('user', JSON.stringify({ id: user, householdId, username: 'test-local-review' })); }, { token: reviewToken, user: String(reviewUser._id), householdId: String(reviewHome._id) });
