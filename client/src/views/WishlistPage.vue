@@ -72,6 +72,12 @@ const priorityBucket = item => Object.prototype.hasOwnProperty.call(priorityText
 const canEdit = item => item?.supportsWishEdit === true && validWishVersion(item);
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealId = meal => String(meal?._id || meal?.id || '');
+const linkedMealId = item => {
+  const meal = item?.mealId;
+  const id = typeof meal === 'string' ? meal : meal?._id || meal?.id;
+  return typeof id === 'string' && /^[a-z\d_-]{1,128}$/i.test(id) ? id : '';
+};
+const linkedMealName = item => typeof item?.mealId?.name === 'string' && item.mealId.name.trim() ? item.mealId.name.trim() : '查看菜谱';
 const confirmedLink = (result, wishId, expectedMealId) => result?._id === wishId && String(typeof result.mealId === 'string' ? result.mealId : result.mealId?._id || result.mealId?.id || '') === String(expectedMealId);
 const linkOptions = computed(() => {
   const seen = new Set();
@@ -419,6 +425,8 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
         <el-card v-for="item in group.items" :key="item._id" class="wish-card" :data-wish-id="item._id">
           <div class="wish-title"><strong>{{ item.title }}</strong><el-tag>{{ priorityText[priorityBucket(item)] || '未设置' }}</el-tag></div>
           <p>{{ item.note || '还没有备注' }}</p>
+          <div v-if="linkedMealId(item)" class="linked-meal"><span>关联菜谱：</span><router-link :to="{ name: 'MealDetail', params: { id: linkedMealId(item) } }" target="_blank" rel="noopener noreferrer" :aria-label="`查看${item.title}的关联菜谱：${linkedMealName(item)}（新标签打开）`">{{ linkedMealName(item) }} <span aria-hidden="true">↗</span></router-link><small>新标签打开</small></div>
+          <p v-else-if="item.mealId" class="pending-note">关联菜谱信息不完整，请刷新清单后核对。</p>
           <p v-if="group.status === 'unknown'" class="pending-note">记录状态无法识别，请刷新核对或联系管理员；暂不能操作。</p>
           <template v-else>
           <p v-if="!item.mealId && !item.supportsSafeMealLink" class="pending-note">服务器未提供安全关联能力，暂不能关联菜谱。</p>
@@ -436,7 +444,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
             <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :loading="convertingId === item._id" :disabled="busy || loading || !!actionIssue || actionLocked" @click="attachExisting(item, pendingLinks[item._id])">重试关联</el-button>
             <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="reviewPendingLink(item)">核对关联</el-button>
             <el-button v-if="!item.mealId && pendingLinks[item._id] && reviewedLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="finishLinkReview(item)">结束核对</el-button>
-            <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
+            <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !linkedMealId(item)" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
             <el-button v-if="item.status === 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'planned')">标记已安排</el-button>
             <el-button v-if="item.status !== 'done'" size="small" type="success" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>
             <el-button v-if="item.status !== 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'open')">重新想吃</el-button>
@@ -500,6 +508,10 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .status-column { background: var(--bg-primary); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px var(--shadow-color); display: flex; flex-direction: column; gap: 12px; }
 .status-column h2 { display: flex; justify-content: space-between; font-size: 18px; }
 .wish-card p { color: var(--text-secondary); }
+.linked-meal { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; color: var(--text-primary); font-size: 13px; overflow-wrap: anywhere; }
+.linked-meal a { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+.linked-meal a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.linked-meal small { color: var(--text-primary); font-size: 12px; }
 .empty-column { color:var(--text-secondary); font-size:13px; margin:0; padding:12px 0; }
 .wish-title, .vote-row, .actions { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
 .wish-title strong { overflow-wrap: anywhere; min-width: 0; }

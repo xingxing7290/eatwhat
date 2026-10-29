@@ -14,8 +14,8 @@ async function main () {
     let items = [
       { _id: 'a', title: '火锅', note: '香辣', category: '聚餐', priority: 'high', status: 'open', votes: [], votedByMe: false, supportsSetVote: true, supportsConditionalActions: true, editVersion: version, mealId: { _id: 'm1', name: '豆腐锅' } },
       { _id: 'b', title: '番茄', note: '', category: '家常', priority: 'normal', status: 'open', votes: [], supportsSafeMealLink: true },
-      { _id: 'c', title: '牛肉', note: '', category: '家常', priority: 'normal', status: 'planned', votes: [] },
-      { _id: 'd', title: '面条', note: '', category: '主食', priority: 'low', status: 'done', votes: [] },
+      { _id: 'c', title: '牛肉', note: '', category: '家常', priority: 'normal', status: 'planned', votes: [], mealId: { name: '信息不全' } },
+      { _id: 'd', title: '面条', note: '', category: '主食', priority: 'low', status: 'done', votes: [], mealId: 'legacy-id' },
       { _id: 'e', title: '旧状态心愿', note: '', category: '', priority: 'legacy', status: 'unknown-old', votes: [] }
     ]
     const errors = []; page.on('pageerror', error => errors.push(error.message))
@@ -34,6 +34,32 @@ async function main () {
     })
     await page.goto(`${base}/wishlist`)
     await page.getByText('显示 5 / 5 条记录').waitFor()
+    const linked = page.getByRole('link', { name: '查看火锅的关联菜谱：豆腐锅（新标签打开）' })
+    assert.equal(await linked.getAttribute('href'), '/meals/detail/m1')
+    assert.equal(await linked.getAttribute('target'), '_blank')
+    assert.match(await linked.getAttribute('rel'), /noopener/)
+    assert.ok((await linked.boundingBox()).height >= 44)
+    assert.equal(await page.getByRole('link', { name: '查看面条的关联菜谱：查看菜谱（新标签打开）' }).getAttribute('href'), '/meals/detail/legacy-id')
+    const incomplete = page.locator('.wish-card').filter({ hasText: '牛肉' })
+    await incomplete.getByText('关联菜谱信息不完整', { exact: false }).waitFor()
+    assert.equal(await incomplete.getByRole('button', { name: '安排今天晚餐' }).isDisabled(), true)
+    await page.getByRole('textbox', { name: '搜索想吃记录' }).fill('豆腐锅')
+    await page.getByText('显示 1 / 5 条记录').waitFor()
+    await page.context().route('**/api/**', route => {
+      const path = new URL(route.request().url()).pathname
+      if (path === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
+      if (path === '/api/meals/m1') return route.fulfill({ json: { _id: 'm1', name: '豆腐锅', ingredients: [], steps: [], photos: [], tags: [] } })
+      return route.fulfill({ json: [] })
+    })
+    const popupPromise = page.waitForEvent('popup')
+    await linked.click()
+    const popup = await popupPromise
+    await popup.waitForURL('**/meals/detail/m1')
+    await popup.getByRole('heading', { name: '豆腐锅' }).waitFor()
+    assert.equal(await page.getByRole('textbox', { name: '搜索想吃记录' }).inputValue(), '豆腐锅', 'opening a recipe must preserve the original filtered board')
+    await popup.close()
+    await page.getByRole('textbox', { name: '搜索想吃记录' }).fill('')
+    await page.getByText('显示 5 / 5 条记录').waitFor()
     const unknown = page.locator('.wish-card').filter({ hasText: '旧状态心愿' })
     await unknown.getByText('记录状态无法识别', { exact: false }).waitFor()
     assert.equal(await unknown.getByRole('button').count(), 0)
@@ -45,7 +71,7 @@ async function main () {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.wishlist-page .eyebrow', '.wishlist-page h1', '.filter-heading h2', '.filter-heading p', '.status-filters button.active', '.status-filters button:not(.active)', '.priority-filter', '.status-column h2', '.pending-note']) {
+          for (const selector of ['.wishlist-page .eyebrow', '.wishlist-page h1', '.filter-heading h2', '.filter-heading p', '.status-filters button.active', '.status-filters button:not(.active)', '.priority-filter', '.status-column h2', '.pending-note', '.linked-meal a', '.linked-meal small']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`)
           }
