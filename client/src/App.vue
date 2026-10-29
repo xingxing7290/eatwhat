@@ -13,6 +13,9 @@ import { householdVerificationFailed, verifyCurrentHousehold } from './services/
 
 const route = useRoute();
 const router = useRouter();
+const moreSections = { '/wishlist': '想吃清单', '/guest-orders': '宴请点菜', '/memories': '饭后回忆', '/photo-album': '饭桌相册', '/review': '饭桌回顾', '/anniversaries': '纪念日', '/settings': '设置' };
+const currentMoreSection = computed(() => moreSections[route.path] || '');
+const mealSubpage = computed(() => route.path.startsWith('/meals/'));
 const isDarkMode = ref(localStorage.getItem('darkMode') === 'true');
 const selectedColorTheme = ref(localStorage.getItem('colorTheme') || 'cream');
 const locale = ref(zhCn);
@@ -272,14 +275,14 @@ onBeforeUnmount(() => {
           </router-link>
           
           <!-- 桌面端导航 -->
-          <nav class="main-nav desktop-nav">
+          <nav class="main-nav desktop-nav" aria-label="主导航">
             <router-link to="/dashboard" class="nav-link" @click="closeMobileMenu">首页</router-link>
             <router-link to="/calendar" class="nav-link" @click="closeMobileMenu">日历</router-link>
             <router-link to="/weekly-plan" class="nav-link" @click="closeMobileMenu">周计划</router-link>
-            <router-link to="/meals" class="nav-link" @click="closeMobileMenu">菜品</router-link>
+            <router-link to="/meals" class="nav-link" :class="{ 'section-active': mealSubpage }" :aria-current="mealSubpage ? 'location' : route.path === '/meals' ? 'page' : undefined" @click="closeMobileMenu">菜品</router-link>
             <router-link to="/shopping-list" class="nav-link" @click="closeMobileMenu">购物清单</router-link>
             <el-dropdown trigger="click">
-              <button class="nav-more" type="button" aria-label="更多功能">更多 <el-icon><ArrowDown /></el-icon></button>
+              <button class="nav-more" :class="{ 'section-active': currentMoreSection }" :aria-current="currentMoreSection ? 'location' : undefined" :aria-description="currentMoreSection ? `当前：${currentMoreSection}` : undefined" type="button" aria-label="更多功能">更多<span v-if="currentMoreSection" class="nav-more-current" aria-hidden="true"> · {{ currentMoreSection }}</span> <el-icon><ArrowDown /></el-icon></button>
               <template #dropdown>
                 <el-dropdown-menu>
                   <el-dropdown-item><router-link to="/wishlist">想吃清单</router-link></el-dropdown-item>
@@ -401,7 +404,7 @@ onBeforeUnmount(() => {
             <el-icon><Food /></el-icon>
             <span>购物清单</span>
           </router-link>
-          <router-link to="/meals" class="mobile-nav-link" @click="closeSamePageMenu($event, '/meals')">
+          <router-link to="/meals" class="mobile-nav-link" :class="{ 'section-active': mealSubpage }" :aria-current="mealSubpage ? 'location' : route.path === '/meals' ? 'page' : undefined" @click="closeSamePageMenu($event, '/meals')">
             <el-icon><Food /></el-icon>
             <span>菜品</span>
           </router-link>
@@ -1328,10 +1331,12 @@ html[data-theme] .el-popper {
 .app-header .header-left .main-nav { gap: 3px; }
 .app-header .header-left .main-nav .nav-link { padding: 9px 11px; font-size: 14px; white-space: nowrap; }
 .nav-more { display: inline-flex; align-items: center; gap: 4px; border: 0; padding: 9px 11px; border-radius: 999px; background: transparent; color: var(--text-secondary); font: inherit; font-size: 14px; cursor: pointer; }
-.nav-more:hover, .nav-more:focus-visible { color: var(--text-primary); background: var(--bg-secondary); }
+.nav-more:hover, .nav-more:focus-visible, .nav-more.section-active { color: var(--text-primary); background: var(--bg-secondary); }
+.nav-more-current { font-weight: 700; }
+.app-header .header-left .main-nav .nav-link.section-active { color: var(--text-primary); background: var(--bg-secondary); }
 .el-dropdown-menu__item a { color: inherit; text-decoration: none; display: block; width: 100%; }
 .app-header .header-right .desktop-actions .desktop-logout-btn { display: none; }
-.mobile-nav-link.router-link-active { color: var(--secondary-color); background: var(--bg-secondary); font-weight: 700; }
+.mobile-nav-link.router-link-active, .mobile-nav-link.section-active { color: var(--secondary-color); background: var(--bg-secondary); font-weight: 700; }
 .app-header .header-right .mobile-menu-btn { color: var(--text-primary); }
 html.dark[data-theme] {
   --primary-color: #ffad99;
