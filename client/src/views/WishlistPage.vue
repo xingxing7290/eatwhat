@@ -252,7 +252,7 @@ const save = async () => {
       const changes = Object.fromEntries(Object.keys(form).filter(key => form[key] !== original[key]).map(key => [key, form[key]]));
       if (!Object.keys(changes).length) { dialogVisible.value = false; reset(); return; }
       result = await api.wishlist.updateDetails(editing.value.id, changes, editing.value.version);
-      if (String(result?._id || result?.id || '') !== editing.value.id || !canEdit(result)) throw new Error('保存响应不完整');
+      if (String(result?._id || result?.id || '') !== editing.value.id || !canEdit(result) || Object.entries(changes).some(([key, value]) => typeof result[key] !== 'string' || result[key] !== value.trim())) throw new Error('保存响应不完整或内容不一致');
     } else result = await api.wishlist.create({ ...form, title: form.title.trim() });
     if (!result?._id && !result?.id) throw new Error('保存响应不完整');
     const savedMessage = editing.value ? '想吃记录已更新' : '已加入想吃清单';

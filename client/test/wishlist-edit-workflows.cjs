@@ -26,6 +26,7 @@ async function main () {
         if (mode === 'unknown') return route.fulfill({ status: 503, json: { error: '响应丢失' } })
         assert.deepEqual(body.expectedEditVersion, version('v2'))
         assert.equal(body.status, undefined); assert.equal(body.votes, undefined); assert.equal(body.mealId, undefined)
+        if (mode === 'badreceipt') return route.fulfill({ json: { ...item, title: body.title, priority: body.priority, note: '不一致的备注', editVersion: version('v3') } })
         item = { ...item, ...body, editVersion: version('v3') }; data = item
       }
       await route.fulfill({ status: 200, json: data })
@@ -61,12 +62,20 @@ async function main () {
     await dialog.locator('textarea').fill('多加醋')
     await dialog.locator('.el-select').click()
     await page.locator('.el-select-dropdown:visible').getByRole('option', { name: '超想吃', exact: true }).click()
+    mode = 'badreceipt'
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await dialog.getByText('编辑结果未确认', { exact: false }).waitFor()
+    assert.equal(await title.inputValue(), '核对后修改', 'a mismatched receipt must preserve the edit draft')
+    assert.equal(await dialog.locator('textarea').inputValue(), '多加醋')
+    await dialog.getByRole('button', { name: '读取最新记录并核对' }).click()
+    await dialog.getByRole('button', { name: '已核对，允许重试' }).click()
+    await page.getByRole('button', { name: '已核对，允许重试', exact: true }).last().click()
     mode = 'success'
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })
     await page.getByText('核对后修改', { exact: true }).waitFor()
     assert.equal(item.note, '多加醋'); assert.equal(item.priority, 'high'); assert.equal(item.status, 'planned'); assert.equal(item.mealId._id, 'meal-a'); assert.equal(item.votes.length, 1)
-    assert.equal(writes.length, 3)
+    assert.equal(writes.length, 4)
     await page.getByRole('button', { name: '编辑核对后修改' }).click()
     await title.fill('暂存草稿')
     await dialog.getByRole('button', { name: '取消', exact: true }).click()
