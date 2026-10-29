@@ -1068,6 +1068,30 @@ async function main() {
     assert.equal(safeImageIssue.mealId, null);
     assert.equal(safeImageIssue.createdBy, null);
     assert.equal(safeImageIssue.resolvedBy, null);
+    const issueBaseline = await MealImageIssue.countDocuments({ householdId: homeA._id, status: 'open' });
+    const bulkIssues = await MealImageIssue.insertMany(Array.from({ length: 205 }, (_, index) => ({ householdId: homeA._id, mealId: mealA._id, createdBy: userA._id, status: 'open', note: `pagination-${index}` })));
+    const issuePageIds = new Set();
+    for (let page = 1; page <= Math.ceil((issueBaseline + bulkIssues.length) / 100); page++) {
+      const response = await request(`/meal-image-issues?status=open&page=${page}&limit=100`, { token: tokenA });
+      assert.equal(response.status, 200);
+      assert.equal(response.data.supportsImageIssuePagination, true);
+      assert.equal(response.data.householdId, String(homeA._id));
+      assert.equal(response.data.total, issueBaseline + bulkIssues.length);
+      assert.equal(response.data.totalPages, Math.ceil((issueBaseline + bulkIssues.length) / 100));
+      assert.equal(response.data.page, page);
+      assert.equal(response.data.limit, 100);
+      for (const item of response.data.items) { assert.equal(issuePageIds.has(item._id), false, 'pages must not overlap'); issuePageIds.add(item._id); }
+    }
+    assert.equal(issuePageIds.size, issueBaseline + bulkIssues.length, 'all issue records must be reachable');
+    assert.equal((await request('/meal-image-issues?status=open', { token: tokenA })).data.length, 200, 'legacy callers keep the bounded array response');
+    const otherHomePage = await request('/meal-image-issues?status=open&page=1&limit=100', { token: tokenB });
+    assert.equal(otherHomePage.data.householdId, String(homeB._id));
+    assert.equal(otherHomePage.data.items.some(item => issuePageIds.has(item._id)), false, 'pagination must not expose another household');
+    const beyondIssues = await request('/meal-image-issues?status=open&page=9999&limit=100', { token: tokenA });
+    assert.deepEqual(beyondIssues.data.items, []);
+    assert.equal(beyondIssues.data.total, issueBaseline + bulkIssues.length);
+    for (const query of ['page=0', 'page=1.5', 'page=10001', 'page=1&page=2', 'limit=101', 'limit=0']) assert.equal((await request(`/meal-image-issues?${query}`, { token: tokenA })).status, 400);
+    await MealImageIssue.deleteMany({ _id: { $in: bulkIssues.map(item => item._id) } });
     const anniversary = await AnniversaryMenu.create({ householdId: homeA._id, createdBy: userA._id, title: '测试纪念日', date: '2026-11-11', photos: [imageData], meals: { breakfast: [mealA._id], lunch: [otherMeal._id], dinner: [mealA._id, otherMeal._id] } });
     const anniversaryList = await request('/anniversaries', { token: tokenA });
     assert.equal(anniversaryList.status, 200);

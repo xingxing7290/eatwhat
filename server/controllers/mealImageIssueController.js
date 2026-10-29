@@ -13,7 +13,23 @@ exports.list = async (req, res, next) => {
     const { household } = await ensureUserHousehold(req.user.uid, 0, req.expectedHouseholdId);
     const query = { householdId: household._id };
     if (req.query.status) query.status = req.query.status;
-    res.json(await populate(MealImageIssue.find(query).sort({ status: 1, createdAt: -1 }).limit(200), household._id));
+    if (req.query.page !== undefined || req.query.limit !== undefined) {
+      const parsePositive = (value, fallback, maximum) => {
+        if (value === undefined) return fallback;
+        if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) return null;
+        const parsed = Number(value);
+        return Number.isSafeInteger(parsed) && parsed <= maximum ? parsed : null;
+      };
+      const page = parsePositive(req.query.page, 1, 10000);
+      const limit = parsePositive(req.query.limit, 20, 100);
+      if (page === null || limit === null) return res.status(400).json({ error: '图片反馈分页参数无效' });
+      const [total, items] = await Promise.all([
+        MealImageIssue.countDocuments(query),
+        populate(MealImageIssue.find(query).sort({ status: 1, createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit), household._id)
+      ]);
+      return res.json({ supportsImageIssuePagination: true, householdId: String(household._id), page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)), items });
+    }
+    res.json(await populate(MealImageIssue.find(query).sort({ status: 1, createdAt: -1, _id: -1 }).limit(200), household._id));
   } catch (err) { next(err); }
 };
 
