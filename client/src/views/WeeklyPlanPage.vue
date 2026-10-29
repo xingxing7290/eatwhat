@@ -49,8 +49,9 @@ const monday = value => {
   return dateKey(d);
 };
 const thisWeek = ref(monday());
+const localToday = ref(dateKey(new Date()));
 let weekClockTimer = null;
-const refreshCurrentWeek = () => { thisWeek.value = monday(); };
+const refreshCurrentWeek = () => { const now = new Date(); thisWeek.value = monday(dateKey(now)); localToday.value = dateKey(now); };
 const datesFor = value => {
   const [year, month, day] = monday(value).split('-').map(Number);
   return Array.from({ length: 7 }, (_, index) => dateKey(new Date(year, month - 1, day + index)));
@@ -291,7 +292,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 <template>
   <div class="weekly-page" v-loading="loading" element-loading-text="正在处理周计划" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header">
-      <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>一周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div></div>
+      <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>一周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div><router-link v-if="current?.days.some(day => day.date === localToday)" class="today-link" :to="{ name: 'calendar', query: { date: localToday } }">本机今天 {{ localToday }} · 查看日历 →</router-link></div>
       <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || draftNeedsRebase || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
 
@@ -325,6 +326,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('focus', refr
 .page-header { display: flex; justify-content: space-between; gap: 20px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 26px; padding: clamp(22px, 3vw, 36px); box-shadow: 0 12px 28px var(--shadow-color); }
 h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-family: Georgia, 'Songti SC', serif; font-size: clamp(26px, 3vw, 36px); } .eyebrow { color: var(--weekly-accent); font-size: 11px; letter-spacing: .14em; font-weight: 800; } .page-header p,.muted{color:var(--text-secondary)}
 .week-summary { display: flex; flex-wrap: wrap; gap: 8px; color: var(--text-secondary); font-size: 13px; } .week-summary span { border: 1px solid var(--border-light); border-radius: 999px; padding: 5px 10px; }
+.today-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; font-size: 13px; text-decoration: underline; text-underline-offset: 3px; }
+.today-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }

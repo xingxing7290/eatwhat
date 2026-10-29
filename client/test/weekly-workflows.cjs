@@ -201,6 +201,7 @@ async function main () {
       await page.setViewportSize({ width, height: 844 })
       await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
       assert.ok((await contrast(page, '.draft-card .unavailable-alert .el-alert__title')).ratio >= 4.5, `${width} ${dark} ${theme}`)
+      assert.ok((await contrast(page, '.today-link')).ratio >= 4.5, `today link ${width} ${dark} ${theme}`)
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     }
     await page.setViewportSize({ width: 390, height: 844 })
