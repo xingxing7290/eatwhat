@@ -241,6 +241,12 @@ async function main () {
     await page.getByText('相册暂时无法加载', { exact: false }).waitFor()
     await page.waitForFunction(() => document.activeElement?.textContent?.includes('重新加载'))
     assert.equal(await page.locator('.photo-card').count(), 0)
+    await page.getByRole('button', { name: '返回第一页' }).click()
+    await page.getByRole('button', { name: /第 1 张/ }).waitFor()
+    assert.equal(new URL(page.url()).searchParams.get('page'), null)
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 1 张'))
+    await page.getByRole('button', { name: '下一页' }).click()
+    await page.getByText('相册暂时无法加载', { exact: false }).waitFor()
     failPage = false
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByRole('button', { name: /第 25 张/ }).waitFor()
