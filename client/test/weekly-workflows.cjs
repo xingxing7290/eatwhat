@@ -133,6 +133,20 @@ async function main () {
     await page.waitForTimeout(250)
     assert.equal(await dialog.getByRole('button', { name: '选择麻婆豆腐' }).count(), 1)
     await dialog.getByRole('button', { name: '选择麻婆豆腐' }).click()
+    await page.setViewportSize({ width: 320, height: 844 })
+    const longChoiceFits = await dialog.locator('.chosen-item').first().evaluate(row => {
+      const extra = document.createTextNode('x'.repeat(100)); row.querySelector('.chosen-remove').append(extra)
+      const fits = row.scrollWidth <= row.clientWidth && document.documentElement.scrollWidth <= innerWidth
+      extra.remove(); return fits
+    })
+    assert.equal(longChoiceFits, true, 'long selected names and order controls must fit a narrow screen')
+    await page.setViewportSize({ width: 390, height: 844 })
+    assert.equal(await dialog.getByRole('button', { name: '上移番茄炒蛋' }).isDisabled(), true)
+    await dialog.getByRole('button', { name: '上移麻婆豆腐' }).focus()
+    await page.keyboard.press('Enter')
+    assert.deepEqual(await dialog.locator('.chosen-item').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label'))), ['第1道：麻婆豆腐', '第2道：番茄炒蛋'])
+    assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '移除麻婆豆腐')
+    assert.equal(applyCalls, 0, 'reordering in the picker must not write to the calendar')
     for (const fault of ['坏页', '重复', '缺项', '无分页']) {
       await search.fill(fault)
       await dialog.locator('.catalog-error').waitFor()
@@ -160,6 +174,7 @@ async function main () {
     await page.getByRole('button', { name: '调整2026-10-26晚餐' }).click()
     await dialog.getByRole('alert').waitFor()
     await dialog.getByRole('button', { name: '移除番茄炒蛋' }).waitFor()
+    assert.deepEqual(await dialog.locator('.chosen-item').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label'))), ['第1道：麻婆豆腐', '第2道：番茄炒蛋'], 'the adjusted order must be retained in the draft')
     failCatalog = false
     legacyCatalog = true
     await dialog.getByRole('button', { name: '重试' }).click()

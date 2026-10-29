@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import { ElMessageBox } from 'element-plus';
 import api from '@/services/api';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
@@ -10,6 +10,8 @@ const props = defineProps({ date: { type: String, required: true }, label: { typ
 const emit = defineEmits(['confirm', 'cancel']);
 const idOf = meal => String(meal?._id || meal?.id || '');
 const selected = ref(props.meals.map(meal => ({ ...meal })));
+const chosenList = ref(null);
+const searchInput = ref(null);
 const initialIds = selected.value.map(idOf);
 const dirty = computed(() => JSON.stringify(selected.value.map(idOf)) !== JSON.stringify(initialIds));
 const query = ref('');
@@ -69,6 +71,31 @@ const toggle = meal => {
   if (index < 0) selected.value.push(meal);
   else selected.value.splice(index, 1);
 };
+const removeSelected = async meal => {
+  const index = selected.value.findIndex(item => idOf(item) === idOf(meal));
+  if (index < 0) return;
+  const source = document.activeElement;
+  toggle(meal);
+  await nextTick();
+  const focused = document.activeElement;
+  if (focused && focused !== document.body && focused !== source && focused.isConnected) return;
+  const buttons = chosenList.value?.querySelectorAll('.chosen-remove') || [];
+  (buttons[Math.min(index, buttons.length - 1)] || searchInput.value)?.focus();
+};
+const moveSelected = async (index, direction) => {
+  const target = index + direction;
+  if (target < 0 || target >= selected.value.length) return;
+  const source = document.activeElement;
+  const hadFocus = !!source?.closest('.chosen-item');
+  const [meal] = selected.value.splice(index, 1);
+  selected.value.splice(target, 0, meal);
+  await nextTick();
+  const focused = document.activeElement;
+  if (!hadFocus || (focused && focused !== document.body && focused !== source && focused.isConnected)) return;
+  const row = chosenList.value?.querySelectorAll('.chosen-item')[target];
+  const button = row?.querySelector(direction < 0 ? '.move-up' : '.move-down');
+  (button && !button.disabled ? button : row?.querySelector('.chosen-remove'))?.focus();
+};
 const cancel = async () => {
   if (dirty.value) {
     try { await ElMessageBox.confirm('本餐次的调整还没有保存到周计划草稿。', '放弃本次调整？', { type: 'warning', confirmButtonText: '放弃调整', cancelButtonText: '继续选择' }); }
@@ -84,13 +111,13 @@ onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer
 
 <template>
   <el-dialog :model-value="true" :title="`调整 ${date} ${label}`" width="min(760px, 94vw)" :close-on-click-modal="false" :before-close="cancel" class="weekly-meal-picker">
-    <div class="picker-intro">选择或取消菜品，确认后只更新周计划草稿，尚不会写入日历。</div>
+    <div class="picker-intro">选择或取消菜品，并可调整顺序；确认后只更新周计划草稿，尚不会写入日历。</div>
     <div class="chosen" aria-live="polite">
       <strong>本餐已选 {{ selected.length }} 道</strong>
-      <div v-if="selected.length" class="chosen-list"><button v-for="meal in selected" :key="idOf(meal)" type="button" :aria-label="`移除${meal.name}`" @click="toggle(meal)">{{ meal.name }} <span aria-hidden="true">×</span></button></div>
+      <div v-if="selected.length" ref="chosenList" class="chosen-list"><div v-for="(meal, index) in selected" :key="idOf(meal)" class="chosen-item" role="group" :aria-label="`第${index + 1}道：${meal.name}`"><button type="button" class="chosen-remove" :aria-label="`移除${meal.name}`" @click="removeSelected(meal)">{{ meal.name }} <span aria-hidden="true">×</span></button><template v-if="selected.length > 1"><button type="button" class="move-up" :aria-label="`上移${meal.name}`" :disabled="index === 0" @click="moveSelected(index, -1)">↑</button><button type="button" class="move-down" :aria-label="`下移${meal.name}`" :disabled="index === selected.length - 1" @click="moveSelected(index, 1)">↓</button></template></div></div>
       <span v-else class="muted">未选择菜品；确认后该餐次为空。</span>
     </div>
-    <el-input v-model="query" clearable placeholder="搜索菜名、食材或做法" aria-label="搜索周计划菜品" />
+    <el-input ref="searchInput" v-model="query" clearable placeholder="搜索菜名、食材或做法" aria-label="搜索周计划菜品" />
     <div class="picker-layout">
       <aside aria-label="周计划菜品分类" class="category-list">
         <button type="button" :class="{ active: !category && !uncategorized }" :aria-pressed="!category && !uncategorized" @click="category = ''; uncategorized = false">全部</button>
@@ -120,8 +147,12 @@ onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer
 .picker-intro,.muted { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .chosen { padding: 12px; margin: 12px 0; background: var(--bg-secondary); border-radius: 12px; }
 .chosen strong { display: block; margin-bottom: 8px; color: var(--text-primary); }
-.chosen-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 100px; overflow-y: auto; }
-.chosen-list button { border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 20px; padding: 6px 10px; min-height: 36px; cursor: pointer; font: inherit; }
+.chosen-list { display: flex; flex-wrap: wrap; gap: 6px; max-height: 150px; overflow-y: auto; }
+.chosen-item { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; }
+.chosen-list button { border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary); border-radius: 14px; padding: 6px 10px; min-height: 44px; cursor: pointer; font: inherit; }
+.chosen-remove { min-width: 0; overflow-wrap: anywhere; }
+.move-up,.move-down { flex: 0 0 44px; font-size: 18px !important; }
+.chosen-list button:disabled { opacity: .45; cursor: not-allowed; }
 .picker-layout { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 12px; margin-top: 14px; }
 .category-list,.catalog { min-width: 0; max-height: min(45vh, 440px); overflow-y: auto; }
 .category-list { display: flex; flex-direction: column; gap: 4px; }
