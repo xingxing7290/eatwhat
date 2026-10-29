@@ -190,6 +190,35 @@ async function main () {
       assert.equal(closedWrites, 1)
       await closedPage.close()
     }
+    const delayedMenu = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    let releaseMenu; let announceMenu
+    const menuStarted = new Promise(resolve => { announceMenu = resolve })
+    const manyMeals = Array.from({ length: 25 }, (_, index) => ({ _id: `menu-${index}`, name: `选菜${index}`, category: '主食' }))
+    await delayedMenu.route('**/guest-orders/public/**', async route => {
+      const req = route.request(); const url = new URL(req.url())
+      if (req.method() === 'GET' && url.searchParams.has('statusOnly')) return route.fulfill({ status: 503, json: { error: '状态暂不可用' } })
+      if (req.method() === 'GET') {
+        const pageNumber = Number(url.searchParams.get('page') || 1)
+        if (pageNumber === 2) { announceMenu(); await new Promise(resolve => { releaseMenu = resolve }) }
+        return route.fulfill({ json: { session: { title: '测试宴请', status: 'open', canOrder: true, supportsGuestMenuPagination: true }, meals: manyMeals.slice((pageNumber - 1) * 24, pageNumber * 24), menu: { page: pageNumber, limit: 24, total: 25, totalPages: 2, categories: [{ name: '主食', count: 25 }] } } })
+      }
+      return route.fulfill({ status: 409, json: { code: 'GUEST_SESSION_CLOSED', error: '本次暂不接收点单' } })
+    })
+    await delayedMenu.goto(`http://127.0.0.1:${server.address().port}/guest-order/delayed-menu`)
+    await delayedMenu.locator('.meal').filter({ hasText: '选菜0' }).getByRole('button', { name: '＋ 想吃' }).click()
+    await delayedMenu.getByRole('button', { name: '下一页（顶部）' }).click()
+    await menuStarted
+    await delayedMenu.getByRole('button', { name: '查看点菜单' }).click()
+    await delayedMenu.locator('#guestName').fill('客人草稿')
+    await delayedMenu.locator('#orderNote').fill('保留的备注')
+    await delayedMenu.getByRole('button', { name: '提交给主人' }).click()
+    await delayedMenu.getByText('主人暂不接收新点单', { exact: false }).first().waitFor()
+    const oldMenuResponse = delayedMenu.waitForResponse(response => response.url().includes('page=2') && response.status() === 200)
+    releaseMenu(); await oldMenuResponse
+    await delayedMenu.waitForFunction(() => document.querySelector('#mealGrid').getAttribute('aria-busy') === 'false')
+    assert.equal(await delayedMenu.getByRole('button', { name: '提交给主人' }).isDisabled(), true, 'a late menu must not reopen a rejected session')
+    assert.equal(await delayedMenu.locator('#orderNote').inputValue(), '保留的备注')
+    await delayedMenu.close()
     const blockedStorage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await blockedStorage.addInitScript(() => {
       window.__blockGuestStorage = true

@@ -741,6 +741,7 @@
       async function loadMenu() {
         clearTimeout(searchTimer);
         const sequence = ++state.menuSequence;
+        const statusSequence = state.statusSequence;
         const page = state.menuPage;
         const category = state.category;
         const params = new URLSearchParams({ page: String(page), limit: '24' });
@@ -764,7 +765,9 @@
             if (page > menu.totalPages) { state.menuPage = menu.totalPages; return loadMenu(); }
             state.menu = menu;
           } else { state.menu = null; state.menuPage = 1; }
-          state.menuSupported = supported; state.session = data.session; state.meals = data.meals;
+          state.menuSupported = supported; state.meals = data.meals;
+          // Menu requests can finish after a newer lock/status result. Keep the newer status.
+          if (!state.session || statusSequence === state.statusSequence) { state.session = data.session; state.statusSequence++; }
           if (!state.menuInitialized) {
             if (!state.menuBootstrap) state.menuBootstrap = (async () => {
               if (state.pending) restorePendingDraft();
