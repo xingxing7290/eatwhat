@@ -57,7 +57,13 @@ const newIngredient = reactive({ name: '', amount: '' });
 const newStep = reactive({ description: '', imageFile: null, imagePreview: '' });
 // Key by the step object, so undo follows the step when it is reordered.
 const stepImageUndo = reactive(new WeakMap());
-const rules = { name: [{ required: true, whitespace: true, message: '请输入菜品名称', trigger: 'blur' }] };
+// Match the server's validator: Unicode code points, excluding text/emoji presentation selectors.
+const serverTextLength = value => Array.from(value || '').filter(char => char !== '\uFE0E' && char !== '\uFE0F').length;
+const descriptionLength = computed(() => serverTextLength(form.description));
+const rules = {
+  name: [{ required: true, whitespace: true, message: '请输入菜品名称', trigger: 'blur' }],
+  description: [{ validator: (_rule, value, callback) => serverTextLength(value) > 1000 ? callback(new Error('菜品简介不能超过 1000 字')) : callback(), trigger: 'blur' }]
+};
 const initialForm = ref(JSON.stringify(form));
 const previews = new Set();
 const imageFor = value => previews.has(value) || (typeof value === 'string' && /^data:image\//i.test(value)) ? value : resolveRecipeImage(value, placeholder);
@@ -297,7 +303,7 @@ watch(() => route.params.id, load, { immediate: true });
         <el-card><template #header>基础信息</template>
           <div class="two-cols"><el-form-item label="菜品名称" prop="name"><el-input v-model="form.name" placeholder="给这道菜起个名字" maxlength="100" show-word-limit /></el-form-item><el-form-item label="分类"><el-input v-model="form.category" placeholder="家常菜、外食、甜品..." /></el-form-item></div>
           <div class="two-cols"><el-form-item label="子类"><el-input v-model="form.subcategory" placeholder="热菜、汤、早餐..." /></el-form-item><el-form-item label="份量"><el-input v-model="form.servingSize" placeholder="2人份" /></el-form-item></div>
-          <el-form-item label="简介"><el-input v-model="form.description" type="textarea" rows="3" /></el-form-item>
+          <el-form-item label="简介" prop="description"><el-input v-model="form.description" type="textarea" rows="3" aria-describedby="description-count" /><div id="description-count" class="field-hint" :class="{ 'field-hint-error': descriptionLength > 1000 }">{{ descriptionLength }} / 1000 字<span v-if="descriptionLength > 1000">，请删减后保存</span></div></el-form-item>
           <div class="two-cols"><el-form-item label="准备时间(分钟)"><el-input-number v-model="form.prepTime" :min="0" /></el-form-item><el-form-item label="烹饪时间(分钟)"><el-input-number v-model="form.cookTime" :min="0" /></el-form-item></div>
           <div class="two-cols"><el-form-item label="难度"><el-select v-model="form.difficulty" clearable><el-option v-for="opt in difficultyOptions" :key="opt.value" :label="opt.label" :value="opt.value" /></el-select></el-form-item><el-form-item label="总耗时"><el-tag>{{ totalTime }} 分钟</el-tag></el-form-item></div>
           <el-form-item label="标签"><el-select v-model="form.tags" multiple filterable allow-create default-first-option style="width:100%;" /></el-form-item>
@@ -338,6 +344,8 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }
 .main-column, .side-column { display: flex; flex-direction: column; gap: 18px; }
 .two-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.field-hint { width: 100%; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; margin-top: 5px; text-align: right; }
+.field-hint-error { color: var(--el-color-danger); }
 .inline-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 12px; }
 .ingredient-help { color: var(--text-primary); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
 .ingredient-list { display: grid; gap: 10px; }
