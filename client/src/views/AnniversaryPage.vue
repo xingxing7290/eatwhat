@@ -8,6 +8,7 @@ import { useUncertainCreate } from '@/composables/useUncertainCreate';
 import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 import { usePhotoRemovalUndo } from '@/composables/usePhotoRemovalUndo';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
+import { normalizeMealSearch } from '@/utils/mealSearch.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const menus = ref([]);
@@ -149,20 +150,14 @@ const searchMealCatalog = async () => {
   const query = mealQuery.value.trim();
   mealLoading.value = true;
   mealError.value = '';
+  meals.value = [];
+  mealTotal.value = 0;
   try {
     const params = { page: 1, limit: 50 };
     if (query) params.search = query;
     const result = await api.meal.getAllMeals(params);
     if (!alive || sequence !== mealSequence) return;
-    let rows = result.data;
-    let total = result.total;
-    if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(meal => !mealId(meal) || typeof meal.name !== 'string' || !meal.name.trim())) throw new Error('菜品列表不完整');
-    if (result.page == null && result.limit == null && rows.length === total) {
-      const lower = query.toLowerCase();
-      rows = rows.filter(meal => [meal.name, meal.description, meal.tips, ...(Array.isArray(meal.tags) ? meal.tags : []), ...(Array.isArray(meal.ingredients) ? meal.ingredients.map(item => item?.name || item) : []), ...(Array.isArray(meal.steps) ? meal.steps.map(item => item?.description || item) : [])].some(field => String(field || '').toLowerCase().includes(lower)));
-      total = rows.length;
-      rows = rows.slice(0, 50);
-    }
+    const { rows, total } = normalizeMealSearch(result, query);
     meals.value = rows;
     mealTotal.value = total;
   } catch (e) { if (alive && sequence === mealSequence) mealError.value = e?.error || e?.message || '菜品加载失败'; }
@@ -173,6 +168,8 @@ const searchMeals = query => {
   mealSequence++;
   mealLoading.value = true;
   mealError.value = '';
+  meals.value = [];
+  mealTotal.value = 0;
   if (mealTimer) clearTimeout(mealTimer);
   mealTimer = setTimeout(searchMealCatalog, 180);
 };

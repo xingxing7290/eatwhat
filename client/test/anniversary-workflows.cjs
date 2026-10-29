@@ -31,7 +31,11 @@ async function main () {
       }
       else if (req.method() === 'GET' && path === '/meals') {
         reads.push(Object.fromEntries(url.searchParams)); const query = url.searchParams.get('search') || ''; const found = meals.filter(meal => meal.name.includes(query))
-        data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
+        if (query === '坏页') data = { data: [meals[1]], total: 1, page: 2, limit: 50 }
+        else if (query === '重复') data = { data: [meals[1], meals[1]], total: 2, page: 1, limit: 50 }
+        else if (query === '缺项') data = { data: [meals[1]], total: 2, page: 1, limit: 50 }
+        else if (query === '无分页') data = { data: [meals[1]], total: 75 }
+        else data = { data: found.slice(0, 50), total: found.length, page: 1, limit: 50 }
       }
       await route.fulfill({ status: 200, json: data })
     })
@@ -67,7 +71,13 @@ async function main () {
     await page.getByRole('option', { name: '菜品01', exact: true }).click()
     const dinner = dialog.getByRole('combobox', { name: '搜索晚餐菜品' })
     await dinner.click()
+    for (const fault of ['坏页', '重复', '缺项', '无分页']) {
+      await dinner.fill(fault)
+      await dialog.getByText('菜品暂时无法加载', { exact: false }).first().waitFor()
+      assert.equal(await page.getByRole('option', { name: '菜品02', exact: true }).count(), 0, `${fault} must not expose stale or invalid choices`)
+    }
     await dinner.fill('菜品75')
+    await dialog.getByText('菜品暂时无法加载', { exact: false }).first().waitFor({ state: 'hidden' })
     await page.getByRole('option', { name: '菜品75', exact: true }).click()
     await dialog.getByRole('button', { name: '保存', exact: true }).click()
     await dialog.waitFor({ state: 'hidden' })

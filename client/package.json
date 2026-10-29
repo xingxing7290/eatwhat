@@ -8,6 +8,7 @@
     "preview": "vite preview --host",
     "test:workflows": "node test/web-workflows.cjs",
     "test:selection": "node test/selection-workflows.cjs",
+    "test:meal-search": "node --test test/meal-search.test.mjs",
     "test:calendar-delete": "node test/calendar-delete-workflows.cjs",
     "test:calendar-loading": "node test/calendar-loading-workflows.cjs",
     "test:calendar-navigation": "node test/calendar-navigation-workflows.cjs",
