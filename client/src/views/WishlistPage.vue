@@ -26,6 +26,8 @@ const editReviewed = ref(false);
 const latestEdit = ref(null);
 const latestError = ref('');
 const pendingLinks = reactive({});
+const reviewedLinks = reactive({});
+const linkReviewErrors = reactive({});
 const uncertainCreates = reactive({});
 const linkDialog = ref(false);
 const linkItem = ref(null);
@@ -141,7 +143,7 @@ const load = async () => {
       if (!pendingView.value) boardMode.value = false;
       items.value = result;
     }
-    for (const item of items.value) if (item.mealId) { delete pendingLinks[item._id]; delete uncertainCreates[item._id]; }
+    for (const item of items.value) if (item.mealId) { delete pendingLinks[item._id]; delete reviewedLinks[item._id]; delete linkReviewErrors[item._id]; delete uncertainCreates[item._id]; }
     actionIssue.value = '';
   }
   catch (e) { if (alive && sequence === listSequence) loadError.value = e?.error || e?.message || '加载想吃清单失败'; }
@@ -281,6 +283,7 @@ const convertToMeal = async (item) => {
     const meal = await api.meal.createMeal({ name: item.title, description: item.note || '来自想吃清单', category: item.category || '想吃清单', tags: ['想吃清单'], favorite: true });
     if (!meal?._id && !meal?.id) throw new Error('创建结果缺少菜谱编号');
     pendingLinks[item._id] = meal._id || meal.id;
+    delete reviewedLinks[item._id]; delete linkReviewErrors[item._id];
     try {
       const linked = await api.wishlist.attachMeal(item._id, pendingLinks[item._id], { onlyIfUnlinked: true });
       if (!confirmedLink(linked, item._id, pendingLinks[item._id])) throw new Error('关联响应不完整');
@@ -344,9 +347,38 @@ const attachExisting = async (item, mealId) => {
     ElMessage.success('已关联菜谱');
   } catch (error) {
     pendingLinks[item._id] = mealId;
+    delete reviewedLinks[item._id]; delete linkReviewErrors[item._id];
     linkDialog.value = false;
     ElMessage.warning('关联未确认，请先刷新清单后检查');
   } finally { await load(); convertingId.value = ''; }
+};
+const reviewPendingLink = async item => {
+  const expected = pendingLinks[item?._id];
+  if (!expected || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
+  convertingId.value = item._id;
+  delete reviewedLinks[item._id]; delete linkReviewErrors[item._id];
+  try {
+    const latest = await api.wishlist.get(item._id, { suppressErrorToast: true });
+    if (!alive || pendingLinks[item._id] !== expected) return;
+    if (latest?._id !== item._id || !Object.prototype.hasOwnProperty.call(latest, 'mealId')) throw new Error('记录信息不完整');
+    if (latest.mealId !== null) {
+      const linked = typeof latest.mealId === 'string' ? latest.mealId : latest.mealId?._id || latest.mealId?.id;
+      if (typeof linked !== 'string' || !linked.trim()) throw new Error('关联菜谱信息不完整');
+      delete pendingLinks[item._id];
+      ElMessage.info('已读取到关联菜谱，请核对当前记录');
+      await load();
+    } else reviewedLinks[item._id] = true;
+  } catch (error) { if (alive && pendingLinks[item._id] === expected) linkReviewErrors[item._id] = error?.error || error?.message || '无法读取最新记录'; }
+  finally { convertingId.value = ''; }
+};
+const finishLinkReview = async item => {
+  const expected = pendingLinks[item?._id];
+  if (!expected || !reviewedLinks[item._id] || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
+  confirmingId.value = item._id;
+  try {
+    await ElMessageBox.confirm('当前读取结果尚未关联，但先前请求仍可能稍后完成。结束核对不会取消该请求，也不会删除已经创建的菜谱。', '结束关联核对？', { type: 'warning', confirmButtonText: '了解风险，结束核对', cancelButtonText: '继续核对' });
+    if (pendingLinks[item._id] === expected) { delete pendingLinks[item._id]; delete reviewedLinks[item._id]; delete linkReviewErrors[item._id]; }
+  } catch (_) {} finally { confirmingId.value = ''; }
 };
 const arrangeToday = (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
@@ -392,6 +424,8 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
           <p v-if="!item.mealId && !item.supportsSafeMealLink" class="pending-note">服务器未提供安全关联能力，暂不能关联菜谱。</p>
           <p v-if="uncertainCreates[item._id] && !item.mealId" class="pending-note">创建结果不确定，请先搜索并关联已有菜谱，避免重复创建。</p>
           <p v-if="pendingLinks[item._id]" class="pending-note">菜谱关联尚未确认，请先刷新清单核对，再决定是否重试。</p>
+          <p v-if="reviewedLinks[item._id] && pendingLinks[item._id]" class="pending-note">最新记录尚未关联；先前请求仍可能稍后完成。</p>
+          <p v-if="linkReviewErrors[item._id]" class="pending-note">核对失败：{{ linkReviewErrors[item._id] }}</p>
           <div class="vote-row"><el-button link type="warning" :disabled="busy || loading || !!actionIssue || actionLocked || !item.supportsSetVote || typeof item.votedByMe !== 'boolean'" :aria-pressed="item.votedByMe === true" :aria-label="`${item.votedByMe ? '取消想吃' : '我想吃'}${item.title}`" @click="vote(item)"><el-icon><Star /></el-icon>{{ item.votedByMe ? '已想吃' : '我想吃' }} · {{ item.votes?.length || 0 }} 票</el-button><span>{{ item.category }}</span></div>
           <p v-if="!item.supportsSetVote || typeof item.votedByMe !== 'boolean'" class="pending-note">服务器暂不支持安全投票。</p>
           <p v-if="!validWishVersion(item)" class="pending-note">服务器未提供记录版本，暂不能安全修改状态或删除。</p><p v-else-if="!item.supportsWishEdit" class="pending-note">服务器暂不支持安全编辑想吃内容。</p>
@@ -400,6 +434,8 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
             <el-button v-if="!item.mealId && !pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !item.supportsSafeMealLink || !!uncertainCreates[item._id]" @click="convertToMeal(item)">转菜品</el-button>
             <el-button v-if="!item.mealId && !pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !item.supportsSafeMealLink" @click="openLinkDialog(item)">关联已有菜谱</el-button>
             <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :loading="convertingId === item._id" :disabled="busy || loading || !!actionIssue || actionLocked" @click="attachExisting(item, pendingLinks[item._id])">重试关联</el-button>
+            <el-button v-if="!item.mealId && pendingLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="reviewPendingLink(item)">核对关联</el-button>
+            <el-button v-if="!item.mealId && pendingLinks[item._id] && reviewedLinks[item._id]" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="finishLinkReview(item)">结束核对</el-button>
             <el-button v-if="item.mealId" size="small" :disabled="busy || loading || !!actionIssue || actionLocked" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
             <el-button v-if="item.status === 'open'" size="small" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'planned')">标记已安排</el-button>
             <el-button v-if="item.status !== 'done'" size="small" type="success" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>

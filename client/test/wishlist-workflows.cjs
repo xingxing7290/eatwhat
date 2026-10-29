@@ -11,8 +11,8 @@ async function main () {
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const version = revision => ({ revision, updatedAt: '2026-10-28T12:00:00.000Z' })
-    let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, supportsSetVote: true, supportsSafeMealLink: true, supportsConditionalActions: true, editVersion: version('v1') }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
-    let voteMode = 'unknown'; let statusMode = 'unknown'; let deleteMode = 'unknown'; let attachMode = 'lost'; let releaseVote; let releaseSlow; const reads = []; const writes = []; const errors = []
+    let items = [{ _id: 'wish-a', title: '想吃面条', status: 'open', priority: 'normal', votes: [], votedByMe: false, mealId: null, supportsSetVote: true, supportsSafeMealLink: true, supportsConditionalActions: true, editVersion: version('v1') }, { _id: 'wish-old', title: '旧服务记录', status: 'open', priority: 'normal', votes: [], supportsSafeMealLink: true }]
+    let voteMode = 'unknown'; let statusMode = 'unknown'; let deleteMode = 'unknown'; let attachMode = 'lost'; let reviewFails = false; let releaseVote; let releaseSlow; const reads = []; const writes = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
@@ -20,6 +20,7 @@ async function main () {
       let data = {}
       if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       else if (req.method() === 'GET' && path === '/wishlist') data = items
+      else if (req.method() === 'GET' && path === '/wishlist/wish-a') { if (reviewFails) return route.fulfill({ status: 503, json: { error: '核对读取失败' } }); data = items[0] }
       else if (req.method() === 'GET' && path === '/meals') {
         const query = url.searchParams.get('search') || ''; reads.push(Object.fromEntries(url.searchParams)); const found = meals.filter(meal => meal.name.includes(query))
         if (query === '菜品0') await new Promise(resolve => { releaseSlow = resolve })
@@ -97,8 +98,24 @@ async function main () {
     await dialog.getByRole('button', { name: '确认关联' }).click()
     await page.getByText('菜谱关联尚未确认', { exact: false }).waitFor()
     assert.equal(await page.getByRole('button', { name: '删除想吃面条' }).isDisabled(), true)
+    reviewFails = true
+    await page.getByRole('button', { name: '核对关联' }).click()
+    await page.getByText('核对失败：核对读取失败').waitFor()
+    assert.equal(await page.getByRole('button', { name: '结束核对', exact: true }).count(), 0)
+    reviewFails = false
+    await page.getByRole('button', { name: '核对关联' }).click()
+    await page.getByText('最新记录尚未关联', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '结束核对', exact: true }).click()
+    await page.getByText('先前请求仍可能稍后完成', { exact: false }).last().waitFor()
+    await page.getByRole('button', { name: '继续核对', exact: true }).click()
+    await page.getByRole('button', { name: '结束核对', exact: true }).click()
+    await page.getByRole('button', { name: '了解风险，结束核对' }).click()
+    await page.getByRole('button', { name: '关联已有菜谱' }).first().waitFor()
+    await page.getByRole('button', { name: '关联已有菜谱' }).first().click()
+    await dialog.getByRole('combobox', { name: '搜索并选择菜谱' }).fill('菜品75')
+    await page.getByRole('option', { name: '菜品75', exact: true }).click()
     attachMode = 'malformed'
-    await page.getByRole('button', { name: '重试关联' }).click()
+    await dialog.getByRole('button', { name: '确认关联' }).click()
     await page.getByRole('button', { name: '安排今天晚餐' }).waitFor()
     assert.equal(await page.getByText('菜谱关联尚未确认', { exact: false }).count(), 0, 'a subsequent verified read resolves the uncertain result')
     assert.equal(writes.find(item => item.path.endsWith('/meal')).body.mealId, 'meal-75')
