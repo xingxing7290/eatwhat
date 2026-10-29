@@ -44,7 +44,7 @@ async function main () {
       if (method === 'GET' && pathname === '/meals/categories') {
         if (failCategories) return route.fulfill({ status: 503, json: { error: '分类暂不可用' } })
         data = [{ category: '肉类' }, { category: '蔬菜' }]
-      } else if (method === 'GET' && pathname === '/meals/tags') data = []
+      } else if (method === 'GET' && pathname === '/meals/tags') data = ['清淡']
       else if (method === 'GET' && pathname === '/meals') {
         reads.push(url.searchParams.toString())
         if (legacy) data = meals
@@ -111,6 +111,46 @@ async function main () {
     await page.getByText('分类或标签可能不完整').waitFor({ state: 'hidden' })
     await page.waitForFunction(() => document.querySelectorAll('.meals-grid .meal-card-wrapper').length === 8)
     assert.equal(await page.locator('.meals-grid .meal-card-wrapper').count(), 8)
+    const filterToggle = page.getByRole('button', { name: '筛选', exact: true })
+    await filterToggle.click()
+    assert.equal(await filterToggle.getAttribute('aria-expanded'), 'true')
+    for (const label of ['分类', '子类', '标签']) assert.equal(await page.getByRole('combobox', { name: label, exact: true }).count(), 1)
+    await page.getByRole('combobox', { name: '标签', exact: true }).focus()
+    await page.getByRole('combobox', { name: '标签', exact: true }).press('Enter')
+    await page.getByRole('option', { name: '清淡', exact: true }).click()
+    await page.getByRole('complementary', { name: '菜品分类' }).getByRole('button', { name: '肉类' }).click()
+    await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('测试菜')
+    const chips = page.getByRole('group', { name: '当前筛选条件' })
+    await chips.getByRole('button', { name: '移除标签：清淡筛选' }).waitFor()
+    for (const width of [320, 390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      for (const dark of [false, true]) {
+        await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+        for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+          await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+          for (const selector of ['.active-filter-chip', '.active-filters-label', '.filter-field-label']) {
+            const result = await contrast(page, selector)
+            assert.ok(result.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+          }
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+        }
+      }
+    }
+    await page.setViewportSize({ width: 390, height: 844 })
+    await filterToggle.click()
+    assert.equal(await filterToggle.getAttribute('aria-expanded'), 'false')
+    assert.equal(await chips.getByRole('button').count(), 3)
+    assert.equal(await page.getByRole('button', { name: '移除测试菜19' }).count(), 1)
+    assert.equal(await page.getByRole('button', { name: '移除测试菜20' }).count(), 1)
+    for (const selector of ['.active-filter-chip', '.active-filters-label']) {
+      const result = await contrast(page, selector)
+      assert.ok(result.ratio >= 4.5, `${selector}: ${result.ratio}`)
+    }
+    await chips.getByRole('button', { name: '移除分类：肉类筛选' }).click()
+    await chips.getByRole('button', { name: '移除搜索：测试菜筛选' }).click()
+    await chips.getByRole('button', { name: '移除标签：清淡筛选' }).click()
+    assert.equal(await filterToggle.evaluate(node => document.activeElement === node), true)
+    await page.waitForFunction(() => document.querySelectorAll('.meals-grid .meal-card-wrapper').length === 8)
     assert.ok(reads.every(read => new URLSearchParams(read).get('limit') === '8' && new URLSearchParams(read).has('page')))
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     if (process.env.EATWHAT_SELECTION_MOBILE_SHOT) await page.screenshot({ path: process.env.EATWHAT_SELECTION_MOBILE_SHOT, fullPage: true })

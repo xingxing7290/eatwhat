@@ -64,6 +64,24 @@ useDraftGuard({ dirty: selectionDirty, busy: isSaving, uncertain: saveUncertain,
 const hasActiveFilters = computed(() => {
   return !!(searchQuery.value || selectedTag.value || selectedCategory.value || selectedSubcategory.value);
 });
+const activeFilterContainer = ref(null);
+const filterToggleButton = ref(null);
+const activeFilters = computed(() => [
+  searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
+  selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
+  selectedSubcategory.value && { key: 'subcategory', label: `子类：${selectedSubcategory.value}` },
+  selectedTag.value && { key: 'tag', label: `标签：${selectedTag.value}` }
+].filter(Boolean));
+const removeActiveFilter = async key => {
+  const index = activeFilters.value.findIndex(item => item.key === key);
+  if (key === 'search') searchQuery.value = '';
+  else if (key === 'category') selectedCategory.value = '';
+  else if (key === 'subcategory') selectedSubcategory.value = '';
+  else if (key === 'tag') selectedTag.value = '';
+  await nextTick();
+  const buttons = activeFilterContainer.value?.querySelectorAll('button') || [];
+  (buttons[Math.min(index, buttons.length - 1)] || filterToggleButton.value?.$el)?.focus();
+};
 
 // 计算餐食类型的中文名
 const mealTypeText = computed(() => {
@@ -493,7 +511,7 @@ onBeforeUnmount(() => {
         </el-radio-group>
 
         <div class="toolbar-actions">
-          <el-button size="small" @click="showAdvancedFilters = !showAdvancedFilters">
+          <el-button ref="filterToggleButton" size="small" :aria-expanded="showAdvancedFilters" aria-controls="selection-advanced-filters" @click="showAdvancedFilters = !showAdvancedFilters">
             <el-icon><Filter /></el-icon>
             筛选
           </el-button>
@@ -504,9 +522,10 @@ onBeforeUnmount(() => {
       </div>
 
       <el-collapse-transition>
-        <div v-show="showAdvancedFilters" class="advanced-filters">
+        <div id="selection-advanced-filters" v-show="showAdvancedFilters" class="advanced-filters">
           <div class="filter-item">
-            <el-select v-model="selectedCategory" placeholder="选择分类" clearable style="width: 100%;">
+            <span class="filter-field-label" aria-hidden="true">分类</span>
+            <el-select v-model="selectedCategory" aria-label="分类" placeholder="选择分类" clearable style="width: 100%;">
               <el-option
                 v-for="c in categoryOptions"
                 :key="c"
@@ -517,8 +536,10 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="filter-item">
+            <span class="filter-field-label" aria-hidden="true">子类</span>
             <el-select
               v-model="selectedSubcategory"
+              aria-label="子类"
               placeholder="选择子类"
               clearable
               style="width: 100%;"
@@ -534,7 +555,8 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="filter-item">
-            <el-select v-model="selectedTag" placeholder="选择标签" clearable style="width: 100%;">
+            <span class="filter-field-label" aria-hidden="true">标签</span>
+            <el-select v-model="selectedTag" aria-label="标签" placeholder="选择标签" clearable style="width: 100%;">
               <el-option
                 v-for="tag in tags"
                 :key="tag"
@@ -545,6 +567,10 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </el-collapse-transition>
+      <div v-if="activeFilters.length" ref="activeFilterContainer" class="active-filters" role="group" aria-label="当前筛选条件">
+        <span class="active-filters-label">当前筛选</span>
+        <button v-for="filter in activeFilters" :key="filter.key" type="button" class="active-filter-chip" :aria-label="`移除${filter.label}筛选`" @click="removeActiveFilter(filter.key)"><span>{{ filter.label }}</span><span aria-hidden="true">×</span></button>
+      </div>
       
       <div v-if="!catalogLoading && !catalogError" class="catalog-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
     </div>
@@ -553,7 +579,7 @@ onBeforeUnmount(() => {
       <aside class="category-sidebar" aria-label="菜品分类">
         <div class="category-heading">菜品分类</div>
         <nav class="category-list" aria-label="选择菜品分类">
-          <button type="button" :class="{ active: !selectedCategory }" :aria-pressed="!selectedCategory" @click="selectedCategory = ''">全部菜品</button>
+          <button type="button" :class="{ active: !selectedCategory }" :aria-pressed="!selectedCategory" @click="selectedCategory = ''">全部分类</button>
           <button v-for="category in categoryOptions" :key="category" type="button" :class="{ active: selectedCategory === category }" :aria-pressed="selectedCategory === category" @click="selectedCategory = category">{{ category }}</button>
         </nav>
         <div v-if="metadataError" class="metadata-warning" role="status">分类或标签可能不完整 <button type="button" @click="loadMetadata">重试</button></div>
@@ -805,6 +831,12 @@ onBeforeUnmount(() => {
 .metadata-warning { padding: 12px 8px 0; color: var(--text-secondary); font-size: 12px; }
 .metadata-warning button { border: 0; background: none; color: var(--text-primary); padding: 6px 0; text-decoration: underline; font: inherit; cursor: pointer; }
 .catalog-summary { color: var(--text-secondary); font-size: 13px; }
+.filter-field-label { display: block; margin-bottom: 6px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+.active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; min-width: 0; }
+.active-filters-label { color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+.active-filter-chip { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.active-filter-chip span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.active-filter-chip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .selection-status, .selection-hint { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .selection-status { font-weight: 700; }
 .selection-hint { color: var(--text-secondary); }
