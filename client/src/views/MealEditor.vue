@@ -153,7 +153,7 @@ const fillForm = (meal) => {
   Object.assign(form, {
     name: meal.name || '', description: meal.description || '', category: meal.category || '', subcategory: meal.subcategory || '',
     tags: [...(meal.tags || [])], imageUrl: meal.imageUrl || '', existingPhotos: [...(meal.photos || [])],
-    ingredients: (meal.ingredients || []).map(i => ({ name: i.name || i, amount: i.amount || '' })),
+    ingredients: (meal.ingredients || []).map(i => typeof i === 'string' ? { name: i, amount: '' } : { name: i.name || '', amount: i.amount || '' }),
     steps: (meal.steps || []).map(s => typeof s === 'string' ? { description: s, imageUrl: '' } : { description: s.description || '', imageUrl: s.imageUrl || '' }),
     tips: meal.tips || '', servingSize: meal.servingSize || '', prepTime: meal.prepTime || 0, cookTime: meal.cookTime || 0,
     difficulty: meal.difficulty || '', taste: [...(meal.taste || [])], healthTags: [...(meal.healthTags || [])], spiceLevel: meal.spiceLevel || 0, source: meal.source || '', sourcePath: meal.sourcePath || '', favorite: !!meal.favorite, rating: meal.rating || 0
@@ -182,8 +182,8 @@ const load = async () => {
     if (sequence !== loadSequence) return;
     if (!meal || String(meal._id || meal.id || '') !== id || typeof meal.name !== 'string' || !meal.name.trim() ||
         ['ingredients', 'steps', 'photos', 'tags', 'taste', 'healthTags'].some(key => meal[key] != null && !Array.isArray(meal[key])) ||
-        (meal.ingredients || []).some(item => !item || (typeof item !== 'string' && typeof item !== 'object')) ||
-        (meal.steps || []).some(item => !item || (typeof item !== 'string' && typeof item !== 'object')) ||
+        (meal.ingredients || []).some(item => typeof item !== 'string' && (!item || typeof item !== 'object' || Array.isArray(item) || (item.name != null && typeof item.name !== 'string') || (item.amount != null && typeof item.amount !== 'string'))) ||
+        (meal.steps || []).some(item => typeof item !== 'string' && (!item || typeof item !== 'object' || Array.isArray(item) || (item.description != null && typeof item.description !== 'string') || (item.imageUrl != null && typeof item.imageUrl !== 'string'))) ||
         (meal.photos || []).some(item => typeof item !== 'string')) throw new Error('菜品数据不完整或不属于当前页面');
     fillForm(meal);
     supportsConditionalEdit.value = meal?.supportsConditionalEdit === true;

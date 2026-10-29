@@ -10,7 +10,7 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
-    let holdA = false; let releaseA; let foreign = false; let failB = false; let writes = 0; let submittedIngredients; let submittedSteps; let submittedBody
+    let holdA = false; let releaseA; let foreign = false; let failB = false; let malformed = ''; let writes = 0; let submittedIngredients; let submittedSteps; let submittedBody
     const originalCover = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg"/%3E'
     const meal = id => ({ _id: id, name: id === 'a' ? '菜品甲' : '菜品乙', imageUrl: originalCover, ingredients: id === 'b' ? [{ name: '鸡蛋', amount: '2个' }] : [], steps: id === 'b' ? [{ description: '炒熟', imageUrl: '' }, { description: '', imageUrl: '/uploads/step.jpg' }] : [], photos: [], tags: [], supportsConditionalEdit: true, editVersion: { revision: `rev-${id}`, updatedAt: null } })
     await page.route('**/api/**', async route => {
@@ -21,7 +21,11 @@ async function main () {
         const id = path.slice(-1)
         if (id === 'a' && holdA) await new Promise(resolve => { releaseA = resolve })
         if (id === 'b' && failB) return route.fulfill({ status: 503, json: { error: '暂时无法读取菜品' } })
-        return route.fulfill({ json: meal(foreign && id === 'a' ? 'b' : id) })
+        const data = meal(foreign && id === 'a' ? 'b' : id)
+        if (id === 'a' && malformed === 'missing-name') data.ingredients = [{ amount: '少许' }]
+        if (id === 'a' && malformed === 'bad-ingredient') data.ingredients = [{ name: { text: '鸡蛋' }, amount: '2个' }]
+        if (id === 'a' && malformed === 'bad-step') data.steps = [{ description: '炒熟', imageUrl: { url: '/bad' } }]
+        return route.fulfill({ json: data })
       }
       if (request.method() === 'PUT' && path === '/meals/b') {
         writes++
@@ -37,6 +41,20 @@ async function main () {
     })
     const navigate = path => page.evaluate(target => { void document.querySelector('#app').__vue_app__.config.globalProperties.$router.push(target) }, path)
     const input = page.getByPlaceholder('给这道菜起个名字')
+    malformed = 'missing-name'
+    await page.goto(`${base}/meals/editor/a`)
+    assert.equal(await page.getByRole('textbox', { name: '第 1 项食材名称' }).inputValue(), '')
+    assert.equal(await page.getByRole('textbox', { name: '第 1 项食材用量' }).inputValue(), '少许')
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await page.getByText('第 1 项食材名称不能为空', { exact: false }).waitFor()
+    assert.equal(writes, 0)
+    for (const fault of ['bad-ingredient', 'bad-step']) {
+      malformed = fault; await page.reload()
+      await page.getByText('无法加载菜品：菜品数据不完整或不属于当前页面').waitFor()
+      assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), true)
+      assert.equal(writes, 0)
+    }
+    malformed = ''
     await page.goto(`${base}/meals/editor/a`)
     await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '菜品甲')
     await input.fill('尚未保存的草稿')
