@@ -4,6 +4,7 @@ const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Album tests require a local test server')
 const image = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%2280%22%3E%3Crect width=%22100%22 height=%2280%22 fill=%22%23d49a75%22/%3E%3C/svg%3E'
 const photos = Array.from({ length: 30 }, (_, index) => ({ memoryId: 'memory-a', photoIndex: index, date: '2026-10-28', mealType: 'dinner', title: `照片${index + 1}`, photo: index === 3 ? '/broken-photo.png' : `${image}#${index}`, meals: [] }))
+photos[3].meals = [{ _id: 'meal-a', name: '家常菜' }, null, { _id: 'bad/id', name: '异常菜品' }]
 
 async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
@@ -24,12 +25,14 @@ async function main () {
       if (photoHold) await new Promise(resolve => releasePhotos.push(resolve))
       return photoUnavailable ? route.fulfill({ status: 404, body: '' }) : route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect width="100" height="80" fill="orange"/></svg>' })
     })
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request()
       const url = new URL(req.url())
       const path = url.pathname.replace(/^\/api/, '')
       let data = {}
+      if (path === '/meals/meal-a') return route.fulfill({ json: { _id: 'meal-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [] } })
+      if (path === '/memories' && url.searchParams.has('mealId')) return route.fulfill({ json: [] })
       if (req.method() === 'GET' && path === '/photo-album') {
         const month = url.searchParams.get('month')
         const current = Number(url.searchParams.get('page') || 1)
@@ -69,6 +72,18 @@ async function main () {
     await brokenCard.click()
     const photoDialog = page.getByRole('dialog', { name: '饭桌回忆' })
     await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    const recipeLink = photoDialog.getByRole('link', { name: '在新标签页查看家常菜菜谱' })
+    assert.equal(await recipeLink.getAttribute('href'), '/meals/detail/meal-a')
+    assert.equal(await recipeLink.getAttribute('rel'), 'noopener noreferrer')
+    assert.ok((await recipeLink.boundingBox()).height >= 44)
+    await photoDialog.getByText('菜品不可用').waitFor()
+    assert.equal(await photoDialog.getByRole('link', { name: /异常菜品|菜品不可用/ }).count(), 0)
+    const popupPromise = page.waitForEvent('popup')
+    await recipeLink.click()
+    const popup = await popupPromise
+    await popup.getByRole('heading', { name: '家常菜' }).waitFor()
+    await popup.close()
+    assert.equal(await photoDialog.isVisible(), true, 'viewing a recipe must keep the photo open')
     photoHold = true
     await photoDialog.getByRole('button', { name: '重试这张照片' }).focus()
     await page.keyboard.press('Enter')

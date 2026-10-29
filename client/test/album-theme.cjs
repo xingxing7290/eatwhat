@@ -14,7 +14,7 @@ async function main () {
     await page.route('**/api/**', route => {
       const url = new URL(route.request().url())
       if (url.pathname === '/api/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (url.pathname === '/api/photo-album') return route.fulfill({ json: { month: '2026-10', total: 25, page: 1, limit: 24, photos: Array.from({ length: 24 }, (_, index) => ({ memoryId: 'm1', photoIndex: index, date: '2026-10-28', title: '温暖晚餐', note: '一起做饭的时光', photo: `${image}#${index}`, meals: [] })) } })
+      if (url.pathname === '/api/photo-album') return route.fulfill({ json: { month: '2026-10', total: 25, page: 1, limit: 24, photos: Array.from({ length: 24 }, (_, index) => ({ memoryId: 'm1', photoIndex: index, date: '2026-10-28', title: '温暖晚餐', note: '一起做饭的时光', photo: `${image}#${index}`, meals: [{ _id: 'meal-a', name: '家常菜' }] })) } })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/photo-album`)
@@ -40,7 +40,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.el-dialog h3', '.el-dialog .note', '.el-dialog .viewer-nav > span', '.el-dialog .memory-link a']) {
+        for (const selector of ['.el-dialog h3', '.el-dialog .note', '.el-dialog .viewer-nav > span', '.el-dialog .memory-link a', '.el-dialog .album-meal-link']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }
