@@ -113,7 +113,7 @@ async function main () {
     await page.goto(`${base}/selection?date=${today}&mealType=dinner&suggestedMealId=${created.data[0]._id}`)
     await page.locator('.selection-info').getByText('联调新菜').waitFor()
     await page.getByRole('button', { name: '保存安排' }).click()
-    await page.waitForURL('**/calendar')
+    await page.waitForURL(`**/calendar?date=${today}`)
     await page.waitForFunction(() => { const images = [...document.querySelectorAll('.added-by-avatar img')]; return images.length > 0 && images.every(image => image.complete && image.naturalWidth > 0) })
     const day = await apiGet(`/schedules/day/${today}`)
     assert.equal(day.meals.dinner.some(item => item.meal?.name === '联调新菜'), true)

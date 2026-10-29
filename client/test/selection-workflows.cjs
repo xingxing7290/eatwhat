@@ -15,6 +15,7 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
+    await page.clock.setFixedTime(new Date(2026, 8, 28, 12))
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.addInitScript(() => {
@@ -138,7 +139,8 @@ async function main () {
     await page.getByText('保存结果未确认，请先核对最新安排').waitFor({ state: 'hidden' })
     saveMode = 'success'
     await page.getByRole('button', { name: '保存安排' }).click()
-    await page.waitForURL('**/calendar')
+    await page.waitForURL(`**/calendar?date=${date}`)
+    await page.getByText(`已定位到 ${date}`, { exact: false }).waitFor()
     assert.equal(writes.length, 3)
 
     malformedSchedule = true
@@ -167,10 +169,19 @@ async function main () {
       if (mode === 'old' || mode === 'mismatch') await page.getByText('无法确认想吃记录的最新状态', { exact: false }).waitFor()
       await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存安排') && !button.disabled))
       await page.getByRole('button', { name: '保存安排' }).click()
-      await page.waitForURL('**/calendar')
+      await page.waitForURL(`**/calendar?date=${date}`)
     }
     assert.equal(wishWrites.length, 1, 'only a matching open wish on a compatible server may be marked planned')
     assert.deepEqual(wishWrites[0].expectedEditVersion, { revision: 'wish-v1', updatedAt: '2026-10-29T08:00:00.000Z' })
+    await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存安排') && !button.disabled))
+    await page.getByRole('button', { name: '取消', exact: true }).click()
+    await page.waitForURL(`**/calendar?date=${date}`)
+    await page.getByText(`已定位到 ${date}`, { exact: false }).waitFor()
+    assert.equal(await page.locator('.mobile-date-card.target-date .date-number').textContent(), '29')
+    await page.goto(`${base}/selection?date=2026-02-30&mealType=dinner`)
+    await page.waitForURL('**/calendar')
+    assert.equal(writes.length, 7, 'invalid dates must not trigger schedule writes')
     assert.deepEqual(errors, [])
     console.log('Selection workflows passed: pagination, race, drafts, uncertain saves, malformed data and legacy filtering')
   } finally { await browser.close() }

@@ -8,6 +8,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Grid, Menu, Search, Filter } from '@element-plus/icons-vue';
 import api from '../services/api';
 import { validWishVersion } from '../utils/wishlistVersion.mjs';
+import { validWeekLink } from '../utils/weekLink.mjs';
 
 const route = useRoute();
 const router = useRouter();
@@ -15,6 +16,7 @@ const scheduleStore = useScheduleStore();
 
 const date = computed(() => route.query.date);
 const mealType = computed(() => route.query.mealType);
+const calendarDestination = () => ({ name: 'calendar', ...(validWeekLink(date.value) ? { query: { date: date.value } } : {}) });
 
 const isInitializing = ref(false);
 const isSaving = ref(false);
@@ -185,7 +187,7 @@ const saveSelection = async () => {
     
     initialIds.value = idsFor(selectedMeals.value);
     isSaving.value = false;
-    await router.push({ name: 'calendar' });
+    await router.push(calendarDestination());
     
   } catch (error) {
     if (error?.code === 'SCHEDULE_CONFLICT') {
@@ -202,7 +204,7 @@ const saveSelection = async () => {
 
 // 取消选择
 const handleCancel = () => {
-  router.push({ name: 'calendar' });
+  router.push(calendarDestination());
 };
 
 // 清除过滤
@@ -299,9 +301,9 @@ const loadMetadata = async () => {
 
 const loadSelection = async ({ includeSuggestion = true } = {}) => {
   // 检查必要参数
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date.value || '') || !['breakfast', 'lunch', 'dinner'].includes(mealType.value)) {
+  if (!validWeekLink(date.value) || !['breakfast', 'lunch', 'dinner'].includes(mealType.value)) {
     ElMessage.error('缺少必要参数');
-    router.push({ name: 'calendar' });
+    router.push(calendarDestination());
     return;
   }
 

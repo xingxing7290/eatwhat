@@ -1491,7 +1491,7 @@ async function main() {
       await pages[0].waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent.includes('保存安排') && !button.disabled));
       assert.equal((await request(`/wishlist/${scheduledWish._id}/status`, { method: 'PATCH', token: tokenPartner, body: { status: 'done' } })).status, 200);
       await pages[0].getByRole('button', { name: '保存安排' }).click();
-      await pages[0].waitForURL('**/calendar');
+      await pages[0].waitForURL('**/calendar?date=2026-12-20');
       assert.equal((await WishlistItem.findById(scheduledWish._id)).status, 'done', 'saving a schedule must not overwrite a later completion');
       await pages[0].goto(`${webBase}/meals`);
       await pages[0].getByRole('textbox', { name: '搜索菜品' }).fill('浏览器归档菜');
@@ -1545,7 +1545,7 @@ async function main() {
       ]);
       assert.ok(await pages[0].locator('.meals-grid .meal-card-wrapper').count() <= 8);
       await pages[0].getByRole('button', { name: '保存安排' }).click();
-      await pages[0].waitForURL('**/calendar');
+      await pages[0].waitForURL(`**/calendar?date=${dinnerDate}`);
       await pages[1].getByRole('button', { name: '保存安排' }).click();
       await pages[1].getByText('其他成员刚刚更新了安排').waitFor();
       assert.equal(await pages[1].getByRole('button', { name: '保存安排' }).isDisabled(), true);
@@ -1556,7 +1556,7 @@ async function main() {
       await pages[1].getByRole('textbox', { name: '搜索可选菜品' }).fill('浏览器排餐二');
       await pages[1].getByRole('button', { name: '选择浏览器排餐二' }).click();
       await pages[1].getByRole('button', { name: '保存安排' }).click();
-      await pages[1].waitForURL('**/calendar');
+      await pages[1].waitForURL(`**/calendar?date=${dinnerDate}`);
       const savedDinner = await request(`/schedules/day/${dinnerDate}`, { token: tokenA });
       assert.equal(savedDinner.status, 200);
       assert.deepEqual(savedDinner.data.meals.dinner.map(item => String(item.meal._id)), [String(uiMeal._id), String(secondMeal._id)]);

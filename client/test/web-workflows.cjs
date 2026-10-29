@@ -247,7 +247,7 @@ async function main () {
   assert.match(await page.locator('.selection-info').innerText(), /清炒青菜/)
   assert.match(await page.locator('.selection-info').innerText(), /麻婆豆腐/)
   await page.getByRole('button', { name: '保存安排' }).click()
-  await page.waitForURL('**/calendar')
+  await page.waitForURL(`**/calendar?date=${today}`)
   await page.locator('.calendar-grid .meal-icon svg').first().waitFor()
   assert.deepEqual(writes.find(item => item.path.includes('/schedules/'))?.body.mealIds, ['meal-a', 'meal-c', 'meal-b'])
   assert.equal(writes.find(item => item.path.includes('/schedules/'))?.body.expectedVersion, schedule.scheduleVersion)
@@ -275,7 +275,7 @@ async function main () {
   assert.equal(await page.getByRole('button', { name: '保存安排' }).isEnabled(), true)
   assert.doesNotMatch(await page.locator('.selection-info').innerText(), /麻婆豆腐/)
   await page.getByRole('button', { name: '取消', exact: true }).click()
-  await page.waitForURL('**/calendar')
+  await page.waitForURL(`**/calendar?date=${today}`)
 
   dailySchedule = { date: today, meals: schedule.meals }
   await page.goto(`${base}/selection?date=${today}&mealType=dinner`)
@@ -285,7 +285,7 @@ async function main () {
   await page.goto(`${base}/selection?date=${today}&mealType=dinner`)
   await page.getByText('已选择:').waitFor()
   await page.getByRole('button', { name: '保存安排' }).click()
-  await page.waitForURL('**/calendar')
+  await page.waitForURL(`**/calendar?date=${today}`)
   assert.equal(writes.filter(item => item.path.includes('/schedules/')).at(-1).body.expectedVersion, null)
   dailySchedule = schedule
 
