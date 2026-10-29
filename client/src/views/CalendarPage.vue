@@ -278,12 +278,12 @@ const scrollToTarget = () => {
 // 重试查找今天元素
 const tryScrollToToday = (attempt = 0) => {
   const mobileToday = document.querySelector('.mobile-date-card.today');
-  if (mobileToday) {
+  if (mobileToday?.getClientRects().length) {
     scrollElementIntoView(mobileToday);
     return true;
   }
   const desktopToday = document.querySelector('.calendar-body .date-cell.today');
-  if (desktopToday) {
+  if (desktopToday?.getClientRects().length) {
     scrollElementIntoView(desktopToday, { containerSelector: '.calendar-grid' });
     return true;
   }

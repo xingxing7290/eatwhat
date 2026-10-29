@@ -11,10 +11,11 @@ async function main () {
     await page.addInitScript(() => {
       localStorage.setItem('token', 'test'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' }))
       window.__calendarScrolls = []
+      window.__calendarScrollTargets = []
       const windowScroll = window.scrollTo.bind(window)
-      window.scrollTo = (...args) => { if (args[0] && typeof args[0] === 'object') window.__calendarScrolls.push(args[0].behavior); return windowScroll(...args) }
+      window.scrollTo = (...args) => { if (args[0] && typeof args[0] === 'object') { window.__calendarScrolls.push(args[0].behavior); window.__calendarScrollTargets.push('window') }; return windowScroll(...args) }
       const elementScroll = Element.prototype.scroll
-      Element.prototype.scroll = function (...args) { if (args[0] && typeof args[0] === 'object') window.__calendarScrolls.push(args[0].behavior); return elementScroll.apply(this, args) }
+      Element.prototype.scroll = function (...args) { if (args[0] && typeof args[0] === 'object') { window.__calendarScrolls.push(args[0].behavior); window.__calendarScrollTargets.push(this.classList.contains('calendar-grid') ? 'grid' : 'other') }; return elementScroll.apply(this, args) }
     })
     const errors = []; const reads = []; page.on('pageerror', error => errors.push(error.message))
     let recipeWrites = 0
@@ -118,6 +119,21 @@ async function main () {
     await page.locator('.date-cell.target-date').waitFor()
     await page.waitForFunction(() => window.__calendarScrolls.includes('auto'))
     assert.equal(await page.evaluate(() => window.__calendarScrolls.includes('smooth')), false, 'desktop calendar scroll must respect reduced motion')
+    await page.evaluate(() => { window.__calendarScrollTargets = [] })
+    await page.locator('.page-header').getByRole('button', { name: '今天' }).click()
+    await page.locator('.calendar-grid .date-cell.today').waitFor()
+    await page.waitForFunction(() => window.__calendarScrollTargets.includes('grid'))
+    assert.equal(await page.evaluate(() => window.__calendarScrollTargets.includes('window')), false, 'desktop today navigation must not scroll to the hidden mobile card')
+    await page.waitForFunction(() => { const grid = document.querySelector('.calendar-grid').getBoundingClientRect(); const day = document.querySelector('.calendar-grid .date-cell.today').getBoundingClientRect(); return day.bottom > grid.top && day.top < grid.bottom })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.goto(`${base}/calendar?month=2026-12`)
+    await page.locator('.mobile-month-nav').getByText('2026年12月').waitFor()
+    await page.evaluate(() => { window.__calendarScrollTargets = [] })
+    await page.locator('.mobile-month-nav').getByRole('button', { name: '今天' }).click()
+    await page.locator('.mobile-date-card.today').waitFor()
+    await page.waitForFunction(() => window.__calendarScrollTargets.includes('window'))
+    assert.equal(await page.evaluate(() => window.__calendarScrollTargets.includes('grid')), false, 'mobile today navigation must not scroll the hidden desktop grid')
+    await page.waitForFunction(() => { const day = document.querySelector('.mobile-date-card.today').getBoundingClientRect(); return day.bottom > 0 && day.top < innerHeight })
     assert.deepEqual(errors, [])
     console.log('Calendar navigation checks passed: recipe details and editing, themes, dated selection, history and invalid links')
   } finally { await browser.close() }
