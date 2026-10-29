@@ -17,13 +17,15 @@ const editForm = reactive({ title: '', eventAt: null });
 let listSequence = 0; let detailSequence = 0; let alive = true; let clockTimer; let filterTimer;
 const statusLabels = { open: '正在点菜', locked: '已锁单', completed: '已完成', cancelled: '已取消', expired: '链接已过期' };
 const statusTypes = { open: 'success', locked: 'warning', completed: 'info', cancelled: 'info', expired: 'info' };
-const visibleSessions = computed(() => paginationAvailable.value ? sessions.value : sessions.value.filter(item => (!statusFilter.value || item.status === statusFilter.value) && (!search.value.trim() || item.title.toLowerCase().includes(search.value.trim().toLowerCase()))));
+const visibleSessions = computed(() => paginationAvailable.value ? sessions.value : sessions.value.filter(item => (!statusFilter.value || effectiveStatus(item) === statusFilter.value) && (!search.value.trim() || item.title.toLowerCase().includes(search.value.trim().toLowerCase()))));
 const hasFilters = computed(() => !!(search.value.trim() || statusFilter.value));
 const safeCreate = computed(() => capabilities.value?.supportsIdempotentSessionCreate === true && /^[a-f0-9]{24}$/.test(capabilities.value?.householdId || ''));
 const pendingKey = computed(() => safeCreate.value ? `eatwhat.hostGuest.create.${capabilities.value.householdId}` : '');
 const validVersion = item => item?.supportsConditionalSession === true && item.editVersion && (item.editVersion.revision === null || (typeof item.editVersion.revision === 'string' && !!item.editVersion.revision)) && (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
 const canChange = computed(() => capabilities.value?.supportsConditionalSession === true && validVersion(detail.value) && !loading.value && !working.value && !detailLoading.value && !detailError.value && !mutationIssue.value);
 const linkExpired = computed(() => !detail.value?.expiresAt || !Number.isFinite(Date.parse(detail.value.expiresAt)) || Date.parse(detail.value.expiresAt) <= now.value);
+const effectiveStatus = item => item?.status === 'open' && item.expiresAt && Number.isFinite(Date.parse(item.expiresAt)) && Date.parse(item.expiresAt) <= now.value ? 'expired' : item?.status;
+const detailStatus = computed(() => effectiveStatus(detail.value));
 const canShare = computed(() => !loading.value && !detailLoading.value && !detailError.value && !mutationIssue.value && !linkExpired.value && ['open', 'locked'].includes(detail.value?.status) && !!safeShareUrl(detail.value?.shareUrl));
 const dateText = value => { if (!value) return '未设置'; const date = new Date(value); return Number.isFinite(date.getTime()) ? new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false }).format(date) : '时间不可用'; };
 const dateValue = value => { if (!value) return null; const date = new Date(value); return Number.isFinite(date.getTime()) ? date : null; };
@@ -59,12 +61,12 @@ function clearPending() {
   if (sessionStorage.getItem(pendingKey.value) !== null) throw new Error('无法清除安全创建凭证');
   pending.value = null;
 }
-function acceptSession(item, withOrders = false) {
+function acceptSession(item, withOrders = false, listItem = false) {
   if (!item || typeof item.id !== 'string' || !item.id || typeof item.title !== 'string' || !statusLabels[item.status]) throw new Error('宴请数据不完整');
   if (capabilities.value?.householdId && item.householdId !== capabilities.value.householdId) throw new Error('家庭已变化，请重新加载宴请');
   const count = value => Number.isSafeInteger(value) && value >= 0;
   const quantity = value => Number.isSafeInteger(value) && value > 0;
-  if (!withOrders && (!count(item.guestCount) || !count(item.totalQuantity))) throw new Error('宴请列表统计不完整');
+  if (listItem && (!count(item.guestCount) || !count(item.totalQuantity))) throw new Error('宴请列表统计不完整');
   if (withOrders) {
     if (!Array.isArray(item.orders) || !item.summary || !count(item.summary.guestCount) || !count(item.summary.totalQuantity) || !Array.isArray(item.summary.dishes) || item.summary.dishes.some(dish => !dish || typeof dish.name !== 'string' || !dish.name.trim() || !quantity(dish.quantity) || !Array.isArray(dish.guestNames) || dish.guestNames.some(name => typeof name !== 'string') || !Array.isArray(dish.notes) || dish.notes.some(note => typeof note !== 'string')) || item.orders.some(order => !order || typeof order.id !== 'string' || !order.id || typeof order.guestName !== 'string' || !Array.isArray(order.items) || !order.items.length || order.items.some(dish => !dish || typeof dish.name !== 'string' || !dish.name.trim() || !quantity(dish.quantity)))) throw new Error('点菜汇总数据不完整');
     const orderTotal = item.orders.reduce((sum, order) => sum + order.items.reduce((subtotal, dish) => subtotal + dish.quantity, 0), 0);
@@ -102,7 +104,7 @@ async function load() {
         if (meta || result.value.sessions.length > 30) throw new Error('无法确认宴请列表范围，请重试');
         listPagination.value = null; paginationAvailable.value = false; listPage.value = 1;
       }
-      const rows = result.value.sessions.map(item => acceptSession(item));
+      const rows = result.value.sessions.map(item => acceptSession(item, false, true));
       if (new Set(rows.map(item => item.id)).size !== rows.length) throw new Error('宴请列表存在重复记录');
       sessions.value = rows;
     } catch (error) { sessions.value = []; listPagination.value = null; paginationAvailable.value = false; listError.value = error.message; }
@@ -193,9 +195,14 @@ async function changeSession(changes, label, expectedCheck) {
   finally { working.value = false; }
 }
 async function setStatus(status) {
+  now.value = Date.now();
   if (!canChange.value) return;
+  if (status === 'locked' && detailStatus.value !== 'open') return ElMessage.warning('链接已过期，请刷新后核对');
+  if (status === 'open' && linkExpired.value) return ElMessage.warning('链接已过期，不能继续点菜');
   const messages = { locked: '锁单会阻止后续提交或修改；已在处理的请求仍可能完成。', open: '恢复后客人可继续点菜。', completed: '完成后不能再重新开放点菜；已在处理的请求仍可能完成。', cancelled: '取消后链接不能继续点菜；已在处理的请求仍可能完成。' };
   try { await ElMessageBox.confirm(messages[status], `${statusLabels[status]}？`, { type: 'warning', confirmButtonText: '确认', cancelButtonText: '返回' }); } catch (_) { return; }
+  now.value = Date.now();
+  if ((status === 'open' && linkExpired.value) || (status === 'locked' && detailStatus.value !== 'open')) return ElMessage.warning('链接状态已变化，请刷新后核对');
   await changeSession({ status }, '状态更新', item => item.storedStatus === status);
 }
 function startEdit() { if (!canChange.value) return; editForm.title = detail.value.title; editForm.eventAt = dateValue(detail.value.eventAt); editing.value = true; }
@@ -210,8 +217,11 @@ async function cancelEdit() {
   editing.value = false;
 }
 async function rotateLink() {
-  if (!canChange.value || !detail.value?.shareUrl) return;
+  now.value = Date.now();
+  if (!canChange.value || !detail.value?.shareUrl || linkExpired.value || !['open', 'locked'].includes(detailStatus.value)) return;
   try { await ElMessageBox.confirm('更换后旧链接不能发起新请求；已在处理的请求仍可能完成，已提交的点菜单保留。', '更换点菜链接？', { type: 'warning', confirmButtonText: '确认更换', cancelButtonText: '取消' }); } catch (_) { return; }
+  now.value = Date.now();
+  if (linkExpired.value || !['open', 'locked'].includes(detailStatus.value)) return ElMessage.warning('链接状态已变化，本次没有更换');
   const id = detail.value.id; const version = detail.value.editVersion; const previous = detail.value.shareUrl; working.value = true;
   try {
     const result = await api.guestOrder.rotate(id, version); const item = acceptSession(result?.session);
@@ -228,12 +238,14 @@ async function finishReview() {
   await load();
 }
 async function copyLink() {
+  now.value = Date.now();
   const url = safeShareUrl(detail.value?.shareUrl); if (!url || !canShare.value) return;
   try { await navigator.clipboard.writeText(url); ElMessage.success('点菜链接已复制'); }
   catch (_) { ElMessage.warning('无法自动复制，请手动选择下方链接'); }
 }
-onMounted(() => { load(); clockTimer = setInterval(() => { now.value = Date.now(); }, 30000); });
-onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; clearInterval(clockTimer); clearTimeout(filterTimer); });
+const refreshClock = () => { now.value = Date.now(); };
+onMounted(() => { load(); window.addEventListener('focus', refreshClock); document.addEventListener('visibilitychange', refreshClock); clockTimer = setInterval(refreshClock, 30000); });
+onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.removeEventListener('focus', refreshClock); document.removeEventListener('visibilitychange', refreshClock); clearInterval(clockTimer); clearTimeout(filterTimer); });
 </script>
 
 <template>
@@ -248,17 +260,17 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; clearIn
     <div v-if="listError" class="empty-card" role="alert"><p>{{ listError }}</p><el-button @click="load">重新加载</el-button></div>
     <div v-else-if="loading" class="empty-card">正在加载宴请…</div>
     <div v-else-if="!visibleSessions.length" class="empty-card"><el-icon :size="34"><Food /></el-icon><template v-if="hasFilters"><h3>没有找到匹配的宴请</h3><p>试试其他名称或状态。</p><el-button @click="clearFilters">清除筛选</el-button></template><template v-else><h3>还没有宴请</h3><p>创建一场聚餐，邀请客人挑选喜欢的菜。</p><el-button type="primary" :disabled="!safeCreate || !!pending" @click="createOpen = true">创建第一场宴请</el-button></template></div>
-    <div v-else class="session-grid"><article v-for="item in visibleSessions" :key="item.id" class="session-card"><div class="card-top"><el-tag :type="statusTypes[item.status]" round>{{ statusLabels[item.status] }}</el-tag><span>有效至 {{ dateText(item.expiresAt) }}</span></div><h3>{{ item.title }}</h3><p>聚餐时间：{{ dateText(item.eventAt) }}</p><div class="card-bottom"><div><strong>{{ item.guestCount }}</strong><small> 份点菜单</small><strong>{{ item.totalQuantity }}</strong><small> 份菜</small></div><el-button :disabled="working || !!mutationIssue" @click="openDetail(item)">查看详情</el-button></div></article></div>
+    <div v-else class="session-grid"><article v-for="item in visibleSessions" :key="item.id" class="session-card"><div class="card-top"><el-tag :type="statusTypes[effectiveStatus(item)]" round>{{ statusLabels[effectiveStatus(item)] }}</el-tag><span>有效至 {{ dateText(item.expiresAt) }}</span></div><h3>{{ item.title }}</h3><p>聚餐时间：{{ dateText(item.eventAt) }}</p><div class="card-bottom"><div><strong>{{ item.guestCount }}</strong><small> 份点菜单</small><strong>{{ item.totalQuantity }}</strong><small> 份菜</small></div><el-button :disabled="working || !!mutationIssue" @click="openDetail(item)">查看详情</el-button></div></article></div>
     <nav v-if="!loading && !listError && listPagination && listPagination.totalPages > 1" class="list-pagination" aria-label="宴请分页"><el-button :disabled="working || listPage <= 1" @click="changePage(listPage - 1)">上一页</el-button><span>第 {{ listPage }} / {{ listPagination.totalPages }} 页</span><el-button :disabled="working || listPage >= listPagination.totalPages" @click="changePage(listPage + 1)">下一页</el-button></nav>
 
     <el-dialog v-model="createOpen" title="创建宴请" width="min(560px, 94vw)" :before-close="closeCreate" :close-on-click-modal="false" :close-on-press-escape="!working"><el-alert v-if="pending" type="warning" :closable="false" show-icon title="创建结果待核对，可安全重试原内容。"><div class="alert-actions"><el-button link type="primary" :disabled="working || !!pending.invalid" @click="retryCreate">安全重试</el-button><el-button link :disabled="working" @click="abandonPending">放弃安全重试</el-button></div></el-alert><el-form label-position="top"><el-form-item label="宴请名称"><el-input v-model="form.title" maxlength="80" show-word-limit placeholder="例如：周末家庭聚餐" :disabled="working || !!pending" /></el-form-item><el-form-item label="聚餐时间（选填）"><el-date-picker v-model="form.eventAt" type="datetime" placeholder="选择日期和时间" aria-label="聚餐时间" :disabled="working || !!pending" style="width:100%" /></el-form-item><el-form-item label="链接有效期"><el-select v-model="form.hours" :disabled="working || !!pending" style="width:100%"><el-option :value="24" label="24 小时" /><el-option :value="72" label="3 天" /><el-option :value="168" label="7 天" /></el-select></el-form-item></el-form><p class="dialog-note">链接仅供受邀客人使用；创建后可复制或更换。</p><template #footer><el-button :disabled="working || !!pending" @click="closeCreate(() => createOpen = false)">取消</el-button><el-button type="primary" :loading="working" :disabled="!!pending || !safeCreate" @click="createSession">创建并查看链接</el-button></template></el-dialog>
 
     <el-dialog v-model="detailOpen" title="宴请详情" width="min(760px, 94vw)" :before-close="closeDetail" :close-on-click-modal="false" :close-on-press-escape="!working"><div v-if="detailLoading && !detail" class="empty-card">正在加载详情…</div><el-alert v-if="detailError" type="error" :closable="false" show-icon :title="detailError"><p v-if="detail">以下是上次成功加载的内容，可能已过期；请重试后核对。</p><el-button link type="primary" :disabled="working" @click="readDetail(selectedId, !!mutationIssue)">重试</el-button></el-alert><el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue.message"><div class="alert-actions"><el-button link type="primary" :loading="detailLoading" :disabled="working" @click="readDetail(selectedId, true)">读取最新状态</el-button><el-button v-if="mutationIssue.checked" link type="primary" :disabled="working" @click="finishReview">已核对，继续</el-button></div></el-alert>
-      <template v-if="detail"><div class="detail-head"><div><el-tag :type="statusTypes[detail.status]" round>{{ statusLabels[detail.status] }}</el-tag><h2>{{ detail.title }}</h2><p>聚餐 {{ dateText(detail.eventAt) }} · 链接有效至 {{ dateText(detail.expiresAt) }}</p></div><div class="inline-actions"><el-button :loading="detailLoading" :disabled="working || editing || !!mutationIssue" @click="readDetail(selectedId)">刷新点菜</el-button><el-button v-if="!editing" :disabled="!canChange" @click="startEdit">编辑信息</el-button></div></div>
+      <template v-if="detail"><div class="detail-head"><div><el-tag :type="statusTypes[detailStatus]" round>{{ statusLabels[detailStatus] }}</el-tag><h2>{{ detail.title }}</h2><p>聚餐 {{ dateText(detail.eventAt) }} · 链接有效至 {{ dateText(detail.expiresAt) }}</p></div><div class="inline-actions"><el-button :loading="detailLoading" :disabled="working || editing || !!mutationIssue" @click="readDetail(selectedId)">刷新点菜</el-button><el-button v-if="!editing" :disabled="!canChange" @click="startEdit">编辑信息</el-button></div></div>
         <div v-if="editing" class="edit-panel"><el-form label-position="top"><el-form-item label="宴请名称"><el-input v-model="editForm.title" maxlength="80" show-word-limit :disabled="working" /></el-form-item><el-form-item label="聚餐时间"><el-date-picker v-model="editForm.eventAt" type="datetime" aria-label="编辑聚餐时间" :disabled="working" style="width:100%" /></el-form-item></el-form><div class="inline-actions"><el-button :disabled="working" @click="cancelEdit">取消</el-button><el-button type="primary" :disabled="!canChange || !editDirty" @click="saveEdit">保存信息</el-button></div></div>
         <el-alert v-if="!validVersion(detail)" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，详情暂时只能查看。" />
         <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
-        <div class="status-actions"><el-button v-if="detail.status === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detail.status === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detail.status)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detail.status)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
+        <div class="status-actions"><el-button v-if="detailStatus === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detailStatus === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
         <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
         <section v-if="detail.orders.length" class="orders"><h3>客人点菜单</h3><el-collapse><el-collapse-item v-for="order in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
       </template>

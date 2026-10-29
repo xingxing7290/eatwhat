@@ -1526,7 +1526,8 @@ async function main() {
       assert.equal((await GuestOrderSession.findById(hostBrowserSession._id)).status, 'locked');
       await hostDialog.getByRole('button', { name: '更换链接' }).click();
       await pages[0].getByRole('button', { name: '确认更换' }).click();
-      await pages[0].waitForFunction(oldToken => !document.querySelector('input[aria-label="客人点菜链接"]')?.value.includes(oldToken), hostBrowserOldToken);
+      await pages[0].waitForFunction(oldToken => { const value = document.querySelector('input[aria-label="客人点菜链接"]')?.value; return !!value && !value.includes(oldToken); }, hostBrowserOldToken);
+      assert.equal(await hostDialog.getByText('链接更换结果未确认', { exact: false }).count(), 0, 'a verified rotation must not be presented as uncertain');
       assert.equal((await request(`/guest-orders/public/${hostBrowserOldToken}`)).status, 404);
       assert.equal(await GuestOrder.countDocuments({ sessionId: hostBrowserSession._id }), 1, 'rotating a link retains guest orders');
       await Promise.all(pages.map(page => page.goto(`${webBase}/dashboard`)));

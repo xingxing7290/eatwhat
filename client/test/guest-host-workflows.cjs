@@ -12,7 +12,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const home = '111111111111111111111111'; const id = '222222222222222222222222'; const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''
+    let current = null; let firstPayload; let createCount = 0; let createRequests = 0; let rotateRequests = 0; let detailMissing = false; let badSummary = ''; let rotateFails = true
     const version = value => ({ revision: `v${value}`, updatedAt: `2026-10-29T00:00:0${value}.000Z` })
     const detail = () => ({ ...current, summary: { guestCount: 1, totalQuantity: 2, dishes: [{ mealId: 'meal', name: '客人想吃的菜', quantity: 2, guestNames: ['测试客人'], notes: ['测试客人：少盐'] }] }, orders: [{ id: 'order-1', guestName: '测试客人', submittedAt: '2026-10-29T12:00:00Z', items: [{ name: '客人想吃的菜', quantity: 2, note: '少盐' }], note: '整单备注' }] })
     await page.route('**/api/**', async route => {
@@ -47,8 +47,8 @@ async function main () {
       }
       if (req.method() === 'POST' && pathname === `/guest-orders/${id}/rotate-link`) {
         rotateRequests++; assert.equal(req.postDataJSON().expectedEditVersion.revision, current.editVersion.revision)
-        current = { ...current, shareUrl: 'https://example.test/guest-order/new-private-token', editVersion: version(4) }
-        return route.fulfill({ status: 503, json: { error: '响应丢失' } })
+        current = { ...current, shareUrl: `https://example.test/guest-order/new-private-token-${rotateRequests}`, editVersion: version(3 + rotateRequests) }
+        return rotateFails ? route.fulfill({ status: 503, json: { error: '响应丢失' } }) : route.fulfill({ json: { session: current } })
       }
       return route.fulfill({ json: {} })
     })
@@ -106,6 +106,13 @@ async function main () {
     await page.getByRole('dialog', { name: '结束核对？' }).waitFor({ state: 'hidden' })
     assert.equal(await dialog.getByRole('textbox', { name: '客人点菜链接' }).inputValue(), current.shareUrl)
     assert.equal(rotateRequests, 1)
+    rotateFails = false
+    await dialog.getByRole('button', { name: '更换链接' }).click()
+    await page.getByRole('button', { name: '确认更换' }).click()
+    await dialog.getByRole('textbox', { name: '客人点菜链接' }).waitFor()
+    await page.waitForFunction(() => document.querySelector('input[aria-label="客人点菜链接"]')?.value.endsWith('new-private-token-2'))
+    assert.equal(await dialog.getByText('链接更换结果未确认', { exact: false }).count(), 0, 'a successful rotation response need not contain list statistics')
+    assert.equal(rotateRequests, 2)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     const logs = await page.evaluate(async () => JSON.stringify((await import('/src/services/api.js')).apiLogs.history))
     assert.equal(logs.includes(firstPayload.creationKey), false, 'creation capability must not enter the API log')
@@ -114,7 +121,7 @@ async function main () {
     await dialog.getByRole('button', { name: '编辑信息' }).click()
     const retainedEdit = dialog.locator('.edit-panel input').first()
     await retainedEdit.fill('找不到宴请时仍保留草稿')
-    current = { ...current, editVersion: version(5) }
+    current = { ...current, editVersion: version(6) }
     await dialog.getByRole('button', { name: '保存信息' }).click()
     await dialog.getByText('其他成员已修改宴请', { exact: false }).waitFor()
     detailMissing = true
@@ -155,6 +162,41 @@ async function main () {
     assert.equal(await expiredDialog.getByRole('button', { name: '标记完成' }).isEnabled(), true)
     assert.equal(await expiredPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await expiredPage.close()
+    const livePage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    const initialTime = new Date(2026, 9, 29, 12, 0, 0)
+    await livePage.clock.setFixedTime(initialTime)
+    await livePage.addInitScript(() => {
+      localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ householdId: 'home-a' }))
+      window.__copies = 0; Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => { window.__copies++ } } })
+    })
+    const expiring = { ...expired, title: '即将过期的宴请', status: 'open', storedStatus: 'open', expiresAt: new Date(initialTime.getTime() + 5000).toISOString() }
+    let lateRotations = 0
+    await livePage.route('**/api/**', route => {
+      if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
+      const pathname = new URL(route.request().url()).pathname.replace(/^\/api/, '')
+      if (pathname === '/guest-orders/capabilities') return route.fulfill({ json: { householdId: home, supportsConditionalSession: true, supportsIdempotentSessionCreate: true } })
+      if (pathname === '/guest-orders') return route.fulfill({ json: { sessions: [{ ...expiring, guestCount: 0, totalQuantity: 0 }] } })
+      if (pathname.endsWith('/rotate-link')) { lateRotations++; return route.fulfill({ json: {} }) }
+      return route.fulfill({ json: { session: { ...expiring, summary: { guestCount: 0, totalQuantity: 0, dishes: [] }, orders: [] } } })
+    })
+    await livePage.goto(`${base}/guest-orders`)
+    await livePage.getByRole('button', { name: '查看详情' }).click()
+    const liveDialog = livePage.getByRole('dialog', { name: '宴请详情' })
+    await liveDialog.getByRole('button', { name: '更换链接' }).click()
+    await livePage.clock.setFixedTime(new Date(initialTime.getTime() + 6000))
+    await livePage.getByRole('button', { name: '确认更换' }).click()
+    await livePage.getByText('链接状态已变化，本次没有更换').waitFor()
+    assert.equal(lateRotations, 0, 'expiration during the confirmation must prevent rotation')
+    await liveDialog.getByText('链接已过期，不能重新开放或更换。').waitFor()
+    assert.equal(await liveDialog.locator('.detail-head .el-tag').innerText(), '链接已过期')
+    await livePage.clock.setFixedTime(initialTime)
+    await livePage.evaluate(() => window.dispatchEvent(new Event('focus')))
+    assert.equal(await liveDialog.getByRole('button', { name: '复制链接' }).isEnabled(), true)
+    await livePage.clock.setFixedTime(new Date(initialTime.getTime() + 6000))
+    await liveDialog.getByRole('button', { name: '复制链接' }).dispatchEvent('click')
+    assert.equal(await livePage.evaluate(() => window.__copies), 0, 'copy checks the current clock even before the periodic refresh')
+    assert.equal(await liveDialog.getByRole('button', { name: '复制链接' }).isDisabled(), true)
+    await livePage.close()
     console.log('Guest host workflows passed: safe creation, draft conflicts, link review, privacy and legacy guard')
   } finally { await browser.close() }
 }
