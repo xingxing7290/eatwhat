@@ -751,6 +751,7 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
   color: #4a3e3d;
   font-size: 20px;
   font-weight: 750;
+  overflow-wrap: anywhere;
 }
 
 .meal-description {
@@ -798,6 +799,7 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
 }
 
 @media (max-width: 768px) {
+  .meal-card-wrapper :deep(.el-card__body) { padding: 0; height: 100%; }
   .meal-card-wrapper:hover {
     transform: none;
   }
@@ -811,6 +813,8 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
     height: 190px;
     margin: 10px 10px 0;
   }
+  .meal-info { padding: 14px 12px 16px; }
+  .meal-actions .feed-btn { padding-inline: 8px; }
 }
 
 :global(html.dark .meal-card-wrapper .meal-name) { color: var(--text-primary); }

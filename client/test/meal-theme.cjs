@@ -63,6 +63,19 @@ async function main() {
             const box = await page.getByRole('button', { name }).boundingBox();
             assert.ok(box && box.height >= 44 && box.width >= 44, `${name} must remain a usable touch target: ${JSON.stringify(box)}`);
           }
+          if (width === 320) {
+            const actionBoxes = await page.locator('.meal-card-wrapper .meal-actions .el-button').evaluateAll(buttons => buttons.map(button => { const box = button.getBoundingClientRect(); return { width: box.width, height: box.height, top: box.top } }));
+            assert.equal(actionBoxes.length, 5);
+            assert.ok(actionBoxes.every(box => box.width >= 44 && box.height >= 44), 'card actions must remain tappable');
+            assert.ok(new Set(actionBoxes.map(box => Math.round(box.top))).size <= 2, 'card actions should not stack into more than two rows');
+            const imageRatio = await page.locator('.meal-card-wrapper').evaluate(card => card.querySelector('.meal-image-container').getBoundingClientRect().width / card.getBoundingClientRect().width);
+            assert.ok(imageRatio > 0.8, `recipe image should use the available card width: ${imageRatio}`);
+            const title = page.locator('.meal-card-wrapper .meal-name');
+            const original = await title.textContent();
+            await title.evaluate(element => { element.textContent = 'LongRecipeName'.repeat(12); });
+            assert.equal(await title.evaluate(element => element.scrollWidth <= element.clientWidth), true, 'long unbroken names must wrap inside the card');
+            await title.evaluate((element, text) => { element.textContent = text; }, original);
+          }
           for (const selector of ['.view-switcher .el-radio-button__inner', '.category-list button', '.meal-card-wrapper .feed-btn']) {
             const box = await page.locator(selector).first().boundingBox();
             assert.ok(box && box.height >= 44, `${selector} must have a 44px touch target`);
