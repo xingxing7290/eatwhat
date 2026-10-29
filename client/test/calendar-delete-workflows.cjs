@@ -37,7 +37,7 @@ async function main () {
     const deleteButton = () => page.locator('.desktop-only').getByRole('button', { name: `删除${date}晚餐` })
     const startDelete = async () => { await deleteButton().click(); await page.getByRole('button', { name: '确认', exact: true }).click() }
     const review = page.locator('.delete-review')
-    await page.goto(`${base}/calendar`)
+    await page.goto(`${base}/calendar?date=${date}`)
     await deleteButton().waitFor()
     await startDelete()
     await review.getByText('删除结果未确认，请先核对最新安排。').waitFor()
@@ -46,6 +46,9 @@ async function main () {
     assert.equal(new URL(page.url()).searchParams.has('month'), false, 'an unresolved delete must block changing the calendar through the URL')
     assert.equal(await deleteButton().isDisabled(), true)
     assert.equal(await page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+    await page.getByRole('link', { name: '查看该日期所在周计划' }).click()
+    await page.getByRole('button', { name: '继续编辑' }).click()
+    assert.equal(new URL(page.url()).pathname, '/calendar', 'the week link must preserve unresolved-delete navigation protection')
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
@@ -53,7 +56,7 @@ async function main () {
         await page.setViewportSize({ width, height: 900 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.delete-review .el-alert__title', '.delete-review .el-alert__description', '.delete-review .el-button']) {
+          for (const selector of ['.delete-review .el-alert__title', '.delete-review .el-alert__description', '.delete-review .el-button', '.calendar-notice a']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${result.ratio}`)
           }

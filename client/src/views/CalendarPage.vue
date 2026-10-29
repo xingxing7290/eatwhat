@@ -467,7 +467,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
       </div>
     </div>
 
-    <div v-if="targetedDate" class="calendar-notice" role="status">已定位到 {{ targetedDate }}，请核对相应餐次。</div>
+    <div v-if="targetedDate" class="calendar-notice" role="status"><span>已定位到 {{ targetedDate }}，请核对相应餐次。</span><router-link :to="{ name: 'weeklyPlan', query: { week: targetedDate } }">查看该日期所在周计划 →</router-link></div>
     <div v-else-if="invalidDateLink" class="calendar-notice" role="status">日历链接中的日期无效，已打开当前月份。</div>
 
     <el-alert v-if="deleteIssue" class="delete-review" type="warning" :closable="false" show-icon :title="deleteIssue.conflict ? '安排已被其他成员修改，本次没有删除。' : '删除结果未确认，请先核对最新安排。'">
@@ -762,6 +762,8 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
 .calendar-notice { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .calendar-notice :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
 .calendar-notice :deep(.el-button:focus-visible) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.calendar-notice a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.calendar-notice a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .partner-wishlist-banner { display: flex; justify-content: space-between; gap: 12px; align-items: center; background: var(--bg-primary); border: 1px solid var(--border-light); border-radius: 16px; padding: 12px 16px; box-shadow: 0 8px 22px var(--shadow-color); }
 .add-meal, .mobile-add-meal { width: 100%; font: inherit; }
 .partner-wishlist-banner div { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--text-secondary); }
