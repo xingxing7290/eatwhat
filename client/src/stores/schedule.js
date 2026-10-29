@@ -33,9 +33,9 @@ export const useScheduleStore = defineStore('schedule', {
         return schedule.meals[mealType]
           .map(item => {
             if (item && typeof item === 'object') {
-              if (item.meal) {
+              if (Object.prototype.hasOwnProperty.call(item, 'meal')) {
                 const m = item.meal;
-                return m._id || m.id || m;
+                return m ? (m._id || m.id || m) : null;
               }
               return item._id || item.id || item;
             }

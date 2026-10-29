@@ -5,6 +5,7 @@ const { body, param, query, validationResult } = require('express-validator');
 const logger = require('../utils/logger');
 const { ensureUserHousehold } = require('../utils/household');
 const { retainedMealAssignments, scheduleUpdatePipeline } = require('../utils/scheduleAssignments');
+const { schedulePopulation } = require('../utils/schedulePopulation');
 
 function normalizeMealItems(scheduleDoc) {
 	if (!scheduleDoc || !scheduleDoc.meals) return;
@@ -24,7 +25,7 @@ function isMobileClient(req) {
 }
 function compactSchedule(schedule) {
 	const compactItems = items => (items || []).map(item => {
-		const meal = item && item.meal ? item.meal : item;
+		const meal = item && typeof item === 'object' && 'meal' in item ? item.meal : item;
 		return {
 			meal: meal && meal._id ? { _id: meal._id, id: meal._id, name: meal.name || '' } : meal
 		};
@@ -67,14 +68,7 @@ exports.getSchedules = async (req, res, next) => {
       date: { $gte: `${monthPrefix}-01`, $lte: `${monthPrefix}-${String(endDate.getDate()).padStart(2, '0')}` }
     });
     schedulesInDb.forEach(s => normalizeMealItems(s));
-    await Schedule.populate(schedulesInDb, [
-      { path: 'meals.breakfast.meal' },
-      { path: 'meals.lunch.meal' },
-      { path: 'meals.dinner.meal' },
-      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
-    ]);
+    await Schedule.populate(schedulesInDb, schedulePopulation(household._id));
     const scheduleMap = new Map(schedulesInDb.map(s => [s.date, s]));
     const fullMonthSchedules = [];
     for (let day = 1; day <= endDate.getDate(); day++) {
@@ -100,14 +94,7 @@ exports.getScheduleByDate = async (req, res, next) => {
       return res.status(200).json({ date, meals: { breakfast: [], lunch: [], dinner: [] }, scheduleExists: false, scheduleVersion: null });
     }
     normalizeMealItems(schedule);
-    await schedule.populate([
-      { path: 'meals.breakfast.meal' },
-      { path: 'meals.lunch.meal' },
-      { path: 'meals.dinner.meal' },
-      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
-    ]);
+    await schedule.populate(schedulePopulation(household._id));
     res.status(200).json(isMobileClient(req) ? compactSchedule(schedule) : {
       ...schedule.toObject(), scheduleExists: true,
       scheduleVersion: schedule.updatedAt ? schedule.updatedAt.toISOString() : null
@@ -135,14 +122,7 @@ exports.updateSchedule = async (req, res, next) => {
     }
     const updateData = { householdId: household._id };
     updateData[`meals.${mealType}`] = mealIds.map(mealId => ({ meal: mealId, addedBy: req.user.uid || null }));
-    const population = [
-      { path: 'meals.breakfast.meal' },
-      { path: 'meals.lunch.meal' },
-      { path: 'meals.dinner.meal' },
-      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
-    ];
+    const population = schedulePopulation(household._id);
     let schedule;
     if (conditional && expectedVersion === null) {
       try {

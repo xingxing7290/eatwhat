@@ -22,6 +22,7 @@ const catalogLoading = ref(false);
 const catalogError = ref('');
 const metadataError = ref(false);
 const loadError = ref(false);
+const selectionReadError = ref('');
 const conflict = ref(false);
 const saveUncertain = ref(false);
 const expectedVersion = ref(null);
@@ -307,6 +308,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
   const sequence = ++selectionSequence;
   isInitializing.value = true;
   loadError.value = false;
+  selectionReadError.value = '';
   wishSnapshot.value = null;
   wishNotice.value = '';
   try {
@@ -328,7 +330,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
       return meal?._id || meal?.id || (typeof meal === 'string' ? meal : '');
     }).filter(Boolean).map(String);
     if (existingIds.length !== items.length) {
-      throw new Error('现有安排中有无法读取的菜品，请先在日历中检查');
+      throw new Error('现有安排中有不可用的菜品。请先在日历中核对并清除该餐次，再重新安排。');
     }
     if (new Set(existingIds).size !== existingIds.length) throw new Error('现有安排包含重复菜品，请先在日历中检查');
     const suggestedId = includeSuggestion && typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
@@ -359,6 +361,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
   } catch (error) {
     if (sequence === selectionSequence) {
       loadError.value = true;
+      selectionReadError.value = error?.error || error?.message || '加载页面数据失败，请重试';
       ElMessage.error(error?.error || error?.message || '加载页面数据失败，请重试');
     }
   } finally {
@@ -418,6 +421,7 @@ onBeforeUnmount(() => {
     </div>
     <el-alert v-if="loadError || saveUncertain" type="error" :closable="false" show-icon :title="saveUncertain ? '保存结果未确认，请先核对最新安排。' : conflict ? '其他成员刚刚更新了安排，当前选择尚未保存。' : '无法读取完整的现有安排，为保护数据暂时不能保存。'">
       <span v-if="conflict || saveUncertain">重新加载会用最新安排替换当前选择，请先记下需要保留的菜品。</span>
+      <p v-else-if="selectionReadError">{{ selectionReadError }}</p>
       <el-button link type="primary" :disabled="isInitializing" @click="reloadSelection">{{ conflict || saveUncertain ? '重新加载最新安排' : '重新加载' }}</el-button>
     </el-alert>
     <el-alert v-if="wishNotice" type="info" :closable="false" show-icon :title="wishNotice" />

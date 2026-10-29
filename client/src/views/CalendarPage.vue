@@ -276,19 +276,19 @@ const findMealById = (id) => {
       const m = id.meal;
       if (m && typeof m === 'object' && m.name) return m;
       const mId = (m && typeof m === 'object') ? (m._id || m.id) : m;
-      return meals.value.find(meal => String(meal._id || meal.id) === String(mId)) || { name: '未知菜品' };
+      return meals.value.find(meal => String(meal._id || meal.id) === String(mId)) || { name: '菜品不可用' };
     }
 
     if (id && typeof id === 'object' && id.name) return id;
 
     const rawId = id._id || id.id;
     if (rawId) {
-      return meals.value.find(meal => String(meal._id || meal.id) === String(rawId)) || { name: '未知菜品' };
+      return meals.value.find(meal => String(meal._id || meal.id) === String(rawId)) || { name: '菜品不可用' };
     }
 
-    return { name: '未知菜品' };
+    return { name: '菜品不可用' };
   }
-  return meals.value.find(meal => String(meal._id || meal.id) === String(id)) || { name: '未知菜品' };
+  return meals.value.find(meal => String(meal._id || meal.id) === String(id)) || { name: '菜品不可用' };
 };
 
 const getAddedBy = (item) => {
@@ -322,8 +322,9 @@ const handleDeleteSchedule = async (date, mealType) => {
   deleting.value = true;
   try {
     const formattedDate = format(date, 'yyyy-MM-dd');
+    const hasUnavailable = snapshot.meals[mealType].some(item => item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'meal') && item.meal === null);
     const result = await ElMessageBox.confirm(
-      `确定删除 ${formattedDate} 的${mealTypes.find(m => m.key === mealType).label}安排吗？`,
+      `确定删除 ${formattedDate} 的${mealTypes.find(m => m.key === mealType).label}安排吗？${hasUnavailable ? '此操作会清除该餐次的全部菜品，包括不可用记录。' : ''}`,
       '删除确认',
       {
         confirmButtonText: '确认',
@@ -566,8 +567,8 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
                       
                       <div class="meal-items">
                         <div 
-                          v-for="item in getDateSchedule(day).meals[mealType.key]" 
-                          :key="(item.meal && (item.meal._id || item.meal.id)) || item._id || item.id"
+                          v-for="(item, index) in getDateSchedule(day).meals[mealType.key]"
+                          :key="(item.meal && (item.meal._id || item.meal.id)) || item._id || item.id || `unavailable-${index}`"
                           class="meal-item"
                           :style="{ 'background-color': mealType.color }"
                         >
@@ -667,8 +668,8 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
                   <!-- 如果已有安排 -->
                   <div v-if="getDateSchedule(day)?.meals?.[mealType.key]?.length" class="mobile-meal-items">
                     <div 
-                      v-for="item in getDateSchedule(day).meals[mealType.key]" 
-                      :key="(item.meal && (item.meal._id || item.meal.id)) || item._id || item.id"
+                      v-for="(item, index) in getDateSchedule(day).meals[mealType.key]"
+                      :key="(item.meal && (item.meal._id || item.meal.id)) || item._id || item.id || `unavailable-${index}`"
                       class="mobile-meal-item"
                       :style="{ 'background-color': mealType.color }"
                     >

@@ -10,6 +10,7 @@ const { ensureUserHousehold } = require('../utils/household');
 const { dateKey, startOfWeek, weekDates } = require('../utils/week');
 const { _statusFor } = require('./defaultMealController');
 const { _balanceHintsForDay, _weekSchedules } = require('./weeklyPlanController');
+const { schedulePopulation } = require('../utils/schedulePopulation');
 
 function mealCount(schedule) {
   return ['breakfast', 'lunch', 'dinner'].reduce((sum, type) => sum + (schedule?.meals?.[type]?.length || 0), 0);
@@ -38,9 +39,9 @@ async function partnerWishlistFor(householdId, uid) {
     { $project: { _priorityRank: 0 } }
   ]);
   return WishlistItem.populate(items, [
-    { path: 'mealId' },
-    { path: 'createdBy', select: 'username displayName avatarUrl' },
-    { path: 'votes', select: 'username displayName avatarUrl' }
+    { path: 'mealId', match: { householdId } },
+    { path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' },
+    { path: 'votes', match: { householdId }, select: 'username displayName avatarUrl' }
   ]);
 }
 
@@ -50,12 +51,7 @@ exports.summary = async (req, res, next) => {
     const today = dateKey(new Date());
     const weekStart = startOfWeek(today);
     const week = await _weekSchedules(household._id, weekStart);
-    const todaySchedule = await Schedule.findOne({ householdId: household._id, date: today }).populate([
-      { path: 'meals.breakfast.meal' }, { path: 'meals.lunch.meal' }, { path: 'meals.dinner.meal' },
-      { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
-      { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
-    ]);
+    const todaySchedule = await Schedule.findOne({ householdId: household._id, date: today }).populate(schedulePopulation(household._id));
     const [wishlist, recentMemories, defaultStatus, openImageIssues, mealStats] = await Promise.all([
       partnerWishlistFor(household._id, req.user.uid),
       MealMemory.find({ householdId: household._id, photos: { $exists: true, $ne: [] } }).populate({ path: 'mealIds', match: { householdId: household._id } }).sort({ date: -1, createdAt: -1 }).limit(6),

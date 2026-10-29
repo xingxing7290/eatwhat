@@ -13,7 +13,7 @@ const arranging = ref('');
 const failedPhotos = reactive(new Set());
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 
-const mealName = (item) => item?.meal?.name || item?.name || '未命名菜品';
+const mealName = (item) => item?.meal?.name || item?.name || '菜品不可用';
 const mealId = (meal) => meal?._id || meal?.id || meal?.mealId || (typeof meal === 'string' ? meal : '');
 const plannedSlots = computed(() => (summary.value?.week?.days || []).reduce((count, day) => count + Object.keys(mealTypeText).filter(type => day.meals?.[type]?.length).length, 0));
 const loadError = ref('');
@@ -93,7 +93,7 @@ onBeforeUnmount(() => { active = false; });
         <div v-for="(label, type) in mealTypeText" :key="type" class="meal-row">
           <strong>{{ label }}</strong>
           <div class="meal-tags">
-            <el-tag v-for="item in summary.todaySchedule?.meals?.[type] || []" :key="item.meal?._id || item._id" effect="plain">{{ mealName(item) }}</el-tag>
+            <el-tag v-for="(item, index) in summary.todaySchedule?.meals?.[type] || []" :key="item?.meal?._id || item?._id || `unavailable-${index}`" effect="plain">{{ mealName(item) }}</el-tag>
             <span v-if="!summary.todaySchedule?.meals?.[type]?.length" class="muted">还没安排</span>
           </div>
         </div>

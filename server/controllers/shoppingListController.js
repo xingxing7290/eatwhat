@@ -5,6 +5,7 @@ const { ensureUserHousehold } = require('../utils/household');
 const { startOfWeek, weekDates } = require('../utils/week');
 const mongoose = require('mongoose');
 const { hasSafeShoppingListIndex } = require('../utils/shoppingListIndex');
+const { schedulePopulation } = require('../utils/schedulePopulation');
 
 function categoryFor(name) {
   const text = String(name || '');
@@ -92,9 +93,8 @@ exports.generate = async (req, res, next) => {
     const weekStart = requestedWeek(req.body?.weekStart || req.query.weekStart);
     if (!weekStart) return res.status(400).json({ error: '购物清单日期无效' });
     const dates = weekDates(weekStart);
-    const schedules = await Schedule.find({ householdId: household._id, date: { $in: dates } }).populate([
-      { path: 'meals.breakfast.meal' }, { path: 'meals.lunch.meal' }, { path: 'meals.dinner.meal' }
-    ]);
+    const schedules = await Schedule.find({ householdId: household._id, date: { $in: dates } }).populate(schedulePopulation(household._id, { includeAuthors: false }));
+    if (schedules.some(schedule => ['breakfast', 'lunch', 'dinner'].some(type => (schedule.meals?.[type] || []).some(entry => !entry?.meal)))) return res.status(409).json({ code: 'SCHEDULE_MEAL_UNAVAILABLE', error: '本周排餐包含不可用的菜品，未生成购物清单。请先在日历中核对。' });
     const list = await getOrCreateList(household._id, weekStart, req.user.uid);
     if (!checkVersion(req, res, list)) return;
     const checkedMap = new Map((list.items || []).filter(item => !item.manual).map(item => [itemKey(item), !!item.checked]));

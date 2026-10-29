@@ -6,6 +6,7 @@ const { ensureUserHousehold } = require('../utils/household');
 const { startOfWeek, weekDates, dateKey, parseDateKey } = require('../utils/week');
 const mongoose = require('mongoose');
 const { retainedMealAssignments, scheduleUpdatePipeline } = require('../utils/scheduleAssignments');
+const { schedulePopulation } = require('../utils/schedulePopulation');
 
 const mealTypes = ['breakfast', 'lunch', 'dinner'];
 const mealTypeLabels = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
@@ -43,12 +44,7 @@ function balanceHintsForDay(schedule) {
 }
 async function weekSchedules(householdId, weekStart) {
   const dates = weekDates(weekStart);
-  const schedules = await Schedule.find({ householdId, date: { $in: dates } }).populate([
-    { path: 'meals.breakfast.meal' }, { path: 'meals.lunch.meal' }, { path: 'meals.dinner.meal' },
-    { path: 'meals.breakfast.addedBy', select: 'username displayName avatarUrl' },
-    { path: 'meals.lunch.addedBy', select: 'username displayName avatarUrl' },
-    { path: 'meals.dinner.addedBy', select: 'username displayName avatarUrl' }
-  ]);
+  const schedules = await Schedule.find({ householdId, date: { $in: dates } }).populate(schedulePopulation(householdId));
   const map = new Map(schedules.map(item => [item.date, item]));
   return dates.map(date => map.get(date) || { date, meals: { breakfast: [], lunch: [], dinner: [] } });
 }
