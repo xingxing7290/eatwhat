@@ -252,6 +252,11 @@ const addItem = async () => {
     }
   }
 };
+const addItemOnEnter = event => {
+  if (event.isComposing || event.keyCode === 229) return;
+  event.preventDefault();
+  addItem();
+};
 const beginEdit = item => {
   if (disabled.value) return;
   editingItem.value = { id: item._id, manual: !!item.manual };
@@ -282,7 +287,7 @@ const saveEdit = async () => {
     }, next => next.items.some(item => item._id === id && item.name === fields.name && (item.amount || '') === fields.amount && item.category === fields.category && item.checked === expectedChecked));
   } finally { working.value = false; }
 };
-const saveEditOnEnter = event => { if (event.isComposing) return; event.preventDefault(); saveEdit(); };
+const saveEditOnEnter = event => { if (event.isComposing || event.keyCode === 229) return; event.preventDefault(); saveEdit(); };
 const toggle = async item => {
   if (disabled.value) return;
   const hadFocus = document.activeElement?.closest('.item-row')?.dataset.itemId === String(item._id);
@@ -343,7 +348,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
     <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加" />
     <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
     <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
-    <el-card><template #header><strong>添加食材</strong></template><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keyup.enter="addItem" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keyup.enter="addItem" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
+    <el-card><template #header><strong>添加食材</strong></template><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
     </template>
     <el-dialog v-model="copyDialogVisible" title="手动复制待买清单" width="min(560px, 92vw)"><p class="copy-help">浏览器未允许自动复制。以下是点击时的快照；清单之后的变化不会自动更新。</p><el-input ref="snapshotInput" :model-value="copiedSnapshot" type="textarea" :rows="10" readonly aria-label="待买清单快照" /><template #footer><el-button @click="selectSnapshot">全选内容</el-button><el-button type="primary" @click="copyDialogVisible = false">完成</el-button></template></el-dialog>
     <el-dialog :model-value="!!editingItem" title="编辑购物食材" width="min(520px, 92vw)" :close-on-click-modal="false" :before-close="closeEdit">

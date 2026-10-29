@@ -48,6 +48,7 @@ async function main () {
     await page.getByRole('button', { name: '继续编辑' }).click()
     assert.equal(await name.inputValue(), '土鸡蛋')
     await amount.evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, isComposing: true })))
+    await amount.evaluate(input => input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', keyCode: 229, bubbles: true })))
     assert.equal(writes, 0, 'confirming an IME composition must not submit the form')
     await amount.press('Enter')
     await dialog.waitFor({ state: 'hidden' })
