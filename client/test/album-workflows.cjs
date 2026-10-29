@@ -15,11 +15,12 @@ async function main () {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     let legacy = false
+    let photoUnavailable = true
     let malformed = false
     let failPage = false
     let holdPage = false; let releasePage; let noPhotos = false
     const reads = []
-    await page.route('**/broken-photo.png', route => route.fulfill({ status: 404, body: '' }))
+    await page.route('**/broken-photo.png', route => photoUnavailable ? route.fulfill({ status: 404, body: '' }) : route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="80"><rect width="100" height="80" fill="orange"/></svg>' }))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request()
@@ -60,6 +61,19 @@ async function main () {
     await page.setViewportSize({ width: 390, height: 844 })
     assert.ok(reads.every(read => read.limit === 24 && read.page >= 1))
     await page.locator('.photo-card img[alt="图片暂不可用"]').waitFor()
+    const brokenCard = page.getByRole('button', { name: /第 4 张，照片暂不可用/ })
+    await brokenCard.getByText('照片暂不可用').waitFor()
+    await brokenCard.click()
+    const photoDialog = page.getByRole('dialog', { name: '饭桌回忆' })
+    await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    photoUnavailable = false
+    await photoDialog.getByRole('button', { name: '重试这张照片' }).click()
+    await photoDialog.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor({ state: 'hidden' })
+    await photoDialog.locator('img.preview').waitFor()
+    await page.waitForFunction(() => document.querySelector('.el-dialog img.preview')?.naturalWidth === 100)
+    await page.keyboard.press('Escape')
+    await photoDialog.waitFor({ state: 'hidden' })
+    await page.getByRole('button', { name: /第 4 张$/ }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     if (process.env.EATWHAT_ALBUM_SHOT) await page.screenshot({ path: process.env.EATWHAT_ALBUM_SHOT })
     await page.getByRole('button', { name: '下一页' }).click()
