@@ -12,7 +12,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let mode = 'populated'; let failB = true; let wishFailed = false; let wishes = []; let release; let catalogCalls = 0; let inflight = 0; let peak = 0; const mealCalls = []
+    let mode = 'populated'; let failB = true; let wishFailed = false; let wishReadFail = false; let wishHold = false; let releaseWish; let wishFresh = null; let wishes = []; let release; let catalogCalls = 0; let inflight = 0; let peak = 0; const mealCalls = []
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -36,6 +36,10 @@ async function main () {
         return route.fulfill({ json: { _id: id, name: mode === 'race' ? (oldRequest ? '旧月份菜名' : '新月份菜名') : id === 'a' ? '旧版菜甲' : '旧版菜乙' } })
       }
       if (path === '/wishlist') return wishFailed ? route.fulfill({ status: 503, json: { error: '提醒读取失败' } }) : route.fulfill({ json: wishes })
+      if (path === '/wishlist/wish-linked') {
+        if (wishHold) await new Promise(resolve => { releaseWish = resolve })
+        return wishReadFail ? route.fulfill({ status: 503, json: { error: '心愿读取失败' } }) : route.fulfill({ json: wishFresh })
+      }
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/calendar`)
@@ -65,13 +69,40 @@ async function main () {
         }
       }
     }
+    wishReadFail = true
     await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
+    await page.getByText('无法核对最新的想吃内容', { exact: false }).waitFor()
+    assert.equal(new URL(page.url()).pathname, '/calendar')
+    wishReadFail = false
+    wishFresh = { _id: 'wish-linked', title: '新菜名', status: 'open', partnerSignal: true, mealId: { _id: 'meal-z', name: '新菜名' } }
+    await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
+    await page.getByText('日期或想吃内容已变化', { exact: false }).waitFor()
+    assert.equal(new URL(page.url()).pathname, '/calendar')
+    await page.getByRole('button', { name: '安排新菜名到今天晚餐' }).click()
     await page.waitForURL('**/selection?*')
     const target = new URL(page.url())
-    assert.equal(target.searchParams.get('suggestedMealId'), 'meal-b')
+    assert.equal(target.searchParams.get('suggestedMealId'), 'meal-z')
     assert.equal(target.searchParams.get('wishlistId'), 'wish-linked')
     assert.equal(target.searchParams.get('date'), '2026-10-28')
     assert.equal(target.searchParams.get('mealType'), 'dinner')
+    wishFresh = { ...wishFresh, status: 'done' }
+    await page.goto(`${base}/calendar`)
+    await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
+    await page.getByText('这条想吃已变化，不再是待安排的家人提醒').waitFor()
+    assert.equal(await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).count(), 0)
+    wishFresh = { ...wishes[1], status: 'open' }
+    wishHold = true
+    await page.reload()
+    await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
+    for (let i = 0; i < 100 && !releaseWish; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseWish, 'function')
+    await page.clock.setFixedTime(new Date(2026, 9, 29, 0, 1))
+    const wishResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/wishlist/wish-linked')
+    releaseWish(); await wishResponse
+    await page.getByText('日期或想吃内容已变化', { exact: false }).last().waitFor()
+    assert.equal(new URL(page.url()).pathname, '/calendar', 'a date rollover during the check must not navigate')
+    wishHold = false
+    await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     wishes = []
     await page.setViewportSize({ width: 1280, height: 900 })
 

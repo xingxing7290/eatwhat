@@ -38,6 +38,7 @@ useDraftGuard({ dirty: noDraft, busy: computed(() => deleting.value || checkingD
 let active = true;
 const meals = ref([]);
 const partnerWishlist = ref([]);
+const arrangingWish = ref('');
 const nameLoading = ref(false);
 const nameWarning = ref('');
 const wishlistError = ref('');
@@ -114,12 +115,31 @@ const loadPartnerWishlist = async (sequence = monthSequence) => {
 };
 const wishlistMealId = item => item?.mealId && typeof item.mealId === 'object' && !item.mealId.archived ? item.mealId._id || item.mealId.id : '';
 const wishlistNeedsRecipe = item => item?.mealId?.archived ? '菜品已移入回收站' : item?.mealLinkStatus === 'unavailable' ? '关联菜品不可用' : item?.mealLinkStatus === 'unlinked' ? '尚未关联菜品' : '请先核对关联菜品';
-const arrangeWishlistDinner = (item) => {
+const arrangeWishlistDinner = async (item) => {
+  if (arrangingWish.value || blocked.value || isLoading.value || loadError.value) return;
   const id = wishlistMealId(item);
   if (!id || !item?._id) return ElMessage.warning('请先在想吃清单中核对关联菜品');
-  return router.push({ name: 'MealSelection', query: {
-    date: format(new Date(), 'yyyy-MM-dd'), mealType: 'dinner', suggestedMealId: id, wishlistId: item._id
-  } });
+  const wishId = String(item._id);
+  const shownDate = format(new Date(), 'yyyy-MM-dd');
+  const sequence = monthSequence;
+  arrangingWish.value = wishId;
+  try {
+    const fresh = await api.wishlist.get(wishId);
+    if (!active || sequence !== monthSequence) return;
+    if (!fresh || String(fresh._id || fresh.id || '') !== wishId || typeof fresh.title !== 'string' || !['open', 'planned', 'done'].includes(fresh.status)) throw new Error('想吃信息不完整');
+    const shown = partnerWishlist.value.find(wish => String(wish?._id || '') === wishId);
+    if (!shown || shown !== item) return ElMessage.warning('提醒已刷新，请重新核对后再安排');
+    if (fresh.status !== 'open' || fresh.partnerSignal === false) {
+      partnerWishlist.value = partnerWishlist.value.filter(wish => wish !== item);
+      return ElMessage.warning('这条想吃已变化，不再是待安排的家人提醒');
+    }
+    partnerWishlist.value = partnerWishlist.value.map(wish => wish === item ? fresh : wish);
+    const nextId = wishlistMealId(fresh);
+    if (format(new Date(), 'yyyy-MM-dd') !== shownDate || String(nextId || '') !== String(id) || fresh.title !== item.title) return ElMessage.warning('日期或想吃内容已变化，请核对更新后的提醒再安排');
+    return router.push({ name: 'MealSelection', query: { date: shownDate, mealType: 'dinner', suggestedMealId: id, wishlistId: wishId } });
+  } catch (_) {
+    if (active && sequence === monthSequence) ElMessage.warning('无法核对最新的想吃内容，请重试或到想吃清单查看');
+  } finally { arrangingWish.value = ''; }
 };
 const validateMonth = (rows, year, month) => {
   if (!Array.isArray(rows)) throw new Error('月度安排数据不完整');
@@ -488,7 +508,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
 
     <section v-if="partnerWishlist.length" class="partner-wishlist-banner" aria-label="家人最近想吃">
       <div class="wishlist-banner-heading"><strong>家人最近想吃</strong><router-link :to="{ name: 'wishlist' }">查看全部想吃 →</router-link></div>
-      <ul class="wishlist-reminders"><li v-for="item in partnerWishlist" :key="item._id"><div class="wishlist-reminder-title"><strong>{{ item.title || '未命名想吃' }}</strong><small v-if="!wishlistMealId(item) || !item._id">{{ wishlistNeedsRecipe(item) }}</small></div><el-button v-if="wishlistMealId(item) && item._id" size="small" type="primary" :aria-label="`安排${item.title || '这道菜'}到今天晚餐`" @click="arrangeWishlistDinner(item)">安排今天晚餐</el-button><router-link v-else :to="{ name: 'wishlist' }" :aria-label="`在想吃清单中核对${item.title || '这条想吃'}`">前往核对 →</router-link></li></ul>
+      <ul class="wishlist-reminders"><li v-for="item in partnerWishlist" :key="item._id"><div class="wishlist-reminder-title"><strong>{{ item.title || '未命名想吃' }}</strong><small v-if="!wishlistMealId(item) || !item._id">{{ wishlistNeedsRecipe(item) }}</small></div><el-button v-if="wishlistMealId(item) && item._id" size="small" type="primary" :loading="arrangingWish === String(item._id)" :disabled="!!arrangingWish || blocked || isLoading || !!loadError" :aria-label="`安排${item.title || '这道菜'}到今天晚餐`" @click="arrangeWishlistDinner(item)">安排今天晚餐</el-button><router-link v-else :to="{ name: 'wishlist' }" :aria-label="`在想吃清单中核对${item.title || '这条想吃'}`">前往核对 →</router-link></li></ul>
     </section>
 
     <!-- 移动端月份导航 - 只在移动端显示 -->
