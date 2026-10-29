@@ -23,11 +23,11 @@ function photoUrls(req) {
   return (req.files || []).map(file => buildImageUrl(req, file.filename));
 }
 function populateQuery(q, householdId) {
-  return q.populate({ path: 'mealIds', match: { householdId } }).populate('createdBy', 'username displayName avatarUrl').populate({ path: 'participants', match: { householdId }, select: 'username displayName avatarUrl' });
+  return q.populate({ path: 'mealIds', match: { householdId } }).populate({ path: 'createdBy', match: { householdId }, select: 'username displayName avatarUrl' }).populate({ path: 'participants', match: { householdId }, select: 'username displayName avatarUrl' });
 }
 function validDate(value) { const parsed = parseDateKey(value); return !!parsed && dateKey(parsed) === value; }
 function present(item) {
-  return { ...item.toObject(), supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
+  return { ...(item.toObject ? item.toObject() : item), supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: item.editRevision || null, updatedAt: item.updatedAt ? item.updatedAt.toISOString() : null } };
 }
 function parseEditVersion(value) {
   let version = value;
@@ -63,6 +63,20 @@ exports.list = async (req, res, next) => {
     if (req.query.date) { if (typeof req.query.date !== 'string' || !validDate(req.query.date)) return res.status(400).json({ error: '日期无效' }); query.date = req.query.date; }
     if (req.query.month) { if (typeof req.query.month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month)) return res.status(400).json({ error: '月份无效' }); query.date = { $regex: `^${req.query.month}` }; }
     if (req.query.mealId) { if (typeof req.query.mealId !== 'string' || !mongoose.isValidObjectId(req.query.mealId)) return res.status(400).json({ error: '菜品无效' }); query.mealIds = req.query.mealId; }
+    if (req.query.view === 'timeline') {
+      const { page: pageInput = '1', limit: limitInput = '12', search = '', mealType = 'all', photos = 'all' } = req.query;
+      if (typeof pageInput !== 'string' || !/^[1-9]\d*$/.test(pageInput) || typeof limitInput !== 'string' || !/^[1-9]\d*$/.test(limitInput) || typeof search !== 'string' || search.length > 100 || typeof mealType !== 'string' || !['all', 'breakfast', 'lunch', 'dinner', 'snack', 'other'].includes(mealType) || typeof photos !== 'string' || !['all', 'yes', 'no'].includes(photos)) return res.status(400).json({ error: '回忆筛选或分页参数无效' });
+      const page = Number(pageInput); const limit = Number(limitInput); const skip = (page - 1) * limit; const term = search.trim();
+      if (!Number.isSafeInteger(page) || !Number.isSafeInteger(limit) || limit > 30 || !Number.isSafeInteger(skip) || skip > 1000000) return res.status(400).json({ error: '回忆分页参数无效' });
+      if (query.mealIds) query.mealIds = new mongoose.Types.ObjectId(query.mealIds);
+      if (mealType !== 'all') query.mealType = mealType;
+      if (photos !== 'all') query['photos.0'] = { $exists: photos === 'yes' };
+      if (term) { const regex = new RegExp(term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'); query.$or = [{ title: regex }, { note: regex }, { mood: regex }, { nextImprovement: regex }]; }
+      const [result] = await MealMemory.aggregate([{ $match: query }, { $facet: { items: [{ $sort: { date: -1, createdAt: -1, _id: -1 } }, { $skip: skip }, { $limit: limit }], count: [{ $count: 'total' }] } }]);
+      const items = result?.items || [];
+      await MealMemory.populate(items, [{ path: 'mealIds', match: { householdId: household._id } }, { path: 'createdBy', match: { householdId: household._id }, select: 'username displayName avatarUrl' }, { path: 'participants', match: { householdId: household._id }, select: 'username displayName avatarUrl' }]);
+      return res.json({ supportsMemoryTimeline: true, page, limit, search: term, month: req.query.month || '', mealType, photos, total: result?.count?.[0]?.total || 0, items: items.map(present) });
+    }
     const memories = await populateQuery(MealMemory.find(query).sort({ date: -1, createdAt: -1 }).limit(200), household._id);
     res.json(memories.map(present));
   } catch (err) { next(err); }

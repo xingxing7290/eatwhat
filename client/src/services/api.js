@@ -489,7 +489,7 @@ export const anniversaryTemplateApi = {
 // 饭后回忆API
 export const memoryApi = {
 	list: (params = {}) => api.get('/memories', { params }),
-	get: (id) => api.get(`/memories/${id}`),
+	get: (id, options = {}) => api.get(`/memories/${encodeURIComponent(id)}`, options),
 	create: (payload) => api.post('/memories', payload),
 	update: (id, payload) => api.put(`/memories/${id}`, payload),
 	delete: (id, expectedEditVersion) => api.delete(`/memories/${id}`, { params: expectedEditVersion === undefined ? {} : { expectedEditVersion: JSON.stringify(expectedEditVersion) } })

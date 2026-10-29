@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Delete, Picture, Edit } from '@element-plus/icons-vue';
@@ -11,6 +11,15 @@ import { resolveUploadedImage } from '@/utils/uploadedImage.mjs';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const memories = ref([]);
+const timelinePage = ref(1);
+const timelineLimit = 12;
+const timelineTotal = ref(0);
+const timelineCapable = ref(false);
+const timelineSearch = ref('');
+const timelineMonth = ref('');
+const timelineMealType = ref('all');
+const timelinePhotos = ref('all');
+let timelineTimer = null;
 const route = useRoute();
 const router = useRouter();
 const meals = ref([]);
@@ -28,6 +37,10 @@ const loading = ref(false);
 const loadError = ref('');
 const deletingId = ref('');
 const deleteIssue = ref('');
+const deleteTargetId = ref('');
+const deleteReviewError = ref('');
+const deleteReviewMessage = ref('');
+const checkingDelete = ref(false);
 const editing = ref(null);
 const editIssue = ref('');
 const editReviewed = ref(false);
@@ -47,8 +60,8 @@ const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value || photoFiles.value.length > 0);
 const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => resetForm(), reopen: () => { dialogVisible.value = true; }, label: '回忆' });
 const { uncertain: saveUncertain, reviewed, reviewing, deciding, markUncertain, review, allowRetry, discardDraft } = recovery;
-const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || linkedLoading.value || !!deletingId.value);
-const uncertain = computed(() => saveUncertain.value || !!editIssue.value);
+const busy = computed(() => saving.value || reviewing.value || deciding.value || checkingEdit.value || checkingDelete.value || linkedLoading.value || !!deletingId.value);
+const uncertain = computed(() => saveUncertain.value || !!editIssue.value || !!deleteIssue.value);
 useDraftGuard({ dirty, busy, uncertain, label: '饭后回忆' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐', snack: '加餐', other: '其它' };
 const supportedPhotoTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
@@ -103,7 +116,13 @@ const handlePhotoChange = async (_uploadFile, uploadFiles) => {
 };
 
 
-const grouped = computed(() => memories.value.reduce((acc, item) => {
+const filtersActive = computed(() => !!timelineSearch.value.trim() || !!timelineMonth.value || timelineMealType.value !== 'all' || timelinePhotos.value !== 'all');
+const visibleMemories = computed(() => {
+  if (timelineCapable.value) return memories.value;
+  const query = timelineSearch.value.trim().toLocaleLowerCase();
+  return memories.value.filter(item => (!timelineMonth.value || item.date.startsWith(`${timelineMonth.value}-`)) && (timelineMealType.value === 'all' || item.mealType === timelineMealType.value) && (timelinePhotos.value === 'all' || (Array.isArray(item.photos) && item.photos.length > 0) === (timelinePhotos.value === 'yes')) && (!query || [item.title, item.note, item.mood, item.nextImprovement].some(value => String(value || '').toLocaleLowerCase().includes(query))));
+});
+const grouped = computed(() => visibleMemories.value.reduce((acc, item) => {
   const key = item.date;
   if (!acc[key]) acc[key] = [];
   acc[key].push(item);
@@ -115,7 +134,9 @@ const validVersion = item => item?.supportsConditionalEdit === true && item.edit
   (item.editVersion.updatedAt === null || (typeof item.editVersion.updatedAt === 'string' && Number.isFinite(Date.parse(item.editVersion.updatedAt))));
 const canDelete = item => item?.supportsConditionalDelete === true && validVersion(item);
 const deleteBlocked = computed(() => saveUncertain.value || !!editIssue.value || (!!editing.value && dirty.value));
-const legacyDeleteWarning = computed(() => memories.value.some(item => !canDelete(item)));
+const legacyDeleteWarning = computed(() => visibleMemories.value.some(item => !canDelete(item)));
+const timelinePages = computed(() => Math.max(1, Math.ceil(timelineTotal.value / timelineLimit)));
+const resetFilters = () => { timelineSearch.value = ''; timelineMonth.value = ''; timelineMealType.value = 'all'; timelinePhotos.value = 'all'; };
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealOptions = computed(() => {
   const seen = new Set();
@@ -246,15 +267,24 @@ const openLinkedMemory = async id => {
   finally { if (alive) linkedLoading.value = false; }
 };
 const load = async () => {
+  if (timelineTimer) { clearTimeout(timelineTimer); timelineTimer = null; }
   const sequence = ++memorySequence;
   loading.value = true;
   loadError.value = '';
   try {
-    const memoryData = await api.memory.list();
+    const query = { view: 'timeline', page: timelinePage.value, limit: timelineLimit, search: timelineSearch.value.trim(), mealType: timelineMealType.value, photos: timelinePhotos.value, ...(timelineMonth.value ? { month: timelineMonth.value } : {}) };
+    const memoryData = await api.memory.list(query);
     if (!alive || sequence !== memorySequence) return;
-    if (!Array.isArray(memoryData)) throw new Error('回忆列表数据不完整');
-    memories.value = memoryData;
-    deleteIssue.value = '';
+    const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && item._id && typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date)) && new Set(rows.map(item => item._id)).size === rows.length;
+    if (memoryData?.supportsMemoryTimeline === true) {
+      if (memoryData.page !== query.page || memoryData.limit !== timelineLimit || memoryData.search !== query.search || memoryData.month !== (query.month || '') || memoryData.mealType !== query.mealType || memoryData.photos !== query.photos || !Number.isSafeInteger(memoryData.total) || memoryData.total < 0 || !validItems(memoryData.items) || memoryData.items.length !== Math.min(timelineLimit, Math.max(0, memoryData.total - (query.page - 1) * timelineLimit))) throw new Error('回忆分页数据不完整');
+      timelineCapable.value = true; timelineTotal.value = memoryData.total;
+      if (timelinePage.value > timelinePages.value) { timelinePage.value = timelinePages.value; return load(); }
+      memories.value = memoryData.items;
+    } else {
+      if (!validItems(memoryData)) throw new Error('回忆列表数据不完整');
+      timelineCapable.value = false; memories.value = memoryData;
+    }
     if (typeof route.query.edit === 'string' && route.query.edit) {
       const requestedId = route.query.edit;
       await openLinkedMemory(requestedId);
@@ -281,6 +311,15 @@ const load = async () => {
   } catch (e) { if (alive && sequence === memorySequence) loadError.value = e?.error || e?.message || '加载饭后回忆失败'; }
   finally { if (alive && sequence === memorySequence) loading.value = false; }
 };
+const changeTimelinePage = next => {
+  if (loading.value || deleteIssue.value || deletingId.value || checkingDelete.value || next < 1 || next > timelinePages.value || next === timelinePage.value) return;
+  timelinePage.value = next; load();
+};
+watch([timelineSearch, timelineMonth, timelineMealType, timelinePhotos], () => {
+  timelinePage.value = 1; memorySequence++; loading.value = true;
+  if (timelineTimer) clearTimeout(timelineTimer);
+  timelineTimer = setTimeout(load, 200);
+}, { flush: 'sync' });
 const save = async () => {
   if (!form.date) return ElMessage.warning('请选择日期');
   if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value) return;
@@ -306,7 +345,7 @@ const save = async () => {
     const result = editing.value ? await api.memory.update(editing.value.id, fd) : await api.memory.create(fd);
     if (!result?._id && !result?.id) throw new Error('保存响应不完整');
     if (editing.value && (String(result._id || result.id) !== editing.value.id || !validVersion(result))) throw new Error('保存响应不完整');
-    ElMessage.success('回忆已保存');
+    ElMessage.success(`回忆已保存${filtersActive.value || timelinePage.value > 1 ? '；如未显示，请调整筛选或页码' : ''}`);
     dialogVisible.value = false;
     resetForm();
     await load();
@@ -320,17 +359,37 @@ const remove = async (item) => {
   if (deletingId.value || saving.value || deleteIssue.value || loading.value || loadError.value || deleteBlocked.value) return;
   if (!canDelete(item)) return ElMessage.warning('服务器未提供安全删除能力，请稍后重试');
   deletingId.value = item._id;
+  deleteReviewMessage.value = '';
   try {
     await ElMessageBox.confirm('确定删除这条饭后回忆吗？', '删除确认');
     await api.memory.delete(item._id, item.editVersion);
     if (editing.value?.id === String(item._id)) resetForm();
     ElMessage.success('已删除');
     await load();
-  } catch (e) { if (e !== 'cancel' && e !== 'close') deleteIssue.value = e?.code === 'MEMORY_CONFLICT' ? '回忆已被修改或删除，本次未删除；请重新加载并核对。' : '删除结果未确认，请重新加载并核对后再操作。'; }
+  } catch (e) { if (e !== 'cancel' && e !== 'close') { deleteTargetId.value = String(item._id); deleteReviewError.value = ''; deleteIssue.value = e?.code === 'MEMORY_CONFLICT' ? '回忆已被修改或删除，本次未删除；请重新加载并核对。' : '删除结果未确认，请重新加载并核对后再操作。'; } }
   finally { deletingId.value = ''; }
 };
+const reviewDelete = async () => {
+  if (!deleteTargetId.value || checkingDelete.value) return;
+  checkingDelete.value = true; deleteReviewError.value = ''; let message = '';
+  try {
+    const item = await api.memory.get(deleteTargetId.value, { suppressErrorToast: true });
+    if (!alive) return;
+    if (!item || String(item._id || item.id) !== deleteTargetId.value || typeof item.date !== 'string') throw new Error('读取的回忆信息不完整');
+    message = `服务器当前仍有「${item.title || '温馨一餐'}」（${item.date}）；先前请求仍可能稍后完成，请继续留意。`;
+  } catch (e) {
+    if (!alive) return;
+    if (e?.code === 'MEMORY_NOT_FOUND') message = '服务器当前未找到这条回忆；先前请求仍可能稍后完成。';
+    else { deleteReviewError.value = e?.error || e?.message || '无法核对这条回忆，请重试'; checkingDelete.value = false; return; }
+  }
+  await load();
+  if (!alive) return;
+  if (loadError.value) deleteReviewError.value = '已读取记录，但列表刷新失败，请重试。';
+  else { deleteReviewMessage.value = message; deleteIssue.value = ''; deleteTargetId.value = ''; }
+  checkingDelete.value = false;
+};
 onMounted(() => { window.addEventListener('keydown', onPhotoKey); load(); });
-onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); window.removeEventListener('keydown', onPhotoKey); });
+onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); window.removeEventListener('keydown', onPhotoKey); });
 </script>
 
 <template>
@@ -341,15 +400,21 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
     </div>
 
     <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
+    <p v-if="saveUncertain && !dialogVisible" class="timeline-note">列表可能跨页或受到筛选影响，请按日期和内容逐页核对；未显示不代表保存失败。</p>
     <el-alert v-if="linkedError" type="warning" :closable="false" show-icon :title="`无法打开相册关联的回忆：${linkedError}`"><el-button link type="primary" :loading="linkedLoading" @click="openLinkedMemory(linkedId)">重新打开</el-button><el-button link @click="linkedError = ''; linkedId = ''">关闭提示</el-button></el-alert>
     <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button></el-alert>
-    <el-alert v-if="deleteIssue" type="warning" :closable="false" show-icon :title="deleteIssue"><el-button link type="primary" :loading="loading" @click="load">重新加载并核对</el-button></el-alert>
+    <el-alert v-if="deleteIssue" type="warning" :closable="false" show-icon :title="deleteIssue"><p v-if="deleteReviewError">{{ deleteReviewError }}</p><el-button link type="primary" :loading="checkingDelete || loading" @click="reviewDelete">重新加载并核对</el-button></el-alert>
+    <el-alert v-if="deleteReviewMessage" type="info" show-icon :title="deleteReviewMessage" @close="deleteReviewMessage = ''" />
     <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分回忆。" />
 
+    <section class="memory-filters" aria-label="查找饭后回忆">
+      <div class="filter-heading"><div><span class="filter-kicker">YOUR TABLE JOURNAL</span><h2>寻找一段回忆</h2><p aria-live="polite">{{ loading ? '正在查找回忆…' : loadError ? '暂时无法获取结果' : timelineCapable ? `共 ${timelineTotal} 条回忆 · 第 ${timelinePage} / ${timelinePages} 页` : `显示 ${visibleMemories.length} 条回忆` }}</p></div><label class="search-field"><span class="sr-only">搜索回忆</span><input v-model="timelineSearch" type="search" maxlength="100" placeholder="搜索标题、心情或笔记" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label></div>
+      <div class="filter-row"><label>月份<input v-model="timelineMonth" type="month" aria-label="按月份筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label><label>餐次<select v-model="timelineMealType" aria-label="按餐次筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部餐次</option><option v-for="(label, key) in mealTypeText" :key="key" :value="key">{{ label }}</option></select></label><label>照片<select v-model="timelinePhotos" aria-label="按照片筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部回忆</option><option value="yes">有照片</option><option value="no">无照片</option></select></label><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="resetFilters">清除筛选</button></div>
+    </section>
     <div v-loading="loading" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-      <el-empty v-else-if="!loading && !memories.length" description="还没有饭后回忆" />
-      <p v-if="!loading && !loadError && memories.length >= 200" class="timeline-note">当前显示最近 200 条回忆，其他照片可在饭桌相册中按月查看。</p>
+      <el-empty v-else-if="!loading && !visibleMemories.length" :description="filtersActive ? '没有符合条件的饭后回忆' : '还没有饭后回忆'" />
+      <p v-if="!loading && !loadError && !timelineCapable && memories.length >= 200" class="timeline-note">当前服务器最多返回最近 200 条；筛选只覆盖已返回的记录。请升级服务器以浏览全部历史回忆。</p>
       <section v-for="(items, date) in (loadError ? {} : grouped)" :key="date" class="day-group">
         <h2>{{ date }}</h2>
         <div class="memory-grid">
@@ -365,6 +430,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         </div>
       </section>
     </div>
+    <nav v-if="timelineCapable && !loadError && timelineTotal > timelineLimit" class="timeline-pagination" aria-label="回忆分页"><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage <= 1" @click="changeTimelinePage(timelinePage - 1)">上一页</el-button><span aria-live="polite">第 {{ timelinePage }} / {{ timelinePages }} 页</span><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage >= timelinePages" @click="changeTimelinePage(timelinePage + 1)">下一页</el-button></nav>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑饭后回忆' : '记录饭后回忆'" width="min(560px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <CreateRecoveryNotice v-if="saveUncertain" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -424,6 +490,23 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .photo-nav .el-button { margin: 0; min-height: 44px; }
 .meal-help { color: var(--text-secondary); line-height: 1.5; }
 .timeline-note { color: var(--text-secondary); font-size: 13px; }
+.memory-filters { --memory-accent: color-mix(in srgb,var(--secondary-color) 45%,#33211a); padding: 22px 24px; border: 1px solid var(--border-color); border-radius: 22px; background: var(--bg-primary); box-shadow: 0 8px 24px var(--shadow-color); }
+.filter-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; }
+.filter-heading h2 { margin-top: 6px; font-size: 19px; }
+.filter-heading p { margin: 5px 0 0; color: var(--text-secondary); font-size: 13px; }
+.filter-kicker { color: var(--memory-accent); font-size: 10px; font-weight: 800; letter-spacing: .13em; }
+.search-field { width: min(100%,360px); }
+.memory-filters input,.memory-filters select { box-sizing: border-box; min-height: 44px; max-width: 100%; padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; }
+.search-field input { width: 100%; }
+.filter-row { display: flex; align-items: end; flex-wrap: wrap; gap: 12px; margin-top: 18px; }
+.filter-row label { display: grid; gap: 6px; color: var(--text-primary); font-size: 13px; }
+.reset-filter { min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--memory-accent); font-weight: 700; text-decoration: underline; cursor: pointer; }
+.memory-filters input:focus-visible,.memory-filters select:focus-visible,.reset-filter:focus-visible { outline: 2px solid var(--memory-accent); outline-offset: 3px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+.timeline { display: flex; flex-direction: column; gap: 18px; }
+.timeline-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); }
+.timeline-pagination :deep(.el-button) { min-height: 44px; }
+:global(html.dark .memory-filters) { --memory-accent: var(--secondary-color); }
 .meal-names { justify-content: flex-start; flex-wrap: wrap; margin-top: 10px; }
-@media (max-width: 640px) { .page-header { flex-direction: column; align-items: stretch; } }
+@media (max-width: 640px) { .page-header { flex-direction: column; align-items: stretch; } .memory-filters { padding: 18px; } .filter-heading { align-items: stretch; flex-direction: column; } .search-field { width: 100%; } }
 </style>

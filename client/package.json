@@ -19,6 +19,7 @@
     "test:album": "node test/album-workflows.cjs",
     "test:album-theme": "node test/album-theme.cjs",
     "test:memory": "node test/memory-workflows.cjs",
+    "test:memory-timeline": "node test/memory-timeline-workflows.cjs",
     "test:memory-edit": "node test/memory-edit-workflows.cjs",
     "test:wishlist": "node test/wishlist-workflows.cjs",
     "test:wishlist-filter": "node test/wishlist-filter-workflows.cjs",

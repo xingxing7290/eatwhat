@@ -11,7 +11,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true
+    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true; let detailFailure = false
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/broken-memory.png', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/api/**', async route => {
@@ -20,6 +20,11 @@ async function main () {
       let data = {}
       if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       else if (req.method() === 'GET' && path === '/memories') data = deleted ? [] : [{ _id: 'memory-a', date: '2026-10-28', mealType: 'dinner', title: '回忆一', photos: [image, '/broken-memory.png'], mealIds: [], supportsConditionalEdit: true, supportsConditionalDelete: deleteSupported, editVersion: { revision, updatedAt: '2026-10-28T12:00:00.000Z' } }]
+      else if (req.method() === 'GET' && path === '/memories/memory-a') {
+        if (detailFailure) return route.fulfill({ status: 503, json: { error: '暂时无法读取' } })
+        if (deleted) return route.fulfill({ status: 404, json: { code: 'MEMORY_NOT_FOUND', error: '未找到回忆' } })
+        data = { _id: 'memory-a', date: '2026-10-28', title: '回忆一' }
+      }
       else if (req.method() === 'POST' && path === '/memories') { saved = req.postData(); data = { _id: 'created' } }
       else if (req.method() === 'DELETE' && path === '/memories/memory-a') {
         assert.equal(JSON.parse(url.searchParams.get('expectedEditVersion')).revision, revision)
@@ -69,13 +74,20 @@ async function main () {
     await page.getByRole('button', { name: '确定', exact: true }).click()
     await page.getByText('回忆已被修改或删除，本次未删除', { exact: false }).waitFor()
     assert.equal(await page.getByRole('button', { name: '记录一餐' }).isDisabled(), true)
+    detailFailure = true
     await page.getByRole('button', { name: '重新加载并核对' }).click()
+    await page.getByText('暂时无法读取', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('button', { name: '记录一餐' }).isDisabled(), true)
+    detailFailure = false
+    await page.getByRole('button', { name: '重新加载并核对' }).click()
+    await page.getByText('服务器当前仍有「回忆一」', { exact: false }).waitFor()
     deleteMode = 'unknown'
     await page.getByRole('button', { name: '删除回忆一' }).click()
     await page.getByRole('button', { name: '确定', exact: true }).click()
     await page.getByText('删除结果未确认', { exact: false }).waitFor()
     assert.equal(await page.getByRole('button', { name: '记录一餐' }).isDisabled(), true)
     await page.getByRole('button', { name: '重新加载并核对' }).click()
+    await page.getByText('服务器当前未找到这条回忆', { exact: false }).waitFor()
     await page.getByText('还没有饭后回忆').waitFor()
     const initialReads = reads.length
     await page.goto(`${base}/memories?new=1&mealId=meal-75`)
