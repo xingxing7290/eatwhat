@@ -16,6 +16,11 @@ const memories = ref([]);
 const route = useRoute();
 const router = useRouter();
 const validMonth = value => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const validMemoryDate = value => {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value) || Number(value.slice(0, 4)) < 100) return false;
+  const time = Date.parse(`${value}T00:00:00Z`);
+  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
+};
 const readTimelineQuery = query => {
   const page = typeof query.page === 'string' && /^[1-9]\d*$/.test(query.page) ? Number(query.page) : 1;
   return {
@@ -246,7 +251,7 @@ const resetForm = () => {
   initialForm.value = JSON.stringify(form);
 };
 const fillEdit = item => {
-  if (!(item?._id || item?.id) || !validVersion(item) || typeof item.date !== 'string' || !Object.prototype.hasOwnProperty.call(mealTypeText, item.mealType) || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || !Array.isArray(item.mealIds) || item.mealIds.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string'))) throw new Error('回忆数据或版本不完整，请刷新后重试');
+  if (!(item?._id || item?.id) || !validVersion(item) || !validMemoryDate(item.date) || !Object.prototype.hasOwnProperty.call(mealTypeText, item.mealType) || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || !Array.isArray(item.mealIds) || item.mealIds.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string'))) throw new Error('回忆数据或版本不完整，请刷新后重试');
   resetPhotoUndo();
   unavailableMealCount.value = item.mealIds.filter(meal => meal === null).length;
   clearedUnavailableMeals.value = false; mealVisibilityVerified.value = item.supportsUnavailableMealVisibility === true;
@@ -340,7 +345,9 @@ const load = async () => {
     const query = { view: 'timeline', mealVisibility: 'preserve', page: timelinePage.value, limit: timelineLimit, search: timelineSearch.value.trim(), mealType: timelineMealType.value, photos: timelinePhotos.value, ...(timelineMonth.value ? { month: timelineMonth.value } : {}) };
     const memoryData = await api.memory.list(query);
     if (!alive || sequence !== memorySequence) return;
-    const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && item._id && typeof item.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(item.date) && (item.mealIds === undefined || (Array.isArray(item.mealIds) && item.mealIds.every(meal => meal === null || (!!mealId(meal) && typeof meal.name === 'string')))) && (item.photos === undefined || (Array.isArray(item.photos) && item.photos.every(photo => typeof photo === 'string')))) && new Set(rows.map(item => item._id)).size === rows.length;
+    const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && item._id && validMemoryDate(item.date) && (item.mealIds === undefined || (Array.isArray(item.mealIds) && item.mealIds.every(meal => meal === null || (!!mealId(meal) && typeof meal.name === 'string')))) && (item.photos === undefined || (Array.isArray(item.photos) && item.photos.every(photo => typeof photo === 'string')))) && new Set(rows.map(item => item._id)).size === rows.length;
+    const receivedRows = memoryData?.supportsMemoryTimeline === true ? memoryData.items : memoryData;
+    if (Array.isArray(receivedRows) && receivedRows.some(item => item && !validMemoryDate(item.date))) throw new Error('回忆包含无效日期，请检查数据或联系管理员');
     if (memoryData?.supportsMemoryTimeline === true) {
       if (memoryData.page !== query.page || memoryData.limit !== timelineLimit || memoryData.search !== query.search || memoryData.month !== (query.month || '') || memoryData.mealType !== query.mealType || memoryData.photos !== query.photos || !Number.isSafeInteger(memoryData.total) || memoryData.total < 0 || !validItems(memoryData.items) || memoryData.items.length !== Math.min(timelineLimit, Math.max(0, memoryData.total - (query.page - 1) * timelineLimit))) throw new Error('回忆分页数据不完整');
       timelineCapable.value = true; timelineTotal.value = memoryData.total;

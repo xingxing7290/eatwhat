@@ -13,7 +13,7 @@ async function main () {
     const rows = Array.from({ length: 205 }, (_, index) => ({ _id: `memory-${index}`, date: `2025-01-${String(28 - index % 28).padStart(2, '0')}`, title: `历史回忆${String(index).padStart(3, '0')}`, note: index === 204 ? '最后一条特别记号' : '', mood: '温馨', mealType: index % 2 ? 'lunch' : 'dinner', photos: index % 3 ? [] : ['/uploads/photo.png'], mealIds: [], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: `v${index}`, updatedAt: '2026-01-01T00:00:00.000Z' } }))
     rows[0].mealIds = [{ _id: 'meal-a', name: '家常菜' }, null, { _id: 'bad/id', name: '异常菜品' }]
     rows[0].supportsUnavailableMealVisibility = true
-    let legacy = false; let releaseSlow; const requests = []; const errors = []
+    let legacy = false; let invalidDate = false; let releaseSlow; const requests = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.context().route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -22,13 +22,21 @@ async function main () {
       if (path === '/memories' && url.searchParams.has('mealId')) return route.fulfill({ json: [] })
       if (path !== '/memories' || req.method() !== 'GET') return route.fulfill({ json: {} })
       const query = Object.fromEntries(url.searchParams); requests.push(query)
-      if (legacy) return route.fulfill({ json: rows.slice(0, 200) })
+      if (legacy) return route.fulfill({ json: rows.slice(0, 200).map((row, index) => invalidDate && index === 0 ? { ...row, date: '2025-02-29' } : row) })
       if (query.search === '历史回忆001') await new Promise(resolve => { releaseSlow = resolve })
       const filtered = rows.filter(row => (!query.month || row.date.startsWith(`${query.month}-`)) && (query.mealType === 'all' || row.mealType === query.mealType) && (query.photos === 'all' || (row.photos.length > 0) === (query.photos === 'yes')) && (!query.search || [row.title, row.note, row.mood].some(value => value.includes(query.search))))
       const number = Number(query.page); const limit = Number(query.limit)
-      return route.fulfill({ json: { supportsMemoryTimeline: true, page: number, limit, search: query.search, month: query.month || '', mealType: query.mealType, photos: query.photos, total: filtered.length, items: filtered.slice((number - 1) * limit, number * limit) } })
+      const items = filtered.slice((number - 1) * limit, number * limit).map((row, index) => invalidDate && index === 0 ? { ...row, date: '2025-02-29' } : row)
+      return route.fulfill({ json: { supportsMemoryTimeline: true, page: number, limit, search: query.search, month: query.month || '', mealType: query.mealType, photos: query.photos, total: filtered.length, items } })
     })
     await page.goto(`${base}/memories?month=2025-01`)
+    await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
+    invalidDate = true
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await page.getByText('无法加载回忆：回忆包含无效日期，请检查数据或联系管理员').waitFor()
+    assert.equal(await page.locator('.memory-card').count(), 0, 'invalid dates must not appear as real memories')
+    invalidDate = false
+    await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2025-01')
     assert.equal(requests[0].month, '2025-01')
@@ -94,7 +102,7 @@ async function main () {
     await page.getByRole('button', { name: '刷新当前结果' }).click()
     await page.getByText('历史回忆012·家人更新', { exact: true }).waitFor()
     await page.getByText('共 205 条回忆 · 第 2 / 18 页').waitFor()
-    assert.equal(new URL(page.url()).searchParams.get('page'), '2')
+    await page.waitForFunction(() => new URL(location.href).searchParams.get('page') === '2')
     rows[12].title = '历史回忆012'
     await page.getByRole('button', { name: '刷新当前结果' }).click()
     await page.getByText('历史回忆012', { exact: true }).waitFor()
@@ -148,6 +156,12 @@ async function main () {
     }
     legacy = true
     await page.reload()
+    await page.getByText('当前服务器最多返回最近 200 条', { exact: false }).waitFor()
+    invalidDate = true
+    await page.getByRole('button', { name: '刷新当前结果' }).click()
+    await page.getByText('无法加载回忆：回忆包含无效日期，请检查数据或联系管理员').waitFor()
+    invalidDate = false
+    await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('当前服务器最多返回最近 200 条', { exact: false }).waitFor()
     await page.getByRole('searchbox', { name: '搜索回忆' }).fill('历史回忆199')
     await page.getByText('历史回忆199', { exact: true }).waitFor()

@@ -125,6 +125,11 @@ async function main () {
     assert.equal(await linked.getByPlaceholder('比如：周五晚上的番茄牛腩').inputValue(), '核对后回忆')
     await page.waitForURL('**/memories?month=2026-10')
     assert.equal(await page.getByLabel('按月份筛选回忆').inputValue(), '2026-10')
+    await linked.getByRole('button', { name: '取消', exact: true }).click()
+    memory.date = '2025-02-29'
+    await page.goto(`${base}/memories?edit=memory-a&month=2026-10`)
+    await page.getByText('无法打开相册关联的回忆', { exact: false }).waitFor()
+    assert.equal(await page.getByRole('dialog', { name: '编辑饭后回忆' }).count(), 0, 'a deep-linked record with an invalid date must not open for editing')
     assert.deepEqual(errors, [])
     console.log('Memory edit workflows passed: conflict, direct review, recovery, photo and linked-data preservation')
   } finally { await browser.close() }
