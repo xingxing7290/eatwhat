@@ -505,7 +505,7 @@
         if (state.menuLoading) { $('count').textContent = '加载中'; const loading = document.createElement('div'); loading.className = 'empty'; loading.textContent = '正在端上菜单…'; $('mealGrid').replaceChildren(loading); return; }
         if (state.menuError) {
           $('count').textContent = '加载失败';
-          const box = document.createElement('div'); box.className = 'error'; box.textContent = '菜单暂时无法加载，请检查网络后重试。';
+          const box = document.createElement('div'); box.className = 'error'; box.textContent = state.menuError.startsWith('菜单分页数据不完整') ? '菜单数据不完整或已变化，请重新加载。' : '菜单暂时无法加载，请检查网络后重试。';
           const retry = document.createElement('button'); retry.type = 'button'; retry.className = 'menu-retry'; retry.textContent = '重新加载菜单'; retry.addEventListener('click', () => { menuFocusIntent = document.activeElement === retry ? { anchor: retry, sourceId: '' } : null; loadMenu(); }); box.appendChild(retry); $('mealGrid').replaceChildren(box); return;
         }
         $('count').textContent = `${state.menuSupported === true ? state.menu.total : meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
@@ -726,9 +726,10 @@
         clearTimeout(searchTimer);
         const sequence = ++state.menuSequence;
         const page = state.menuPage;
+        const category = state.category;
         const params = new URLSearchParams({ page: String(page), limit: '24' });
         if (state.search.trim()) params.set('search', state.search.trim());
-        if (state.category) params.set('category', state.category);
+        if (category) params.set('category', category);
         state.menuLoading = true; state.menuError = ''; renderFilters(); renderMeals();
         try {
           const data = await jsonRequest(`${apiRoot}?${params}`);
@@ -737,7 +738,13 @@
           const supported = data.session.supportsGuestMenuPagination === true;
           if (supported) {
             const menu = data.menu;
-            if (!menu || menu.page !== page || menu.limit !== 24 || !Number.isSafeInteger(menu.total) || menu.total < 0 || menu.totalPages !== Math.max(1, Math.ceil(menu.total / 24)) || !Array.isArray(menu.categories) || menu.categories.some(item => !item || typeof item.name !== 'string' || !item.name || !Number.isSafeInteger(item.count) || item.count < 0) || data.meals.length > 24 || data.meals.some(meal => !meal || typeof meal._id !== 'string' || typeof meal.name !== 'string')) throw new Error('菜单分页数据不完整');
+            if (!menu || menu.page !== page || menu.limit !== 24 || !Number.isSafeInteger(menu.total) || menu.total < 0 || menu.totalPages !== Math.max(1, Math.ceil(menu.total / 24)) || !Array.isArray(menu.categories) || menu.categories.some(item => !item || typeof item.name !== 'string' || !item.name || !Number.isSafeInteger(item.count) || item.count < 0) || data.meals.some(meal => !meal || typeof meal._id !== 'string' || !meal._id || typeof meal.name !== 'string' || !meal.name.trim())) throw new Error('菜单分页数据不完整');
+            const categoryNames = menu.categories.map(item => item.name);
+            const categoryTotal = menu.categories.reduce((sum, item) => sum + item.count, 0);
+            const expectedTotal = category ? (menu.categories.find(item => item.name === category)?.count || 0) : categoryTotal;
+            const expectedLength = Math.min(24, Math.max(0, menu.total - (page - 1) * 24));
+            const wrongCategory = category && data.meals.some(meal => category === '其他' ? ![null, '', '其他'].includes(meal.category ?? null) : meal.category !== category);
+            if (new Set(categoryNames).size !== categoryNames.length || !Number.isSafeInteger(categoryTotal) || expectedTotal !== menu.total || data.meals.length !== expectedLength || new Set(data.meals.map(meal => meal._id)).size !== data.meals.length || wrongCategory) throw new Error('菜单分页数据不完整或已变化，请重试');
             if (page > menu.totalPages) { state.menuPage = menu.totalPages; return loadMenu(); }
             state.menu = menu;
           } else { state.menu = null; state.menuPage = 1; }

@@ -33,6 +33,10 @@ async function main () {
       if (query === '延迟') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
       if (query === '出错' && !failedOnce) { failedOnce = true; return route.fulfill({ status: 503, json: { error: '测试断网' } }) }
       if (query === '异常响应') return route.fulfill({ json: { session, meals: [], menu: { page: number, limit, total: 500, totalPages: 1, categories: [] } } })
+      if (query === '重复菜') return route.fulfill({ json: { session, meals: [meals[0], meals[0]], menu: { page: number, limit, total: 2, totalPages: 1, categories: [{ name: '热菜', count: 2 }] } } })
+      if (query === '缺漏菜') return route.fulfill({ json: { session, meals: [meals[0]], menu: { page: number, limit, total: 2, totalPages: 1, categories: [{ name: '热菜', count: 2 }] } } })
+      if (query === '分类重复') return route.fulfill({ json: { session, meals: [meals[0]], menu: { page: number, limit, total: 1, totalPages: 1, categories: [{ name: '热菜', count: 1 }, { name: '热菜', count: 0 }] } } })
+      if (query === '统计不一致') return route.fulfill({ json: { session, meals: [meals[0]], menu: { page: number, limit, total: 1, totalPages: 1, categories: [{ name: '热菜', count: 2 }] } } })
       const searched = meals.filter(meal => [meal.name, meal.category].join(' ').toLowerCase().includes(query))
       const filtered = searched.filter(meal => !category || meal.category === category)
       const counts = new Map()
@@ -171,6 +175,16 @@ async function main () {
     await search.fill('异常响应')
     await page.getByRole('button', { name: '重新加载菜单' }).waitFor()
     assert.equal(await page.locator('.meal').count(), 0, 'malformed results must not display stale meals')
+    for (const fault of ['重复菜', '缺漏菜', '分类重复', '统计不一致']) {
+      await search.fill(fault)
+      const response = page.waitForResponse(result => new URL(result.url()).searchParams.get('search') === fault)
+      await response
+      await page.waitForFunction(() => document.querySelector('#mealGrid').getAttribute('aria-busy') === 'false')
+      await page.getByRole('button', { name: '重新加载菜单' }).waitFor()
+      await page.getByText('菜单数据不完整或已变化，请重新加载。', { exact: false }).waitFor()
+      assert.equal(await page.locator('.meal').count(), 0, `${fault} must not show an incomplete menu`)
+      assert.equal(await page.locator('#cartTitle').innerText(), '已选 2 道菜', 'menu errors must retain the selected dishes')
+    }
     await search.fill('菜品0000')
     await page.locator('.meal').filter({ hasText: '菜品0000' }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
@@ -190,9 +204,10 @@ async function main () {
     await legacy.close()
     const many = await browser.newPage({ viewport: { width: 320, height: 844 } })
     const varied = Array.from({ length: 25 }, (_, index) => ({ _id: index.toString(16).padStart(24, '0'), name: `菜品${index}`, category: `分类${String(index).padStart(2, '0')}` }))
+    let wrongCategory = false
     await many.route('**/guest-orders/public/**', route => {
       const url = new URL(route.request().url()); const category = url.searchParams.get('category') || ''
-      const shown = varied.filter(item => !category || item.category === category)
+      const shown = wrongCategory && category ? [varied[0]] : varied.filter(item => !category || item.category === category)
       return route.fulfill({ json: { session, meals: shown.slice(0, 24), menu: { page: 1, limit: 24, total: shown.length, totalPages: Math.max(1, Math.ceil(shown.length / 24)), categories: varied.map(item => ({ name: item.category, count: 1 })) } } })
     })
     await many.goto(`http://127.0.0.1:${server.address().port}/guest-order/many-categories`)
@@ -213,6 +228,10 @@ async function main () {
     assert.ok((await contrast(many, '.filter.active')).ratio >= 4.5, 'the selected category must have readable contrast')
     assert.ok((await contrast(many, '.filter-scroll-hint')).ratio >= 4.5, 'the scroll hint must have readable contrast')
     assert.equal(await many.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    wrongCategory = true
+    await many.getByRole('textbox', { name: '搜索菜品' }).fill('重新核对')
+    await many.getByRole('button', { name: '重新加载菜单' }).waitFor()
+    assert.equal(await many.locator('.meal').count(), 0, 'a dish from another category must not appear in the selected category')
     await many.close()
     console.log('Guest menu workflows passed: pagination, complete search, categories, stale responses, cart and legacy guard')
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }
