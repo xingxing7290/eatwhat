@@ -52,6 +52,8 @@ async function main () {
     assert.equal(await page.getByText('还没有相关回忆').count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.locator('.hero img[alt="图片暂不可用"]').waitFor()
+    await page.getByText('封面图片暂不可用', { exact: true }).waitFor()
+    assert.equal(await page.locator('.cover-button').getAttribute('aria-describedby'), 'cover-notice')
     await page.getByText('鸡蛋', { exact: true }).waitFor()
     await page.getByText('炒熟', { exact: true }).waitFor()
     await page.getByRole('button', { name: '查看第 1 张菜品照片' }).click()
@@ -168,6 +170,10 @@ async function main () {
       await page.getByRole('button', { name: '返回', exact: true }).waitFor()
       assert.equal(await page.getByRole('button', { name: '返回饭桌回顾' }).count(), 0)
     }
+    await page.goto(`${base}/meals/detail/meal-b`)
+    await page.getByRole('heading', { name: '第二道菜' }).waitFor()
+    await page.getByText('暂无封面图片', { exact: true }).waitFor()
+    assert.equal(await page.locator('.cover-button').isDisabled(), true)
     assert.deepEqual(errors, [])
     console.log('Meal detail workflows passed: scheduling review, independent reads, previews, uncertain feedback and memory navigation')
   } finally { await browser.close() }

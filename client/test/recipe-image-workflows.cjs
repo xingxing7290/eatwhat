@@ -69,6 +69,7 @@ async function main () {
     await page.getByRole('radio', { name: '网格视图' }).focus(); await page.keyboard.press('Space')
     await page.getByRole('button', { name: '查看旧地址图片' }).first().click()
     await page.waitForFunction(() => { const image = document.querySelector('.hero img'); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') })
+    assert.equal(await page.locator('.cover-notice').count(), 0, 'a successfully retried cover must not be marked unavailable')
     assert.equal(images.some(url => url.includes('/api/uploads/external.png')), false)
     await page.goto(`${base}/meals/editor/local`)
     await page.waitForFunction(() => ['.cover-box img', '.step-item img', '.photo-item img'].every(selector => { const image = document.querySelector(selector); return image?.complete && image.naturalWidth > 0 && image.src.includes('/api/uploads/local.png?v=2') }))

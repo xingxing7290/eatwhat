@@ -60,6 +60,9 @@ const memoryPages = computed(() => Math.max(1, Math.ceil(memoryTotal.value / mem
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
 const imageFor = value => resolveUploadedImage(value) || defaultImage;
 const coverImage = computed(() => imageFor(meal.value?.imageUrl));
+const coverFailed = ref(false);
+const coverNotice = computed(() => coverFailed.value ? '封面图片暂不可用' : !meal.value?.imageUrl ? '暂无封面图片' : '');
+watch(() => [route.params.id, coverImage.value], () => { coverFailed.value = false; }, { flush: 'sync' });
 const photos = computed(() => Array.isArray(meal.value?.photos) ? meal.value.photos.filter(photo => typeof photo === 'string' && photo) : []);
 const schedulableId = computed(() => {
   const id = meal.value?._id || meal.value?.id;
@@ -181,6 +184,7 @@ const load = async () => {
   finally { if (sequence === loadSequence) loading.value = false; }
 };
 const fallbackImage = event => handleUploadedImageError(event, defaultImage);
+const fallbackCover = event => { if (!event.target?.isConnected) return; fallbackImage(event); if (event.target.dataset.placeholder === '1') coverFailed.value = true; };
 const showPhoto = (images, index, title, event, gallery = false) => { if (images.length && index >= 0 && index < images.length) { photoFocus = { origin: event.currentTarget, index: gallery ? index : null }; viewedPhoto.value = { images, index, title }; } };
 const closePhoto = () => { viewedPhoto.value = null; };
 const restorePhotoFocus = async () => { const target = photoFocus; photoFocus = null; await new Promise(resolve => setTimeout(resolve, 0)); if (!target || photoFocus || !target.origin?.isConnected) return; const active = document.activeElement; if (active && active !== document.body && active !== target.origin && active.isConnected) return; (target.index === null ? target.origin : photoGrid.value?.querySelectorAll('button')[target.index] || target.origin).focus(); };
@@ -237,7 +241,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
     <el-alert v-if="meal?.archived" type="info" :closable="false" show-icon title="这道菜已移入回收站；历史记录仍然保留，可在菜品管理的回收站中恢复。" />
     <template v-if="meal && !mealError">
       <section class="hero">
-        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`, $event)"><img :key="coverImage" :src="coverImage" :alt="meal.name" @error="fallbackImage" /></button>
+        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" :aria-describedby="coverNotice ? 'cover-notice' : undefined" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`, $event)"><img :key="coverImage" :src="coverImage" :alt="meal.imageUrl ? meal.name : '暂无封面图片'" @error="fallbackCover" /><span v-if="coverNotice" id="cover-notice" class="cover-notice">{{ coverNotice }}</span></button>
         <div class="hero-info">
           <div class="title-row">
             <h1>{{ meal.name }}</h1>
@@ -337,6 +341,8 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 .hero { display: grid; grid-template-columns: minmax(280px, 460px) 1fr; gap: 24px; background: var(--bg-primary); border-radius: 12px; padding: 20px; box-shadow: 0 2px 12px var(--shadow-color); }
 .hero img { width: 100%; height: 320px; object-fit: cover; border-radius: 10px; background: var(--bg-secondary); }
 .cover-button, .detail-photo { border: 0; padding: 0; background: var(--bg-secondary); border-radius: 10px; cursor: pointer; }
+.cover-button { position: relative; }
+.cover-notice { position: absolute; right: 12px; bottom: 12px; padding: 5px 9px; border-radius: 999px; background: #49382f; color: #fffaf3; font-size: 12px; font-weight: 700; line-height: 1.4; }
 .cover-button:disabled { cursor: default; }
 .cover-button:focus-visible, .detail-photo:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 3px; }
 .hero-info { display: flex; flex-direction: column; gap: 14px; }
