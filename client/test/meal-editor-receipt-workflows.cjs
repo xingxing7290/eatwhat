@@ -56,6 +56,7 @@ async function main () {
     await page.getByText('1001 / 1000 字，请删减后保存').waitFor()
     await page.getByRole('button', { name: '保存', exact: true }).click()
     await page.getByText('菜品简介不能超过 1000 字').waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-describedby')?.includes('description-count'))
     assert.equal(writes, 8, 'overlong description must not send a request')
     assert.equal((await description.inputValue()).length, 2002, 'existing long text must not be truncated')
     await description.fill('❤️'.repeat(1000))
