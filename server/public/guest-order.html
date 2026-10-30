@@ -124,10 +124,12 @@
       box-shadow: 0 9px 24px rgba(91, 58, 47, .07);
     }
     .photo { position: relative; flex: none; aspect-ratio: 4 / 3; background: linear-gradient(135deg, #f7e6d8, #e5f0df); overflow: hidden; }
-    .photo img { width: 100%; height: 100%; display: block; object-fit: cover; }
-    .photo .fallback { position: absolute; inset: 0; display: grid; place-items: center; font-size: 48px; }
+    .photo img { position: relative; z-index: 1; width: 100%; height: 100%; display: block; object-fit: cover; }
+    .photo .fallback { position: absolute; inset: 0; }
+    .photo .fallback svg { display: block; width: 100%; height: 100%; }
     .selected-badge {
       position: absolute;
+      z-index: 2;
       top: 9px;
       right: 9px;
       min-width: 30px;
@@ -253,6 +255,7 @@
   </style>
 </head>
 <body>
+  <template id="mealFallback"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 480" preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false"><rect width="720" height="480" fill="#f6ede6"/><circle cx="360" cy="236" r="151" fill="#f0dfd2"/><circle cx="360" cy="236" r="121" fill="#fffaf5" stroke="#e6c8b3" stroke-width="5"/><circle cx="360" cy="236" r="89" fill="#f9eee6" stroke="#f0dacc" stroke-width="4"/><path d="M295 248c12-39 46-69 78-64 31 5 51 40 55 70-27 21-92 23-133-6Z" fill="#dca47e"/><path d="M318 233c12-15 25-19 40-16m-15 37c11-13 26-16 41-12" fill="none" stroke="#fff4e9" stroke-width="9" stroke-linecap="round"/><path d="M221 147v67m-15-67v38c0 13 7 24 15 24s15-11 15-24v-38m-15 67v112m278-179c-20 13-28 36-28 62v23h28m0-85v179" fill="none" stroke="#d7af96" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/><path d="M325 133c-9-14 9-20 1-34m36 31c-9-14 9-20 1-34m36 37c-9-14 9-20 1-34" fill="none" stroke="#d8b19b" stroke-width="6" stroke-linecap="round" opacity=".7"/></svg></template>
   <main class="shell">
     <section class="hero">
       <div class="eyebrow">EATWHAT · 客人点菜</div>
@@ -480,7 +483,7 @@
         const photo = document.createElement('div');
         photo.className = 'photo';
         const fallback = document.createElement('div');
-        fallback.className = 'fallback'; fallback.textContent = '🍽️';
+        fallback.className = 'fallback'; fallback.appendChild($('mealFallback').content.cloneNode(true));
         photo.appendChild(fallback);
         const imageUrl = safeImageUrl(meal.imageUrl);
         if (imageUrl) {

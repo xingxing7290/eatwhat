@@ -16,6 +16,10 @@ async function main () {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const meals = Array.from({ length: 650 }, (_, i) => ({ _id: i.toString(16).padStart(24, '0'), name: i === 649 ? '末页特色菜' : i === 648 ? '延迟旧结果' : `菜品${String(i).padStart(4, '0')}`, category: i < 325 ? '热菜' : '素菜' }))
+    meals[2].imageUrl = '/broken-guest-photo'
+    meals[3].imageUrl = '/valid-guest-photo'
+    await page.route('**/broken-guest-photo', route => route.fulfill({ status: 404, body: '' }))
+    await page.route('**/valid-guest-photo', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>' }))
     const longName = 'LongDishName'.repeat(8); meals[1].name = longName
     const session = { title: '测试菜单', householdName: '测试家庭', status: 'open', canOrder: true, supportsGuestMenuPagination: true }
     let slowStarted
@@ -46,6 +50,15 @@ async function main () {
     await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/menu-test`)
     await page.getByText('650 道菜', { exact: false }).waitFor()
     assert.equal(await page.locator('.meal').count(), 24)
+    const fallbackCard = page.locator('.meal').filter({ hasText: '菜品0002' })
+    await fallbackCard.locator('.photo img').waitFor({ state: 'detached' })
+    assert.equal(await fallbackCard.locator('.fallback svg').getAttribute('aria-hidden'), 'true')
+    assert.ok((await fallbackCard.locator('.fallback svg').boundingBox()).height > 0, 'missing photos use a visible decorative illustration')
+    const goodImage = page.locator('.meal').filter({ hasText: '菜品0003' }).locator('.photo img')
+    await goodImage.waitFor()
+    await page.waitForFunction(() => [...document.querySelectorAll('.meal')].find(card => card.textContent.includes('菜品0003'))?.querySelector('img')?.naturalWidth === 8)
+    await goodImage.scrollIntoViewIfNeeded()
+    assert.equal(await goodImage.evaluate(img => { const box = img.getBoundingClientRect(); return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === img }), true, 'loaded photos must appear above the placeholder')
     assert.equal(await page.getByText('第 1 / 28 页').count(), 2)
     await page.setViewportSize({ width: 320, height: 844 })
     const longCard = page.locator('.meal').filter({ hasText: longName })
