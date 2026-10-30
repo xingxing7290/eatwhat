@@ -26,6 +26,9 @@ const initialLocation = parseLocation(route.query);
 const targetedDate = ref(initialLocation.target || '');
 const invalidDateLink = ref(!!initialLocation.invalid);
 const currentDate = ref(initialLocation.date || new Date());
+const todayKey = ref(format(new Date(), 'yyyy-MM-dd'));
+let todayTimer = null;
+const refreshToday = () => { todayKey.value = format(new Date(), 'yyyy-MM-dd'); };
 const isLoading = ref(false);
 const loadError = ref('');
 const deleting = ref(false);
@@ -68,7 +71,7 @@ const mealTypes = [
   { key: 'dinner', label: '晚餐', icon: Sunset, color: '#a76783', symbol: '晚' }
 ];
 
-const isTodayDate = (date) => date && format(date, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd');
+const isTodayDate = (date) => date && format(date, 'yyyy-MM-dd') === todayKey.value;
 
 const hasPlannedMeals = (date) => {
   const schedule = getDateSchedule(date);
@@ -303,6 +306,7 @@ const scrollToToday = () => {
 
 // 切换到今天
 const goToToday = async () => {
+  refreshToday();
   shouldScrollToToday.value = true;
   targetedDate.value = '';
   invalidDateLink.value = false;
@@ -458,8 +462,18 @@ watch(() => [route.query.date, route.query.month], async () => {
   if (!sameMonth) currentDate.value = location.date;
   else { await nextTick(); if (active && !isLoading.value && !loadError.value) scrollToTarget(); }
 });
-onMounted(fetchMonthSchedules);
-onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
+onMounted(() => {
+  fetchMonthSchedules();
+  window.addEventListener('focus', refreshToday);
+  document.addEventListener('visibilitychange', refreshToday);
+  todayTimer = setInterval(refreshToday, 60000);
+});
+onBeforeUnmount(() => {
+  active = false; monthSequence++; nameSequence++;
+  window.removeEventListener('focus', refreshToday);
+  document.removeEventListener('visibilitychange', refreshToday);
+  if (todayTimer) clearInterval(todayTimer);
+});
 </script>
 
 <template>
@@ -592,7 +606,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
               class="date-cell"
               :class="{
                 'empty-cell': !day,
-                'today': day && format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd'),
+                'today': isTodayDate(day),
                 'target-date': day && format(day, 'yyyy-MM-dd') === targetedDate,
                 'different-month': day && getMonth(day) !== getMonth(currentDate)
               }"
@@ -703,7 +717,7 @@ onBeforeUnmount(() => { active = false; monthSequence++; nameSequence++; });
               v-if="day && getMonth(day) === getMonth(currentDate)"
               class="mobile-date-card"
               :class="{
-                'today': format(day, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd'),
+                'today': isTodayDate(day),
                 'target-date': format(day, 'yyyy-MM-dd') === targetedDate
               }"
             >
