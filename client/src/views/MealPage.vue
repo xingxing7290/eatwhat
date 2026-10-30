@@ -284,7 +284,10 @@ const fetchMeals = async () => {
     if (sequence !== fetchSequence) return;
     let rows = result.data; let total = result.total;
     if (!Array.isArray(rows) || !Number.isSafeInteger(total) || total < 0 || rows.some(item => !item || !(item._id || item.id) || typeof item.name !== 'string' || !item.name.trim()) || new Set(rows.map(item => String(item._id || item.id))).size !== rows.length) throw new Error('菜品列表数据不完整');
-    if (result.legacyArray) { rows = rows.filter(legacyCatalogMatches); total = rows.length; rows = rows.slice((requestedPage - 1) * pageSize.value, requestedPage * pageSize.value); }
+    if (result.legacyArray || (result.page == null && result.limit == null)) {
+      if (rows.length !== total) throw new Error('菜品列表数据不完整，无法确认全部结果');
+      rows = rows.filter(legacyCatalogMatches); total = rows.length; rows = rows.slice((requestedPage - 1) * pageSize.value, requestedPage * pageSize.value);
+    }
     else if (uncategorized.value && !result.supportsUncategorizedFilter) throw new Error('当前服务器不支持未分类筛选，请升级服务器或查看全部分类');
     else if (uncategorized.value && rows.some(meal => meal.category != null && meal.category !== '')) throw new Error('未分类筛选结果不完整，请重试');
     else if (result.page != null || result.limit != null) {
