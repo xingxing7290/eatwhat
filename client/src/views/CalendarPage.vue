@@ -604,6 +604,7 @@ onBeforeUnmount(() => {
               v-for="(day, index) in calendarDays" 
               :key="index" 
               class="date-cell"
+              :aria-current="isTodayDate(day) ? 'date' : undefined"
               :class="{
                 'empty-cell': !day,
                 'today': isTodayDate(day),
@@ -614,8 +615,7 @@ onBeforeUnmount(() => {
               <!-- 日期标题 -->
               <div v-if="day" class="date-header">
                 <span class="date-number">{{ format(day, 'd') }}</span>
-                <span v-if="isTodayDate(day)" class="today-heart">♡</span>
-                <span v-else-if="hasPlannedMeals(day)" class="note-pin"></span>
+                <span class="date-badges"><span v-if="isTodayDate(day)" class="date-badge">今天</span><span v-if="format(day, 'yyyy-MM-dd') === targetedDate" class="date-badge">已定位</span><span v-if="!isTodayDate(day) && hasPlannedMeals(day)" class="note-pin" aria-hidden="true"></span></span>
               </div>
               
               <!-- 三餐安排区域 -->
@@ -716,6 +716,7 @@ onBeforeUnmount(() => {
             <div 
               v-if="day && getMonth(day) === getMonth(currentDate)"
               class="mobile-date-card"
+              :aria-current="isTodayDate(day) ? 'date' : undefined"
               :class="{
                 'today': isTodayDate(day),
                 'target-date': format(day, 'yyyy-MM-dd') === targetedDate
@@ -726,6 +727,8 @@ onBeforeUnmount(() => {
                 <div class="date-info">
                   <span class="date-number">{{ format(day, 'd') }}</span>
                   <span class="date-weekday">{{ weekDays[getDay(day)] }}</span>
+                  <span v-if="isTodayDate(day)" class="date-badge">今天</span>
+                  <span v-if="format(day, 'yyyy-MM-dd') === targetedDate" class="date-badge">已定位</span>
                 </div>
               </div>
 
@@ -1537,18 +1540,8 @@ onBeforeUnmount(() => {
   background: rgba(245, 235, 230, 0.86);
 }
 
-.today-heart {
-  width: 28px;
-  height: 28px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 999px;
-  color: #c96c5d;
-  background: rgba(255, 180, 162, 0.2);
-  font-size: 18px;
-  font-weight: 800;
-}
+.date-badges { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+.date-badge { display: inline-flex; align-items: center; padding: 3px 7px; border: 1px solid var(--border-color); border-radius: 999px; background: var(--bg-secondary); color: var(--text-primary); font-size: 11px; line-height: 1.4; font-weight: 700; white-space: nowrap; }
 
 .note-pin {
   width: 12px;
