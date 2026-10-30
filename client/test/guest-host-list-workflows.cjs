@@ -17,7 +17,7 @@ async function main () {
     const items = Array.from({ length: 41 }, (_, i) => ({ id: i.toString(16).padStart(24, '0'), householdId: home, title: i === 40 ? '延迟旧宴请' : `宴请${String(i).padStart(3, '0')}`, status: i % 2 ? 'completed' : 'open', storedStatus: i % 2 ? 'completed' : 'open', eventAt: null, expiresAt: '2099-01-01T00:00:00.000Z', shareUrl: `https://example.test/guest-order/token${i}`, supportsConditionalSession: true, editVersion: { revision: `v${i}`, updatedAt: '2026-10-29T00:00:00.000Z' }, guestCount: i, totalQuantity: i }))
     items[38].expiresAt = new Date(initialTime.getTime() + 5000).toISOString()
     let slowStarted; const slowRequest = new Promise(resolve => { slowStarted = resolve })
-    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false; let invalidStatus = ''; let serverExpired = false
+    let malformed = false; let truncated = false; let failCapabilities = false; let invalidCounts = false; let invalidStatus = ''; let serverExpired = false; let holdListPage = false; let failListPage = false; let releaseListPage
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const pathname = url.pathname.replace(/^\/api/, '')
@@ -25,6 +25,8 @@ async function main () {
       if (pathname === '/guest-orders') {
         const pageNumber = Number(url.searchParams.get('page')); const limit = Number(url.searchParams.get('limit')); const search = url.searchParams.get('search') || ''; const status = url.searchParams.get('status') || ''
         assert.equal(limit, 12)
+        if (holdListPage && pageNumber === 3) await new Promise(resolve => { releaseListPage = resolve })
+        if (failListPage && pageNumber === 3) return route.fulfill({ status: 503, json: { error: '宴请分页读取失败' } })
         if (search === '延迟') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
         const filtered = items.map(item => serverExpired && item.id === items[38].id ? { ...item, status: 'expired' } : item).filter(item => item.title.includes(search) && (!status || item.status === status))
         const pagination = { page: pageNumber, limit, total: filtered.length, totalPages: Math.max(1, Math.ceil(filtered.length / limit)) }
@@ -42,10 +44,31 @@ async function main () {
     assert.equal(await page.locator('.session-card').count(), 12)
     assert.equal(await page.getByText('第 1 / 4 页').count(), 2)
     if (process.env.EATWHAT_GUEST_HOST_LIST_SHOT) await page.screenshot({ path: process.env.EATWHAT_GUEST_HOST_LIST_SHOT })
-    await page.getByRole('button', { name: '下一页（顶部）' }).click()
+    await page.getByRole('button', { name: '下一页（顶部）' }).focus()
+    await page.keyboard.press('Enter')
     await page.getByText('第 2 / 4 页').first().waitFor()
+    await page.waitForFunction(() => document.activeElement?.closest('nav')?.getAttribute('aria-label') === '宴请顶部分页' && document.activeElement.textContent.trim() === '第 2 / 4 页')
     await page.getByRole('heading', { name: '宴请012' }).waitFor()
     const search = page.getByRole('textbox', { name: '搜索宴请名称' })
+    const bottom = page.getByRole('navigation', { name: '宴请分页', exact: true })
+    await bottom.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
+    await page.getByRole('heading', { name: '宴请024' }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.closest('nav')?.getAttribute('aria-label') === '宴请分页' && document.activeElement.textContent.trim() === '第 3 / 4 页')
+    await bottom.getByRole('button', { name: '上一页' }).click(); await page.getByRole('heading', { name: '宴请012' }).waitFor()
+    holdListPage = true
+    await bottom.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
+    await page.getByText('正在加载宴请…').waitFor(); await search.focus()
+    for (let i = 0; i < 100 && !releaseListPage; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseListPage, 'function'); holdListPage = false; releaseListPage()
+    await page.getByRole('heading', { name: '宴请024' }).waitFor()
+    assert.equal(await search.evaluate(input => document.activeElement === input), true, 'late pagination must not steal focus')
+    await bottom.getByRole('button', { name: '上一页' }).click(); await page.getByRole('heading', { name: '宴请012' }).waitFor()
+    failListPage = true
+    await bottom.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
+    await page.getByText('宴请分页读取失败').first().waitFor()
+    await page.waitForFunction(() => document.activeElement?.classList.contains('list-error-focus'))
+    failListPage = false; await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByRole('heading', { name: '宴请024' }).waitFor()
     await search.fill('宴请039')
     await page.getByRole('heading', { name: '宴请039' }).waitFor()
     assert.equal(await page.locator('.session-card').count(), 1)
