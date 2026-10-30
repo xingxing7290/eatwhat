@@ -396,6 +396,40 @@ async function main () {
       assert.equal(accessWrites, 0, 'checking an existing credential must not create or update an order')
       await accessBlocked.close()
     }
+    for (const wasUncertain of [true, false]) {
+      const uncertainBlocked = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      await uncertainBlocked.addInitScript(({ wasUncertain }) => {
+        const key = 'eatwhat.guestOrder.uncertain-read-blocked.uncertain'
+        if (wasUncertain) sessionStorage.setItem(key, '1')
+        window.__blockUncertainRead = true
+        const original = Storage.prototype.getItem
+        Storage.prototype.getItem = function (name) { if (window.__blockUncertainRead && this === sessionStorage && name === key) throw new DOMException('blocked', 'SecurityError'); return original.call(this, name) }
+      }, { wasUncertain })
+      let uncertainWrites = 0
+      await uncertainBlocked.route('**/guest-orders/public/**', route => {
+        if (route.request().method() !== 'GET') { uncertainWrites++; return route.fulfill({ status: 500 }) }
+        return route.fulfill({ json: { session, meals: [safeMeal] } })
+      })
+      await uncertainBlocked.goto(`http://127.0.0.1:${server.address().port}/guest-order/uncertain-read-blocked`)
+      await uncertainBlocked.getByRole('button', { name: '查看 / 核对' }).click()
+      await uncertainBlocked.getByText('浏览器暂时无法读取上次提交的核对状态', { exact: false }).waitFor()
+      assert.equal(await uncertainBlocked.locator('#guestName').isDisabled(), true)
+      assert.equal(await uncertainBlocked.getByRole('button', { name: '提交给主人' }).isDisabled(), true)
+      assert.equal(await uncertainBlocked.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+      await uncertainBlocked.getByRole('button', { name: '重新读取核对状态' }).click()
+      await uncertainBlocked.getByText('仍无法读取核对状态', { exact: false }).waitFor()
+      await uncertainBlocked.evaluate(() => { window.__blockUncertainRead = false })
+      await uncertainBlocked.getByRole('button', { name: '重新读取核对状态' }).click()
+      if (wasUncertain) {
+        await uncertainBlocked.getByText('提交结果尚未确认', { exact: false }).waitFor()
+        assert.equal(await uncertainBlocked.getByRole('button', { name: '提交给主人' }).isDisabled(), true)
+      } else {
+        await uncertainBlocked.getByText('已重新读取核对状态', { exact: false }).waitFor()
+        assert.equal(await uncertainBlocked.locator('#guestName').isDisabled(), false)
+      }
+      assert.equal(uncertainWrites, 0, 'reading recovery state must not submit an order')
+      await uncertainBlocked.close()
+    }
     const closedPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await closedPage.addInitScript(() => localStorage.setItem('eatwhat.guestOrder.closed-test', 'closed-access'))
     await closedPage.route('**/guest-orders/public/**', async route => {
