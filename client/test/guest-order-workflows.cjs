@@ -279,7 +279,10 @@ async function main () {
     await statusPage.route('**/guest-orders/public/**', async route => {
       statusRequests++
       if (statusRequests === 1) { await new Promise(resolve => { releaseStatus = resolve }); return route.fulfill({ status: 503, json: { error: '离线' } }) }
-      return route.fulfill({ json: { session, meals: [safeMeal] } })
+      if (statusRequests === 2) return route.fulfill({ json: { session: { status: 'locked', canOrder: true }, meals: [safeMeal] } })
+      if (statusRequests === 3) return route.fulfill({ json: { session: { status: 'open' }, meals: [safeMeal] } })
+      if (statusRequests === 5) return route.fulfill({ json: { session: { status: 'locked', canOrder: true }, meals: [safeMeal] } })
+      return route.fulfill({ json: { session: { ...session, supportsGuestMenuPagination: true }, meals: [safeMeal], menu: { page: 1, limit: 24, total: 1, totalPages: 1, categories: [{ name: '家常菜', count: 1 }] } } })
     })
     await statusPage.goto(`http://127.0.0.1:${server.address().port}/guest-order/status-test`)
     await statusPage.waitForFunction(() => document.querySelector('#status')?.textContent === '正在确认点菜状态')
@@ -291,9 +294,24 @@ async function main () {
     await statusPage.getByText('点菜状态暂未确认').waitFor()
     assert.equal(await statusPage.locator('#status').getAttribute('class'), 'pill')
     assert.equal(await statusPage.getByRole('button', { name: '查看点菜单' }).isDisabled(), true)
+    for (const invalidStatus of ['contradictory', 'missing']) {
+      const response = statusPage.waitForResponse(result => result.url().includes('/guest-orders/public/'))
+      await statusPage.getByRole('button', { name: '重新加载菜单' }).click()
+      await response
+      await statusPage.getByText('点菜状态暂未确认').waitFor()
+      assert.equal(await statusPage.locator('#status').getAttribute('class'), 'pill', `${invalidStatus} status must not appear open`)
+      assert.equal(await statusPage.locator('.meal').count(), 0)
+    }
     await statusPage.getByRole('button', { name: '重新加载菜单' }).click()
     await statusPage.getByText('● 正在点菜').waitFor()
     assert.match(await statusPage.locator('#status').getAttribute('class'), /open/)
+    await statusPage.locator('.meal').getByRole('button', { name: '＋ 想吃' }).click()
+    await statusPage.getByLabel('搜索菜品').fill('安全')
+    await statusPage.getByText('暂时无法更新点菜状态', { exact: false }).waitFor()
+    assert.match(await statusPage.locator('#status').innerText(), /上次：.*正在点菜/)
+    assert.match(await statusPage.locator('#cartTitle').innerText(), /已选 1 道菜/)
+    await statusPage.getByRole('button', { name: '重新加载菜单' }).click()
+    await statusPage.getByText('● 正在点菜', { exact: true }).waitFor()
     await statusPage.close()
     const staleStatus = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await staleStatus.addInitScript(() => {
@@ -586,6 +604,7 @@ async function main () {
     assert.equal(unsafeWrites, 0, 'cannot safely create before persisting the retry token')
     await noSessionStorage.close()
     console.log('Guest ordering workflows passed: unavailable dishes, draft-safe conflicts and uncertain submissions')
-  } finally { await browser.close(); await new Promise(resolve => server.close(resolve)) }
+  } catch (error) { console.error('Guest workflow failure:', error); throw error }
+  finally { await browser.close(); server.closeAllConnections(); await new Promise(resolve => server.close(resolve)) }
 }
 main().catch(error => { console.error(error); process.exitCode = 1 })

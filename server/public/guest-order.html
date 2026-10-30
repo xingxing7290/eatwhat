@@ -363,6 +363,7 @@
       }
 
       function canOrder() { return state.session && state.session.canOrder === true; }
+      function validSessionStatus(session) { return !!session && ['open', 'locked', 'closed', 'completed', 'cancelled', 'expired'].includes(session.status) && typeof session.canOrder === 'boolean' && session.canOrder === (session.status === 'open'); }
 
       function safeImageUrl(value) {
         try {
@@ -773,7 +774,11 @@
         try {
           const data = await jsonRequest(`${apiRoot}?${params}`);
           if (sequence !== state.menuSequence) return;
-          if (!data.session || !Array.isArray(data.meals)) throw new Error('菜单数据不完整');
+          if (!validSessionStatus(data.session)) {
+            if (state.session && statusSequence === state.statusSequence) { state.statusStale = true; renderHeader(); }
+            throw new Error('菜单数据不完整');
+          }
+          if (!Array.isArray(data.meals)) throw new Error('菜单数据不完整');
           const supported = data.session.supportsGuestMenuPagination === true;
           if (supported) {
             const menu = data.menu;
@@ -827,7 +832,7 @@
           const wasOpen = canOrder();
           const data = await jsonRequest(`${apiRoot}?statusOnly=1`);
           if (sequence !== state.statusSequence) return;
-          if (!data.session || !['open', 'locked', 'closed', 'completed', 'cancelled', 'expired'].includes(data.session.status) || typeof data.session.canOrder !== 'boolean' || data.session.canOrder !== (data.session.status === 'open')) throw new Error('状态数据不完整');
+          if (!validSessionStatus(data.session)) throw new Error('状态数据不完整');
           state.session = { ...(state.session || {}), ...data.session };
           state.statusStale = false;
           const retryFocused = document.activeElement === $('retryStatus');
