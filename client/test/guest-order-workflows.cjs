@@ -274,6 +274,27 @@ async function main () {
       }
     })
     const safeMeal = { _id: '123456789012345678901234', name: '安全提交测试菜', category: '家常菜' }
+    const statusPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    let releaseStatus; let statusRequests = 0
+    await statusPage.route('**/guest-orders/public/**', async route => {
+      statusRequests++
+      if (statusRequests === 1) { await new Promise(resolve => { releaseStatus = resolve }); return route.fulfill({ status: 503, json: { error: '离线' } }) }
+      return route.fulfill({ json: { session, meals: [safeMeal] } })
+    })
+    await statusPage.goto(`http://127.0.0.1:${server.address().port}/guest-order/status-test`)
+    await statusPage.waitForFunction(() => document.querySelector('#status')?.textContent === '正在确认点菜状态')
+    assert.equal(await statusPage.locator('#status').getAttribute('class'), 'pill', 'unconfirmed status must not look open')
+    await statusPage.waitForFunction(() => document.querySelector('#mealGrid')?.getAttribute('aria-busy') === 'true')
+    for (let i = 0; i < 100 && !releaseStatus; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseStatus, 'function')
+    releaseStatus()
+    await statusPage.getByText('点菜状态暂未确认').waitFor()
+    assert.equal(await statusPage.locator('#status').getAttribute('class'), 'pill')
+    assert.equal(await statusPage.getByRole('button', { name: '查看点菜单' }).isDisabled(), true)
+    await statusPage.getByRole('button', { name: '重新加载菜单' }).click()
+    await statusPage.getByText('● 正在点菜').waitFor()
+    assert.match(await statusPage.locator('#status').getAttribute('class'), /open/)
+    await statusPage.close()
     let safeRequests = 0; let logicalOrders = 0; let firstBody; let sessionOpen = true
     await safePage.route('**/guest-orders/public/**', async route => {
       const req = route.request()

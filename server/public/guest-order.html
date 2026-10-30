@@ -257,11 +257,11 @@
     <section class="hero">
       <div class="eyebrow">EATWHAT · 客人点菜</div>
       <h1 id="title">正在打开菜单…</h1>
-      <p id="subtitle">主人已经备好菜谱，挑你真正想吃的。</p>
+      <p id="subtitle">正在加载菜单和点菜状态…</p>
       <div class="hero-meta">
         <span class="pill" id="household">🏠 主人家</span>
         <span class="pill" id="eventTime" hidden>🗓 聚餐时间</span>
-        <span class="pill open" id="status">● 正在点菜</span>
+        <span class="pill" id="status" role="status" aria-live="polite">正在确认点菜状态</span>
       </div>
     </section>
 
@@ -413,6 +413,13 @@
         $('eventTime').textContent = eventText ? `🗓 ${eventText}` : '';
         $('status').textContent = statusCopy(session.status);
         $('status').className = `pill ${canOrder() ? 'open' : 'closed'}`;
+      }
+
+      function renderUnconfirmedHeader(loading) {
+        if (state.session) return;
+        $('subtitle').textContent = loading ? '正在加载菜单和点菜状态…' : '菜单暂时无法加载，请检查网络或联系主人。';
+        $('status').textContent = loading ? '正在确认点菜状态' : '点菜状态暂未确认';
+        $('status').className = 'pill';
       }
 
       function closedMenuText() {
@@ -760,7 +767,7 @@
         const params = new URLSearchParams({ page: String(page), limit: '24' });
         if (state.search.trim()) params.set('search', state.search.trim());
         if (category) params.set('category', category);
-        state.menuLoading = true; state.menuError = ''; renderFilters(); renderMeals();
+        state.menuLoading = true; state.menuError = ''; renderUnconfirmedHeader(true); renderFilters(); renderMeals();
         try {
           const data = await jsonRequest(`${apiRoot}?${params}`);
           if (sequence !== state.menuSequence) return;
@@ -794,6 +801,7 @@
         } catch (error) {
           if (sequence !== state.menuSequence) return;
           state.menuError = error.message || '菜单加载失败';
+          renderUnconfirmedHeader(false);
           if (!state.menuInitialized && (state.pending || state.accessReadBlocked || state.uncertainReadBlocked)) { restorePendingDraft(); renderCartBar(); renderCartList(); }
         } finally {
           if (sequence === state.menuSequence) { state.menuLoading = false; renderFilters(); renderMeals(); restoreMenuFocus(); }
