@@ -394,6 +394,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .source-recipes nav { display: flex; flex-wrap: wrap; gap: 0 16px; }
 .source-recipes a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .source-recipes a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.item-row :deep(.el-checkbox) { min-height: 44px; padding: 4px 2px; border-radius: 8px; }
+.item-row :deep(.el-checkbox:focus-within) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .item-row :deep(.el-checkbox__label .quantity-notice) { display: inline-block; color: var(--text-primary); font-size: 12px; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; }
 .week-navigation { display: flex; flex-wrap: wrap; gap: 6px; }.week-navigation .el-button { min-height: 44px; margin: 0; }
 .week-link { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }.week-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 3px; }

@@ -32,10 +32,17 @@ async function main () {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`)
           }
+          for (const checkbox of await page.locator('.item-row .el-checkbox').all()) {
+            const box = await checkbox.boundingBox()
+            assert.ok(box.width >= 44 && box.height >= 44, `${width} ingredient checkbox must have a usable touch target`)
+          }
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
       }
     }
+    const ingredient = page.getByRole('checkbox', { name: /菠菜/ })
+    await ingredient.focus()
+    assert.notEqual(await ingredient.locator('xpath=ancestor::label').evaluate(label => getComputedStyle(label).outlineStyle), 'none', 'keyboard focus must be visible around the ingredient')
     await page.getByRole('button', { name: '待买', exact: true }).click()
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
