@@ -49,6 +49,10 @@ async function main () {
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'long notes and categories must wrap on narrow screens')
     assert.equal(await longCard.getByText(`https://example.com/${'a'.repeat(300)}`).count(), 1, 'long notes remain available without truncation')
     assert.equal(await longCard.getByRole('button', { name: '关联已有菜谱' }).isVisible(), true)
+    for (const button of await page.locator('.wish-card .actions .el-button, .wish-card .vote-row .el-button').all()) {
+      const box = await button.boundingBox()
+      assert.ok(box.height >= 44 && box.width >= 44, 'wishlist actions must remain tappable on narrow screens')
+    }
     await page.setViewportSize({ width: 390, height: 844 })
     const linked = page.getByRole('link', { name: '查看火锅的关联菜谱：豆腐锅（新标签打开）' })
     assert.equal(await linked.getAttribute('href'), '/meals/detail/m1')
@@ -146,6 +150,10 @@ async function main () {
     await page.getByText('显示 1 / 5 条记录').waitFor()
     await page.getByLabel('按优先级筛选').selectOption('low')
     await page.getByText('没有符合条件的想吃记录').waitFor()
+    await page.getByRole('button', { name: '调整搜索' }).click()
+    assert.equal(await search.inputValue(), '香辣', 'adjusting search must preserve the query')
+    assert.equal(await page.getByLabel('按优先级筛选').inputValue(), 'low', 'adjusting search must preserve other filters')
+    assert.equal(await search.evaluate(node => document.activeElement === node), true)
     await page.getByRole('button', { name: '清除筛选' }).click()
     await page.getByText('显示 5 / 5 条记录').waitFor()
     await page.getByLabel('按优先级筛选').selectOption('unset')

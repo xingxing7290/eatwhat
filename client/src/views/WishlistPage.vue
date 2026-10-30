@@ -453,7 +453,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     </section>
     <div v-if="pendingView && !loadError" class="hidden-pending" role="status"><span>正在查看关联或创建结果待核对的记录。</span><el-button link type="primary" @click="showBoard">返回全部清单</el-button></div>
     <div v-if="!loadError && !loading && hiddenPendingCount" class="hidden-pending" role="status"><span>有 {{ hiddenPendingCount }} 条关联或创建结果待核对的记录不在当前结果中。</span><el-button link type="primary" @click="showPending">查看待核对记录</el-button></div>
-    <el-empty v-if="!loadError && !loading && !pendingView && filterActive && !filteredItems.length" description="没有符合条件的想吃记录"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
+    <el-empty v-if="!loadError && !loading && !pendingView && filterActive && !filteredItems.length" description="没有符合条件的想吃记录"><div class="empty-filter-actions"><el-button type="primary" @click="searchInput?.focus()">调整搜索</el-button><el-button @click="resetFilters">清除筛选</el-button></div></el-empty>
     <div v-else-if="!loadError" v-loading="loading" class="board" :class="{ 'single-column': selectedStatus !== 'all' }" :aria-busy="loading ? 'true' : 'false'">
       <section v-for="group in grouped" :key="group.status" class="status-column">
         <h2>{{ statusText[group.status] }} <span>{{ filterActive && !pendingView ? `${group.matched} / ${group.total}` : group.total }}</span></h2>
@@ -529,6 +529,8 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 <style scoped>
 .reset-filter { min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .reset-filter:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.empty-filter-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.empty-filter-actions .el-button { min-height: 44px; margin: 0; }
 .schedule-help { margin: 0 0 16px; color: var(--text-secondary); line-height: 1.6; }
 .schedule-fields { display: grid; gap: 10px; color: var(--text-primary); }
 .schedule-fields input[type='date'] { min-height: 44px; width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
@@ -573,6 +575,8 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .wish-title strong { overflow-wrap: anywhere; min-width: 0; }
 .wish-title .el-tag { color: var(--text-primary); min-width: max-content; }
 .actions { justify-content: flex-start; }
+.actions .el-button, .vote-row .el-button { min-height: 44px; }
+.actions .el-button { min-width: 44px; }
 .actions .el-button + .el-button { margin-left: 0; }
 .search-hint { display: block; margin-top: 8px; color: var(--text-secondary); line-height: 1.5; }
 .edit-hint { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
