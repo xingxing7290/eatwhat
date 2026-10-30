@@ -25,6 +25,7 @@ async function main() {
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
+    await page.clock.setFixedTime(new Date(2026, 9, 30, 12));
     let failSummary = false;
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -53,7 +54,7 @@ async function main() {
     assert.equal(await page.getByRole('link', { name: '前往饭桌相册：温暖晚餐' }).count(), 1);
     const checks = [
       ['eyebrow', '.eyebrow'], ['title', '.hero-panel h1'], ['accent title', '.hero-panel h1 span'],
-      ['summary text', '.hero-panel > div:first-child > p:last-of-type'], ['section label', '.section-heading small'],
+      ['summary text', '.hero-panel > div:first-child > p:last-of-type'], ['date notice', '.date-notice'], ['section label', '.section-heading small'],
       ['section title', '.section-heading h2'], ['card title', '.today-card .card-title span'],
       ['meal link', '.today-card .today-recipe-link'], ['today action', '.today-slot-action'], ['warning tag', '.today-card .hint-list .el-tag'],
       ['metric number', '.metric-row strong'], ['weekday label', '.week-day-label'], ['week meal count', '.week-day span:last-child'], ['week date', '.week-day strong'],

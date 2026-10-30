@@ -8,6 +8,7 @@ async function main () {
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1', username: 'test' })) })
     let date = '2026-10-28'; let suggested = 'meal-a'; let wishTitle = '家人想吃的菜'; let archived = false; let mode = 'valid'; let calls = 0; let release
@@ -41,6 +42,7 @@ async function main () {
     date = '2026-10-29'
     await page.getByRole('button', { name: '安排晚餐' }).click()
     await page.getByText('日期或想吃内容已变化', { exact: false }).waitFor()
+    await page.getByText('首页按服务器日期 2026-10-29 显示，本机日期为 2026-10-28', { exact: false }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/dashboard', 'a new date requires renewed intent')
     suggested = 'meal-b'
     const changedResponse = page.waitForResponse(result => new URL(result.url()).pathname === '/api/dashboard/summary')
@@ -253,6 +255,7 @@ async function main () {
     await page.clock.setFixedTime(new Date(2026, 9, 29, 0, 1))
     await page.evaluate(() => window.dispatchEvent(new Event('focus')))
     await page.getByRole('button', { name: '安排2026-10-29早餐' }).waitFor()
+    assert.equal(await page.locator('.date-notice').count(), 0, 'the date notice disappears when local and server dates agree')
     assert.equal(calls, callsBeforeFocus + 4, 'cross-day focus refreshes the displayed server date')
     const beforePending = calls
     release = null; mode = 'hold'

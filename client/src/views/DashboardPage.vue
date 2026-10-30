@@ -33,6 +33,8 @@ let dayTimer = null;
 let lastLocalDay = '';
 let wasAway = false;
 const localDay = () => { const now = new Date(); return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; };
+const localToday = ref(localDay());
+const dateMismatch = computed(() => !!summary.value && summary.value.today !== localToday.value);
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const validMeals = value => value && typeof value === 'object' && Object.keys(mealTypeText).every(type => Array.isArray(value[type]));
 const validCount = value => Number.isSafeInteger(value) && value >= 0;
@@ -104,7 +106,7 @@ const openTodayCalendar = async () => {
 const refreshAfterLocalDayChange = async () => {
   const today = localDay();
   if (!active || today === lastLocalDay) return;
-  lastLocalDay = today;
+  lastLocalDay = today; localToday.value = today;
   if (loadRequest) await loadRequest;
   if (active) await load();
 };
@@ -112,7 +114,7 @@ const onReturn = async () => {
   if (!active || document.hidden) return;
   if (!wasAway) return refreshAfterLocalDayChange();
   wasAway = false;
-  lastLocalDay = localDay();
+  lastLocalDay = localDay(); localToday.value = lastLocalDay;
   // A request started before leaving may contain stale data; refresh after it finishes.
   if (loadRequest) await loadRequest;
   if (active && !document.hidden) await load();
@@ -128,7 +130,7 @@ const photoLink = photo => {
 };
 
 onMounted(() => {
-  lastLocalDay = localDay();
+  lastLocalDay = localDay(); localToday.value = lastLocalDay;
   window.addEventListener('focus', onReturn);
   window.addEventListener('blur', onBlur);
   document.addEventListener('visibilitychange', onVisibility);
@@ -154,6 +156,7 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onRe
     </section>
 
     <div v-if="loadError && !loading" class="load-error" role="alert"><div><strong>暂时没有加载出饭桌信息</strong><p>{{ loadError }}</p></div><el-button @click="load">重新加载</el-button></div>
+    <div v-if="summary && !loadError && dateMismatch" class="date-notice" role="status">首页按服务器日期 {{ summary.today }} 显示，本机日期为 {{ localToday }}。时区或设备时间可能不同，安排前请确认日期。</div>
     <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><div class="summary-controls"><span>{{ summary.today }}（服务器日期）</span><el-button size="small" plain :disabled="loading || !!arranging" @click="load">刷新饭桌</el-button></div></div>
     <section class="dashboard-grid" v-if="summary && !loadError">
       <el-card class="today-card">
@@ -242,6 +245,7 @@ h1 span { color: var(--dashboard-accent-ink); }
 .hero-image { min-height: 260px; position: relative; background: linear-gradient(0deg, rgba(34,25,20,.52), transparent 50%), url('../assets/dashboard-hero.jpg') center/cover; }.hero-image span { position: absolute; right: 22px; bottom: 20px; color: white; font-size: 12px; letter-spacing: .12em; }
 .section-heading { display: flex; justify-content: space-between; align-items: end; gap: 12px; padding: 8px 2px 0; }.section-heading small { color: var(--dashboard-accent-ink); letter-spacing: .14em; font-weight: 800; }.section-heading h2 { margin: 6px 0 0; font-size: 22px; color: var(--text-primary); }.summary-controls { display: flex; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 13px; }
 .load-error { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; }.load-error p { margin-top: 5px; color: var(--text-secondary); }
+.date-notice { padding: 14px 18px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .card-title { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-weight: 700; }.card-title .el-icon { color: var(--secondary-color); }.card-title .el-tag { margin-left: auto; }
 .meal-row, .wishlist-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-light); }
