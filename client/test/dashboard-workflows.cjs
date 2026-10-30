@@ -16,8 +16,9 @@ async function main () {
     const recipe = { _id: 'meal-a', name: '家常菜', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } }
     const meals = { breakfast: [], lunch: [], dinner: [] }
     const summary = () => {
-      const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(Date.parse(`${date}T00:00:00Z`) + (index - 3) * 86400000).toISOString().slice(0, 10), meals }))
-      return { today: date, todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: ['未识别到蔬菜，请核对食材'], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
+      const today = new Date(`${date}T00:00:00Z`); const monday = today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000
+      const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(monday + (index + (mode === 'shiftedweek' ? 1 : 0)) * 86400000).toISOString().slice(0, 10), meals }))
+      return { today: date, weekStart: mode === 'wrongstart' ? '2020-01-01' : new Date(monday).toISOString().slice(0, 10), todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: ['未识别到蔬菜，请核对食材'], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
     }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -89,7 +90,7 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('饭桌信息不完整，请重新加载').waitFor()
     assert.equal(await page.locator('.dashboard-grid').count(), 0, 'an incomplete week must not be shown as an empty plan')
-    for (const fault of ['badcount', 'wrongdate']) {
+    for (const fault of ['badcount', 'wrongdate', 'shiftedweek', 'wrongstart']) {
       mode = fault
       const response = page.waitForResponse(result => new URL(result.url()).pathname === '/api/dashboard/summary')
       await page.getByRole('button', { name: '重新加载' }).click()

@@ -17,7 +17,7 @@ async function main () {
     const errors = []; const reads = []; let mode = 'normal'; let release
     page.on('pageerror', error => errors.push(error.message))
     const meals = { breakfast: [], lunch: [], dinner: [] }; const today = '2026-10-28'
-    const summary = { today, todaySchedule: { meals }, todayHints: [], week: { days: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.parse(`${today}T00:00:00Z`) + (i - 3) * 86400000).toISOString().slice(0, 10), meals })) }, partnerWishlist: [], recentPhotos: [{ ...photos[25], fingerprint }], defaultMeals: { imported: 0, total: 0 }, imageIssues: { open: 0 }, meals: { favorites: 0 } }
+    const summary = { today, todaySchedule: { meals }, todayHints: [], week: { days: Array.from({ length: 7 }, (_, i) => ({ date: new Date(Date.parse(`${today}T00:00:00Z`) + (i - 2) * 86400000).toISOString().slice(0, 10), meals })) }, partnerWishlist: [], recentPhotos: [{ ...photos[25], fingerprint }], defaultMeals: { imported: 0, total: 0 }, imageIssues: { open: 0 }, meals: { favorites: 0 } }
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })

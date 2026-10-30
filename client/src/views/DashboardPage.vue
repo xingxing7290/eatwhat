@@ -47,7 +47,9 @@ const validateSummary = value => {
       !validCount(value.defaultMeals?.imported) || !validCount(value.defaultMeals?.total) || value.defaultMeals.imported > value.defaultMeals.total || !validCount(value.imageIssues?.open) || !validCount(value.meals?.favorites) ||
       (value.todaySchedule.date != null && value.todaySchedule.date !== value.today)) throw new Error('饭桌信息不完整，请重新加载');
   const days = value.week.days.map(day => day.date).sort();
-  if (!days.includes(value.today) || days.some((day, index) => index && Date.parse(`${day}T00:00:00Z`) - Date.parse(`${days[index - 1]}T00:00:00Z`) !== 86400000)) throw new Error('饭桌信息不完整，请重新加载');
+  const todayDate = new Date(`${value.today}T00:00:00Z`);
+  const monday = new Date(todayDate.getTime() - ((todayDate.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
+  if (days[0] !== monday || (value.weekStart != null && value.weekStart !== monday) || days.some((day, index) => Date.parse(`${day}T00:00:00Z`) - Date.parse(`${monday}T00:00:00Z`) !== index * 86400000)) throw new Error('饭桌信息不完整，请重新加载');
   return { ...value, week: { ...value.week, days: [...value.week.days].sort((a, b) => a.date.localeCompare(b.date)) } };
 };
 const load = () => {
