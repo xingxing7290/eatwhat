@@ -34,7 +34,7 @@
           <el-input v-model="form.householdName" placeholder="小家名称，可选" clearable size="large" :prefix-icon="HomeFilled" class="custom-input" maxlength="40" />
         </el-form-item>
         <el-form-item v-else label="邀请码" prop="inviteCode">
-          <el-input v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" @input="invalidInviteLink = false; registrationError = ''" />
+          <el-input ref="inviteInput" v-model="form.inviteCode" placeholder="请输入家人的邀请码" clearable size="large" :prefix-icon="Key" class="custom-input" maxlength="20" autocomplete="off" @input="invalidInviteLink = false; registrationError = ''" />
         </el-form-item>
         <el-form-item label="昵称（可选）" prop="displayName">
           <el-input
@@ -50,6 +50,7 @@
         </el-form-item>
         <el-form-item label="用户名" prop="username">
           <el-input
+            ref="usernameInput"
             v-model="form.username"
             placeholder="请输入用户名"
             clearable
@@ -107,7 +108,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { EditPen, HomeFilled, Key, Lock, User } from '@element-plus/icons-vue'
@@ -117,6 +118,8 @@ import { currentSessionScope, sessionIsCurrent } from '@/services/sessionScope'
 const router = useRouter()
 const route = useRoute()
 const formRef = ref()
+const inviteInput = ref(null)
+const usernameInput = ref(null)
 const loading = ref(false)
 const uncertain = ref(false)
 const registrationError = ref('')
@@ -166,11 +169,13 @@ const useCurrentAccount = async () => {
 const onSubmit = async () => {
   if (loading.value || uncertain.value || !formRef.value) return
   registrationError.value = ''
+  const origin = document.activeElement
+  let focusField = ''
   loading.value = true
   try {
     let valid = false
-    try { valid = await formRef.value.validate() } catch (_) { return }
-    if (!valid) return
+    try { valid = await formRef.value.validate() } catch (_) { focusField = 'invalid'; return }
+    if (!valid) { focusField = 'invalid'; return }
     try {
       const result = await api.auth.register({
         displayName: form.value.displayName.trim(),
@@ -190,10 +195,20 @@ const onSubmit = async () => {
     } catch (e) {
       registrationComplete.value = false
       const message = e?.error || ''
-      if (message === '邀请码无效' || message === '用户名已存在') registrationError.value = message
+      if (message === '邀请码无效' || message === '用户名已存在') { registrationError.value = message; focusField = message === '邀请码无效' ? 'invite' : 'username' }
       else uncertain.value = true
     }
-  } finally { loading.value = false }
+  } finally {
+    loading.value = false
+    if (focusField) {
+      await nextTick()
+      const focused = document.activeElement
+      if (!focused || focused === document.body || !focused.isConnected || focused === origin) {
+        const target = focusField === 'invalid' ? formRef.value?.$el?.querySelector('.el-form-item.is-error input') : (focusField === 'invite' ? inviteInput.value?.input : usernameInput.value?.input)
+        target?.focus()
+      }
+    }
+  }
 }
 
 const warnBeforeUnload = event => {
