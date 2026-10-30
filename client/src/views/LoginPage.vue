@@ -28,6 +28,7 @@
         <el-form-item prop="username">
           <el-input 
             id="login-username"
+            ref="usernameInput"
             v-model="form.username" 
             placeholder="请输入用户名" 
             clearable 
@@ -44,6 +45,7 @@
         <el-form-item prop="password">
           <el-input 
             id="login-password"
+            ref="passwordInput"
             v-model="form.password" 
             type="password" 
             placeholder="请输入密码" 
@@ -85,7 +87,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
@@ -97,6 +99,8 @@ const REMEMBER_LOGIN_KEY = 'eatwhat_remember_login'
 const route = useRoute()
 const router = useRouter()
 const formRef = ref()
+const usernameInput = ref()
+const passwordInput = ref()
 const loading = ref(false)
 const loginError = ref('')
 const form = ref({ username: '', password: '' })
@@ -179,9 +183,13 @@ const onSubmit = async () => {
   if (loading.value || !formRef.value) return
   loginError.value = ''
   loading.value = true
+  let invalidInput = null
   try {
     let valid = false
-    try { valid = await formRef.value.validate() } catch (_) { return }
+    try { valid = await formRef.value.validate() } catch (_) {
+      invalidInput = !form.value.username.trim() ? usernameInput : !form.value.password ? passwordInput : null
+      return
+    }
     if (!valid) return
     try {
       const startingSession = storedSessionIdentity()
@@ -203,7 +211,10 @@ const onSubmit = async () => {
     } catch (e) {
       loginError.value = (typeof e === 'string' ? e : e?.error || e?.message) || '登录失败，请检查网络后重试。'
     }
-  } finally { loading.value = false }
+  } finally {
+    loading.value = false
+    if (invalidInput) { await nextTick(); invalidInput.value?.focus() }
+  }
 }
 
 const rules = {

@@ -32,6 +32,13 @@ async function main () {
     await password.press('Enter')
     await page.getByText('请输入用户名', { exact: true }).last().waitFor()
     assert.equal(calls, 0)
+    await page.waitForFunction(() => document.activeElement?.id === 'login-username')
+    await username.fill('test')
+    await password.fill('')
+    await username.press('Enter')
+    await page.getByText('请输入密码', { exact: true }).last().waitFor()
+    await page.waitForFunction(() => document.activeElement?.id === 'login-password')
+    assert.equal(calls, 0, 'invalid forms must not send a login request')
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
@@ -42,6 +49,7 @@ async function main () {
       }
     }
     await username.fill(' test ')
+    await password.fill('private-password')
     await password.press('Enter')
     await page.getByRole('alert').getByText('用户名或密码错误').waitFor()
     assert.equal(await password.inputValue(), 'private-password')
