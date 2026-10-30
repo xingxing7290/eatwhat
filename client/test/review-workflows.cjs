@@ -33,6 +33,7 @@ async function main () {
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const url = new URL(route.request().url())
+      if (url.pathname === '/api/uploads/valid.svg') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>' })
       if (url.pathname === '/api/meals/meal-a') {
         if (route.request().method() === 'PUT') recipeWrites++
         return route.fulfill({ json: { _id: 'meal-a', name: '番茄炒蛋', ingredients: [], steps: [], photos: [], tags: [], healthTags: [], supportsConditionalEdit: true, editVersion: { revision: 'v1', updatedAt: null } } })
@@ -53,6 +54,7 @@ async function main () {
         if (label === '2026-02') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
         if (scenario === 'failure') return route.fulfill({ status: 503, json: { error: '暂时无法读取' } })
         const data = fixture(type, label)
+        if (scenario === 'noimage') { data.topMeals[0].imageUrl = ''; data.bestMemory.photos = ['/api/uploads/valid.svg']; data.photos[0].photo = '/api/uploads/valid.svg' }
         if (scenario === 'legacy') delete data.supportsHouseholdScopedReview
         if (scenario === 'malformed') data.range.end = '1999-01-01'
         if (scenario === 'oldphoto') { delete data.photos[0].photoIndex; delete data.photos[0].fingerprint }
@@ -67,6 +69,14 @@ async function main () {
     await page.getByRole('heading', { name: '把日子，慢慢记下来' }).waitFor()
     await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
+    await page.locator('.meal-image').getByText('图片暂不可用').waitFor()
+    await page.locator('.feature-image').getByText('图片暂不可用').waitFor()
+    await page.locator('.photo-card').getByText('图片暂不可用').waitFor()
+    assert.match(await page.locator('.photo-card').getAttribute('href'), /photo-album/)
+    scenario = 'noimage'; await page.reload()
+    await page.locator('.meal-image').getByText('暂无菜图').waitFor()
+    await page.locator('.photo-card img').evaluate(img => img.decode())
+    assert.equal(await page.locator('.feature-image .image-notice, .photo-image-notice').count(), 0, 'successfully loaded photos must not show a stale failure notice')
     scenario = 'long'; await page.setViewportSize({ width: 320, height: 844 }); await page.reload()
     await page.getByText('LongCategory'.repeat(20)).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'long unbroken labels must not overflow the review page')
