@@ -348,6 +348,15 @@ const load = async () => {
       boardCounts.value = counts;
     }
     if (!Array.isArray(rows) || rows.some(item => !item || typeof (item._id || item.id) !== 'string' || !(item._id || item.id) || typeof item.title !== 'string' || typeof item.date !== 'string' || (item.photos !== undefined && (!Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string'))) || (item.meals !== undefined && (!item.meals || typeof item.meals !== 'object' || Object.values(item.meals).some(rows => !Array.isArray(rows) || rows.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string')))))) || new Set(rows.map(item => item._id || item.id)).size !== rows.length) throw new Error('菜单列表不完整');
+    if (!Array.isArray(menuData)) {
+      const returned = { upcoming: 0, past: 0, unknown: 0 };
+      for (const item of rows) {
+        const bucket = !validDate(item.date) ? 'unknown' : item.date >= request.today ? 'upcoming' : 'past';
+        if (request.period !== 'all' && bucket !== request.period) throw new Error('菜单日期与筛选条件不一致，请重新加载');
+        returned[bucket]++;
+      }
+      if (Object.keys(returned).some(key => returned[key] > menuData.counts[key])) throw new Error('菜单日期统计不一致，请重新加载');
+    }
     menus.value = rows;
   } catch (e) { if (alive && sequence === menuSequence) loadError.value = e?.error || e?.message || '加载纪念日菜单失败'; }
   finally { if (alive && sequence === menuSequence) loading.value = false; }
