@@ -11,9 +11,9 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; const reads = []; let saved = ''; let deleted = false; let failTemplates = true; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true
+    const errors = []; const reads = []; let saved = ''; let deleted = false; let failTemplates = true; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true; let brokenPhoto = true
     page.on('pageerror', error => errors.push(error.message))
-    await page.route('**/broken-anniversary.png', route => route.fulfill({ status: 404, body: '' }))
+    await page.route('**/broken-anniversary.png', route => brokenPhoto ? route.fulfill({ status: 404, body: '' }) : route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>' }))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -62,6 +62,16 @@ async function main () {
     await page.keyboard.press('ArrowRight')
     await viewer.getByText('2 / 2').waitFor()
     await viewer.locator('img[alt="图片暂不可用"]').waitFor()
+    await viewer.getByText('照片暂时无法加载，纪念日菜单仍然保留。').waitFor()
+    brokenPhoto = false
+    await viewer.getByRole('button', { name: '重试这张照片' }).focus()
+    await page.keyboard.press('Enter')
+    await viewer.locator('.photo-preview').evaluate(img => img.decode())
+    await viewer.getByText('照片暂时无法加载，纪念日菜单仍然保留。').waitFor({ state: 'hidden' })
+    assert.equal(await viewer.locator('.photo-preview').evaluate(img => document.activeElement === img), true, 'retry should preserve keyboard focus')
+    await page.keyboard.press('ArrowLeft')
+    await viewer.getByText('1 / 2').waitFor()
+    assert.equal(await viewer.getByText('照片暂时无法加载，纪念日菜单仍然保留。').count(), 0, 'successful photos must not inherit the previous error')
     await page.keyboard.press('Escape')
     await viewer.waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: '新增菜单' }).click()
