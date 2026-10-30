@@ -147,9 +147,20 @@ const navigatePhoto = async direction => {
   await load(direction < 0 ? 'last' : 'first', viewerEpoch);
 };
 const onKey = event => {
-  if (!selected.value || loading.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  if (!selected.value || loading.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const dialog = viewerPreview.value?.closest('.el-dialog');
+  const target = event.target instanceof Element ? event.target : null;
+  if (!dialog || !target || !dialog.contains(target) || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="slider"], [role="spinbutton"]')) return;
   event.preventDefault();
-  navigatePhoto(event.key === 'ArrowLeft' ? -1 : 1);
+  const wasPreview = target === viewerPreview.value;
+  const epoch = viewerEpoch;
+  void navigatePhoto(event.key === 'ArrowLeft' ? -1 : 1).then(async () => {
+    if (!wasPreview || !selected.value || epoch !== viewerEpoch) return;
+    await nextTick();
+    if (!selected.value || epoch !== viewerEpoch) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || active === target || !active.isConnected) viewerPreview.value?.focus({ preventScroll: true });
+  });
 };
 const photoKey = item => JSON.stringify([item.memoryId, item.photoIndex ?? null, item.photo]);
 const imageFor = item => resolveUploadedImage(item.photo) || placeholder;
