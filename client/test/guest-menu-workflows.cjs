@@ -228,7 +228,8 @@ async function main () {
     await page.close()
 
     const legacy = await browser.newPage({ viewport: { width: 1280, height: 900 } })
-    await legacy.route('**/guest-orders/public/**', route => route.fulfill({ json: { session: { ...session, supportsGuestMenuPagination: undefined }, meals: meals.slice(0, 600) } }))
+    let legacyFault = ''
+    await legacy.route('**/guest-orders/public/**', route => route.fulfill({ json: { session: { ...session, supportsGuestMenuPagination: undefined }, meals: legacyFault === 'duplicate' ? [meals[0], meals[0]] : legacyFault === 'missing-id' ? [{ name: '无编号' }] : legacyFault === 'missing-name' ? [{ _id: 'valid-id', name: ' ' }] : meals.slice(0, 600) } }))
     await legacy.goto(`http://127.0.0.1:${server.address().port}/guest-order/legacy-test`)
     await legacy.getByText('当前服务器仅提供前 600 道菜', { exact: false }).waitFor()
     assert.equal(await legacy.locator('.meal').count(), 600)
@@ -241,6 +242,14 @@ async function main () {
     await legacy.getByRole('button', { name: '清除搜索和分类' }).click()
     assert.equal(await legacy.locator('.meal').count(), 600, 'legacy menu reset restores its available results')
     assert.equal(await legacy.getByRole('textbox', { name: '搜索菜品' }).inputValue(), '')
+    for (const fault of ['duplicate', 'missing-id', 'missing-name']) {
+      legacyFault = fault; await legacy.reload()
+      await legacy.getByText('菜单数据不完整或已变化，请重新加载。').waitFor()
+      assert.equal(await legacy.locator('.meal').count(), 0, `${fault} legacy items must not be selectable`)
+      legacyFault = ''; await legacy.getByRole('button', { name: '重新加载菜单' }).click()
+      await legacy.getByText('当前服务器仅提供前 600 道菜', { exact: false }).waitFor()
+      assert.equal(await legacy.locator('.meal').count(), 600, 'a valid retry must restore the menu')
+    }
     await legacy.close()
     const many = await browser.newPage({ viewport: { width: 320, height: 844 } })
     const varied = Array.from({ length: 25 }, (_, index) => ({ _id: index.toString(16).padStart(24, '0'), name: `菜品${index}`, category: `分类${String(index).padStart(2, '0')}` }))
