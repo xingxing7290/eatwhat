@@ -31,6 +31,12 @@ let alive = true;
 
 const selectedIds = computed(() => new Set(selected.value.map(idOf)));
 const lastPage = computed(() => Math.max(1, Math.ceil(total.value / limit)));
+const filtersActive = computed(() => !!query.value.trim() || !!category.value || uncategorized.value);
+const clearFilters = async () => {
+  query.value = ''; category.value = ''; uncategorized.value = false;
+  await nextTick();
+  searchInput.value?.focus();
+};
 const load = async () => {
   const ticket = ++sequence;
   loading.value = true;
@@ -129,7 +135,8 @@ onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer
         <div v-if="error && !loading" class="catalog-error" role="alert">{{ error }} <el-button link type="primary" @click="load">重试</el-button></div>
         <div v-else-if="loading" class="catalog-state" role="status">正在加载菜品…</div>
         <template v-else>
-          <div v-if="!meals.length" class="catalog-state">没有找到匹配的菜品</div>
+          <p class="result-count" role="status">共 {{ total }} 道匹配菜品<span v-if="total"> · 第 {{ page }} / {{ lastPage }} 页</span></p>
+          <div v-if="!meals.length" class="catalog-state"><p>{{ filtersActive ? '没有找到符合筛选条件的菜品。' : '菜谱库中还没有可选菜品。' }}</p><el-button v-if="filtersActive" @click="clearFilters">清除筛选</el-button><small v-if="filtersActive">已选菜品会保留。</small></div>
           <div v-else class="meal-list">
             <button v-for="meal in meals" :key="idOf(meal)" type="button" class="meal-option" :class="{ active: selectedIds.has(idOf(meal)) }" :aria-label="`${selectedIds.has(idOf(meal)) ? '取消选择' : '选择'}${meal.name}`" :aria-pressed="selectedIds.has(idOf(meal))" @click="toggle(meal)">
               <img :key="imageFor(meal)" :src="imageFor(meal)" alt="" @error="imageError" /><span class="meal-copy"><strong>{{ meal.name }}</strong><small>{{ meal.category || '未分类' }}</small></span><span class="choice-mark" aria-hidden="true">{{ selectedIds.has(idOf(meal)) ? '✓' : '+' }}</span>
@@ -159,6 +166,8 @@ onBeforeUnmount(() => { alive = false; sequence++; if (timer) clearTimeout(timer
 .category-list > button { border: 0; background: transparent; color: var(--text-secondary); text-align: left; padding: 10px; min-height: 42px; border-radius: 10px; overflow-wrap: anywhere; cursor: pointer; font: inherit; }
 .category-list > button.active { background: var(--bg-tertiary); color: var(--text-primary); font-weight: 700; box-shadow: inset 3px 0 0 var(--secondary-color); }
 .metadata-note,.catalog-state,.catalog-error { color: var(--text-secondary); font-size: 13px; padding: 12px; }
+.result-count { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.5; }
+.catalog-state p { margin: 0 0 10px; line-height: 1.5; }.catalog-state .el-button { min-height: 44px; }.catalog-state small { display: block; margin-top: 8px; line-height: 1.5; }
 .metadata-note button { border: 0; padding: 5px 0; background: none; color: var(--secondary-color); text-decoration: underline; font: inherit; cursor: pointer; }
 .meal-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .meal-option { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 74px; padding: 8px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-primary); color: var(--text-primary); text-align: left; cursor: pointer; font: inherit; }
