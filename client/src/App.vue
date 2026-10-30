@@ -225,7 +225,7 @@ const handleKeyDown = (e) => {
   if (e.key === 'Escape' && showMobileMenu.value) {
     // A teleported confirmation or other dialog owns Escape while it is open.
     // Closing the drawer as well would hide the original focus target.
-    const dialogOpen = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].some(dialog => dialog.getClientRects().length && !dialog.closest('[inert], [aria-hidden="true"]'));
+    const dialogOpen = [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].some(dialog => dialog.id !== 'mobile-navigation' && dialog.getClientRects().length && !dialog.closest('[inert], [aria-hidden="true"]'));
     if (dialogOpen) return;
     e.preventDefault();
     closeMobileMenu(true);
@@ -406,9 +406,9 @@ onBeforeUnmount(() => {
       </header>
       
       <!-- 移动端导航菜单 -->
-      <div v-if="isLoggedIn" id="mobile-navigation" class="mobile-nav" :class="{ 'show': showMobileMenu }" :inert="!showMobileMenu ? '' : null" :aria-hidden="!showMobileMenu">
+      <div v-if="isLoggedIn" id="mobile-navigation" class="mobile-nav" role="dialog" aria-modal="true" aria-labelledby="mobile-navigation-title" :class="{ 'show': showMobileMenu }" :inert="!showMobileMenu ? '' : null" :aria-hidden="!showMobileMenu">
         <div class="mobile-nav-header">
-          <h3>菜单</h3>
+          <h3 id="mobile-navigation-title">导航菜单</h3>
           <el-button ref="mobileMenuCloseButton" type="text" aria-label="关闭导航菜单" @click="closeMobileMenu(true)">
             <el-icon><Close /></el-icon>
           </el-button>
