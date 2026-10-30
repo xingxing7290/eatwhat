@@ -394,7 +394,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .source-recipes button { min-height: 44px; padding: 4px 6px; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
 .source-recipes button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .source-recipes nav { display: flex; flex-wrap: wrap; gap: 0 16px; }
-.source-recipes a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.source-recipes a { display: block; box-sizing: border-box; min-width: 0; max-width: 100%; min-height: 44px; padding: 12px 0; overflow-wrap: anywhere; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .source-recipes a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .item-row :deep(.el-checkbox) { min-height: 44px; padding: 4px 2px; border-radius: 8px; }
 .item-row :deep(.el-checkbox:focus-within) { outline: 2px solid var(--text-primary); outline-offset: 2px; }
