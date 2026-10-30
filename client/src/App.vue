@@ -118,6 +118,12 @@ watch(selectedColorTheme, () => {
   applyColorTheme();
 });
 
+// Keep the page behind the mobile drawer stationary, including when the
+// drawer itself reaches either end of its scrollable content.
+watch(showMobileMenu, open => {
+  document.documentElement.classList.toggle('mobile-navigation-open', open);
+});
+
 watch(() => route.fullPath, () => {
   loadAuthState();
   const wasOpen = showMobileMenu.value;
@@ -252,6 +258,7 @@ const handleResize = () => {
 };
 
 onBeforeUnmount(() => {
+  document.documentElement.classList.remove('mobile-navigation-open');
   window.removeEventListener('keydown', handleKeyDown);
   window.removeEventListener('resize', handleResize);
   window.removeEventListener('eatwhat-theme-change', handleColorThemeChange);
@@ -790,6 +797,7 @@ body {
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  overscroll-behavior: contain;
   
   &.show {
     right: 0;

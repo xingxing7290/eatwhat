@@ -79,6 +79,10 @@ html.dark {
 }
 
 /* 基础元素样式 */
+html.mobile-navigation-open {
+  overflow: hidden;
+}
+
 body {
   color: var(--text-primary);
   background: linear-gradient(180deg, var(--bg-secondary) 0%, #fff8ef 52%, var(--bg-tertiary) 100%);
