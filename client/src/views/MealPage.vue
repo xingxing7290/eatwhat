@@ -1183,7 +1183,10 @@ onBeforeUnmount(() => {
         <el-icon class="empty-icon"><Food /></el-icon>
         <h3>{{ hasActiveFilters ? '没有找到匹配的菜品' : '暂无菜品' }}</h3>
         <p>{{ hasActiveFilters ? '试试调整关键词或清除筛选。' : '开始添加你的第一个菜品吧！' }}</p>
-        <el-button v-if="hasActiveFilters" @click="clearFilters">清除筛选</el-button>
+        <div v-if="hasActiveFilters" class="empty-filter-actions">
+          <el-button type="primary" @click="searchInput?.focus()">调整搜索</el-button>
+          <el-button @click="clearFilters">清除筛选</el-button>
+        </div>
         <el-button
           v-else
           type="primary"
@@ -1731,6 +1734,9 @@ onBeforeUnmount(() => {
   color: var(--text-secondary);
   margin: 0 0 20px 0;
 }
+
+.empty-filter-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.empty-filter-actions .el-button { min-height: 44px; margin: 0; }
 
 .empty-action-btn {
   display: flex;
