@@ -112,9 +112,9 @@ const loadPartnerWishlist = async (sequence = monthSequence) => {
   try {
     const items = await api.wishlist.list({ status: 'open' });
     if (!active || sequence !== monthSequence) return;
-    if (!Array.isArray(items)) throw new Error('心愿提醒数据不完整');
-    partnerWishlist.value = items.filter(item => item?.partnerSignal).slice(0, 3);
-  } catch (_) { if (active && sequence === monthSequence) wishlistError.value = '暂时无法读取想吃提醒'; }
+    if (!Array.isArray(items) || items.some(item => !item || typeof item.partnerSignal !== 'boolean')) throw new Error('想吃提醒数据不完整或服务器不支持家庭提醒');
+    partnerWishlist.value = items.filter(item => item.partnerSignal).slice(0, 3);
+  } catch (error) { if (active && sequence === monthSequence) { partnerWishlist.value = []; wishlistError.value = error?.message === '想吃提醒数据不完整或服务器不支持家庭提醒' ? error.message : '暂时无法读取想吃提醒'; } }
 };
 const wishlistMealId = item => item?.mealId && typeof item.mealId === 'object' && !item.mealId.archived ? item.mealId._id || item.mealId.id : '';
 const wishlistNeedsRecipe = item => item?.mealId?.archived ? '菜品已移入回收站' : item?.mealLinkStatus === 'unavailable' ? '关联菜品不可用' : item?.mealLinkStatus === 'unlinked' ? '尚未关联菜品' : '请先核对关联菜品';
@@ -532,7 +532,7 @@ onBeforeUnmount(() => {
       <span>{{ nameLoading ? '正在补全旧版排餐中的菜品名称…' : nameWarning }}</span>
       <el-button v-if="nameWarning && !nameLoading" link type="primary" @click="resolveMealNames(scheduleStore.schedules)">重试菜品名称</el-button>
     </div>
-    <div v-if="!isLoading && !loadError && wishlistError" class="calendar-notice" role="status"><span>{{ wishlistError }}，不影响查看日历。</span><el-button link type="primary" @click="loadPartnerWishlist()">重试提醒</el-button></div>
+    <div v-if="!isLoading && !loadError && wishlistError" class="calendar-notice" role="status"><span>{{ wishlistError }}，不影响查看日历。</span><el-button link type="primary" @click="loadPartnerWishlist()">重试提醒</el-button><router-link :to="{ name: 'wishlist' }">查看想吃清单 →</router-link></div>
 
     <section v-if="partnerWishlist.length" class="partner-wishlist-banner" aria-label="家人最近想吃">
       <div class="wishlist-banner-heading"><strong>家人最近想吃</strong><router-link :to="{ name: 'wishlist' }">查看全部想吃 →</router-link></div>

@@ -68,6 +68,16 @@ async function main () {
     await page.getByRole('link', { name: '在想吃清单中核对先关联菜' }).waitFor()
     await page.getByText('菜品已移入回收站').waitFor()
     assert.equal(await page.getByRole('button', { name: '安排先关联菜到今天晚餐' }).count(), 0)
+    const validWishes = wishes
+    wishes = [{ _id: 'legacy-wish', title: '未标识来源' }]
+    await page.getByRole('button', { name: '刷新所选月' }).click()
+    await page.getByText('想吃提醒数据不完整或服务器不支持家庭提醒，不影响查看日历。').waitFor()
+    assert.equal(await page.getByRole('region', { name: '家人最近想吃' }).count(), 0, 'incomplete reminder data must not be presented as a reliable empty result')
+    assert.equal(await page.getByRole('link', { name: '查看想吃清单 →' }).getAttribute('href'), '/wishlist')
+    wishes = [...validWishes, { _id: 'own-wish', title: '我自己的心愿', partnerSignal: false }]
+    await page.getByRole('button', { name: '重试提醒' }).click()
+    await page.getByRole('link', { name: '在想吃清单中核对先关联菜' }).waitFor()
+    assert.equal(await page.getByText('我自己的心愿').count(), 0, 'personal wishes must not be presented as a partner reminder')
     await page.setViewportSize({ width: 390, height: 844 })
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     for (const dark of [false, true]) {
