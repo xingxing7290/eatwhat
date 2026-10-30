@@ -430,6 +430,44 @@ async function main () {
       assert.equal(uncertainWrites, 0, 'reading recovery state must not submit an order')
       await uncertainBlocked.close()
     }
+    for (const invalidValue of ['', '0', 'damaged']) {
+      const invalidPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
+      await invalidPage.addInitScript(({ invalidValue }) => {
+        const key = 'eatwhat.guestOrder.invalid-uncertainty.uncertain'
+        if (sessionStorage.getItem(key) === null) sessionStorage.setItem(key, invalidValue)
+        const original = Storage.prototype.setItem
+        Storage.prototype.setItem = function (name, value) { if (window.__blockUncertainWrite && this === sessionStorage && name === key) throw new DOMException('blocked', 'SecurityError'); return original.call(this, name, value) }
+      }, { invalidValue })
+      let writes = 0
+      await invalidPage.route('**/guest-orders/public/**', route => {
+        if (route.request().method() !== 'GET') { writes++; return route.fulfill({ status: 500 }) }
+        return route.fulfill({ json: { session, meals: [safeMeal] } })
+      })
+      await invalidPage.goto(`http://127.0.0.1:${server.address().port}/guest-order/invalid-uncertainty`)
+      await invalidPage.getByRole('button', { name: '查看 / 核对' }).click()
+      await invalidPage.getByText('提交核对状态无法识别', { exact: false }).waitFor()
+      assert.equal(await invalidPage.locator('#guestName').isDisabled(), true)
+      assert.equal(await invalidPage.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true }))), true)
+      await invalidPage.getByRole('button', { name: '重新读取核对状态' }).click()
+      await invalidPage.getByText('核对状态仍无法识别', { exact: false }).waitFor()
+      await invalidPage.evaluate(() => { window.__blockUncertainWrite = true })
+      invalidPage.once('dialog', dialog => dialog.accept())
+      await invalidPage.getByRole('button', { name: '标记为待核对' }).click()
+      await invalidPage.getByText('无法保存核对状态', { exact: false }).waitFor()
+      assert.equal(await invalidPage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.invalid-uncertainty.uncertain')), invalidValue)
+      assert.equal(await invalidPage.locator('#guestName').isDisabled(), true)
+      await invalidPage.evaluate(() => { window.__blockUncertainWrite = false })
+      invalidPage.once('dialog', dialog => dialog.accept())
+      await invalidPage.getByRole('button', { name: '标记为待核对' }).click()
+      await invalidPage.getByText('提交结果尚未确认', { exact: false }).waitFor()
+      assert.equal(await invalidPage.evaluate(() => sessionStorage.getItem('eatwhat.guestOrder.invalid-uncertainty.uncertain')), '1')
+      await invalidPage.reload()
+      await invalidPage.getByRole('button', { name: '查看 / 核对' }).click()
+      await invalidPage.getByText('提交结果尚未确认', { exact: false }).waitFor()
+      assert.equal(await invalidPage.getByRole('button', { name: '提交给主人' }).isDisabled(), true)
+      assert.equal(writes, 0, 'repairing recovery state must not submit an order')
+      await invalidPage.close()
+    }
     const closedPage = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await closedPage.addInitScript(() => localStorage.setItem('eatwhat.guestOrder.closed-test', 'closed-access'))
     await closedPage.route('**/guest-orders/public/**', async route => {

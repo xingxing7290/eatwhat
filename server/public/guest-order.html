@@ -294,7 +294,7 @@
       <div class="order-warning" id="unavailableWarning" role="status" hidden><p>部分菜品已下架或不可用。你的选择和备注仍保留，请核对并移除不可用菜品，或稍后重试。</p></div>
       <div class="order-warning" id="conflictWarning" role="alert" hidden><p id="conflictMessage"></p><button type="button" id="loadLatestOrder">载入最新订单</button></div>
       <div class="order-warning" id="uncertainWarning" role="alert" hidden><p>提交结果尚未确认，先前请求仍可能完成。请先联系主人核对，避免重复提交；本页已有的选择和备注不会被自动清除。</p><button type="button" id="acknowledgeUncertain">已核对，继续</button></div>
-      <div class="order-warning" id="uncertainReadWarning" role="alert" hidden><p>浏览器暂时无法读取上次提交的核对状态，请恢复存储访问并重新读取，避免重复提交。</p><button type="button" id="retryUncertainRead">重新读取核对状态</button></div>
+      <div class="order-warning" id="uncertainReadWarning" role="alert" hidden><p id="uncertainReadMessage"></p><button type="button" id="retryUncertainRead">重新读取核对状态</button> <button type="button" id="markInvalidUncertain" hidden>标记为待核对</button></div>
       <div class="order-warning" id="pendingWarning" role="alert" hidden><p id="pendingMessage"></p><button type="button" id="retryPendingRead" hidden>重新读取凭证</button> <button type="button" id="retryPending">安全重试原提交</button> <button type="button" id="abandonPending">放弃安全重试</button></div>
       <div class="order-warning" id="storageWarning" role="status" hidden><p>本浏览器无法保存订单凭证；刷新或关闭页面后，你可能无法继续修改这份订单，请联系主人。</p><button type="button" id="retryStorage">重新保存凭证</button></div>
       <div class="order-warning" id="accessReadWarning" role="alert" hidden><p>浏览器暂时无法读取已提交订单的凭证，无法确认是否已有点菜单。请恢复存储访问并重新读取，避免重复提交。</p><button type="button" id="retryAccessRead">重新读取订单凭证</button></div>
@@ -318,13 +318,13 @@
       const pendingKey = `${storageKey}.pendingCreate`;
       const MAX_DISHES = 50;
       function storedAccessToken() { try { return { token: localStorage.getItem(storageKey) || '', unavailable: false }; } catch (_) { return { token: '', unavailable: true }; } }
-      function storedUncertainty() { try { return { value: sessionStorage.getItem(uncertaintyKey) === '1', unavailable: false }; } catch (_) { return { value: false, unavailable: true }; } }
+      function storedUncertainty() { try { const value = sessionStorage.getItem(uncertaintyKey); return { value: value === '1', unavailable: false, invalid: value !== null && value !== '1' }; } catch (_) { return { value: false, unavailable: true, invalid: false }; } }
       function setUncertainty(value) { state.uncertain = value; try { if (value) sessionStorage.setItem(uncertaintyKey, '1'); else sessionStorage.removeItem(uncertaintyKey); } catch (_) { /* Warning remains active in this page. */ } }
       function validPending(value) { return !!value && /^[A-Za-z0-9_-]{43}$/.test(value.creationKey || '') && typeof value.guestName === 'string' && typeof value.note === 'string' && Array.isArray(value.items) && value.items.length > 0 && value.items.length <= MAX_DISHES && value.items.every(item => item && /^[a-f0-9]{24}$/.test(item.mealId || '') && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20 && typeof item.note === 'string' && typeof item.name === 'string'); }
       function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return { invalid: true, unavailable: true }; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
       const initialAccess = storedAccessToken();
       const initialUncertainty = storedUncertainty();
-      const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, statusSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: initialAccess.token, accessReadBlocked: initialAccess.unavailable, busy: false, conflict: '', uncertain: initialUncertainty.value, uncertainReadBlocked: initialUncertainty.unavailable, pending: storedPending(), storageFailed: false, unavailable: new Set() };
+      const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, statusSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: initialAccess.token, accessReadBlocked: initialAccess.unavailable, busy: false, conflict: '', uncertain: initialUncertainty.value, uncertainReadBlocked: initialUncertainty.unavailable || initialUncertainty.invalid, uncertainReadInvalid: initialUncertainty.invalid, pending: storedPending(), storageFailed: false, unavailable: new Set() };
       const $ = id => document.getElementById(id);
       let toastTimer; let searchTimer;
 
@@ -625,7 +625,10 @@
         $('conflictMessage').textContent = state.conflict === 'load' ? '暂时无法读取之前提交的订单，本页选择仍保留。请先载入最新订单；载入会替换本页未保存的修改。' : '订单已在其他设备更新，本页修改仍保留。请先核对；载入最新订单会替换本页未保存的修改。';
         $('uncertainWarning').hidden = !state.uncertain;
         $('uncertainReadWarning').hidden = !state.uncertainReadBlocked;
+        $('uncertainReadMessage').textContent = state.uncertainReadInvalid ? '浏览器中的提交核对状态无法识别。请先联系主人确认是否已经收到点单，再将异常状态标记为待核对。' : '浏览器暂时无法读取上次提交的核对状态，请恢复存储访问并重新读取，避免重复提交。';
         $('retryUncertainRead').disabled = state.busy;
+        $('markInvalidUncertain').hidden = !state.uncertainReadInvalid;
+        $('markInvalidUncertain').disabled = state.busy;
         $('pendingWarning').hidden = !state.pending;
         $('pendingMessage').textContent = state.pending?.unavailable ? '浏览器暂时无法读取安全提交凭证。请恢复存储访问并重新读取，避免重复提交。' : state.pending?.invalid ? '无法读取之前的安全提交凭证，暂时不能重试。请先联系主人核对，再决定是否放弃。' : '这份点菜单需要核对或保存凭证。可以安全重试原内容，不会因重复重试生成第二份订单；放弃重试前请联系主人确认。';
         $('retryPendingRead').hidden = !state.pending?.unavailable;
@@ -898,12 +901,24 @@
       $('retryUncertainRead').addEventListener('click', () => {
         if (state.busy || !state.uncertainReadBlocked) return;
         const stored = storedUncertainty();
-        if (stored.unavailable) return toast('仍无法读取核对状态，请检查浏览器存储');
+        state.uncertainReadInvalid = stored.invalid;
+        if (stored.unavailable || stored.invalid) { renderCartList(); return toast(stored.unavailable ? '仍无法读取核对状态，请检查浏览器存储' : '核对状态仍无法识别，请先联系主人核对'); }
         const hadFocus = document.activeElement === $('retryUncertainRead');
         state.uncertain = stored.value; state.uncertainReadBlocked = false;
         renderMeals(); renderCartBar(); renderCartList();
         if (hadFocus && (document.activeElement === $('retryUncertainRead') || document.activeElement === document.body)) $('closeCart').focus({ preventScroll: true });
         if (!stored.value) toast('已重新读取核对状态');
+      });
+      $('markInvalidUncertain').addEventListener('click', () => {
+        if (state.busy || !state.uncertainReadBlocked || !state.uncertainReadInvalid || !confirm('异常记录可能对应已提交或仍在处理的点单。将其标记为待核对，不会自动提交。确定继续吗？')) return;
+        try {
+          sessionStorage.setItem(uncertaintyKey, '1');
+          const stored = storedUncertainty();
+          if (stored.unavailable || stored.invalid || !stored.value) throw new Error('Unable to verify uncertainty state');
+          state.uncertain = true; state.uncertainReadBlocked = false; state.uncertainReadInvalid = false;
+          renderMeals(); renderCartBar(); renderCartList();
+          $('acknowledgeUncertain').focus({ preventScroll: true });
+        } catch (_) { toast('无法保存核对状态，请检查浏览器存储'); }
       });
       $('retryAccessRead').addEventListener('click', async () => {
         if (state.busy || !state.accessReadBlocked) return;
