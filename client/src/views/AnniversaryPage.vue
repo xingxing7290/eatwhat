@@ -54,6 +54,7 @@ const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const today = ref(localToday());
 const search = ref('');
+const searchInput = ref(null);
 const period = ref('all');
 const filterGroup = ref(null);
 const addMenuButton = ref(null);
@@ -90,6 +91,7 @@ const filteredMenus = computed(() => {
 const menuGroups = computed(() => ['upcoming', 'past', 'unknown'].map(key => ({ key, title: periodNames[key], items: filteredMenus.value.filter(item => periodOf(item) === key).sort((a, b) => (key === 'past' ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date)) || String(a._id || a.id).localeCompare(String(b._id || b.id))) })).filter(group => group.items.length));
 const hiddenEdit = computed(() => !!editing.value && !filteredMenus.value.some(item => String(item._id || item.id) === editing.value.id));
 const resetFilters = () => { search.value = ''; period.value = 'all'; };
+const clearEmptyFilters = async () => { resetFilters(); await nextTick(); if (searchInput.value) searchInput.value.focus(); else addMenuButton.value?.$el?.focus(); };
 const refreshAndReview = async () => {
   if (!deleteIssue.value || checkingDelete.value) return;
   checkingDelete.value = true;
@@ -179,7 +181,13 @@ const imageFor = photo => resolveUploadedImage(photo) || placeholder;
 const imageError = event => handleUploadedImageError(event, placeholder);
 const openPhoto = (item, index) => { viewedPhoto.value = { title: item.title || '纪念日照片', photos: item.photos, index }; };
 const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.photos.length) viewedPhoto.value.index = next; };
-const onPhotoKey = event => { if (!viewedPhoto.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1); };
+const onPhotoKey = event => {
+  if (!viewedPhoto.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const dialog = target?.closest('.el-dialog');
+  if (!dialog?.querySelector('.photo-preview') || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="slider"], [role="spinbutton"]')) return;
+  event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1);
+};
 const loadTemplates = async () => {
   if (templateLoading.value) return;
   templateLoading.value = true; templateError.value = '';
@@ -418,12 +426,12 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
     <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分纪念日菜单。" />
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载纪念日菜单：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
     <section v-if="!loadError && (menus.length || filtersActive || boardMode)" class="menu-filters" aria-label="查找纪念日菜单">
-      <div class="filter-heading"><div><span class="filter-kicker">YOUR SPECIAL DAYS</span><h2>寻找特别的一天</h2><p aria-live="polite">{{ boardMode ? (loading ? '正在更新菜单…' : `共 ${boardTotal} 份匹配菜单 · 第 ${boardPage} / ${boardPages} 页`) : `显示 ${filteredMenus.length} / ${menus.length} 份菜单` }}</p></div><el-input v-model="search" clearable maxlength="100" aria-label="搜索纪念日菜单" placeholder="搜索标题、主题、备注或菜品" :disabled="!!deletingId || !!deleteIssue" /></div>
+      <div class="filter-heading"><div><span class="filter-kicker">YOUR SPECIAL DAYS</span><h2>寻找特别的一天</h2><p aria-live="polite">{{ boardMode ? (loading ? '正在更新菜单…' : `共 ${boardTotal} 份匹配菜单 · 第 ${boardPage} / ${boardPages} 页`) : `显示 ${filteredMenus.length} / ${menus.length} 份菜单` }}</p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" aria-label="搜索纪念日菜单" placeholder="搜索标题、主题、备注或菜品" :disabled="!!deletingId || !!deleteIssue" /></div>
       <div ref="filterGroup" class="period-filters" role="group" aria-label="按日期筛选菜单"><button v-for="option in periodOptions" :key="option.key" type="button" :class="{ active: period === option.key }" :aria-pressed="period === option.key" :disabled="!!deletingId || !!deleteIssue" @click="period = option.key">{{ option.label }}</button><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deletingId || !!deleteIssue" @click="resetFilters">清除筛选</button></div>
     </section>
     <div v-if="!loadError" v-loading="loading" class="menu-content" :aria-busy="loading ? 'true' : 'false'">
-      <el-empty v-if="!loading && !menus.length && !filtersActive" description="还没有纪念日菜单" />
-      <el-empty v-else-if="!loading && !filteredMenus.length" description="没有符合条件的纪念日菜单" />
+      <el-empty v-if="!loading && !menus.length && !filtersActive" description="还没有纪念日菜单"><el-button type="primary" class="empty-action" :disabled="!!deletingId || !!deleteIssue || !!editIssue" @click="startCreate">创建第一份菜单</el-button></el-empty>
+      <el-empty v-else-if="!loading && !filteredMenus.length" description="没有符合条件的纪念日菜单"><div class="empty-actions"><el-button type="primary" :disabled="!!deletingId || !!deleteIssue" @click="searchInput?.focus()">调整搜索</el-button><el-button :disabled="!!deletingId || !!deleteIssue" @click="clearEmptyFilters">清除全部筛选</el-button></div></el-empty>
       <section v-for="group in menuGroups" :key="group.key" class="menu-group"><div class="group-heading"><h2>{{ group.title }}</h2><span>{{ boardMode ? '本页 ' : '' }}{{ group.items.length }} 份</span></div><div class="menu-grid">
       <el-card v-for="item in group.items" :key="item._id || item.id" class="menu-card" :data-menu-id="item._id || item.id">
         <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="loading || !!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="loading || !!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
@@ -477,6 +485,8 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
 </template>
 
 <style scoped>
+.empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.empty-actions .el-button, .empty-action { min-height: 44px; margin: 0; }
 .calendar-explanation { font-size: 13px; line-height: 1.6; }
 .menu-calendar-link { display: inline-flex; align-items: center; min-height: 44px; margin-left: 10px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .menu-calendar-link:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 2px; }
