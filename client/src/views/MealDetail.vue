@@ -337,6 +337,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 .meal-detail { display: flex; flex-direction: column; gap: 18px; }
 .detail-toolbar { display: flex; justify-content: space-between; gap: 12px; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+.toolbar-actions :deep(.el-button + .el-button) { margin-left: 0; }
 .report-hint { padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 .hero { display: grid; grid-template-columns: minmax(280px, 460px) 1fr; gap: 24px; background: var(--bg-primary); border-radius: 12px; padding: 20px; box-shadow: 0 2px 12px var(--shadow-color); }
 .hero img { width: 100%; height: 320px; object-fit: cover; border-radius: 10px; background: var(--bg-secondary); }
@@ -377,4 +378,10 @@ h1 { margin: 0; color: var(--text-primary); }
 .tips-card p { white-space: pre-wrap; }
 .step-item p, .tips-card p { min-width: 0; overflow-wrap: anywhere; }
 @media (max-width: 768px) { .hero, .content-grid { grid-template-columns: 1fr; } .meta-grid { grid-template-columns: repeat(2, 1fr); } .step-item, .step-item.no-image { grid-template-columns: 28px 1fr; } .step-item img { grid-column: 2; } }
+@media (max-width: 600px) {
+  .detail-toolbar { flex-direction: column; align-items: stretch; }
+  .detail-toolbar > :deep(.el-button) { align-self: flex-start; min-height: 44px; }
+  .toolbar-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .toolbar-actions :deep(.el-button) { width: 100%; min-width: 0; min-height: 44px; margin: 0; }
+}
 </style>
