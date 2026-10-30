@@ -90,6 +90,7 @@ const load = async (openAt = null, viewerToken = null) => {
     let rows = result.photos;
     let total = result.total;
     if (result.page == null && result.limit == null) {
+      if (total != null && (!Number.isSafeInteger(total) || total < 0 || total !== rows.length)) throw new Error('相册照片数量不完整，请重新加载');
       total = rows.length;
       rows = rows.slice((requestedPage - 1) * pageSize, requestedPage * pageSize);
     } else if (!Number.isSafeInteger(total) || total < 0 || result.page !== requestedPage || result.limit !== pageSize || rows.length > pageSize || rows.length > total) throw new Error('相册分页数据不完整');

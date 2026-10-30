@@ -16,7 +16,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    let legacy = false
+    let legacy = false; let legacyTotal = null
     let photoUnavailable = true; let photoHold = false; let releasePhotos = []
     let malformed = false; let invalidPhoto = ''
     let failPage = false
@@ -42,7 +42,7 @@ async function main () {
         if (holdPage && current === 2) await new Promise(resolve => { releasePage = resolve })
         if (failPage && current === 2) return route.fulfill({ status: 503, json: { error: '相册读取失败' } })
         const rows = month === '2026-10' && !noPhotos ? photos : []
-        data = legacy ? { month, photos: rows } : { month, total: rows.length, page: current, limit, photos: malformed ? [] : rows.slice((current - 1) * limit, current * limit) }
+        data = legacy ? { month, photos: rows, ...(legacyTotal !== null ? { total: legacyTotal } : {}) } : { month, total: rows.length, page: current, limit, photos: malformed ? [] : rows.slice((current - 1) * limit, current * limit) }
         if (invalidPhoto && data.photos.length) data.photos = data.photos.map((item, index) => index ? item : { ...item, ...(invalidPhoto === 'date' ? { date: `${month}-32` } : { memoryId: { id: 'invalid' } }) })
       } else if (req.method() === 'GET' && path === '/auth/me') data = { user: { id: 'u1', username: 'test' }, household: { id: 'home', name: '测试家庭', members: [] } }
       await route.fulfill({ status: 200, json: data })
@@ -244,6 +244,15 @@ async function main () {
     await page.getByRole('button', { name: '下一页' }).click()
     await page.getByRole('button', { name: /第 25 张/ }).waitFor()
     assert.equal(await page.locator('.photo-card').count(), 6)
+    legacyTotal = photos.length + 1
+    await page.reload()
+    await page.getByText('相册照片数量不完整，请重新加载', { exact: false }).first().waitFor()
+    assert.equal(await page.locator('.photo-card').count(), 0, 'an incomplete legacy result must not be presented as a complete album')
+    assert.equal(await page.getByText('这个月还没有饭桌照片').count(), 0)
+    legacyTotal = photos.length
+    await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByRole('button', { name: /第 25 张/ }).waitFor()
+    legacyTotal = null
     legacy = false
     failPage = true
     await page.getByRole('button', { name: '上一页' }).click()
