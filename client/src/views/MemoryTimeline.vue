@@ -38,6 +38,7 @@ const timelineLimit = 12;
 const timelineTotal = ref(0);
 const timelineCapable = ref(false);
 const timelineSearch = ref(initialTimeline.search);
+const timelineSearchInput = ref(null);
 const timelineMonth = ref(initialTimeline.month);
 const timelineMealType = ref(initialTimeline.mealType);
 const timelinePhotos = ref(initialTimeline.photos);
@@ -187,6 +188,7 @@ const deleteBlocked = computed(() => saveUncertain.value || !!editIssue.value ||
 const legacyDeleteWarning = computed(() => visibleMemories.value.some(item => !canDelete(item)));
 const timelinePages = computed(() => Math.max(1, Math.ceil(timelineTotal.value / timelineLimit)));
 const resetFilters = () => { timelineSearch.value = ''; timelineMonth.value = ''; timelineMealType.value = 'all'; timelinePhotos.value = 'all'; };
+const clearEmptyFilters = () => { resetFilters(); timelineSearchInput.value?.focus(); };
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealOptions = computed(() => {
   const seen = new Set();
@@ -236,7 +238,10 @@ const moveMemoryPhoto = direction => {
   if (next >= 0 && next < viewedPhoto.value.photos.length) viewedPhoto.value.index = next;
 };
 const onPhotoKey = event => {
-  if (!viewedPhoto.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  if (!viewedPhoto.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const dialog = target?.closest('.el-dialog');
+  if (!dialog?.querySelector('.photo-preview') || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="slider"], [role="spinbutton"]')) return;
   event.preventDefault();
   moveMemoryPhoto(event.key === 'ArrowLeft' ? -1 : 1);
 };
@@ -503,13 +508,16 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
     <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分回忆。" />
 
     <section class="memory-filters" aria-label="查找饭后回忆">
-      <div class="filter-heading"><div><span class="filter-kicker">YOUR TABLE JOURNAL</span><h2>寻找一段回忆</h2><p aria-live="polite">{{ loading ? '正在查找回忆…' : loadError ? '暂时无法获取结果' : timelineCapable ? `共 ${timelineTotal} 条回忆 · 第 ${timelinePage} / ${timelinePages} 页` : `显示 ${visibleMemories.length} 条回忆` }}</p></div><label class="search-field"><span class="sr-only">搜索回忆</span><input v-model="timelineSearch" type="search" maxlength="100" placeholder="搜索标题、心情或笔记" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label></div>
+      <div class="filter-heading"><div><span class="filter-kicker">YOUR TABLE JOURNAL</span><h2>寻找一段回忆</h2><p aria-live="polite">{{ loading ? '正在查找回忆…' : loadError ? '暂时无法获取结果' : timelineCapable ? `共 ${timelineTotal} 条回忆 · 第 ${timelinePage} / ${timelinePages} 页` : `显示 ${visibleMemories.length} 条回忆` }}</p></div><label class="search-field"><span class="sr-only">搜索回忆</span><input ref="timelineSearchInput" v-model="timelineSearch" type="search" maxlength="100" placeholder="搜索标题、心情或笔记" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label></div>
       <div class="filter-row"><label>月份<input v-model="timelineMonth" type="month" aria-label="按月份筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label><label>餐次<select v-model="timelineMealType" aria-label="按餐次筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部餐次</option><option v-for="(label, key) in mealTypeText" :key="key" :value="key">{{ label }}</option></select></label><label>照片<select v-model="timelinePhotos" aria-label="按照片筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部回忆</option><option value="yes">有照片</option><option value="no">无照片</option></select></label><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="resetFilters">清除筛选</button></div>
       <nav v-if="timelineMonth" class="related-period" aria-label="查看所选月份的其他内容"><div><router-link v-if="relatedAlbumMonth" :to="{ name: 'photoAlbum', query: { month: relatedAlbumMonth } }">查看 {{ relatedAlbumMonth }} 相册 →</router-link><router-link v-if="relatedReviewMonth" :to="{ name: 'review', query: { month: relatedReviewMonth } }">查看 {{ relatedReviewMonth }} 饭桌回顾 →</router-link></div><p v-if="relatedAlbumMonth || relatedReviewMonth">仅保留月份；搜索、餐次和照片筛选不会随跳转保留。</p><p v-if="!relatedReviewMonth">饭桌回顾支持 2000 至 2100 年。</p></nav>
     </section>
     <div v-loading="loading" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-      <el-empty v-else-if="!loading && !visibleMemories.length" :description="filtersActive ? '没有符合条件的饭后回忆' : '还没有饭后回忆'" />
+      <el-empty v-else-if="!loading && !visibleMemories.length" :description="filtersActive ? '没有符合条件的饭后回忆' : '还没有饭后回忆'">
+        <div v-if="filtersActive" class="empty-actions"><el-button type="primary" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="timelineSearchInput?.focus()">调整搜索</el-button><el-button :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="clearEmptyFilters">清除全部筛选</el-button></div>
+        <el-button v-else type="primary" :disabled="!!deletingId || !!deleteIssue || !!editIssue" @click="startCreate">记录第一餐</el-button>
+      </el-empty>
       <p v-if="!loading && !loadError && !timelineCapable && memories.length >= 200" class="timeline-note">当前服务器最多返回最近 200 条；筛选只覆盖已返回的记录。请升级服务器以浏览全部历史回忆。</p>
       <section v-for="(items, date) in (loadError ? {} : grouped)" :key="date" class="day-group">
         <h2>{{ date }}</h2>
@@ -566,6 +574,9 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 .header-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .header-actions .el-button { margin: 0; min-height: 44px; }
+.empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.empty-actions .el-button { min-height: 44px; margin: 0; }
+.timeline :deep(.el-empty__bottom .el-button) { min-height: 44px; }
 h1, h2, h3 { margin: 0; color: var(--text-primary); }
 h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}
 .page-header p { color: var(--text-secondary); margin: 6px 0 0; }
