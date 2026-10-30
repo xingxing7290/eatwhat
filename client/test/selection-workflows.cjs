@@ -74,8 +74,8 @@ async function main () {
       else if (method === 'GET' && pathname === '/wishlist/wish-a') data = { _id: 'wish-a', status: wishMode === 'done' ? 'done' : 'open', mealId: { _id: wishMode === 'mismatch' ? 'meal-01' : 'meal-20' }, supportsConditionalActions: wishMode !== 'old', editVersion: { revision: 'wish-v1', updatedAt: '2026-10-29T08:00:00.000Z' } }
       else if (method === 'PATCH' && pathname === '/wishlist/wish-a/status') { wishWrites.push(req.postDataJSON()); data = { _id: 'wish-a', status: 'planned', supportsConditionalActions: true, editVersion: { revision: 'wish-v2', updatedAt: '2026-10-29T09:00:00.000Z' } } }
       else if (method === 'GET' && pathname === `/schedules/day/${date}`) data = {
-        date: malformedSchedule === 'date' ? '2026-10-28' : date, scheduleExists: true, scheduleVersion: version,
-        meals: malformedSchedule === true ? {} : { breakfast: [], lunch: [], dinner: selected.map(meal => ({ meal })) }
+        date: malformedSchedule === 'date' ? '2026-10-28' : date, scheduleExists: !['absent-selected', 'absent-other'].includes(malformedSchedule), scheduleVersion: ['absent-selected', 'absent-other'].includes(malformedSchedule) ? null : version,
+        meals: malformedSchedule === true ? {} : malformedSchedule === 'absent-selected' ? { breakfast: [], lunch: [], dinner: [{ meal: meals[0] }] } : malformedSchedule === 'absent-other' ? { breakfast: [{ meal: meals[0] }], lunch: [], dinner: [] } : malformedSchedule === 'missing-other' ? { dinner: selected.map(meal => ({ meal })) } : { breakfast: [], lunch: [], dinner: selected.map(meal => ({ meal })) }
       }
       else if (method === 'PUT' && pathname === `/schedules/${date}/dinner`) {
         const body = req.postDataJSON()
@@ -353,6 +353,13 @@ async function main () {
     await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
     await page.getByText('无法读取完整的现有安排').waitFor()
     assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true)
+    for (const fault of ['absent-selected', 'absent-other', 'missing-other']) {
+      malformedSchedule = fault
+      await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
+      await page.getByText('现有餐食安排不完整或状态矛盾', { exact: false }).first().waitFor()
+      assert.equal(await page.getByRole('button', { name: '保存安排' }).isDisabled(), true, `${fault} must block writes`)
+      assert.equal(writes.length, 3, `${fault} must not write to the calendar`)
+    }
     malformedSchedule = false
     legacy = true
     await page.goto(`${base}/selection?date=${date}&mealType=dinner`)

@@ -425,6 +425,10 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
         (!schedule.scheduleExists && schedule.scheduleVersion !== null)) {
       throw new Error('服务器未提供有效的安排版本，暂时无法安全保存');
     }
+    if (!['breakfast', 'lunch', 'dinner'].every(type => Array.isArray(schedule?.meals?.[type])) ||
+        (!schedule.scheduleExists && ['breakfast', 'lunch', 'dinner'].some(type => schedule.meals[type].length))) {
+      throw new Error('现有餐食安排不完整或状态矛盾，请刷新后重试');
+    }
     expectedVersion.value = schedule.scheduleVersion;
     const items = schedule?.meals?.[mealType.value];
     if (!Array.isArray(items)) throw new Error('现有餐食安排不完整，请刷新后重试');
