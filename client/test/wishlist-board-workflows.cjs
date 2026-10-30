@@ -11,7 +11,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const rows = Array.from({ length: 29 }, (_, i) => ({ _id: `w${String(i).padStart(2, '0')}`, title: `心愿${String(i).padStart(2, '0')}`, note: '', category: '家常', status: i < 20 ? 'open' : i < 26 ? 'planned' : i < 28 ? 'done' : 'legacy', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked', createdAt: new Date(1700000000000 - i * 1000).toISOString() }))
     rows[12].mealId = { _id: 'm1', name: '家常菜' }
-    const errors = []; const requests = []; let releaseSlow; let detailError = false; let preflight = 'ok'; let createRequests = 0
+    const errors = []; const requests = []; let releaseSlow; let releasePage; let holdPage = false; let failPage = false; let detailError = false; let preflight = 'ok'; let createRequests = 0
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -30,6 +30,8 @@ async function main () {
       if (path === '/wishlist' && request.method() === 'GET') {
         const query = Object.fromEntries(url.searchParams); requests.push(query)
         if (query.search === '心愿01') await new Promise(resolve => { releaseSlow = resolve })
+        if (holdPage && query.page === '2') await new Promise(resolve => { releasePage = resolve })
+        if (failPage && query.page === '2') return route.fulfill({ status: 503, json: { error: '分页读取失败' } })
         const bucket = row => ['open', 'planned', 'done'].includes(row.status) ? row.status : 'unknown'
         const totals = { open: 0, planned: 0, done: 0, unknown: 0 }; const matched = { ...totals }
         rows.forEach(row => totals[bucket(row)]++)
@@ -48,7 +50,34 @@ async function main () {
     await page.getByRole('group', { name: '按状态筛选' }).getByRole('button', { name: '想吃', exact: true }).click()
     await page.getByLabel('按优先级筛选').selectOption('normal')
     await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
-    await page.getByRole('button', { name: '下一页' }).click()
+    await page.getByRole('button', { name: '下一页' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('共 20 条匹配记录 · 第 2 / 2 页').waitFor()
+    await page.waitForFunction(() => document.activeElement?.closest('.board-pagination') && document.activeElement.textContent.trim() === '第 2 / 2 页')
+    assert.equal(await page.getByRole('button', { name: '下一页' }).isDisabled(), true)
+    await page.getByRole('button', { name: '上一页' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
+    await page.waitForFunction(() => document.activeElement?.closest('.board-pagination') && document.activeElement.textContent.trim() === '第 1 / 2 页')
+    holdPage = true
+    await page.getByRole('button', { name: '下一页' }).focus()
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.querySelector('.board')?.getAttribute('aria-busy') === 'true')
+    await page.getByRole('textbox', { name: '搜索想吃记录' }).focus()
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releasePage, 'function')
+    holdPage = false; releasePage()
+    await page.getByText('共 20 条匹配记录 · 第 2 / 2 页').waitFor()
+    assert.equal(await page.getByRole('textbox', { name: '搜索想吃记录' }).evaluate(input => document.activeElement === input), true, 'a late page response must not steal focus')
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
+    failPage = true
+    await page.getByRole('button', { name: '下一页' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('想吃清单暂时无法加载：分页读取失败').waitFor()
+    await page.waitForFunction(() => document.activeElement?.classList.contains('list-error-focus') && document.activeElement.textContent.includes('分页读取失败'))
+    failPage = false
+    await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('共 20 条匹配记录 · 第 2 / 2 页').waitFor()
     rows[12].title = '心愿12（已更新）'
     await page.getByRole('button', { name: '刷新当前结果' }).click()

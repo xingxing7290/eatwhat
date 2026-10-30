@@ -70,6 +70,9 @@ let filterTimer = null;
 const statusFilterGroup = ref(null);
 const searchInput = ref(null);
 const addWishButton = ref(null);
+const pageStatus = ref(null);
+const filterHeading = ref(null);
+const listErrorAlert = ref(null);
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value);
 const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '想吃记录' });
@@ -173,7 +176,20 @@ const load = async () => {
 };
 const showPending = () => { pendingView.value = true; load(); };
 const showBoard = () => { pendingView.value = false; load(); };
-const changePage = page => { if (!loading.value && page >= 1 && page <= totalPages.value && page !== boardPage.value) { boardPage.value = page; load(); } };
+const changePage = async page => {
+  if (loading.value || page < 1 || page > totalPages.value || page === boardPage.value) return;
+  const source = document.activeElement;
+  const fromPagination = !!source?.closest?.('.board-pagination');
+  boardPage.value = page;
+  const sequence = listSequence + 1;
+  await load();
+  await nextTick();
+  if (!alive || sequence !== listSequence || !fromPagination) return;
+  const current = document.activeElement;
+  if (!current || current === document.body || !current.isConnected || current === source) {
+    (loadError.value ? listErrorAlert.value : pageStatus.value || filterHeading.value)?.focus();
+  }
+};
 watch([search, selectedStatus, selectedPriority], () => {
   if (!boardMode.value || pendingView.value) return;
   boardPage.value = 1;
@@ -445,9 +461,9 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     <el-alert v-if="editing && !dialogVisible" type="info" :closable="false" show-icon :title="editIssue ? '编辑结果需要核对，草稿仍保留在本页。' : '编辑草稿仍保留在本页。'"><el-button link type="primary" @click="dialogVisible = true">继续编辑</el-button><el-button v-if="!editIssue" link type="danger" @click="discardEditDraft">放弃草稿</el-button></el-alert>
 
     <el-alert v-if="actionIssue" type="warning" :closable="false" show-icon :title="actionIssue"><el-button link type="primary" :loading="loading" @click="load">刷新清单并核对</el-button></el-alert>
-    <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button><el-button v-if="pendingView" link @click="showBoard">返回全部清单</el-button></el-alert>
+    <div v-if="loadError" ref="listErrorAlert" class="list-error-focus" tabindex="-1"><el-alert type="error" :closable="false" show-icon :title="`想吃清单暂时无法加载：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button><el-button v-if="pendingView" link @click="showBoard">返回全部清单</el-button></el-alert></div>
     <section v-if="!loadError && !pendingView && (items.length || boardMode || filterActive)" class="wish-filters" aria-label="查找想吃记录">
-      <div class="filter-heading"><div><h2>查找心愿</h2><p aria-live="polite"><template v-if="boardMode">{{ loading ? '正在更新结果' : `共 ${boardTotal} 条匹配记录 · 第 ${boardPage} / ${totalPages} 页` }}</template><template v-else>显示 {{ filteredItems.length }} / {{ items.length }} 条记录</template></p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
+      <div class="filter-heading"><div><h2 ref="filterHeading" tabindex="-1">查找心愿</h2><p aria-live="polite"><template v-if="boardMode">{{ loading ? '正在更新结果' : `共 ${boardTotal} 条匹配记录 · 第 ${boardPage} / ${totalPages} 页` }}</template><template v-else>显示 {{ filteredItems.length }} / {{ items.length }} 条记录</template></p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
       <div class="filter-controls"><div ref="statusFilterGroup" class="status-filters" role="group" aria-label="按状态筛选"><button v-for="option in statusOptions" :key="option.key" type="button" :class="{ active: selectedStatus === option.key }" :aria-pressed="selectedStatus === option.key" @click="selectedStatus = option.key">{{ option.label }}</button></div><label class="priority-filter">优先级 <select v-model="selectedPriority" aria-label="按优先级筛选"><option value="all">全部优先级</option><option value="high">超想吃</option><option value="normal">普通</option><option value="low">随缘</option><option value="unset">未设置</option></select></label></div>
       <button v-if="filterActive && filteredItems.length && !pendingView" type="button" class="reset-filter" @click="resetFilters">清除筛选</button>
     </section>
@@ -494,7 +510,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
         </el-card>
       </section>
     </div>
-    <nav v-if="boardMode && !pendingView && !loadError && boardTotal > boardLimit" class="board-pagination" aria-label="想吃清单分页"><el-button :disabled="loading || boardPage <= 1" @click="changePage(boardPage - 1)">上一页</el-button><span aria-live="polite">第 {{ boardPage }} / {{ totalPages }} 页</span><el-button :disabled="loading || boardPage >= totalPages" @click="changePage(boardPage + 1)">下一页</el-button></nav>
+    <nav v-if="boardMode && !pendingView && !loadError && boardTotal > boardLimit" class="board-pagination" aria-label="想吃清单分页"><el-button :disabled="loading || boardPage <= 1" @click="changePage(boardPage - 1)">上一页</el-button><span ref="pageStatus" tabindex="-1" aria-live="polite" aria-atomic="true">第 {{ boardPage }} / {{ totalPages }} 页</span><el-button :disabled="loading || boardPage >= totalPages" @click="changePage(boardPage + 1)">下一页</el-button></nav>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑想吃记录' : '添加想吃'" width="min(520px, 92vw)" :close-on-click-modal="!saving" :close-on-press-escape="!saving" :show-close="!saving">
       <CreateRecoveryNotice v-if="saveUncertain" label="想吃记录" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -562,6 +578,7 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .hidden-pending :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
 .board-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); }
 .board-pagination :deep(.el-button) { min-height: 44px; }
+.board-pagination span:focus-visible, .filter-heading h2:focus-visible, .list-error-focus:focus-visible { outline: 2px solid var(--wish-accent); outline-offset: 3px; }
 .status-column { background: var(--bg-primary); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px var(--shadow-color); display: flex; flex-direction: column; gap: 12px; }
 .status-column h2 { display: flex; justify-content: space-between; font-size: 18px; }
 .wish-card p { color: var(--text-secondary); overflow-wrap: anywhere; }
