@@ -36,6 +36,26 @@ async function main () {
     await page.keyboard.press('Enter')
     assert.equal(await page.evaluate(() => document.activeElement.id), 'app-main')
     assert.equal(new URL(page.url()).hash, '', 'skip link must not change router history')
+    await page.emulateMedia({ reducedMotion: 'reduce' })
+    const motion = await page.evaluate(() => {
+      const node = document.createElement('div')
+      node.style.cssText = 'animation: test-motion 2s 3s infinite; transition: opacity 2s 4s'
+      document.body.appendChild(node)
+      const style = getComputedStyle(node)
+      const result = [style.animationDuration, style.animationDelay, style.animationIterationCount, style.transitionDuration, style.transitionDelay]
+      node.remove(); return result
+    })
+    assert.deepEqual(motion, ['1e-05s', '0s', '1', '1e-05s', '0s'], 'reduced motion must also remove delays and looping')
+    await page.emulateMedia({ reducedMotion: 'no-preference' })
+    const normalMotion = await page.evaluate(() => {
+      const node = document.createElement('div')
+      node.style.cssText = 'animation: test-motion 2s 3s infinite; transition: opacity 2s 4s'
+      document.body.appendChild(node)
+      const style = getComputedStyle(node)
+      const result = [style.animationDuration, style.animationDelay, style.animationIterationCount, style.transitionDuration, style.transitionDelay]
+      node.remove(); return result
+    })
+    assert.deepEqual(normalMotion, ['2s', '3s', 'infinite', '2s', '4s'], 'normal motion preferences must retain animation settings')
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)

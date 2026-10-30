@@ -40,6 +40,15 @@ async function main () {
     })
     await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/local-test`)
     assert.ok(await page.locator('#toast').evaluate(node => parseFloat(getComputedStyle(node).transitionDuration)) < 0.001, 'guest page should respect reduced motion')
+    const guestMotion = await page.evaluate(() => {
+      const node = document.createElement('div')
+      node.style.cssText = 'animation: test-motion 2s 3s infinite; transition: opacity 2s 4s'
+      document.body.appendChild(node)
+      const style = getComputedStyle(node)
+      const result = [style.animationDuration, style.animationDelay, style.animationIterationCount, style.transitionDuration, style.transitionDelay]
+      node.remove(); return result
+    })
+    assert.deepEqual(guestMotion, ['1e-05s', '0s', '1', '1e-05s', '0s'], 'guest reduced motion must remove delays and looping')
     const card = name => page.locator('.meal').filter({ hasText: name })
     assert.equal(await page.getByText('左右滑动或使用 Tab 查看更多分类').isVisible(), false, 'short category lists do not need a scroll hint')
     const unloadBlocked = () => page.evaluate(() => !window.dispatchEvent(new Event('beforeunload', { cancelable: true })))

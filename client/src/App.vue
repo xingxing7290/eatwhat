@@ -1419,7 +1419,7 @@ html.dark[data-theme] .el-message-box__title { color: var(--text-primary); }
   .app-header .header-right .desktop-actions .user-meta { max-width: 65px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; transition-delay: 0s !important; }
 }
 
 </style> 

@@ -236,7 +236,7 @@
     .toast { position: fixed; z-index: 80; left: 50%; top: 24px; max-width: calc(100% - 32px); transform: translate(-50%, -20px); opacity: 0; pointer-events: none; padding: 12px 16px; border-radius: 15px; color: white; background: rgba(76,45,35,.96); box-shadow: var(--shadow); font-weight: 800; transition: .2s ease; }
     .toast.show { opacity: 1; transform: translate(-50%, 0); }
     @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .01ms !important; transition-delay: 0s !important; scroll-behavior: auto !important; }
     }
     @media (max-width: 360px) {
       .meal-body { padding: 10px 8px; }
