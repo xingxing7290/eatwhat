@@ -11,7 +11,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; let releaseMemories; let slowMemories = true; let failReports = true; let reportMode = 'unknown'; let reportWrites = 0; let malformed = false; let longRecipe = false; let scheduleWrites = 0
+    const errors = []; let releaseMemories; let slowMemories = true; let emptyMemories = false; let failReports = true; let reportMode = 'unknown'; let reportWrites = 0; let malformed = false; let longRecipe = false; let scheduleWrites = 0
     const meal = { _id: 'meal-a', name: '测试菜', imageUrl: 'http://127.0.0.1/uploads/old.jpg', ingredients: ['鸡蛋', { name: '番茄', amount: '2个' }], steps: [{ description: '切好', imageUrl: '/broken-step.png' }, '炒熟'], photos: [image, '/broken-wall.png'], tags: [], healthTags: [] }
     const memory = { _id: 'memory-a', date: '2026-10-28', mealType: 'dinner', title: '好吃的一餐', note: '很满足', mood: '开心', photos: [], mealIds: [meal], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: 'v1', updatedAt: '2026-10-28T12:00:00.000Z' } }
     page.on('pageerror', error => errors.push(error.message))
@@ -27,7 +27,7 @@ async function main () {
       else if (path.startsWith('/schedules') && req.method() !== 'GET') { scheduleWrites++; data = {} }
       else if (path === '/meals') data = { data: [meal], page: 1, limit: 8, total: 1 }
       else if (path === '/meals/categories' || path === '/meals/tags' || path === '/wishlist') data = []
-      else if (req.method() === 'GET' && path === '/memories') { if (slowMemories) await new Promise(resolve => { releaseMemories = resolve }); data = [memory] }
+      else if (req.method() === 'GET' && path === '/memories') { if (slowMemories) await new Promise(resolve => { releaseMemories = resolve }); data = emptyMemories ? [] : [memory] }
       else if (req.method() === 'GET' && path === '/memories/memory-a') data = memory
       else if (req.method() === 'POST' && path === '/meal-image-issues') {
         reportWrites++
@@ -170,10 +170,21 @@ async function main () {
       await page.getByRole('button', { name: '返回', exact: true }).waitFor()
       assert.equal(await page.getByRole('button', { name: '返回饭桌回顾' }).count(), 0)
     }
-    await page.goto(`${base}/meals/detail/meal-b`)
+    emptyMemories = true
+    await page.goto(`${base}/meals/detail/meal-b?calendarDate=2026-12-31`)
     await page.getByRole('heading', { name: '第二道菜' }).waitFor()
     await page.getByText('暂无封面图片', { exact: true }).waitFor()
     assert.equal(await page.locator('.cover-button').isDisabled(), true)
+    for (const name of ['补充食材 →', '补充做法 →', '添加菜品照片 →']) {
+      const action = page.getByRole('link', { name })
+      assert.equal(await action.getAttribute('href'), '/meals/editor/meal-b?calendarDate=2026-12-31')
+      assert.ok((await action.boundingBox()).height >= 44, `${name} must be tappable`)
+    }
+    await page.getByRole('link', { name: '补充做法 →' }).click()
+    await page.waitForURL('**/meals/editor/meal-b?calendarDate=2026-12-31')
+    await page.goBack()
+    await page.getByRole('button', { name: '记录做过这道菜' }).click()
+    await page.waitForURL('**/memories?new=1&mealId=meal-b')
     assert.deepEqual(errors, [])
     console.log('Meal detail workflows passed: scheduling review, independent reads, previews, uncertain feedback and memory navigation')
   } finally { await browser.close() }

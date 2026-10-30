@@ -265,7 +265,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
       <section class="content-grid">
         <el-card>
           <template #header>食材清单</template>
-          <el-empty v-if="!meal.ingredients?.length" description="暂无食材" />
+          <el-empty v-if="!meal.ingredients?.length" description="暂无食材"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充食材 →</router-link></el-empty>
           <div v-else class="ingredient-list">
             <div v-for="(item, index) in meal.ingredients" :key="index" class="ingredient-row">
               <span>{{ typeof item === 'string' ? item : item?.name }}</span><strong>{{ typeof item === 'string' ? '' : item?.amount }}</strong>
@@ -275,7 +275,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
 
         <el-card>
           <template #header>做法步骤</template>
-          <el-empty v-if="!meal.steps?.length" description="暂无做法" />
+          <el-empty v-if="!meal.steps?.length" description="暂无做法"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充做法 →</router-link></el-empty>
           <div v-else class="steps-list">
             <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
@@ -292,7 +292,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <div v-if="photos.length" ref="photoGrid" class="photo-grid">
             <button v-for="(photo, index) in photos" :key="`${index}-${photo}`" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 张菜品照片`" @click="showPhoto(photos, index, meal.name, $event, true)"><img :src="imageFor(photo)" :alt="`第 ${index + 1} 张菜品照片`" @error="fallbackImage" /></button>
           </div>
-          <el-empty v-else description="暂无额外照片"><template #image><el-icon><Picture /></el-icon></template></el-empty>
+          <el-empty v-else description="暂无额外照片"><template #image><el-icon><Picture /></el-icon></template><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">添加菜品照片 →</router-link></el-empty>
         </el-card>
 
         <el-card>
@@ -300,7 +300,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <span class="sr-only" role="status" aria-atomic="true">{{ memoryLoading ? '正在加载相关回忆' : memoryError ? '相关回忆加载失败' : memoryPagination ? `共 ${memoryTotal} 条相关回忆，第 ${memoryPage} / ${memoryPages} 页` : `共 ${memoryTotal} 条相关回忆` }}</span>
           <el-alert v-if="memoryError" type="error" :closable="false" show-icon :title="`无法加载相关回忆：${memoryError}`"><el-button ref="memoryRetry" link type="primary" :loading="memoryLoading" @click="reloadMemories">重新加载</el-button></el-alert>
           <p v-else-if="memoryLoading" class="memory-date">正在加载相关回忆…</p>
-          <el-empty v-else-if="!memories.length" description="还没有相关回忆" />
+          <el-empty v-else-if="!memories.length" description="还没有相关回忆"><el-button class="detail-empty-button" type="primary" plain @click="doneOnce">记录做过这道菜</el-button></el-empty>
           <div v-else class="memory-list">
             <p v-if="memoryPagination" class="memory-date">共 {{ memoryTotal }} 条相关回忆 · 第 {{ memoryPage }} / {{ memoryPages }} 页</p>
             <p v-else-if="memories.length >= 200" class="memory-date">旧服务器最多显示最近 200 条相关回忆，请升级服务器以查看全部历史。</p>
@@ -352,6 +352,9 @@ h1 { margin: 0; color: var(--text-primary); }
 .meta-grid div { background: var(--bg-secondary); border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; color: var(--text-secondary); }
 .tags { display: flex; flex-wrap: wrap; gap: 8px; }
 .content-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.detail-empty-action { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.detail-empty-action:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.detail-empty-button { min-height: 44px; }
 .ingredient-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border-light); }
 .ingredient-row { gap: 12px; }
 .ingredient-row > span, .ingredient-row > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
