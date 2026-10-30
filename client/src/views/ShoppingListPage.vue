@@ -345,8 +345,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
       <div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div>
       <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
     </section>
-    <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加" />
-    <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><el-button @click="resetFilters">清除筛选</el-button></el-empty>
+    <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加"><el-button type="primary" class="empty-add" :disabled="disabled" @click="focusAddItem">填写新食材 ↓</el-button></el-empty>
+    <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><div class="empty-filter-actions"><el-button type="primary" @click="searchInput?.focus()">调整搜索</el-button><el-button @click="resetFilters">清除筛选</el-button></div></el-empty>
     <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
     <el-card><template #header><strong>添加食材</strong></template><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
     </template>
@@ -378,6 +378,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .list-tools { padding: 20px 24px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 20px; }
 .copy-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin: 12px 0; }
 .copy-tools .el-button { min-height: 44px; margin: 0; }
+.empty-filter-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+.empty-filter-actions .el-button, .empty-add { min-height: 44px; margin: 0; }
 .copy-tools p, .copy-help { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .progress-loading { padding: 18px 24px; border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-secondary); color: var(--text-primary); }
 .filter-reset { min-height: 44px; margin-top: 8px; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
