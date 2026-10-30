@@ -58,7 +58,7 @@ async function main() {
       ['meal link', '.today-card .today-recipe-link'], ['today action', '.today-slot-action'], ['warning tag', '.today-card .hint-list .el-tag'],
       ['metric number', '.metric-row strong'], ['weekday label', '.week-day-label'], ['week meal count', '.week-day span:last-child'], ['week date', '.week-day strong'],
       ['partner title', '.wishlist-row strong'], ['partner detail', '.wishlist-row p'], ['wishlist context', '.wishlist-context'],
-      ['missing photo', '.photo-unavailable'], ['favorite action', '.status-grid a small'], ['quick link', '.quick-links a'], ['card link', '.card-links a']
+      ['missing photo', '.photo-unavailable'], ['favorite action', '.status-grid a small'], ['quick link', '.quick-links a'], ['quick link detail', '.quick-link-copy small'], ['card link', '.card-links a']
     ];
     for (const mode of ['light', 'dark']) {
       if (mode === 'dark') {
@@ -82,6 +82,17 @@ async function main() {
         await page.screenshot({ path: path.join(os.tmpdir(), `eatwhat-dashboard-${mode}-${width}.png`), fullPage: true });
       }
     }
+    const shortcuts = page.locator('.quick-links a');
+    assert.deepEqual(await shortcuts.evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/weekly-plan', '/shopping-list', '/meals', '/review']);
+    assert.match(await shortcuts.first().innerText(), /查看周计划.*查看安排，按需生成草稿/s, 'the shortcut must describe navigation rather than imply automatic generation');
+    for (const link of await shortcuts.all()) assert.ok((await link.boundingBox()).height >= 44, 'shortcut touch target');
+    await page.keyboard.press('Tab');
+    await shortcuts.first().focus();
+    assert.equal(await shortcuts.first().evaluate(link => link.matches(':focus-visible')), true, 'shortcuts retain a visible keyboard focus state');
+    await page.keyboard.press('Enter');
+    await page.waitForURL('**/weekly-plan');
+    await page.goto(`${base}/dashboard`);
+    await page.getByText('照片暂不可用').waitFor();
     await page.getByRole('button', { name: '打开导航菜单' }).click();
     const close = page.locator('.mobile-nav-header').getByRole('button', { name: '关闭导航菜单' });
     await close.waitFor();

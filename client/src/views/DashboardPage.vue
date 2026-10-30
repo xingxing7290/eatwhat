@@ -219,7 +219,12 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onRe
       <el-card class="quick-card">
         <template #header><div class="card-title"><el-icon><ShoppingCart /></el-icon><span>准备下一顿</span></div></template>
         <p class="quick-description">计划、食材和灵感，放在顺手的位置。</p>
-        <div class="quick-links"><router-link to="/weekly-plan">生成周计划 <span>→</span></router-link><router-link to="/shopping-list">查看购物清单 <span>→</span></router-link><router-link to="/meals">探索全部菜谱 <span>→</span></router-link><router-link to="/review">回顾饭桌时光 <span>→</span></router-link></div>
+        <div class="quick-links">
+          <router-link to="/weekly-plan"><span class="quick-link-copy"><strong>查看周计划</strong><small>查看安排，按需生成草稿</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
+          <router-link to="/shopping-list"><span class="quick-link-copy"><strong>查看购物清单</strong><small>整理下一顿需要的食材</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
+          <router-link to="/meals"><span class="quick-link-copy"><strong>探索全部菜谱</strong><small>按分类或名称寻找灵感</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
+          <router-link to="/review"><span class="quick-link-copy"><strong>回顾饭桌时光</strong><small>重温一起吃过的日子</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
+        </div>
       </el-card>
     </section>
   </div>
@@ -279,10 +284,17 @@ h1 span { color: var(--dashboard-accent-ink); }
 .status-grid a small { color: var(--text-primary); font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
 .status-grid span { color: var(--text-secondary); font-size: 13px; }
 .status-grid strong { color: var(--text-primary); font-size: 22px; }
-.quick-description { color: var(--text-secondary); font-size: 13px; margin-bottom: 12px; }.quick-links { display: grid; gap: 8px; }.quick-links a { display: flex; justify-content: space-between; padding: 12px 14px; border-radius: 14px; text-decoration: none; background: var(--bg-secondary); color: var(--text-primary); }.quick-links a:hover { color: var(--dashboard-accent-ink); }
+.quick-description { color: var(--text-secondary); font-size: 13px; margin-bottom: 12px; }
+.quick-links { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.quick-links a { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; min-height: 72px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 14px; text-decoration: none; background: var(--bg-secondary); color: var(--text-primary); }
+.quick-links a:hover { background: var(--bg-tertiary); }
+.quick-links a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.quick-link-copy { display: flex; min-width: 0; flex-direction: column; gap: 5px; overflow-wrap: anywhere; }
+.quick-link-copy strong { font-size: 14px; }.quick-link-copy small { color: var(--text-primary); font-size: 12px; line-height: 1.5; }
+.quick-arrow { flex: 0 0 auto; font-size: 18px; }
 @media (max-width: 820px) { .wishlist-row { flex-direction: column; align-items: stretch; } .dashboard-grid { grid-template-columns: 1fr; } .week-mini { grid-template-columns: repeat(7, 1fr); } }
 @media (max-width: 600px) { .hero-panel { grid-template-columns: 1fr; }.hero-image { min-height: 150px; }.section-heading { align-items: start; flex-direction: column; gap: 8px; }.week-day { padding: 8px 2px; font-size: 10px; }.load-error { align-items: start; flex-direction: column; } }
-@media (max-width: 480px) { .week-mini { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week-day { font-size: 12px; } .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .status-grid .favorite-shortcut { grid-column: 1 / -1; flex-direction: row; align-items: center; } .status-grid .favorite-shortcut small { margin-left: auto; } }
+@media (max-width: 480px) { .week-mini { grid-template-columns: repeat(4, minmax(0, 1fr)); } .week-day { font-size: 12px; } .status-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .status-grid .favorite-shortcut { grid-column: 1 / -1; flex-direction: row; align-items: center; } .status-grid .favorite-shortcut small { margin-left: auto; } .quick-links { grid-template-columns: 1fr; } }
 :global(html:not(.dark) .dashboard-page .el-tag) { color: #8e4938; background: #fff8f4; border-color: #e8baaa; }
 :global(html:not(.dark) .dashboard-page .hint-list .el-tag) { color: #744016; background: #fff0db; border-color: #d8aa75; }
 :global(html.dark .dashboard-page .el-tag) { color: var(--text-primary); background: var(--bg-tertiary); border-color: var(--border-color); }
