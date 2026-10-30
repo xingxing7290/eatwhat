@@ -185,7 +185,13 @@ const showPhoto = (images, index, title, event, gallery = false) => { if (images
 const closePhoto = () => { viewedPhoto.value = null; };
 const restorePhotoFocus = async () => { const target = photoFocus; photoFocus = null; await new Promise(resolve => setTimeout(resolve, 0)); if (!target || photoFocus || !target.origin?.isConnected) return; const active = document.activeElement; if (active && active !== document.body && active !== target.origin && active.isConnected) return; (target.index === null ? target.origin : photoGrid.value?.querySelectorAll('button')[target.index] || target.origin).focus(); };
 const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.images.length) { viewedPhoto.value.index = next; if (photoFocus && photoFocus.index !== null) photoFocus.index = next; } };
-const onPhotoKey = event => { if (!viewedPhoto.value || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return; event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1); };
+const onPhotoKey = event => {
+  if (!viewedPhoto.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+  const target = event.target instanceof Element ? event.target : null;
+  const dialog = target?.closest('.el-dialog');
+  if (!dialog?.querySelector('.photo-preview') || target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="slider"], [role="spinbutton"]')) return;
+  event.preventDefault(); movePhoto(event.key === 'ArrowLeft' ? -1 : 1);
+};
 onBeforeRouteUpdate(async (to, from) => {
   if (to.params.id === from.params.id) return true;
   if (reportBusy.value) { ElMessage.warning('图片反馈操作正在进行，请稍候'); return false; }
