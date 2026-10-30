@@ -149,6 +149,11 @@
         <el-form-item><el-button type="primary" :disabled="!nameVersionAvailable || !!nameIssue" :loading="householdSaving" @click="saveHousehold">保存小家</el-button></el-form-item>
       </el-form>
     </el-card>
+    <el-dialog v-model="manualCopyOpen" :title="manualCopy?.kind === 'link' ? '手动复制邀请链接' : '手动复制邀请码'" width="min(560px, 92vw)" @opened="selectManualCopy" @closed="manualCopy = null">
+      <template v-if="manualCopyValid"><p class="manual-copy-note">浏览器未允许自动复制。请选择下方内容手动复制，并只分享给信任的人；邀请码刷新后旧内容会失效。</p><el-input ref="manualCopyInput" :model-value="manualCopy.value" readonly :aria-label="manualCopy.kind === 'link' ? '手动复制的邀请链接' : '手动复制的邀请码'" /></template>
+      <el-alert v-else type="warning" :closable="false" show-icon title="家庭或邀请码状态已变化，请关闭后重新核对。" />
+      <template #footer><el-button v-if="manualCopyValid" @click="selectManualCopy">全选内容</el-button><el-button type="primary" @click="manualCopyOpen = false">完成</el-button></template>
+    </el-dialog>
   </div>
 </template>
 
@@ -199,6 +204,7 @@ const syncThemeFromStorage = event => {
 
 const user = ref({ id: '', username: '', displayName: '', avatarUrl: '' });
 const household = ref({ name: '', inviteCode: '', members: [] });
+const manualCopy = ref(null); const manualCopyOpen = ref(false); const manualCopyInput = ref(null);
 const displayName = ref('');
 const householdName = ref('');
 const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '');
@@ -256,6 +262,8 @@ const dirty = computed(() => reloadDirty.value || !!joinCode.value.trim() || joi
 const validNameVersion = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && (value.revision === null || (typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128));
 const nameVersionAvailable = computed(() => household.value.supportsConditionalNameUpdate === true && validNameVersion(household.value.nameVersion));
 const mutationPending = computed(() => saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value || defaultLoading.value || !!resolvingIssue.value);
+const manualCopyValid = computed(() => !!manualCopy.value && profileReady.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && household.value.id === manualCopy.value.home && household.value.inviteCode === manualCopy.value.code && sessionIsCurrent(manualCopy.value.scope));
+const selectManualCopy = () => { if (manualCopyValid.value) { manualCopyInput.value?.input?.focus(); manualCopyInput.value?.input?.select(); } };
 if (rawInvitedCode) {
   hashParams.delete('invite');
   const rest = hashParams.toString();
@@ -463,19 +471,22 @@ const joinHousehold = async () => {
   }
   finally { joining.value = false; }
 };
-const copyInvite = async () => {
+const copyInvitation = async kind => {
   if (!profileReady.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode || !sessionIsCurrent()) return;
-  try { await navigator.clipboard.writeText(household.value.inviteCode || ''); ElMessage.success('邀请码已复制'); }
-  catch (_) { ElMessage.warning(`邀请码：${household.value.inviteCode}`); }
-};
-const copyInviteLink = async () => {
-  if (!profileReady.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode || !sessionIsCurrent()) return;
+  const code = household.value.inviteCode; const home = household.value.id; const scope = currentSessionScope();
   // URL fragments are not sent in the HTTP request or server access logs.
-  const href = router.resolve({ name: 'accountApply', hash: `#invite=${encodeURIComponent(household.value.inviteCode)}` }).href;
-  const link = new URL(href, window.location.origin).href;
-  try { await navigator.clipboard.writeText(link); ElMessage.success('邀请链接已复制'); }
-  catch (_) { await ElMessageBox.alert(link, '请手动复制邀请链接', { confirmButtonText: '知道了' }); }
+  const href = router.resolve({ name: 'accountApply', hash: `#invite=${encodeURIComponent(code)}` }).href;
+  const value = kind === 'link' ? new URL(href, window.location.origin).href : code;
+  const isCurrent = () => profileReady.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && household.value.id === home && household.value.inviteCode === code && sessionIsCurrent(scope);
+  try { await navigator.clipboard.writeText(value); if (isCurrent()) ElMessage.success(kind === 'link' ? '邀请链接已复制' : '邀请码已复制'); else ElMessage.warning('复制期间家庭或邀请码已变化，请重新核对。'); }
+  catch (_) {
+    if (!isCurrent()) return ElMessage.warning('复制期间家庭或邀请码已变化，请重新核对。');
+    manualCopy.value = { kind, value, code, home, scope }; manualCopyOpen.value = true;
+  }
 };
+const copyInvite = () => copyInvitation('code');
+const copyInviteLink = () => copyInvitation('link');
+const invalidateManualCopy = () => { manualCopyOpen.value = false; manualCopy.value = null; };
 const selectTheme = (theme) => {
   selectedTheme.value = theme;
   localStorage.setItem('colorTheme', theme);
@@ -572,8 +583,8 @@ onBeforeRouteLeave(async () => {
   try { await ElMessageBox.confirm(message, '放弃未保存的设置？', { type: 'warning', confirmButtonText: '放弃并离开', cancelButtonText: '继续编辑' }); return true; } catch (_) { return false; }
 });
 watch(() => route.query.section, jumpFromRoute);
-onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); window.addEventListener('storage', syncThemeFromStorage); void jumpFromRoute(route.query.section); reload(); });
-onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); window.removeEventListener('storage', syncThemeFromStorage); clearAvatarFile(); });
+onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); window.addEventListener('storage', syncThemeFromStorage); window.addEventListener('eatwhat-session-changed', invalidateManualCopy); window.addEventListener('eatwhat-session-expired', invalidateManualCopy); void jumpFromRoute(route.query.section); reload(); });
+onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); window.removeEventListener('storage', syncThemeFromStorage); window.removeEventListener('eatwhat-session-changed', invalidateManualCopy); window.removeEventListener('eatwhat-session-expired', invalidateManualCopy); clearAvatarFile(); });
 </script>
 
 <style scoped>
@@ -581,6 +592,7 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .settings-intro { display: flex; align-items: end; justify-content: space-between; gap: 20px; padding: clamp(22px, 4vw, 36px); background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 26px; box-shadow: 0 12px 28px var(--shadow-color); }
 .settings-intro h1 { margin: 8px 0; font: 700 clamp(26px, 3vw, 36px) Georgia, 'Songti SC', serif; }
 .settings-intro p, .status-note, .invite-row small, .file-name { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.manual-copy-note { margin: 0 0 12px; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .eyebrow { color: var(--secondary-color); font-size: 11px; letter-spacing: .14em; font-weight: 800; }
 .intro-badge { flex-shrink: 0; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: 12px; }
 .settings-card { border-radius: 20px; border-color: var(--border-color); background: var(--bg-primary); }
