@@ -53,6 +53,8 @@ async function main () {
     const fallbackCard = page.locator('.meal').filter({ hasText: '菜品0002' })
     await fallbackCard.locator('.photo img').waitFor({ state: 'detached' })
     assert.equal(await fallbackCard.locator('.fallback svg').getAttribute('aria-hidden'), 'true')
+    assert.equal(await fallbackCard.locator('.fallback small').innerText(), '暂无菜图')
+    assert.equal(await fallbackCard.locator('.fallback').getAttribute('aria-hidden'), 'true')
     assert.ok((await fallbackCard.locator('.fallback svg').boundingBox()).height > 0, 'missing photos use a visible decorative illustration')
     const goodImage = page.locator('.meal').filter({ hasText: '菜品0003' }).locator('.photo img')
     await goodImage.waitFor()

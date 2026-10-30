@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import defaultImageSrc from '../assets/meal-placeholder.svg';
 import { resolveRecipeImage, handleUploadedImageError } from '../utils/uploadedImage.mjs';
 import { Check, Edit, Delete, View, Present, Warning } from '@element-plus/icons-vue';
@@ -38,9 +38,10 @@ const props = defineProps({
 const emit = defineEmits(['edit', 'delete', 'select', 'view', 'share', 'imageIssue']);
 
 const defaultImage = ref(defaultImageSrc);
+const imageFailed = ref(false);
 
 // 图片加载错误处理
-const handleImageError = event => handleUploadedImageError(event, defaultImage.value);
+const handleImageError = event => { handleUploadedImageError(event, defaultImage.value); if (event.target?.dataset.placeholder === '1') imageFailed.value = true; };
 
 // handle card click
 const handleCardClick = () => {
@@ -72,6 +73,7 @@ const cardClass = computed(() => ({
 
 // 计算图片URL
 const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.meal.image, defaultImage.value));
+watch(imageUrl, () => { imageFailed.value = false; }, { flush: 'sync' });
 </script>
 
 <template>
@@ -91,12 +93,13 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
         <img
           :key="imageUrl"
           :src="imageUrl"
-          :alt="meal.name"
+          :alt="imageUrl === defaultImage ? '暂无菜图' : meal.name"
           class="meal-image"
           @error="handleImageError"
         />
         <div class="photo-pin"></div>
         <div v-if="meal.isDefault" class="default-ribbon">默认菜谱</div>
+        <span v-if="imageUrl === defaultImage || imageFailed" class="image-notice">{{ imageFailed ? '图片暂不可用' : '暂无菜图' }}</span>
         <div v-if="selected" class="selected-overlay">
           <el-icon><Check /></el-icon>
         </div>
@@ -710,6 +713,8 @@ const imageUrl = computed(() => resolveRecipeImage(props.meal.imageUrl || props.
   background: rgba(253, 251, 247, 0.82);
   box-shadow: 0 4px 12px rgba(117, 78, 58, 0.12);
 }
+
+.image-notice { position: absolute; z-index: 1; right: 10px; bottom: 10px; padding: 4px 8px; border-radius: 999px; background: #49382f; color: #fffaf3; font-size: 12px; font-weight: 700; line-height: 1.4; }
 
 .default-ribbon {
   position: absolute;

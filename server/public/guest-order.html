@@ -127,6 +127,7 @@
     .photo img { position: relative; z-index: 1; width: 100%; height: 100%; display: block; object-fit: cover; }
     .photo .fallback { position: absolute; inset: 0; }
     .photo .fallback svg { display: block; width: 100%; height: 100%; }
+    .photo .fallback small { position: absolute; right: 9px; bottom: 9px; padding: 4px 8px; border-radius: 999px; color: #fffaf3; background: #49382f; font-size: 11px; font-weight: 800; }
     .selected-badge {
       position: absolute;
       z-index: 2;
@@ -483,7 +484,8 @@
         const photo = document.createElement('div');
         photo.className = 'photo';
         const fallback = document.createElement('div');
-        fallback.className = 'fallback'; fallback.appendChild($('mealFallback').content.cloneNode(true));
+        fallback.className = 'fallback'; fallback.setAttribute('aria-hidden', 'true'); fallback.appendChild($('mealFallback').content.cloneNode(true));
+        const fallbackLabel = document.createElement('small'); fallbackLabel.textContent = '暂无菜图'; fallback.appendChild(fallbackLabel);
         photo.appendChild(fallback);
         const imageUrl = safeImageUrl(meal.imageUrl);
         if (imageUrl) {
