@@ -355,6 +355,7 @@ const load = async () => {
     if (Array.isArray(receivedRows) && receivedRows.some(item => item && !validMemoryDate(item.date))) throw new Error('回忆包含无效日期，请检查数据或联系管理员');
     if (memoryData?.supportsMemoryTimeline === true) {
       if (memoryData.page !== query.page || memoryData.limit !== timelineLimit || memoryData.search !== query.search || memoryData.month !== (query.month || '') || memoryData.mealType !== query.mealType || memoryData.photos !== query.photos || !Number.isSafeInteger(memoryData.total) || memoryData.total < 0 || !validItems(memoryData.items) || memoryData.items.length !== Math.min(timelineLimit, Math.max(0, memoryData.total - (query.page - 1) * timelineLimit))) throw new Error('回忆分页数据不完整');
+      if (memoryData.items.some(item => (query.month && !item.date.startsWith(`${query.month}-`)) || (query.mealType !== 'all' && item.mealType !== query.mealType) || (query.photos !== 'all' && (Array.isArray(item.photos) && item.photos.length > 0) !== (query.photos === 'yes')))) throw new Error('回忆结果与筛选条件不一致，请重新加载');
       timelineCapable.value = true; timelineTotal.value = memoryData.total;
       if (timelinePage.value > timelinePages.value) { timelinePage.value = timelinePages.value; scheduleTimelineUrl(); return load(); }
       memories.value = memoryData.items;
