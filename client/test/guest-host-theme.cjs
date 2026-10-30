@@ -27,6 +27,13 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const [width, height] of [[1280, 900], [390, 844], [320, 844]]) {
         await page.setViewportSize({ width, height })
+        if (width === 320) {
+          for (const button of await page.locator('.el-dialog .inline-actions .el-button, .el-dialog .status-actions .el-button').all()) {
+            const box = await button.boundingBox()
+            assert.ok(box && box.height >= 44 && box.width >= 44, 'detail actions must remain tappable on narrow screens')
+          }
+          assert.ok((await page.locator('.share-panel .el-input__wrapper').boundingBox()).height >= 44, 'share link input must remain tappable')
+        }
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
           for (const selector of checks) {
