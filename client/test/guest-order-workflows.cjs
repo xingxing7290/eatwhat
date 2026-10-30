@@ -295,6 +295,45 @@ async function main () {
     await statusPage.getByText('● 正在点菜').waitFor()
     assert.match(await statusPage.locator('#status').getAttribute('class'), /open/)
     await statusPage.close()
+    const staleStatus = await browser.newPage({ viewport: { width: 390, height: 844 } })
+    await staleStatus.addInitScript(() => {
+      const original = window.setInterval
+      window.setInterval = (fn, delay, ...args) => delay === 15000 ? (window.__testStatusPoll = fn, 0) : original(fn, delay, ...args)
+    })
+    let pollMode = 'offline'; let statusWrites = 0
+    await staleStatus.route('**/guest-orders/public/**', route => {
+      const req = route.request(); const url = new URL(req.url())
+      if (req.method() !== 'GET') { statusWrites++; return route.fulfill({ status: 500 }) }
+      if (!url.searchParams.has('statusOnly')) return route.fulfill({ json: { session, meals: [safeMeal] } })
+      if (pollMode === 'offline') return route.fulfill({ status: 503 })
+      if (pollMode === 'malformed') return route.fulfill({ json: { session: { status: 'open' } } })
+      if (pollMode === 'contradictory') return route.fulfill({ json: { session: { status: 'locked', canOrder: true } } })
+      return route.fulfill({ json: { session: { ...session, status: 'locked', canOrder: false } } })
+    })
+    await staleStatus.goto(`http://127.0.0.1:${server.address().port}/guest-order/status-refresh`)
+    await staleStatus.locator('.meal').getByRole('button', { name: '＋ 想吃' }).click()
+    await staleStatus.evaluate(() => window.__testStatusPoll())
+    await staleStatus.getByText('暂时无法更新点菜状态', { exact: false }).waitFor()
+    assert.match(await staleStatus.locator('#status').innerText(), /上次：.*正在点菜/)
+    assert.equal(await staleStatus.locator('#status').getAttribute('class'), 'pill')
+    pollMode = 'malformed'
+    const malformedStatus = staleStatus.waitForResponse(response => response.url().includes('statusOnly=1'))
+    await staleStatus.getByRole('button', { name: '重新确认状态' }).click()
+    await malformedStatus
+    await staleStatus.getByText('暂时无法更新点菜状态', { exact: false }).waitFor()
+    pollMode = 'contradictory'
+    const contradictoryStatus = staleStatus.waitForResponse(response => response.url().includes('statusOnly=1'))
+    await staleStatus.getByRole('button', { name: '重新确认状态' }).click()
+    await contradictoryStatus
+    await staleStatus.getByText('暂时无法更新点菜状态', { exact: false }).waitFor()
+    pollMode = 'locked'
+    await staleStatus.getByRole('button', { name: '重新确认状态' }).click()
+    await staleStatus.getByText('主人已锁单', { exact: false }).waitFor()
+    assert.equal(await staleStatus.locator('#statusWarning').isHidden(), true)
+    assert.equal(await staleStatus.evaluate(() => document.activeElement.id), 'status')
+    assert.match(await staleStatus.locator('#cartTitle').innerText(), /已选 1 道菜/)
+    assert.equal(statusWrites, 0, 'status refresh must not submit the draft')
+    await staleStatus.close()
     let safeRequests = 0; let logicalOrders = 0; let firstBody; let sessionOpen = true
     await safePage.route('**/guest-orders/public/**', async route => {
       const req = route.request()

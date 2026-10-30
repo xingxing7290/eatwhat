@@ -261,8 +261,9 @@
       <div class="hero-meta">
         <span class="pill" id="household">🏠 主人家</span>
         <span class="pill" id="eventTime" hidden>🗓 聚餐时间</span>
-        <span class="pill" id="status" role="status" aria-live="polite">正在确认点菜状态</span>
+        <span class="pill" id="status" role="status" aria-live="polite" tabindex="-1">正在确认点菜状态</span>
       </div>
+      <div class="order-warning" id="statusWarning" role="status" hidden><p>暂时无法更新点菜状态，上方显示的是上次确认的结果。请检查网络并重新确认；主人可能已更改状态。</p><button type="button" id="retryStatus">重新确认状态</button></div>
     </section>
 
     <section class="toolbar">
@@ -324,7 +325,7 @@
       function storedPending() { let text; try { text = sessionStorage.getItem(pendingKey); } catch (_) { return { invalid: true, unavailable: true }; } if (!text) return null; try { const value = JSON.parse(text); return validPending(value) ? value : { invalid: true }; } catch (_) { return { invalid: true }; } }
       const initialAccess = storedAccessToken();
       const initialUncertainty = storedUncertainty();
-      const state = { session: null, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, statusSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: initialAccess.token, accessReadBlocked: initialAccess.unavailable, busy: false, conflict: '', uncertain: initialUncertainty.value, uncertainReadBlocked: initialUncertainty.unavailable || initialUncertainty.invalid, uncertainReadInvalid: initialUncertainty.invalid, pending: storedPending(), storageFailed: false, unavailable: new Set() };
+      const state = { session: null, statusStale: false, meals: [], category: '', search: '', menuPage: 1, menu: null, menuSupported: null, menuLoading: true, menuError: '', menuSequence: 0, statusSequence: 0, menuInitialized: false, cart: new Map(), order: null, accessToken: initialAccess.token, accessReadBlocked: initialAccess.unavailable, busy: false, conflict: '', uncertain: initialUncertainty.value, uncertainReadBlocked: initialUncertainty.unavailable || initialUncertainty.invalid, uncertainReadInvalid: initialUncertainty.invalid, pending: storedPending(), storageFailed: false, unavailable: new Set() };
       const $ = id => document.getElementById(id);
       let toastTimer; let searchTimer;
 
@@ -411,8 +412,9 @@
         const eventText = dateText(session.eventAt);
         $('eventTime').hidden = !eventText;
         $('eventTime').textContent = eventText ? `🗓 ${eventText}` : '';
-        $('status').textContent = statusCopy(session.status);
-        $('status').className = `pill ${canOrder() ? 'open' : 'closed'}`;
+        $('status').textContent = `${state.statusStale ? '上次：' : ''}${statusCopy(session.status)}`;
+        $('status').className = state.statusStale ? 'pill' : `pill ${canOrder() ? 'open' : 'closed'}`;
+        $('statusWarning').hidden = !state.statusStale;
       }
 
       function renderUnconfirmedHeader(loading) {
@@ -787,7 +789,7 @@
           } else { state.menu = null; state.menuPage = 1; }
           state.menuSupported = supported; state.meals = data.meals;
           // Menu requests can finish after a newer lock/status result. Keep the newer status.
-          if (!state.session || statusSequence === state.statusSequence) { state.session = data.session; state.statusSequence++; }
+          if (!state.session || statusSequence === state.statusSequence) { state.session = data.session; state.statusStale = false; state.statusSequence++; }
           if (!state.menuInitialized) {
             if (!state.menuBootstrap) state.menuBootstrap = (async () => {
               if (state.pending) restorePendingDraft();
@@ -824,13 +826,19 @@
         try {
           const wasOpen = canOrder();
           const data = await jsonRequest(`${apiRoot}?statusOnly=1`);
-          if (!data.session || sequence !== state.statusSequence) return;
+          if (sequence !== state.statusSequence) return;
+          if (!data.session || !['open', 'locked', 'closed', 'completed', 'cancelled', 'expired'].includes(data.session.status) || typeof data.session.canOrder !== 'boolean' || data.session.canOrder !== (data.session.status === 'open')) throw new Error('状态数据不完整');
           state.session = { ...(state.session || {}), ...data.session };
+          state.statusStale = false;
+          const retryFocused = document.activeElement === $('retryStatus');
           renderHeader();
+          if (retryFocused) $('status').focus({ preventScroll: true });
           if (wasOpen !== canOrder()) {
             renderMeals(); renderCartBar(); renderCartList();
           }
-        } catch (_) { /* Keep the last confirmed status until it can be checked again. */ }
+        } catch (_) {
+          if (sequence === state.statusSequence && state.session) { state.statusStale = true; renderHeader(); }
+        }
       }
 
       async function submitOrder() {
@@ -878,6 +886,7 @@
           } else if (error.code === 'GUEST_SESSION_CLOSED' || (error.status === 409 && error.message === '本次点菜已经锁单或结束')) {
             state.statusSequence++;
             state.session = { ...(state.session || {}), status: 'closed', canOrder: false };
+            state.statusStale = false;
             renderHeader();
             void loadSession(false);
           } else if (error.code === 'GUEST_ORDER_CONFLICT' || /其他设备更新/.test(error.message)) state.conflict = 'changed';
@@ -899,6 +908,7 @@
       $('menuPreviousTop').addEventListener('click', () => changeMenuPage(-1, 'menuPreviousTop'));
       $('menuNextTop').addEventListener('click', () => changeMenuPage(1, 'menuNextTop'));
       $('openCart').addEventListener('click', openCart);
+      $('retryStatus').addEventListener('click', () => loadSession(false));
       $('closeCart').addEventListener('click', closeCart);
       $('continue').addEventListener('click', closeCart);
       $('submitOrder').addEventListener('click', submitOrder);
