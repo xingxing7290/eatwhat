@@ -81,7 +81,7 @@ async function main () {
   })
   await page.addInitScript(() => {
     localStorage.setItem('token', 'test-token')
-    localStorage.setItem('user', JSON.stringify({ username: 'test', displayName: '测试用户', householdId: sessionStorage.getItem('fixture-household') || 'home-a' }))
+    localStorage.setItem('user', JSON.stringify({ id: 'user-a', username: 'test', displayName: '测试用户', householdId: sessionStorage.getItem('fixture-household') || 'home-a' }))
     const createObjectURL = URL.createObjectURL.bind(URL)
     window.__testObjectUrlNames = {}
     URL.createObjectURL = blob => { const url = createObjectURL(blob); window.__testObjectUrlNames[url] = blob.name; return url }
