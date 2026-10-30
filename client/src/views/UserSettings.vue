@@ -12,7 +12,7 @@
     </nav>
     <el-card ref="profileSection" class="settings-card" role="region" aria-label="用户设置" tabindex="-1">
       <template #header><div class="card-header"><span>用户设置</span></div></template>
-      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining" @submit.prevent>
         <el-form-item label="头像">
           <div class="avatar-row">
             <div class="avatar-preview"><img v-if="profileAvatar && !failedAvatars.has(profileAvatarKey)" :key="profileAvatarKey" :src="profileAvatar" alt="头像预览" @error="onAvatarError($event, profileAvatarKey)" /><div v-else class="avatar-placeholder" :aria-label="avatarFile ? '头像预览不可用' : '头像不可用'">{{ initial }}</div></div>
@@ -24,7 +24,7 @@
             </div>
           </div>
         </el-form-item>
-        <el-form-item label="昵称"><el-input v-model="displayName" placeholder="请输入昵称" maxlength="20" show-word-limit /></el-form-item>
+        <el-form-item label="昵称"><el-input v-model="displayName" aria-label="昵称" placeholder="请输入昵称" maxlength="20" show-word-limit /></el-form-item>
         <el-form-item><el-button type="primary" :loading="saving" :disabled="avatarUploading || !!nameIssue" @click="saveProfile">保存</el-button><el-button :disabled="saving || avatarUploading || !!nameIssue" @click="reload">刷新</el-button></el-form-item>
       </el-form>
     </el-card>
@@ -135,13 +135,13 @@
         <el-button link type="primary" :loading="nameChecking" @click="reviewHouseholdName">核对最新名称</el-button>
         <div v-if="latestName !== null" class="name-review"><span>最新名称：{{ latestName }}</span><el-button link type="primary" @click="useLatestName">采用最新名称</el-button><el-button link type="primary" @click="keepNameDraft">保留我的名称</el-button></div>
       </el-alert>
-      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining">
-        <el-form-item label="小家名称"><el-input v-model="householdName" placeholder="给你们的小家取个名字" maxlength="40" show-word-limit /></el-form-item>
+      <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining" @submit.prevent>
+        <el-form-item label="小家名称"><el-input v-model="householdName" aria-label="小家名称" placeholder="给你们的小家取个名字" maxlength="40" show-word-limit /></el-form-item>
         <el-form-item label="邀请码">
-          <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
+          <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" aria-label="当前小家的邀请码" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
         </el-form-item>
         <el-form-item label="加入小家">
-          <div class="invite-row"><el-input v-model="joinCode" placeholder="输入家人的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small>加入前无法预览目标小家，请先与家人核对邀请码。切换后，原小家的数据不会自动转移。</small><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
+          <div class="invite-row"><el-input v-model="joinCode" aria-label="要加入的小家邀请码" placeholder="输入家人的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small>加入前无法预览目标小家，请先与家人核对邀请码。切换后，原小家的数据不会自动转移。</small><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
         </el-form-item>
         <el-form-item label="成员">
           <div class="member-list"><div v-for="member in household.members || []" :key="member._id || member.id" class="member-item"><div class="member-avatar"><img v-if="avatarSource(member) && !failedAvatars.has(memberAvatarKey(member))" :key="memberAvatarKey(member)" :src="avatarSource(member)" :alt="`${member.displayName || member.username || '成员'}的头像`" @error="onAvatarError($event, memberAvatarKey(member))" /><span v-else aria-label="头像不可用">{{ memberInitial(member) }}</span></div><span class="member-name">{{ member.displayName || member.username || '家庭成员' }}</span></div></div>

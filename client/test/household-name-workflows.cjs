@@ -9,7 +9,7 @@ async function main () {
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'home-a', username: 'test' })) })
-    let name = '原来的小家'; let revision = 'rev-1'; let inviteCode = 'CODE'; let mode = 'normal'; let writes = 0; let release
+    let name = '原来的小家'; let revision = 'rev-1'; let inviteCode = 'CODE'; let mode = 'normal'; let writes = 0; let profileWrites = 0; let joinWrites = 0; let release
     const payload = () => ({ id: 'home-a', name, inviteCode, members: [{ _id: 'u1', username: 'test' }], supportsConditionalNameUpdate: true, nameVersion: { revision } })
     const profile = () => ({ user: { id: 'u1', username: 'test', displayName: '原昵称', householdId: 'home-a' }, household: payload() })
     await page.route('**/api/**', async route => {
@@ -24,7 +24,8 @@ async function main () {
         if (mode === 'legacy') delete result.household.supportsConditionalNameUpdate
         return route.fulfill({ json: result })
       }
-      if (path === '/auth/profile' && req.method() === 'PUT') { const result = profile(); result.user.displayName = req.postDataJSON().displayName; return route.fulfill({ json: result }) }
+      if (path === '/auth/profile' && req.method() === 'PUT') { profileWrites++; const result = profile(); result.user.displayName = req.postDataJSON().displayName; return route.fulfill({ json: result }) }
+      if (path === '/household/join' && req.method() === 'POST') { joinWrites++; return route.fulfill({ status: 400, json: { error: 'unexpected join' } }) }
       if (path === '/auth/avatar' && req.method() === 'POST') { const result = profile(); result.user.avatarUrl = '/uploads/avatar.png'; return route.fulfill({ json: result }) }
       if (path === '/household/invite/refresh' && req.method() === 'POST') { inviteCode = 'CODE2'; return route.fulfill({ json: { household: payload() } }) }
       if (path === '/household/me' && req.method() === 'PUT') {
@@ -44,6 +45,21 @@ async function main () {
     await page.getByPlaceholder('给你们的小家取个名字').waitFor()
     await page.getByPlaceholder('给你们的小家取个名字').fill('我的小家名称')
     await page.getByPlaceholder('请输入昵称').fill('先保存的昵称')
+    assert.equal(await page.getByRole('textbox', { name: '当前小家的邀请码' }).inputValue(), 'CODE')
+    await page.getByRole('textbox', { name: '要加入的小家邀请码' }).fill('FAMILY-CODE')
+    for (const name of ['昵称', '小家名称', '要加入的小家邀请码']) {
+      const input = page.getByRole('textbox', { name, exact: true })
+      assert.equal(await input.count(), 1, `${name} must have an accessible label`)
+      await input.press('Enter')
+    }
+    for (const selector of ['.settings-card[aria-label="用户设置"] form', '.settings-card[aria-label="小家与成员"] form']) {
+      assert.equal(await page.locator(selector).evaluate(form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))), false, 'implicit submission must not reload the page or discard drafts')
+    }
+    assert.equal(await page.getByRole('textbox', { name: '昵称', exact: true }).inputValue(), '先保存的昵称')
+    assert.equal(await page.getByRole('textbox', { name: '小家名称', exact: true }).inputValue(), '我的小家名称')
+    assert.equal(await page.getByRole('textbox', { name: '要加入的小家邀请码' }).inputValue(), 'FAMILY-CODE')
+    assert.deepEqual([writes, profileWrites, joinWrites], [0, 0, 0], 'pressing Enter must not save or switch households')
+    await page.getByRole('textbox', { name: '要加入的小家邀请码' }).clear()
     const jump = page.getByRole('navigation', { name: '设置页面分区' })
     for (const [button, region] of [['个人资料', '用户设置'], ['主题色', '主题色'], ['默认菜品', '默认菜品管理'], ['图片反馈', '待修正图片'], ['小家与成员', '小家与成员']]) {
       await jump.getByRole('button', { name: button, exact: true }).focus(); await page.keyboard.press('Enter')
