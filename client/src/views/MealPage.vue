@@ -234,9 +234,21 @@ const allTags = computed(() => {
 
 // 获取菜品图片
 const getMealImage = meal => resolveRecipeImage(meal.imageUrl || meal.image, defaultImageSrc);
+const imageFailures = ref(new Set());
+const imageKey = meal => JSON.stringify([String(meal._id || meal.id || ''), getMealImage(meal)]);
+const imageNotice = meal => getMealImage(meal) === defaultImageSrc ? '暂无菜图' : imageFailures.value.has(imageKey(meal)) ? '图片暂不可用' : '';
 
 // 图片加载错误处理
-const handleImageError = event => handleUploadedImageError(event, defaultImageSrc);
+const handleImageError = (event, meal) => {
+  if (!event.target?.isConnected) return;
+  handleUploadedImageError(event, defaultImageSrc);
+  if (event.target?.dataset.placeholder === '1') imageFailures.value = new Set([...imageFailures.value, imageKey(meal)]);
+};
+const handleImageLoad = (event, meal) => {
+  if (!event.target?.isConnected || event.target.dataset.placeholder === '1') return;
+  const key = imageKey(meal);
+  if (imageFailures.value.has(key)) { const next = new Set(imageFailures.value); next.delete(key); imageFailures.value = next; }
+};
 
 const legacyCatalogMatches = meal => {
   const query = searchQuery.value.trim().toLocaleLowerCase();
@@ -965,9 +977,11 @@ onBeforeUnmount(() => {
             <img
               :key="getMealImage(meal)"
               :src="getMealImage(meal)"
-              :alt="meal.name"
-              @error="handleImageError"
+              :alt="getMealImage(meal) === defaultImageSrc ? '暂无菜图' : meal.name"
+              @error="handleImageError($event, meal)"
+              @load="handleImageLoad($event, meal)"
             />
+            <span v-if="imageNotice(meal)" class="list-image-notice">{{ imageNotice(meal) }}</span>
           </div>
 
           <div class="meal-list-info">
@@ -1072,10 +1086,12 @@ onBeforeUnmount(() => {
                 <img
                   :key="getMealImage(row)"
                   :src="getMealImage(row)"
-                  :alt="row.name"
-                  @error="handleImageError"
+                  :alt="getMealImage(row) === defaultImageSrc ? '暂无菜图' : row.name"
+                  @error="handleImageError($event, row)"
+                  @load="handleImageLoad($event, row)"
               />
             </div>
+            <span v-if="imageNotice(row)" class="table-image-notice">{{ imageNotice(row) }}</span>
             </template>
           </el-table-column>
 
@@ -1298,7 +1314,7 @@ onBeforeUnmount(() => {
       <el-alert v-if="archiveError" type="error" :closable="false" show-icon :title="`回收站暂不可用：${archiveError}`"><el-button link type="primary" @click="archiveSupported ? loadArchived() : openArchive()">重试</el-button></el-alert>
       <p v-else-if="archiveLoading" class="archive-intro">正在加载回收站…</p>
       <el-empty v-else-if="archiveSupported && !archiveRows.length" :description="archiveSearch.trim() ? '回收站里没有符合条件的菜品' : '回收站里还没有菜品'"><el-button v-if="archiveSearch.trim()" @click="clearArchiveSearch">清除搜索</el-button></el-empty>
-      <div v-else class="archive-list"><div v-for="meal in archiveRows" :key="meal._id || meal.id" class="archive-row"><img :key="getMealImage(meal)" :src="getMealImage(meal)" :alt="meal.name" @error="handleImageError" /><div><strong>{{ meal.name }}</strong><p>{{ meal.category || '未分类' }}</p></div><el-button type="primary" plain :disabled="archiveBusy || archiveLoading" :aria-label="`恢复${meal.name}`" @click="restoreMeal(meal)">恢复</el-button></div></div>
+      <div v-else class="archive-list"><div v-for="meal in archiveRows" :key="meal._id || meal.id" class="archive-row"><img :key="getMealImage(meal)" :src="getMealImage(meal)" :alt="meal.name" @error="handleImageError($event, meal)" @load="handleImageLoad($event, meal)" /><div><strong>{{ meal.name }}</strong><p>{{ meal.category || '未分类' }}</p></div><el-button type="primary" plain :disabled="archiveBusy || archiveLoading" :aria-label="`恢复${meal.name}`" @click="restoreMeal(meal)">恢复</el-button></div></div>
       <div v-if="archiveSupported && archiveTotal > archiveLimit && !archiveError" class="archive-pagination"><el-button :disabled="archiveLoading || archiveBusy || archivePage <= 1" @click="archivePage--; loadArchived()">上一页</el-button><span>第 {{ archivePage }} / {{ archiveLastPage }} 页</span><el-button :disabled="archiveLoading || archiveBusy || archivePage >= archiveLastPage" @click="archivePage++; loadArchived()">下一页</el-button></div>
       <template #footer><el-button :disabled="archiveBusy" @click="archiveDialog = false">关闭</el-button></template>
     </el-dialog>
@@ -1525,11 +1541,14 @@ onBeforeUnmount(() => {
 }
 
 .meal-list-image {
+  position: relative;
   width: 120px;
   height: 120px;
   flex-shrink: 0;
   overflow: hidden;
 }
+.list-image-notice { position: absolute; right: 8px; bottom: 8px; padding: 4px 7px; border-radius: 999px; background: #49382f; color: #fffaf3; font-size: 12px; line-height: 1.4; font-weight: 700; }
+.table-image-notice { display: block; margin-top: 4px; color: var(--text-primary); font-size: 12px; line-height: 1.4; }
 
 .meal-list-image img {
   width: 100%;
