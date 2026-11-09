@@ -1,0 +1,10 @@
+{
+  "project": "eatwhat",
+  "archive_sha256": "df0c6ee02730365044bed2bb887fd84b674910e525d2abaf458ae414db263660",
+  "encrypted_sha256": "6a98d786828f6b92a2c1a564f0a035ad161de9766c0c8f4f9d38288c3e3c9603",
+  "encrypted_bytes": 241043505,
+  "file_entries": 1608,
+  "git_heads": [
+    "15f17ffd8de5e032a7bb96ea14a3207be86bfba8"
+  ]
+}
