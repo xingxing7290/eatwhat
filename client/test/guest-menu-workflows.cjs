@@ -93,7 +93,10 @@ async function main () {
     const longAdd = longCard.getByRole('button', { name: '＋ 想吃' })
     const shortBox = await shortAdd.boundingBox(); const longBox = await longAdd.boundingBox()
     assert.ok(Math.abs((shortBox.y + shortBox.height) - (longBox.y + longBox.height)) < 2, 'same-row actions align despite different title lengths')
+    await goodImage.evaluate(img => { window.__unaffectedGuestImage = img })
     await longCard.getByRole('button', { name: '＋ 想吃' }).click()
+    assert.equal(await goodImage.evaluate(img => img === window.__unaffectedGuestImage), true, 'selecting a dish should not rebuild unrelated images')
+    assert.match(await page.locator('#count').innerText(), /已选 1/)
     const selectedBox = await longCard.locator('.stepper').boundingBox(); const remainingBox = await shortAdd.boundingBox()
     assert.ok(Math.abs((selectedBox.y + selectedBox.height) - (remainingBox.y + remainingBox.height)) < 2, 'selected and unselected controls align in the same row')
     await page.getByRole('button', { name: '查看点菜单' }).click()
@@ -105,6 +108,7 @@ async function main () {
       assert.ok(box.width >= 44 && box.height >= 44 && box.x >= rowBox.x && box.x + box.width <= rowBox.x + rowBox.width, 'quantity controls must remain visible and tappable')
     }
     await longRow.getByRole('button', { name: `减少${longName}` }).click()
+    assert.equal(await goodImage.evaluate(img => img === window.__unaffectedGuestImage), true, 'removing a dish from the cart should not rebuild unrelated images')
     await page.getByRole('button', { name: '关闭', exact: true }).click()
     await page.setViewportSize({ width: 390, height: 844 })
     if (process.env.EATWHAT_GUEST_MENU_SHOT) await page.screenshot({ path: process.env.EATWHAT_GUEST_MENU_SHOT })

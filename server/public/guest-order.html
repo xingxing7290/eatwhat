@@ -472,9 +472,11 @@
         if (state.busy || state.pending || state.accessReadBlocked || state.uncertainReadBlocked) return;
         if (!canOrder()) return toast('主人已经锁单，暂时不能修改');
         if (next > 0 && !state.cart.has(String(meal._id)) && state.cart.size >= MAX_DISHES) return toast('每次最多选择 50 道菜，请先移除其他菜品');
+        const wasAtLimit = state.cart.size >= MAX_DISHES;
         if (next <= 0) { state.cart.delete(String(meal._id)); state.unavailable.delete(String(meal._id)); }
         else state.cart.set(String(meal._id), { meal, quantity: Math.min(20, next), note: state.cart.get(String(meal._id))?.note || '' });
-        renderMeals();
+        if (wasAtLimit !== (state.cart.size >= MAX_DISHES)) renderMeals();
+        else refreshMealQuantity(meal);
         renderCartBar();
         renderCartList();
       }
@@ -518,6 +520,25 @@
         add.setAttribute('aria-describedby', `${title.id}${atLimit ? ' dishLimitNote' : ''}`);
         quantity.setAttribute('aria-label', `已选${item?.quantity || 0}份`);
         stepper.append(minus, quantity, plus); body.append(title, meta, add, stepper); card.append(photo, body); return card;
+      }
+
+      function refreshMealQuantity(meal) {
+        if (state.menuLoading || state.menuError || !state.session) return;
+        const meals = visibleMeals();
+        const card = [...$('mealGrid').children].find(item => item.dataset.mealId === String(meal._id));
+        const currentMeal = meals.find(item => String(item._id) === String(meal._id));
+        if (card && currentMeal) {
+          const focused = card.contains(document.activeElement) ? document.activeElement : null;
+          const focusRole = focused?.dataset.focusRole;
+          const replacement = mealCard(currentMeal);
+          card.replaceWith(replacement);
+          if (focusRole) {
+            const controls = [...replacement.querySelectorAll('button[data-focus-role]')].filter(button => !button.disabled && button.getClientRects().length);
+            const preferredRole = focusRole === 'add' && replacement.classList.contains('selected') ? 'plus' : focusRole !== 'add' && !replacement.classList.contains('selected') ? 'add' : focusRole;
+            (controls.find(button => button.dataset.focusRole === preferredRole) || controls[0])?.focus({ preventScroll: true });
+          }
+        }
+        $('count').textContent = `${state.menuSupported === true ? state.menu.total : meals.length} 道菜${state.cart.size ? ` · 已选 ${state.cart.size}` : ''}`;
       }
 
       function renderMeals() {
