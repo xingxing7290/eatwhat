@@ -19,7 +19,13 @@ async function main () {
       const today = new Date(`${date}T00:00:00Z`); const monday = today.getTime() - ((today.getUTCDay() + 6) % 7) * 86400000
       const days = Array.from({ length: 7 }, (_, index) => ({ date: new Date(monday + (index + (mode === 'shiftedweek' ? 1 : 0)) * 86400000).toISOString().slice(0, 10), meals }))
       if (mode === 'inconsistent') days.find(day => day.date === date).meals = { ...meals, dinner: [{ name: '刚安排的菜' }] }
-      return { today: date, weekStart: mode === 'wrongstart' ? '2020-01-01' : new Date(monday).toISOString().slice(0, 10), todaySchedule: { meals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: ['未识别到蔬菜，请核对食材'], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
+      let todayMeals = meals
+      if (mode === 'replaced' || mode === 'reordered' || mode === 'unknown') {
+        const a = { meal: { _id: 'meal-a', name: '菜 A' } }; const b = { meal: { _id: 'meal-b', name: '菜 B' } }
+        todayMeals = { ...meals, dinner: [a, b] }
+        days.find(day => day.date === date).meals = { ...meals, dinner: mode === 'replaced' ? [a, { meal: { _id: 'meal-c', name: '菜 C' } }] : mode === 'unknown' ? [a, { meal: null }] : [b, a] }
+      }
+      return { today: date, weekStart: mode === 'wrongstart' ? '2020-01-01' : new Date(monday).toISOString().slice(0, 10), todaySchedule: { meals: todayMeals, ...(mode === 'wrongdate' ? { date: '2020-01-01' } : {}) }, todayHints: ['未识别到蔬菜，请核对食材'], week: { days: mode === 'badweek' ? [] : mode === 'reverse' ? days.reverse() : days }, partnerWishlist: mode === 'removed' ? [] : mode === 'long' ? [{ id: 'wish-a', title: '长名字'.repeat(30), mealId: { _id: 'meal-a' } }, { id: 'wish-b', title: '另一道想吃的菜', mealId: { _id: 'meal-b' } }] : [{ _id: 'wish-a', title: wishTitle, mealId: suggested ? { _id: suggested, name: '家常菜', archived } : null }], recentPhotos: [], defaultMeals: { imported: mode === 'badcount' ? 3 : 1, total: 2 }, imageIssues: mode === 'invalid' ? null : { open: 0 }, meals: { favorites: 0 } }
     }
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
@@ -106,6 +112,19 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('今日安排与本周计划暂不一致，请重新加载后核对。').waitFor()
     assert.equal(await page.locator('.dashboard-grid').count(), 0, 'inconsistent snapshots must not be presented as settled')
+    mode = 'replaced'
+    const replacedResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/dashboard/summary')
+    await page.getByRole('button', { name: '重新加载' }).click(); await replacedResponse
+    await page.waitForFunction(() => document.querySelector('.dashboard-page')?.getAttribute('aria-busy') === 'false')
+    assert.equal(await page.locator('.load-error').isVisible(), true, 'a same-count recipe replacement must be detected')
+    for (const safeMode of ['reordered', 'unknown']) {
+      mode = safeMode
+      await page.getByRole('button', { name: '重新加载' }).click()
+      await page.getByRole('button', { name: '刷新饭桌' }).waitFor()
+      assert.equal(await page.locator('.dashboard-grid').isVisible(), true, `${safeMode} must not be treated as a confirmed discrepancy`)
+      mode = 'inconsistent'; await page.getByRole('button', { name: '刷新饭桌' }).click()
+      await page.getByText('今日安排与本周计划暂不一致，请重新加载后核对。').waitFor()
+    }
     mode = 'valid'; suggested = ''
     await page.getByRole('button', { name: '重新加载' }).focus()
     await page.keyboard.press('Enter')

@@ -40,6 +40,14 @@ const dateMismatch = computed(() => !!summary.value && summary.value.today !== l
 const validDate = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`)) && new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) === value;
 const validMeals = value => value && typeof value === 'object' && Object.keys(mealTypeText).every(type => Array.isArray(value[type]));
 const validCount = value => Number.isSafeInteger(value) && value >= 0;
+const comparableMealIds = items => {
+  const ids = items.map(item => {
+    const candidate = item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'meal') ? item.meal : item;
+    const id = mealId(candidate);
+    return typeof id === 'string' && id ? id : null;
+  });
+  return ids.every(Boolean) ? ids.sort() : null;
+};
 const validateSummary = value => {
   if (!value || !validDate(value.today) || !validMeals(value.todaySchedule?.meals) ||
       !Array.isArray(value.todayHints) || value.todayHints.some(hint => typeof hint !== 'string') ||
@@ -53,7 +61,12 @@ const validateSummary = value => {
   const monday = new Date(todayDate.getTime() - ((todayDate.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
   if (days[0] !== monday || (value.weekStart != null && value.weekStart !== monday) || days.some((day, index) => Date.parse(`${day}T00:00:00Z`) - Date.parse(`${monday}T00:00:00Z`) !== index * 86400000)) throw new Error('饭桌信息不完整，请重新加载');
   const weekToday = value.week.days.find(day => day.date === value.today);
-  if (Object.keys(mealTypeText).some(type => weekToday.meals[type].length !== value.todaySchedule.meals[type].length)) throw new Error('今日安排与本周计划暂不一致，请重新加载后核对。');
+  if (Object.keys(mealTypeText).some(type => {
+    const weekly = weekToday.meals[type]; const daily = value.todaySchedule.meals[type];
+    if (weekly.length !== daily.length) return true;
+    const weeklyIds = comparableMealIds(weekly); const dailyIds = comparableMealIds(daily);
+    return weeklyIds && dailyIds && weeklyIds.some((id, index) => id !== dailyIds[index]);
+  })) throw new Error('今日安排与本周计划暂不一致，请重新加载后核对。');
   return { ...value, week: { ...value.week, days: [...value.week.days].sort((a, b) => a.date.localeCompare(b.date)) } };
 };
 const load = () => {
