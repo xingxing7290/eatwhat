@@ -99,6 +99,11 @@ const hasActiveFilters = computed(() => {
 const activeFilterContainer = ref(null);
 const filterToggleButton = ref(null);
 const searchInput = ref(null);
+const searchArea = ref(null);
+const returnToCatalogSearch = () => {
+  searchArea.value?.scrollIntoView({ block: 'center', behavior: 'auto' });
+  searchInput.value?.focus();
+};
 const activeFilters = computed(() => [
   searchQuery.value && { key: 'search', label: `搜索：${searchQuery.value}` },
   selectedCategory.value && { key: 'category', label: `分类：${selectedCategory.value}` },
@@ -770,7 +775,7 @@ onBeforeUnmount(() => {
     </el-alert>
 
     <!-- 搜索和过滤区域 -->
-    <div class="filter-section">
+    <div ref="searchArea" class="filter-section">
       <div class="filter-row">
         <div class="search-box">
           <el-input
@@ -1195,6 +1200,7 @@ onBeforeUnmount(() => {
         <span>第 {{ currentPage }} / {{ Math.ceil(totalMeals / pageSize) }} 页</span>
         <el-button :disabled="currentPage >= Math.ceil(totalMeals / pageSize)" @click="handlePageChange(currentPage + 1)">下一页</el-button>
       </div>
+      <div class="return-search"><button type="button" @click="returnToCatalogSearch">回到搜索 ↑</button></div>
     </div>
 
     <!-- 空状态 -->
@@ -2397,6 +2403,9 @@ onBeforeUnmount(() => {
   .catalog-content .meal-list-tags :deep(.el-tag__content) { overflow-wrap: anywhere; }
 }
 .results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
+.return-search { display: flex; justify-content: center; margin-top: 12px; }
+.return-search button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.return-search button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .wish-recovery { margin-bottom: 12px; }
 .wish-recovery p { margin: 4px 0 8px; line-height: 1.5; }
 .wish-recovery-actions { display: flex; flex-wrap: wrap; gap: 4px 12px; }

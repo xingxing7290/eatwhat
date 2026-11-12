@@ -89,6 +89,14 @@ async function main () {
     await page.getByRole('button', { name: '查看家常菜09' }).first().waitFor()
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '菜品列表')
     await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('q') === '家常菜' && q.get('category') === '家常菜' && q.get('page') === '2' })
+    const resultUrl = page.url(); const readsBeforeSearchJump = requests.length
+    const backToSearch = page.getByRole('button', { name: '回到搜索 ↑' })
+    assert.ok((await backToSearch.boundingBox()).height >= 44)
+    await backToSearch.focus(); await page.keyboard.press('Enter')
+    assert.equal(await search.evaluate(node => document.activeElement === node), true)
+    assert.equal(await search.inputValue(), '家常菜')
+    assert.equal(page.url(), resultUrl, 'jumping to search must preserve the page and filters')
+    assert.equal(requests.length, readsBeforeSearchJump, 'jumping to search must not reload results')
     const requestCountBeforeViewChange = requests.length
     await page.evaluate(() => { window.__originalCatalogTimeout = window.setTimeout; window.setTimeout = (fn, delay, ...args) => delay === 200 ? window.__originalCatalogTimeout(() => {}, 30000) : window.__originalCatalogTimeout(fn, delay, ...args) })
     await page.getByRole('radio', { name: '列表视图' }).focus(); await page.keyboard.press('Space')
@@ -108,7 +116,7 @@ async function main () {
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
       await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
-      for (const selector of ['.meal-list-name', '.meal-list-actions button[aria-label^="查看"]', '.meal-list-actions button[aria-label^="加入想吃"]', '.meal-list-actions button[aria-label^="在详情反馈"]', '.meal-list-actions button[aria-label^="编辑"]']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark} ${theme} ${selector}: ${JSON.stringify(result)}`) }
+      for (const selector of ['.meal-list-name', '.meal-list-actions button[aria-label^="查看"]', '.meal-list-actions button[aria-label^="加入想吃"]', '.meal-list-actions button[aria-label^="在详情反馈"]', '.meal-list-actions button[aria-label^="编辑"]', '.return-search button']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark} ${theme} ${selector}: ${JSON.stringify(result)}`) }
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     }
     await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
