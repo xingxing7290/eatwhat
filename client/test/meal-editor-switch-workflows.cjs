@@ -58,6 +58,17 @@ async function main () {
     await page.goto(`${base}/meals/editor/a`)
     await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '菜品甲')
     await input.fill('尚未保存的草稿')
+    const sectionNav = page.getByRole('navigation', { name: '菜谱编辑分区' })
+    const initialUrl = page.url(); const initialWrites = writes
+    for (const [label, target] of [['食材', '食材'], ['做法', '做法步骤'], ['封面与照片', '封面照片'], ['基础信息', '基础信息']]) {
+      const button = sectionNav.getByRole('button', { name: label, exact: true })
+      assert.ok((await button.boundingBox()).height >= 44)
+      await button.focus(); await page.keyboard.press('Enter')
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), target)
+    }
+    assert.equal(await input.inputValue(), '尚未保存的草稿')
+    assert.equal(page.url(), initialUrl)
+    assert.equal(writes, initialWrites, 'editor section navigation must not save the draft')
     await navigate('/meals/editor/b')
     await page.getByText('当前编辑内容尚未保存').waitFor()
     await page.getByRole('button', { name: '继续编辑' }).click()
@@ -126,6 +137,9 @@ async function main () {
     await coverButton.press('Enter')
     await (await chooserPromise).setFiles(photo)
     await page.getByRole('button', { name: '撤销封面选择' }).waitFor()
+    const selectedCover = await cover.getByAltText('菜品封面预览').getAttribute('src')
+    await sectionNav.getByRole('button', { name: '做法', exact: true }).click()
+    assert.equal(await cover.getByAltText('菜品封面预览').getAttribute('src'), selectedCover, 'section navigation must preserve the selected cover')
     await page.getByRole('button', { name: '撤销封面选择' }).click()
     assert.equal(await cover.getByAltText('菜品封面预览').getAttribute('src'), originalCover, 'undo restores the existing cover')
     await cover.locator('input[type="file"]').setInputFiles(photo)
@@ -223,7 +237,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.ingredient-help', '.ingredient-item label span', '.cover-caption', '.editor-footer p']) {
+        for (const selector of ['.editor-sections button', '.ingredient-help', '.ingredient-item label span', '.cover-caption', '.editor-footer p']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }
