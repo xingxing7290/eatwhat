@@ -62,6 +62,7 @@ const purchased = computed(() => (list.value.items || []).filter(item => item.ch
 const pendingItems = computed(() => (list.value.items || []).filter(item => !item.checked));
 const copyingList = ref(false);
 const copyDialogVisible = ref(false);
+const copySnapshotReady = ref(false);
 const copiedSnapshot = ref('');
 const snapshotInput = ref(null);
 const needsQuantityReview = item => !item.manual && item.quantityComplete === false;
@@ -75,9 +76,17 @@ const copyPendingList = async () => {
     return [`【${categoryText[key]}】`, ...rows.map(item => `- ${clean(item.name)}${clean(item.amount) ? `：${clean(item.amount)}` : ''}${needsQuantityReview(item) ? '（用量待核对）' : ''}`)].join('\n');
   }).filter(Boolean);
   const text = [`购物清单 · ${weekRange.value}`, `全部待买 ${items.length} 项（当前页面快照，不含未保存输入）`, ...sections].join('\n\n');
-  copyingList.value = true;
-  try { await navigator.clipboard.writeText(text); if (active) ElMessage.success('已复制所选周全部待买项；其他成员的最新修改请重新核对'); }
-  catch (_) { if (active) { copiedSnapshot.value = text; copyDialogVisible.value = true; } }
+  const source = document.activeElement; const snapshotWeek = weekStart.value; const snapshotRange = weekRange.value;
+  copyingList.value = true; copySnapshotReady.value = false;
+  try { await navigator.clipboard.writeText(text); if (active) ElMessage.success(`已复制 ${snapshotRange} 的全部待买项；其他成员的最新修改请重新核对`); }
+  catch (_) {
+    if (active) {
+      copiedSnapshot.value = text;
+      const focused = document.activeElement;
+      if (weekStart.value === snapshotWeek && (!focused || focused === document.body || focused === source || !focused.isConnected)) copyDialogVisible.value = true;
+      else copySnapshotReady.value = true;
+    }
+  }
   finally { copyingList.value = false; }
 };
 const selectSnapshot = () => { const input = snapshotInput.value?.textarea; if (input) { input.focus(); input.select(); } };
@@ -366,7 +375,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
       <div class="list-heading"><div><h2>食材清单</h2><p aria-live="polite">显示 {{ filteredItems.length }} / {{ list.items.length }} 项 · {{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}待买 {{ list.items.length - purchased }} 项</p><el-button link type="primary" :disabled="disabled" @click="focusAddItem">添加新食材 ↓</el-button></div><el-input ref="searchInput" v-model="search" clearable placeholder="搜索食材、数量或分类" aria-label="搜索购物食材" /></div>
       <div ref="filterGroup" class="filter-buttons" role="group" aria-label="按购买状态筛选"><button v-for="option in [{ value: 'all', label: '全部', count: list.items.length }, { value: 'pending', label: '待买', count: pendingItems.length }, { value: 'purchased', label: '已买', count: purchased }]" :key="option.value" type="button" :class="{ active: statusFilter === option.value }" :aria-label="option.label" :aria-description="`所选周${option.label} ${option.count} 项，不受其他筛选影响`" :aria-pressed="statusFilter === option.value" @click="statusFilter = option.value">{{ option.label }} <span aria-hidden="true">{{ option.count }}</span></button></div>
       <p class="filter-count-note">数量为所选周全部食材，不受搜索或其他筛选影响。</p>
-      <details class="extra-tools"><summary>采购工具（用量核对、复制） <span v-if="quantityOnly">· 用量筛选已开启</span></summary><div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div><div class="copy-tools"><el-button :loading="copyingList" :disabled="loading || working || changingWeek || !!loadError || !!mutationIssue || !pendingItems.length" @click="copyPendingList">复制全部待买项</el-button><p>不受筛选影响；复制当前已加载的清单，不含未保存输入。需要最新更改时请先刷新。</p></div></details>
+      <details class="extra-tools"><summary>采购工具（用量核对、复制） <span v-if="quantityOnly">· 用量筛选已开启</span><span v-if="copySnapshotReady"> · 待手动复制</span></summary><div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div><div class="copy-tools"><el-button :loading="copyingList" :disabled="loading || working || changingWeek || !!loadError || !!mutationIssue || !pendingItems.length" @click="copyPendingList">复制全部待买项</el-button><p>不受筛选影响；复制当前已加载的清单，不含未保存输入。需要最新更改时请先刷新。</p><div v-if="copySnapshotReady" role="status"><p>自动复制未完成，可手动复制点击时的快照；请核对其中的周日期。</p><el-button @click="copyDialogVisible = true; copySnapshotReady = false">打开待买快照</el-button></div></div></details>
       <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
       <nav v-if="groups.length > 1" class="group-jump" aria-label="快速定位食材分类">
         <span>定位分类</span>
