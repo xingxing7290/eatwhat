@@ -124,6 +124,8 @@ async function main () {
     wallAvailable = true; await page.keyboard.press('Enter')
     await viewer.getByText('照片暂时无法加载，菜谱内容不会改变。').waitFor({ state: 'hidden' })
     await page.waitForFunction(() => document.activeElement?.classList.contains('photo-preview'))
+    await page.getByRole('button', { name: '查看第 2 张菜品照片' }).locator('img[alt="第 2 张菜品照片"]').waitFor()
+    await page.waitForFunction(() => { const img = document.querySelector('button[aria-label="查看第 2 张菜品照片"] img'); return img?.alt === '第 2 张菜品照片' && img.complete && img.naturalWidth > 0 })
     assert.equal(reportWrites, 0, 'retrying a photo must not submit feedback')
     await page.keyboard.press('Escape'); await viewer.waitFor({ state: 'hidden' })
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '查看第 2 张菜品照片')

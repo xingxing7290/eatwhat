@@ -48,6 +48,7 @@ const previewRetrying = ref(false);
 const previewAttempt = ref(0);
 const previewImage = ref(null);
 const previewRetryButton = ref(null);
+const imageVersions = ref({});
 const scheduleDialog = ref(false);
 const scheduleDate = ref('');
 const scheduleType = ref('dinner');
@@ -71,6 +72,7 @@ const toggleStep = index => {
 const memoryPages = computed(() => Math.max(1, Math.ceil(memoryTotal.value / memoryPageSize)));
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
 const imageFor = value => resolveUploadedImage(value) || defaultImage;
+const imageVersion = value => `${imageFor(value)}:${imageVersions.value[imageFor(value)] || 0}`;
 const coverImage = computed(() => imageFor(meal.value?.imageUrl));
 const coverFailed = ref(false);
 const coverNotice = computed(() => coverFailed.value ? '封面图片暂不可用' : !meal.value?.imageUrl ? '暂无封面图片' : '');
@@ -197,6 +199,7 @@ const load = async () => {
 };
 const fallbackImage = event => handleUploadedImageError(event, defaultImage);
 const fallbackCover = event => { if (!event.target?.isConnected) return; fallbackImage(event); if (event.target.dataset.placeholder === '1') coverFailed.value = true; };
+const coverLoaded = event => { if (event.target?.isConnected && event.target.dataset.placeholder !== '1') coverFailed.value = false; };
 const resetPreview = image => { previewUnavailable.value = imageFor(image) === defaultImage; previewRetrying.value = false; previewAttempt.value = 0; };
 const showPhoto = (images, index, title, event, gallery = false) => { if (images.length && index >= 0 && index < images.length) { resetPreview(images[index]); photoFocus = { origin: event.currentTarget, index: gallery ? index : null }; viewedPhoto.value = { images, index, title }; } };
 const previewError = event => {
@@ -209,6 +212,10 @@ const previewLoaded = async event => {
   const image = event.target;
   if (!image?.isConnected || image.dataset.placeholder === '1' || !viewedPhoto.value || imageFor(viewedPhoto.value.images[viewedPhoto.value.index]) === defaultImage || Number(image.dataset.attempt) !== previewAttempt.value) return;
   const restoreFocus = document.activeElement === previewRetryButton.value?.$el;
+  if (previewAttempt.value > 0) {
+    const source = imageFor(viewedPhoto.value.images[viewedPhoto.value.index]);
+    imageVersions.value = { ...imageVersions.value, [source]: (imageVersions.value[source] || 0) + 1 };
+  }
   previewUnavailable.value = false; previewRetrying.value = false;
   if (restoreFocus) { await nextTick(); if (viewedPhoto.value && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true }); }
 };
@@ -268,7 +275,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
     <el-alert v-if="meal?.archived" type="info" :closable="false" show-icon title="这道菜已移入回收站；历史记录仍然保留，可在菜品管理的回收站中恢复。" />
     <template v-if="meal && !mealError">
       <section class="hero">
-        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" :aria-describedby="coverNotice ? 'cover-notice' : undefined" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`, $event)"><img :key="coverImage" :src="coverImage" :alt="meal.imageUrl ? meal.name : '暂无封面图片'" @error="fallbackCover" /><span v-if="coverNotice" id="cover-notice" class="cover-notice">{{ coverNotice }}</span></button>
+        <button class="cover-button" type="button" :disabled="!meal.imageUrl" :aria-label="`查看${meal.name}封面照片`" :aria-describedby="coverNotice ? 'cover-notice' : undefined" @click="showPhoto([meal.imageUrl], 0, `${meal.name}封面`, $event)"><img :key="imageVersion(meal.imageUrl)" :src="coverImage" :alt="meal.imageUrl ? meal.name : '暂无封面图片'" @load="coverLoaded" @error="fallbackCover" /><span v-if="coverNotice" id="cover-notice" class="cover-notice">{{ coverNotice }}</span></button>
         <div class="hero-info">
           <div class="title-row">
             <h1>{{ meal.name }}</h1>
@@ -307,7 +314,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
             <div class="cooking-progress"><p aria-live="polite">本次已完成 {{ completedSteps.size }} / {{ meal.steps.length }} 步</p><button v-if="completedSteps.size" type="button" @click="completedSteps = new Set()">重置进度</button><small>仅在当前页面保留，刷新后重置，不会修改菜谱。</small></div>
             <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
-              <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`, $event)" ><img :key="imageFor(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
+              <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`, $event)" ><img :key="imageVersion(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
               <p>{{ typeof step === 'string' ? step : step?.description }}</p>
               <button type="button" class="step-toggle" :aria-pressed="completedSteps.has(index)" :aria-label="`${completedSteps.has(index) ? '取消完成' : '标记完成'}第 ${index + 1} 步`" @click="toggleStep(index)">{{ completedSteps.has(index) ? '已完成 ✓' : '标记完成' }}</button>
             </div>
@@ -319,7 +326,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
         <el-card>
           <template #header>照片墙</template>
           <div v-if="photos.length" ref="photoGrid" class="photo-grid">
-            <button v-for="(photo, index) in photos" :key="`${index}-${photo}`" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 张菜品照片`" @click="showPhoto(photos, index, meal.name, $event, true)"><img :src="imageFor(photo)" :alt="`第 ${index + 1} 张菜品照片`" @error="fallbackImage" /></button>
+            <button v-for="(photo, index) in photos" :key="`${index}-${photo}`" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 张菜品照片`" @click="showPhoto(photos, index, meal.name, $event, true)"><img :key="imageVersion(photo)" :src="imageFor(photo)" :alt="`第 ${index + 1} 张菜品照片`" @error="fallbackImage" /></button>
           </div>
           <el-empty v-else description="暂无额外照片"><template #image><el-icon><Picture /></el-icon></template><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">添加菜品照片 →</router-link></el-empty>
         </el-card>
