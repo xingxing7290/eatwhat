@@ -219,7 +219,8 @@
     .cart-row strong { display: block; }
     .cart-row small { color: var(--muted); }
     .cart-row .stepper { display: flex; }
-    .item-note { grid-column: 1 / -1; width: 100%; min-height: 40px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px; outline: 0; color: var(--cocoa); background: white; font-size: 13px; font-weight: 700; }
+    .item-note { grid-column: 1 / -1; width: 100%; min-height: 44px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 12px; outline: 0; color: var(--cocoa); background: white; font-size: 13px; font-weight: 700; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     .item-note:focus { border-color: var(--peach); box-shadow: 0 0 0 3px rgba(243,109,78,.1); }
     label { display: block; margin: 13px 0 6px; font-size: 13px; font-weight: 900; }
     .field { width: 100%; min-height: 48px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 15px; outline: 0; color: var(--cocoa); background: white; font-weight: 700; }
@@ -633,18 +634,21 @@
         const focusRow = focused?.closest('.cart-row')?.dataset.mealId;
         const focusRole = focused?.dataset.focusRole;
         const selection = focused instanceof HTMLInputElement ? [focused.selectionStart, focused.selectionEnd] : null;
-        const rows = [...state.cart.values()].map(item => {
+        const rows = [...state.cart.values()].map((item, index) => {
           const unavailable = state.unavailable.has(String(item.meal._id));
           const row = document.createElement('div'); row.className = `cart-row${unavailable ? ' unavailable' : ''}`;
           row.dataset.mealId = String(item.meal._id);
           const copy = document.createElement('div');
           const name = document.createElement('strong'); name.textContent = item.meal.name;
-          const note = document.createElement('small'); note.textContent = unavailable ? (canOrder() ? '已下架或不可用，请移除或稍后重试' : '已下架或不可用') : item.note || (canOrder() ? '可在提交前填写整单备注' : '点菜已结束，内容仅供查看');
+          const note = document.createElement('small'); note.textContent = unavailable ? (canOrder() ? '已下架或不可用，请移除或稍后重试' : '已下架或不可用') : item.note || (canOrder() ? '可在下方填写这道菜的备注' : '点菜已结束，内容仅供查看');
           copy.append(name, note);
           const stepper = document.createElement('div'); stepper.className = 'stepper';
           const minus = document.createElement('button'); minus.textContent = '−'; minus.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder(); minus.setAttribute('aria-label', `减少${item.meal.name}`); minus.addEventListener('click', () => setQuantity(item.meal, item.quantity - 1));
-          const quantity = document.createElement('strong'); quantity.textContent = item.quantity;
+          const quantity = document.createElement('strong'); quantity.id = `cart-quantity-${index}`; quantity.textContent = item.quantity;
+          const unit = document.createElement('span'); unit.className = 'sr-only'; unit.textContent = '份'; quantity.append(unit);
+          minus.setAttribute('aria-describedby', quantity.id);
           const plus = document.createElement('button'); plus.textContent = '+'; plus.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || unavailable || !canOrder() || item.quantity >= 20; plus.setAttribute('aria-label', `增加${item.meal.name}`); plus.title = item.quantity >= 20 ? '每道菜最多 20 份' : ''; plus.addEventListener('click', () => setQuantity(item.meal, item.quantity + 1));
+          plus.setAttribute('aria-describedby', quantity.id);
           const itemNote = document.createElement('input'); itemNote.className = 'item-note'; itemNote.maxLength = 120; itemNote.placeholder = '这道菜备注：例如少辣、不要葱'; itemNote.value = item.note || ''; itemNote.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked;
           itemNote.readOnly = !canOrder();
           minus.dataset.focusRole = 'minus'; plus.dataset.focusRole = 'plus'; itemNote.dataset.focusRole = 'note';
