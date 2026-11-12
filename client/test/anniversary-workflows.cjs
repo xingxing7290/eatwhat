@@ -85,6 +85,7 @@ async function main () {
     await viewer.locator('.photo-preview').evaluate(img => img.decode())
     await viewer.getByText('照片暂时无法加载，纪念日菜单仍然保留。').waitFor({ state: 'hidden' })
     assert.equal(await viewer.locator('.photo-preview').evaluate(img => document.activeElement === img), true, 'retry should preserve keyboard focus')
+    await page.waitForFunction(() => { const img = document.querySelector('button[aria-label="查看纪念晚餐的第 2 张照片"] img'); return img?.getAttribute('alt') === '' && img.complete && img.naturalWidth === 10 })
     assert.equal(saved, '', 'retrying must not change the anniversary menu')
     await page.keyboard.press('ArrowLeft')
     await viewer.getByText('1 / 2').waitFor()

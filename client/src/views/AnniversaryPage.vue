@@ -55,6 +55,7 @@ const previewRetrying = ref(false);
 const previewAttempt = ref(0);
 const previewImage = ref(null);
 const previewRetryButton = ref(null);
+const photoVersions = ref({});
 const photoFiles = ref([]);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const today = ref(localToday());
@@ -187,6 +188,7 @@ const searchMeals = query => {
 };
 const openMealOptions = visible => { if (visible) searchMeals(''); };
 const imageFor = photo => resolveUploadedImage(photo) || placeholder;
+const photoVersion = photo => `${imageFor(photo)}:${photoVersions.value[imageFor(photo)] || 0}`;
 const imageError = event => handleUploadedImageError(event, placeholder);
 const setPreviewState = photo => { previewUnavailable.value = imageFor(photo) === placeholder; previewRetrying.value = false; previewAttempt.value = 0; };
 const previewError = event => {
@@ -199,6 +201,10 @@ const previewLoaded = async event => {
   const image = event.target;
   if (!image?.isConnected || image.dataset.placeholder === '1' || !viewedPhoto.value || imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]) === placeholder || Number(image.dataset.attempt) !== previewAttempt.value) return;
   const restoreFocus = document.activeElement === previewRetryButton.value?.$el;
+  if (previewAttempt.value > 0) {
+    const source = imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]);
+    photoVersions.value = { ...photoVersions.value, [source]: (photoVersions.value[source] || 0) + 1 };
+  }
   previewUnavailable.value = false; previewRetrying.value = false;
   if (restoreFocus) { await nextTick(); if (viewedPhoto.value && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true }); }
 };
@@ -472,7 +478,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
         <router-link v-if="validWeekLink(item.date)" class="menu-calendar-link" :to="{ name: 'calendar', query: { date: item.date } }" :aria-label="`查看${item.title || '纪念日菜单'}的${item.date}日历安排`">查看当天日历 →</router-link>
         <p class="desc">{{ item.description || '没有备注，也可以是一份默契。' }}</p>
         <p v-if="item.supportsUnavailableMealVisibility && Object.keys(mealTypeText).some(key => item.meals?.[key]?.some(meal => meal === null))" class="unavailable-note">部分菜品不可用，原有引用仍保留在菜单中。</p>
-        <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="photo-button" :aria-label="`查看${item.title || '纪念日'}的第 ${index + 1} 张照片`" @click="openPhoto(item, index)"><img :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
+        <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="photo-button" :aria-label="`查看${item.title || '纪念日'}的第 ${index + 1} 张照片`" @click="openPhoto(item, index)"><img :key="photoVersion(photo)" :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
         <div class="meal-blocks">
           <div v-for="(label, key) in mealTypeText" :key="key" class="meal-block">
             <strong>{{ label }}</strong>
