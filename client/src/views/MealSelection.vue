@@ -66,6 +66,7 @@ const savedOutsideRange = ref(false);
 const searchQuery = ref('');
 const selectedMeals = ref([]);
 const initialIds = ref([]);
+const initialMeals = ref([]);
 const displayedMeals = ref([]);
 const totalMeals = ref(0);
 const categories = ref([]);
@@ -281,6 +282,20 @@ const undoClearSelectedMeals = async event => {
   const focused = document.activeElement;
   if (hadFocus && (!focused || focused === document.body || focused === source || !focused.isConnected)) selectedMealContainer.value?.querySelector('.selected-meal-tag:not([disabled])')?.focus();
 };
+const restoreInitialSelection = async event => {
+  if (!selectionDirty.value || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
+  const source = event.currentTarget;
+  const before = JSON.stringify(idsFor(selectedMeals.value));
+  const baseline = JSON.stringify(initialIds.value);
+  const currentDate = date.value; const currentMealType = mealType.value;
+  try { await ElMessageBox.confirm('将放弃本页对该餐次的选择和排序，恢复上次读取的内容；不会重新读取或修改日历。', '恢复读取时的安排？', { type: 'warning', confirmButtonText: '恢复草稿', cancelButtonText: '继续编辑' }); } catch (_) { return; }
+  if (isInitializing.value || isSaving.value || loadError.value || saveUncertain.value || date.value !== currentDate || mealType.value !== currentMealType || JSON.stringify(initialIds.value) !== baseline || JSON.stringify(idsFor(selectedMeals.value)) !== before) return;
+  selectedMeals.value = [...initialMeals.value];
+  clearedSelection.value = null;
+  await nextTick();
+  const focused = document.activeElement;
+  if (!focused || focused === document.body || focused === source || !focused.isConnected || focused.closest?.('.el-message-box')) selectionInfo.value?.focus();
+};
 
 // 保存餐食安排
 const saveSelection = async () => {
@@ -325,6 +340,7 @@ const saveSelection = async () => {
     }
     
     initialIds.value = idsFor(selectedMeals.value);
+    initialMeals.value = [...selectedMeals.value];
     expectedVersion.value = saved.updatedAt;
     isSaving.value = false;
     const destination = calendarDestination();
@@ -526,6 +542,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
         wishNotice.value = '无法确认想吃记录的最新状态；仍可保存排餐，但不会自动修改清单。';
       }
     }
+    initialMeals.value = resolved.slice(0, existingIds.length);
     selectedMeals.value = resolved;
     initialIds.value = [...existingIds];
     conflict.value = false;
@@ -562,6 +579,7 @@ onBeforeRouteUpdate(async (to, from) => {
 watch(() => route.fullPath, () => {
   selectedMeals.value = [];
   initialIds.value = [];
+  initialMeals.value = [];
   savedOutsideRange.value = false;
   conflict.value = false;
   saveUncertain.value = false;
@@ -609,7 +627,7 @@ onBeforeUnmount(() => {
       </div>
       <p class="selection-status" role="status">{{ selectionStatus }}</p>
       <p class="selection-hint">点击菜品卡片选择或取消；切换分类、搜索或翻页不会清除已选菜品。可调整已选顺序，点击“保存安排”后才会更新日历。</p>
-      <div class="selection-bulk-actions"><button v-if="selectedMeals.length" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="clearSelectedMeals">清空本次选择</button><template v-if="clearedSelection"><span role="status">已暂时清空 {{ clearedSelection.length }} 道菜，尚未保存。</span><button ref="undoClearButton" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="undoClearSelectedMeals">撤销清空</button></template></div>
+      <div class="selection-bulk-actions"><button v-if="selectedMeals.length" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="clearSelectedMeals">清空本次选择</button><button v-if="selectionDirty" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="restoreInitialSelection">恢复读取时的安排</button><template v-if="clearedSelection"><span role="status">已暂时清空 {{ clearedSelection.length }} 道菜，尚未保存。</span><button ref="undoClearButton" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="undoClearSelectedMeals">撤销清空</button></template></div>
       
       <div class="selected-meals" ref="selectedMealContainer" v-if="selectedMeals.length > 0">
         <div v-for="(meal, index) in selectedMeals" :key="meal._id || meal.id" class="selected-meal-item" role="group" :aria-label="`第${index + 1}道：${meal.name}`">
