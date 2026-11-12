@@ -259,13 +259,15 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onRe
         <el-button plain @click="router.push('/settings')">去设置里管理</el-button>
       </el-card>
       <el-card class="quick-card">
-        <template #header><div class="card-title"><el-icon><ShoppingCart /></el-icon><span>准备下一顿</span></div></template>
-        <p class="quick-description">计划、食材和灵感，放在顺手的位置。</p>
+        <template #header><div class="card-title"><el-icon><ShoppingCart /></el-icon><span>饭桌快捷入口</span></div></template>
+        <p class="quick-description">计划、采购和聚餐记录，放在顺手的位置。</p>
         <div class="quick-links">
           <router-link :to="{ name: 'weeklyPlan', query: { week: summary.week.days[0].date } }"><span class="quick-link-copy"><strong>查看周计划</strong><small>查看首页所示周，按需生成草稿</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
           <router-link :to="{ name: 'shoppingList', query: { week: summary.week.days[0].date } }"><span class="quick-link-copy"><strong>查看购物清单</strong><small>整理首页所示周的食材</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
           <router-link to="/meals"><span class="quick-link-copy"><strong>探索全部菜谱</strong><small>按分类或名称寻找灵感</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
           <router-link to="/review"><span class="quick-link-copy"><strong>回顾饭桌时光</strong><small>重温一起吃过的日子</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
+          <router-link :to="{ name: 'guestOrders' }"><span class="quick-link-copy"><strong>管理宴请点菜</strong><small>查看邀请和客人点菜单</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
+          <router-link :to="{ name: 'anniversaries' }"><span class="quick-link-copy"><strong>纪念日菜单</strong><small>为特别的日子准备菜单</small></span><span class="quick-arrow" aria-hidden="true">→</span></router-link>
         </div>
       </el-card>
     </section>
