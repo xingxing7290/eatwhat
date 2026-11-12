@@ -88,6 +88,7 @@ async function main () {
     await page.keyboard.press('Enter')
     await viewer.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor({ state: 'hidden' })
     await page.waitForFunction(() => document.activeElement?.classList.contains('photo-preview'))
+    await page.waitForFunction(() => { const img = document.querySelector('button[aria-label="查看回忆一的第 2 张照片"] img'); return img?.getAttribute('alt') === '' && img.complete && img.naturalWidth === 8 })
     assert.equal(saved, '', 'retrying a photo must not write a memory')
     await page.keyboard.press('ArrowLeft')
     await viewer.getByText('1 / 2').waitFor()

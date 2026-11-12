@@ -99,6 +99,7 @@ const previewRetrying = ref(false);
 const previewAttempt = ref(0);
 const previewImage = ref(null);
 const previewRetryButton = ref(null);
+const photoVersions = ref({});
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
 const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
@@ -235,6 +236,7 @@ const searchMeals = query => {
 };
 const openMealOptions = visible => { if (visible && !mealLoaded.value && !mealLoading.value) searchMeals(''); };
 const imageFor = photo => resolveUploadedImage(photo) || placeholder;
+const photoVersion = photo => `${imageFor(photo)}:${photoVersions.value[imageFor(photo)] || 0}`;
 const imageError = event => handleUploadedImageError(event, placeholder);
 const setPreviewState = photo => { previewUnavailable.value = imageFor(photo) === placeholder; previewRetrying.value = false; previewAttempt.value = 0; };
 const openMemoryPhoto = (item, index) => { setPreviewState(item.photos[index]); viewedPhoto.value = { title: item.title || item.date || '饭后照片', photos: item.photos, index }; };
@@ -248,6 +250,10 @@ const previewLoaded = async event => {
   const image = event.target;
   if (!image?.isConnected || image.dataset.placeholder === '1' || !viewedPhoto.value || imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]) === placeholder || Number(image.dataset.attempt) !== previewAttempt.value) return;
   const restoreFocus = document.activeElement === previewRetryButton.value?.$el;
+  if (previewAttempt.value > 0) {
+    const source = imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]);
+    photoVersions.value = { ...photoVersions.value, [source]: (photoVersions.value[source] || 0) + 1 };
+  }
   previewUnavailable.value = false; previewRetrying.value = false;
   if (restoreFocus) { await nextTick(); if (viewedPhoto.value && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true }); }
 };
@@ -560,7 +566,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
             <p>{{ item.note || '没有文字，也是一段回忆。' }}</p>
             <div class="meta"><span>{{ item.mood || '日常' }}</span><el-rate :model-value="item.rating || 0" disabled size="small" /></div>
             <p v-if="item.actualCookTime || item.nextImprovement" class="cooking-note"><span v-if="item.actualCookTime">用时 {{ item.actualCookTime }} 分钟</span><span v-if="item.nextImprovement">下次改进：{{ item.nextImprovement }}</span></p>
-            <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="memory-photo" :aria-label="`查看${item.title || '回忆'}的第 ${index + 1} 张照片`" @click="openMemoryPhoto(item, index)"><img :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
+            <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="memory-photo" :aria-label="`查看${item.title || '回忆'}的第 ${index + 1} 张照片`" @click="openMemoryPhoto(item, index)"><img :key="photoVersion(photo)" :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
             <p v-if="item.supportsUnavailableMealVisibility && item.mealIds?.some(meal => meal === null)" class="unavailable-note">部分相关菜品不可用，原有引用仍保留在回忆中。</p>
             <div class="meal-names"><el-tag v-for="(meal, index) in item.mealIds || []" :key="meal?._id || `unavailable-${index}`" effect="plain" class="memory-meal-tag"><router-link v-if="linkedMealId(meal)" class="memory-meal-link" :to="{ name: 'MealDetail', params: { id: linkedMealId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${item.title || item.date + '的回忆'}关联的${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal?.name || '菜品不可用' }}</span></el-tag></div>
           </el-card>
