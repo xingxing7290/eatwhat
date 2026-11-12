@@ -88,6 +88,18 @@ async function main () {
     assert.equal(typeof releaseCurrent, 'function')
     holdCurrent = false; releaseCurrent()
     await page.getByRole('heading', { name: /周一.*2026-10-26/ }).waitFor()
+    const longName = '特色家庭菜'.repeat(12)
+    currentDays[0] = { ...currentDays[0], scheduleExists: true, scheduleVersion: '2026-10-28T09:00:00.000Z', meals: { ...emptyMeals(), dinner: [{ meal: { _id: 'long-meal', name: longName } }] } }
+    await page.setViewportSize({ width: 320, height: 844 })
+    await page.getByRole('button', { name: '刷新当前安排' }).click()
+    const longLink = page.getByRole('link', { name: `在新标签页查看2026-10-26晚餐的${longName}菜谱` })
+    await longLink.waitFor()
+    assert.equal(await longLink.evaluate(node => { const card = node.closest('.day-card').getBoundingClientRect(); const link = node.getBoundingClientRect(); return link.left >= card.left && link.right <= card.right && node.scrollWidth <= node.clientWidth }), true, 'long recipe names should wrap inside the day card')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'long recipe names should not overflow the page')
+    currentDays[0] = { date: dates[0], meals: emptyMeals(), scheduleExists: false, scheduleVersion: null }
+    await page.getByRole('button', { name: '刷新当前安排' }).click()
+    await longLink.waitFor({ state: 'hidden' })
+    await page.setViewportSize({ width: 390, height: 844 })
     await page.getByText('购物清单不会随排餐变动自动更新', { exact: false }).waitFor()
     const dateLink = page.getByRole('link', { name: '查看 2026-11-01 的日历安排' })
     assert.ok((await dateLink.boundingBox()).height >= 44)

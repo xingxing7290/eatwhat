@@ -364,7 +364,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; window.removeEventListen
 .current-heading .el-button { min-height: 44px; }
 .plan-anchor { scroll-margin-top: calc(var(--header-height, 60px) + 12px); }
 .plan-anchor:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
-.recipe-tag { height: auto; max-width: 100%; padding: 0 8px; white-space: normal; }
+.recipe-tag { height: auto; max-width: 100%; min-width: 0; box-sizing: border-box; padding: 0 8px; white-space: normal; overflow-wrap: anywhere; }
+.recipe-tag :deep(.el-tag__content) { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .recipe-link { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .recipe-link:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 2px; }
 .shopping-context p { margin: 2px 0 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
