@@ -1,6 +1,6 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { useRoute, useRouter, onBeforeRouteUpdate } from 'vue-router';
+import { useRoute, useRouter, onBeforeRouteLeave, onBeforeRouteUpdate } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { ArrowLeft, Edit, Star, Clock, Bowl, Picture, Check, Warning } from '@element-plus/icons-vue';
 import api from '@/services/api';
@@ -93,6 +93,16 @@ const pauseCookingTimer = () => {
   updateCookingTimer();
   if (timerState.value === 'running') { stopTimerInterval(); timerState.value = 'paused'; }
 };
+const timerInProgress = () => {
+  if (timerState.value === 'running') updateCookingTimer();
+  return timerState.value === 'running' || timerState.value === 'paused';
+};
+const confirmTimerLeave = async () => {
+  if (!timerInProgress()) return true;
+  try { await ElMessageBox.confirm('离开后计时会停止并重置，也不会在后台提醒。', '结束当前计时？', { type: 'warning', confirmButtonText: '结束并离开', cancelButtonText: '继续计时' }); return true; } catch (_) { return false; }
+};
+const warnTimerBeforeUnload = event => { if (timerInProgress()) { event.preventDefault(); event.returnValue = ''; } };
+onBeforeRouteLeave(confirmTimerLeave);
 watch([timerMinutes, timerCustomMinutes], resetCookingTimer);
 watch(() => route.params.id, resetCookingTimer);
 const cookingSteps = ref(null);
@@ -328,12 +338,15 @@ const onPhotoKey = event => {
 onBeforeRouteUpdate(async (to, from) => {
   if (to.params.id === from.params.id) return true;
   if (reportBusy.value) { ElMessage.warning('图片反馈操作正在进行，请稍候'); return false; }
-  if (!reportUncertain.value) return true;
-  try { await ElMessageBox.confirm('图片反馈结果尚未确认，切换菜品后核对提示会丢失。', '确认切换？', { type: 'warning', confirmButtonText: '放弃并切换', cancelButtonText: '继续核对' }); return true; } catch (_) { return false; }
+  if (reportUncertain.value) {
+    try { await ElMessageBox.confirm('图片反馈结果尚未确认，切换菜品后核对提示会丢失。', '确认切换？', { type: 'warning', confirmButtonText: '放弃并切换', cancelButtonText: '继续核对' }); } catch (_) { return false; }
+  }
+  return confirmTimerLeave();
 });
 watch(() => route.params.id, load, { immediate: true });
 window.addEventListener('keydown', onPhotoKey);
-onBeforeUnmount(() => { stopTimerInterval(); loadSequence++; memorySequence++; reportSequence++; window.removeEventListener('keydown', onPhotoKey); });
+window.addEventListener('beforeunload', warnTimerBeforeUnload);
+onBeforeUnmount(() => { stopTimerInterval(); loadSequence++; memorySequence++; reportSequence++; window.removeEventListener('keydown', onPhotoKey); window.removeEventListener('beforeunload', warnTimerBeforeUnload); });
 </script>
 
 <template>
