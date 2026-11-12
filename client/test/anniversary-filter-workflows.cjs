@@ -12,22 +12,35 @@ async function main () {
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const fixture = (id, date, title, theme, meal = []) => ({ _id: id, date, title, theme, description: '', photos: [], meals: { breakfast: [], lunch: [], dinner: meal }, supportsConditionalEdit: true, supportsConditionalDelete: true, supportsUnavailableMealVisibility: true, editVersion: version })
-    let menus = [fixture('past', '2025-10-28', '去年晚餐', '秋日'), fixture('future', '2026-11-15', '生日晚餐', '庆祝', [{ _id: 'meal-a', name: '番茄牛腩' }]), fixture('today', '2026-10-28', '今日小聚', '家常'), fixture('invalid', '2026-02-30', '日期旧记录', '待核对')]
+    let menus = [fixture('past', '2025-10-28', '去年晚餐', '秋日'), fixture('future', '2026-11-15', '生日晚餐', '庆祝', [{ _id: 'meal-a', name: '番茄牛腩' }, null, { _id: 'bad/id', name: '异常菜品' }]), fixture('today', '2026-10-28', '今日小聚', '家常'), fixture('invalid', '2026-02-30', '日期旧记录', '待核对')]
     let malformed = false; let writes = 0; const errors = []
     page.on('pageerror', error => errors.push(error.message))
-    await page.route('**/api/**', async route => {
+    await page.context().route('**/api/**', async route => {
       const req = route.request(); const path = new URL(req.url()).pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/anniversaries' && req.method() === 'GET') return route.fulfill({ json: malformed ? [menus[0], menus[0]] : menus })
       if (path === '/anniversaries' && req.method() === 'POST') { writes++; return route.fulfill({ status: 503, json: { error: '保存结果未知' } }) }
       if (path === '/anniversaries/today' && req.method() === 'DELETE') { writes++; menus = menus.filter(item => item._id !== 'today'); return route.fulfill({ status: 204, body: '' }) }
       if (path === '/anniversary-templates') return route.fulfill({ json: [] })
+      if (path === '/meals/meal-a') return route.fulfill({ json: { _id: 'meal-a', name: '番茄牛腩', ingredients: [], steps: [], photos: [], tags: [], healthTags: [] } })
+      if (path === '/memories') return route.fulfill({ json: [] })
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/anniversaries`)
     await page.getByText('显示 4 / 4 份菜单').waitFor()
     await page.getByText('菜单不会自动写入日历', { exact: false }).waitFor()
     const birthday = page.locator('.menu-card').filter({ hasText: '生日晚餐' })
+    const recipeLink = birthday.getByRole('link', { name: '在新标签页查看番茄牛腩菜谱' })
+    assert.equal(await recipeLink.getAttribute('href'), '/meals/detail/meal-a')
+    assert.equal(await recipeLink.getAttribute('rel'), 'noopener noreferrer')
+    assert.ok((await recipeLink.boundingBox()).height >= 44)
+    assert.equal(await birthday.getByRole('link', { name: /异常菜品|菜品不可用/ }).count(), 0)
+    const popupPromise = page.waitForEvent('popup')
+    await recipeLink.click()
+    const popup = await popupPromise
+    await popup.getByRole('heading', { name: '番茄牛腩' }).waitFor()
+    await popup.close()
+    assert.equal(new URL(page.url()).pathname, '/anniversaries', 'viewing a recipe must keep the menu page open')
     const calendarLink = birthday.getByRole('link', { name: '查看生日晚餐的2026-11-15日历安排' })
     assert.equal(await calendarLink.getAttribute('href'), '/calendar?date=2026-11-15')
     assert.ok((await calendarLink.boundingBox()).height >= 44)
@@ -61,6 +74,12 @@ async function main () {
     await page.getByRole('button', { name: '编辑生日晚餐' }).click()
     await editor.getByPlaceholder('比如：三周年晚餐').fill('未保存的草稿')
     await editor.getByRole('button', { name: '取消', exact: true }).click()
+    const draftPopupPromise = page.waitForEvent('popup')
+    await recipeLink.click()
+    const draftPopup = await draftPopupPromise
+    await draftPopup.getByRole('heading', { name: '番茄牛腩' }).waitFor()
+    await draftPopup.close()
+    await page.getByText('编辑草稿仍保留', { exact: false }).waitFor()
     await search.fill('去年')
     await page.getByText('当前筛选中未显示这份菜单。').waitFor()
     await page.getByRole('link', { name: '查看去年晚餐的2025-10-28日历安排' }).click()
@@ -96,7 +115,7 @@ async function main () {
         await page.setViewportSize({ width, height: 844 })
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.filter-kicker', '.filter-heading h2', '.filter-heading p', '.period-filters button.active', '.group-heading h2', '.day-badge', '.menu-calendar-link', '.calendar-explanation']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`) }
+          for (const selector of ['.filter-kicker', '.filter-heading h2', '.filter-heading p', '.period-filters button.active', '.group-heading h2', '.day-badge', '.menu-calendar-link', '.calendar-explanation', '.menu-recipe-link']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${JSON.stringify(result)}`) }
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
       }

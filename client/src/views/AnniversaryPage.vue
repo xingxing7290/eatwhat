@@ -77,6 +77,10 @@ const uncertain = computed(() => saveUncertain.value || !!editIssue.value || !!d
 useDraftGuard({ dirty, busy, uncertain, label: '纪念日菜单' });
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
 const mealId = meal => String(meal?._id || meal?.id || '');
+const recipeLinkId = meal => {
+  const id = mealId(meal);
+  return /^[a-z\d_-]{1,128}$/i.test(id) && typeof meal?.name === 'string' && meal.name.trim() ? id : '';
+};
 const validDate = value => {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const time = Date.parse(`${value}T00:00:00Z`);
@@ -465,7 +469,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
         <div class="meal-blocks">
           <div v-for="(label, key) in mealTypeText" :key="key" class="meal-block">
             <strong>{{ label }}</strong>
-            <el-tag v-for="(meal, index) in item.meals?.[key] || []" :key="meal?._id || `unavailable-${index}`" effect="plain">{{ meal?.name || '菜品不可用' }}</el-tag>
+            <el-tag v-for="(meal, index) in item.meals?.[key] || []" :key="meal?._id || `unavailable-${index}`" class="menu-meal-tag" effect="plain"><router-link v-if="recipeLinkId(meal)" class="menu-recipe-link" :to="{ name: 'MealDetail', params: { id: recipeLinkId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal?.name || '菜品不可用' }}</span></el-tag>
             <span v-if="!item.meals?.[key]?.length" class="empty">菜单未选菜</span>
           </div>
         </div>
@@ -559,6 +563,10 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .photo-nav .el-button { margin: 0; min-height: 44px; }
 .meal-blocks { display: flex; flex-direction: column; gap: 10px; }
 .meal-block { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px; background: var(--bg-secondary); border-radius: 8px; }
+.menu-meal-tag { max-width: 100%; height: auto; white-space: normal; color: var(--text-primary); background: var(--bg-primary); border-color: var(--border-color); }
+.menu-meal-tag :deep(.el-tag__content) { min-width: 0; overflow-wrap: anywhere; }
+.menu-recipe-link { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.menu-recipe-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .unavailable-note { color: var(--text-primary); font-size: 13px; line-height: 1.5; }
 .unavailable-slot { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; }
 .unavailable-slot :deep(.el-button) { min-height: 44px; margin: 0; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
