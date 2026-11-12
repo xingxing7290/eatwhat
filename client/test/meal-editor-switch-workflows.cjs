@@ -127,6 +127,17 @@ async function main () {
     await page.waitForFunction(() => document.querySelector('input[placeholder="给这道菜起个名字"]')?.value === '菜品乙')
     assert.equal(writes, 0)
     const photo = { name: 'preview.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/aKsAAAAASUVORK5CYII=', 'base64') }
+    const galleryButton = page.getByRole('button', { name: '添加菜品照片' })
+    assert.ok((await galleryButton.boundingBox()).height >= 44)
+    assert.equal(await galleryButton.getAttribute('aria-describedby'), 'gallery-photo-help')
+    const galleryChooser = page.waitForEvent('filechooser')
+    await galleryButton.focus(); await page.keyboard.press('Enter')
+    await (await galleryChooser).setFiles(photo)
+    const queuedPhoto = page.locator('.gallery-upload .el-upload-list__item')
+    await queuedPhoto.waitFor()
+    await queuedPhoto.focus(); await page.keyboard.press('Delete')
+    await queuedPhoto.waitFor({ state: 'detached' })
+    assert.equal(writes, 0, 'selecting or removing a photo must not save the recipe')
     const cover = page.locator('.side-column .el-card').first()
     const coverButton = cover.getByRole('button', { name: '更换菜品封面' })
     await cover.getByText('更换封面').waitFor()
@@ -237,7 +248,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.editor-sections button', '.ingredient-help', '.ingredient-item label span', '.cover-caption', '.editor-footer p']) {
+        for (const selector of ['.editor-sections button', '.gallery-picker', '.ingredient-help', '.ingredient-item label span', '.cover-caption', '.editor-footer p']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }

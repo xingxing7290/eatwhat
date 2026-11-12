@@ -35,6 +35,8 @@ const supportsConditionalEdit = ref(false);
 const saved = ref(false);
 const imageFile = ref(null);
 const coverInput = ref(null);
+const galleryUpload = ref(null);
+const chooseGalleryPhotos = () => galleryUpload.value?.$el?.querySelector('input[type="file"]')?.click();
 const imagePreview = ref('');
 const photoFiles = ref([]);
 const removedPhotos = ref([]);
@@ -468,7 +470,7 @@ watch(() => route.params.id, load, { immediate: true });
 
       <aside class="side-column">
         <el-card><template #header><span ref="coverHeading" class="editor-section-heading" tabindex="-1">封面照片</span></template><input ref="coverInput" type="file" :accept="photoAccept" :disabled="loading || submitting" hidden @change="onCoverInputChange" /><button type="button" class="cover-box" :disabled="loading || submitting" :aria-label="imagePreview ? '更换菜品封面' : '选择菜品封面'" @click="coverInput?.click()"><img v-if="imagePreview" :key="imagePreview" :src="imageFor(imagePreview)" alt="菜品封面预览" @error="imageError" /><span v-if="imagePreview" class="cover-caption">更换封面</span><span v-else class="cover-empty"><el-icon><Upload /></el-icon><span>选择封面</span></span></button><el-button v-if="imageFile" link type="primary" @click="undoCoverChange">撤销封面选择</el-button><p class="photo-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30MB；实际以上传服务器设置为准。</p></el-card>
-        <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" ref="existingPhotoGrid" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
+        <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" ref="existingPhotoGrid" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload ref="galleryUpload" class="gallery-upload" action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"></el-upload><button type="button" class="gallery-picker" :disabled="loading || submitting" aria-describedby="gallery-photo-help" @click="chooseGalleryPhotos"><el-icon aria-hidden="true"><Plus /></el-icon>添加菜品照片</button><p id="gallery-photo-help" class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。选中待上传照片后可按 Delete 键移除。</p></el-card>
       </aside>
     </el-form>
     <section v-if="!loading && !loadError" class="editor-footer" aria-label="菜谱保存操作">
@@ -483,6 +485,10 @@ watch(() => route.params.id, load, { immediate: true });
 .editor-sections { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-primary); font-size: 13px; }
 .editor-sections button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
 .editor-sections button:focus-visible, .editor-section-heading:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.gallery-upload :deep(.el-upload--picture-card) { display: none; }
+.gallery-picker { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.gallery-picker:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.gallery-picker:disabled { opacity: .6; cursor: not-allowed; }
 .editor-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 16px 20px; border: 1px solid var(--border-color); border-radius: 18px; background: var(--bg-primary); }
 .editor-footer p { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .editor-footer .el-button { min-height: 44px; margin: 0; }
