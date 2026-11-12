@@ -587,7 +587,7 @@ onBeforeUnmount(() => {
           今天
         </el-button>
       </div>
-      <div class="mobile-date-tools"><label class="mobile-date-jump">跳转到本月日期
+      <div class="mobile-date-tools"><label class="mobile-date-jump"><span>日期</span>
         <select aria-label="跳转到本月日期" :disabled="isLoading || blocked || !!loadError" @change="jumpToMobileDate">
           <option value="">选择日期</option>
           <option v-for="day in calendarDays.filter(Boolean)" :key="format(day, 'yyyy-MM-dd')" :value="format(day, 'yyyy-MM-dd')">{{ format(day, 'M月d日') }} · 周{{ weekDays[getDay(day)] }}</option>
@@ -941,6 +941,7 @@ onBeforeUnmount(() => {
     grid-template-columns: auto 1fr auto auto; /* 左箭头 | 月份文本自适应 | 右箭头 | 今天 */
     align-items: center;
     gap: 8px;
+    .el-button { margin: 0; }
     
     .mobile-nav-btn {
       border-radius: 8px;
@@ -949,9 +950,10 @@ onBeforeUnmount(() => {
     
     .mobile-month-text {
       text-align: center;
-      font-size: 16px;
+      font-size: clamp(13px, 4vw, 16px);
       font-weight: 600;
       color: var(--text-primary);
+      white-space: nowrap;
     }
 
     .mobile-today-btn.inline {
@@ -966,10 +968,11 @@ onBeforeUnmount(() => {
   }
 }
 
-.mobile-date-tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-.mobile-date-jump { display: flex; flex: 1; min-width: 0; align-items: center; justify-content: space-between; gap: 6px; color: var(--text-secondary); font-size: 13px; }
+.mobile-date-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 8px; }
+.mobile-date-jump { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--text-primary); font-size: 13px; }
+.mobile-date-jump span { flex: none; white-space: nowrap; }
 .mobile-refresh { min-height: 44px; margin: 0; flex-shrink: 0; }
-.mobile-date-jump select { min-height: 44px; min-width: 0; max-width: 58%; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.mobile-date-jump select { flex: 1; min-height: 44px; min-width: 0; width: 100%; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
 .mobile-date-jump select:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
 .calendar-grid {
@@ -1648,6 +1651,7 @@ onBeforeUnmount(() => {
 
   .mobile-month-nav {
     top: var(--header-height);
+    border-radius: 20px;
   }
 }
 

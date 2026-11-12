@@ -66,6 +66,14 @@ async function main () {
     assert.equal(await page.locator('.mobile-date-card.target-date').getByText('菜品不可用').count(), 1)
     assert.equal(await page.getByRole('link', { name: /菜品不可用/ }).count(), 0)
     await page.setViewportSize({ width: 320, height: 844 })
+    const dateTools = page.locator('.mobile-date-tools')
+    assert.equal(await page.locator('.mobile-nav-controls').evaluate(node => node.scrollWidth <= node.clientWidth), true, 'month controls must fit a narrow screen')
+    assert.ok((await page.locator('.mobile-month-text').boundingBox()).height < 30, 'the month label must remain on one line')
+    assert.equal(await dateTools.evaluate(node => node.scrollWidth <= node.clientWidth), true, 'date tools must fit a narrow screen')
+    assert.equal(await dateTools.locator('.mobile-date-jump span').innerText(), '日期')
+    assert.ok((await dateTools.getByRole('combobox', { name: '跳转到本月日期' }).boundingBox()).width >= 80)
+    assert.ok((await dateTools.getByRole('button', { name: '刷新所选月' }).boundingBox()).height >= 44)
+    if (process.env.EATWHAT_CALENDAR_SHOT) await page.screenshot({ path: process.env.EATWHAT_CALENDAR_SHOT, fullPage: false })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
