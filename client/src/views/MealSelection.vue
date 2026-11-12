@@ -595,12 +595,14 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="toolbar-row">
-        <el-radio-group v-model="currentView" size="small" aria-label="菜品显示方式">
+        <el-radio-group v-model="currentView" size="small" class="selection-view" aria-label="菜品显示方式">
           <el-radio-button value="grouped" aria-label="分组视图" title="分组视图">
             <el-icon><Menu /></el-icon>
+            <span>分组</span>
           </el-radio-button>
           <el-radio-button value="grid" aria-label="网格视图" title="网格视图">
             <el-icon><Grid /></el-icon>
+            <span>网格</span>
           </el-radio-button>
         </el-radio-group>
 
@@ -841,6 +843,7 @@ onBeforeUnmount(() => {
 
     .toolbar-row {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
@@ -940,6 +943,7 @@ onBeforeUnmount(() => {
 .selection-status, .selection-hint { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .selection-status { font-weight: 700; }
 .selection-hint { color: var(--text-secondary); }
+.selection-view :deep(.el-radio-button__inner) { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 8px 12px; }
 .selection-info { scroll-margin-top: calc(var(--header-height, 64px) + 12px); }
 .selection-info:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .mobile-selection-bar { display: none; }
@@ -985,6 +989,7 @@ onBeforeUnmount(() => {
   .meal-selection :deep(.photo-pin) { width: 28px; height: 8px; top: 7px; }
   .meal-selection :deep(.meal-info) { min-width: 0; padding: 14px 10px 12px 0; gap: 6px; }
   .meal-selection :deep(.meal-name) { font-size: 15px; overflow-wrap: anywhere; }
+  .meal-selection :deep(.selection-indicator) { white-space: nowrap; padding-inline: 6px; }
   .meal-selection :deep(.meal-description) { font-size: 12px; -webkit-line-clamp: 2; }
   .meal-selection :deep(.meal-tags),
   .meal-selection :deep(.meal-ingredients) { display: none; }
@@ -996,5 +1001,9 @@ onBeforeUnmount(() => {
   .desktop-pagination { display: none !important; }
   .mobile-pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--text-secondary); }
   .mobile-pagination :deep(.el-button) { min-height: 44px; padding: 8px 10px; }
+}
+@media (max-width: 400px) {
+  .meal-selection :deep(.meal-image-container) { width: 72px; height: 72px; flex-basis: 72px; margin: 8px; }
+  .meal-selection :deep(.image-notice) { right: 2px; bottom: 2px; padding: 2px 3px; font-size: 10px; white-space: nowrap; }
 }
 </style>

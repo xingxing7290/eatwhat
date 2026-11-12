@@ -94,6 +94,18 @@ async function main () {
     await page.goto(`${base}/selection?date=${date}&mealType=dinner`)
     await page.getByText('与当前安排一致', { exact: true }).waitFor()
     await page.setViewportSize({ width: 320, height: 844 })
+    await page.getByRole('button', { name: '选择测试菜01' }).waitFor()
+    const firstMobileCard = page.getByRole('button', { name: '选择测试菜01' })
+    assert.ok((await firstMobileCard.locator('.meal-name').boundingBox()).height < 25, 'short meal names should fit on one line')
+    assert.equal(await firstMobileCard.locator('.selection-indicator').evaluate(node => node.scrollWidth <= node.clientWidth && node.getBoundingClientRect().height < 32), true, 'selection indicator should remain on one line')
+    assert.equal(await firstMobileCard.locator('.image-notice').evaluate(node => { const box = node.getBoundingClientRect(); const image = node.parentElement.getBoundingClientRect(); return box.left >= image.left && box.right <= image.right && node.scrollWidth <= node.clientWidth }), true, 'image notice must fit its thumbnail')
+    for (const [name, label] of [['分组视图', '分组'], ['网格视图', '网格']]) {
+      const radio = page.getByRole('radio', { name })
+      assert.equal(await radio.locator('xpath=..').getByText(label, { exact: true }).isVisible(), true)
+      assert.ok((await radio.locator('xpath=..').locator('.el-radio-button__inner').boundingBox()).height >= 44)
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    if (process.env.EATWHAT_SELECTION_SHOT) await page.screenshot({ path: process.env.EATWHAT_SELECTION_SHOT, fullPage: true })
     const longLayoutFits = await page.locator('.selected-meal-item').first().evaluate(row => {
       const tag = row.querySelector('.selected-meal-tag')
       const extra = document.createTextNode('x'.repeat(100)); tag.append(extra)
