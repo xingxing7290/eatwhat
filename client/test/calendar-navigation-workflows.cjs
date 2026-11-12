@@ -25,6 +25,8 @@ async function main () {
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/schedules') {
         reads.push(`${url.searchParams.get('year')}-${url.searchParams.get('month')}`)
+        const requestedYear = Number(url.searchParams.get('year'))
+        if (requestedYear < 2000 || requestedYear > 2100) return route.fulfill({ status: 400, json: { error: '年份无效' } })
         if (failToday && url.searchParams.get('year') === '2026' && url.searchParams.get('month') === '10') return route.fulfill({ status: 503, json: { error: '测试加载失败' } })
         const rows = url.searchParams.get('year') === '2026' && url.searchParams.get('month') === '12' ? [{ date: '2026-12-31', scheduleExists: true, scheduleVersion: '2026-10-28T08:00:00.000Z', meals: { breakfast: [], lunch: [], dinner: [{ meal: { _id: 'recipe-a', name: '家常菜' } }, { meal: null }] } }] : []
         return route.fulfill({ json: rows })
@@ -202,20 +204,26 @@ async function main () {
     for (const width of [390, 1280]) {
       await page.setViewportSize({ width, height: 844 })
       const nav = width === 390 ? page.locator('.mobile-month-nav') : page.locator('.page-header')
-      await page.goto(`${base}/calendar?month=0100-01`)
+      await page.goto(`${base}/calendar?month=2000-01`)
       await page.getByLabel('所选月份安排概览').waitFor()
-      await page.getByText('日历支持 0100 年 1 月至 9998 年 12 月', { exact: false }).waitFor()
+      await page.getByText('当前服务器支持 2000 年 1 月至 2100 年 12 月', { exact: false }).waitFor()
       assert.equal(await nav.getByRole('button', { name: '上个月' }).isDisabled(), true)
       assert.equal(await nav.getByRole('button', { name: '下个月' }).isEnabled(), true)
       await nav.getByRole('button', { name: '下个月' }).click()
-      await page.waitForURL('**/calendar?month=0100-02')
-      await page.goto(`${base}/calendar?month=9998-12`)
+      await page.waitForURL('**/calendar?month=2000-02')
+      await page.goto(`${base}/calendar?month=2100-12`)
       await page.getByLabel('所选月份安排概览').waitFor()
       assert.equal(await nav.getByRole('button', { name: '下个月' }).isDisabled(), true)
       assert.equal(await nav.getByRole('button', { name: '上个月' }).isEnabled(), true)
       await nav.getByRole('button', { name: '上个月' }).click()
-      await page.waitForURL('**/calendar?month=9998-11')
+      await page.waitForURL('**/calendar?month=2100-11')
     }
+    for (const invalid of ['0100-01', '1999-12', '2101-01', '9998-12']) {
+      await page.goto(`${base}/calendar?month=${invalid}`)
+      await page.getByText('日历链接中的日期无效或超出 2000–2100 年', { exact: false }).waitFor()
+      await page.getByLabel('所选月份安排概览').waitFor()
+    }
+    assert.ok(reads.every(value => { const year = Number(value.split('-')[0]); return year >= 2000 && year <= 2100 }), 'out-of-range links must not trigger unsupported calendar requests')
     assert.deepEqual(errors, [])
     console.log('Calendar navigation checks passed: recipe details and editing, themes, dated selection, history and invalid links')
   } finally { await browser.close() }

@@ -20,6 +20,7 @@ const parseLocation = query => {
   const value = date || (month ? `${month}-01` : '');
   if (!value) return { date: new Date(), target: '' };
   const [year, partMonth, day] = value.split('-').map(Number);
+  if (year < 2000 || year > 2100) return { invalid: true };
   return { date: new Date(year, partMonth - 1, day), target: date || '' };
 };
 const initialLocation = parseLocation(route.query);
@@ -257,7 +258,7 @@ const navigateToMealSelection = (date, type) => {
 // 切换月份
 const canChangeMonth = delta => {
   const index = getYear(currentDate.value) * 12 + getMonth(currentDate.value) + delta;
-  return index >= 100 * 12 && index <= 9998 * 12 + 11;
+  return index >= 2000 * 12 && index <= 2100 * 12 + 11;
 };
 const changeMonth = (delta) => {
   if (isLoading.value || blocked.value || !canChangeMonth(delta)) return;
@@ -535,8 +536,8 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-if="targetedDate" class="calendar-notice" role="status"><span>已定位到 {{ targetedDate }}，请核对相应餐次。</span><router-link :to="{ name: 'weeklyPlan', query: { week: targetedDate } }">查看该日期所在周计划 →</router-link></div>
-    <div v-else-if="invalidDateLink" class="calendar-notice" role="status">日历链接中的日期无效，已打开当前月份。</div>
-    <div v-if="!canChangeMonth(-1) || !canChangeMonth(1)" class="calendar-notice" role="status">日历支持 0100 年 1 月至 9998 年 12 月，可通过“今天”返回当前月份。</div>
+    <div v-else-if="invalidDateLink" class="calendar-notice" role="status">日历链接中的日期无效或超出 2000–2100 年，已打开当前月份。</div>
+    <div v-if="!canChangeMonth(-1) || !canChangeMonth(1)" class="calendar-notice" role="status">当前服务器支持 2000 年 1 月至 2100 年 12 月，可通过“今天”返回当前月份。</div>
 
     <el-alert v-if="deleteIssue" class="delete-review" type="warning" :closable="false" show-icon :title="deleteIssue.conflict ? '安排已被其他成员修改，本次没有删除。' : '删除结果未确认，请先核对最新安排。'">
       <p>{{ deleteIssue.date }} {{ mealTypes.find(type => type.key === deleteIssue.type)?.label }}：{{ deleteIssue.checked ? (deleteIssue.count ? `当前有 ${deleteIssue.count} 道菜` : '当前没有安排') : '尚未核对' }}</p>
