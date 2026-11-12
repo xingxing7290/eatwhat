@@ -19,8 +19,9 @@ const mode = ref('month');
 const month = ref(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
 const year = ref(String(today.getFullYear()));
 const result = ref(null); const loading = ref(false); const error = ref('');
+const copyNotice = ref(''); const copyingLink = ref(false);
 const failedImages = ref(new Set());
-let sequence = 0; let alive = true;
+let sequence = 0; let copySequence = 0; let alive = true;
 const period = computed(() => mode.value === 'month' ? month.value : year.value);
 const periodKey = computed(() => `${mode.value}:${period.value}`);
 const displayPeriod = computed(() => mode.value === 'year' ? `${year.value} 年` : `${month.value.slice(0, 4)} 年 ${Number(month.value.slice(5))} 月`);
@@ -38,6 +39,20 @@ const stepPeriod = direction => {
 };
 const currentInRange = computed(() => clock.value.getFullYear() >= 2000 && clock.value.getFullYear() <= 2100);
 const goCurrent = () => { if (!currentInRange.value) return; if (mode.value === 'year') year.value = currentPeriod(); else month.value = currentPeriod(); };
+const copyPeriodLink = async () => {
+  if (copyingLink.value) return;
+  const key = periodKey.value; const request = ++copySequence;
+  const query = mode.value === 'month' ? { month: month.value } : { year: year.value };
+  const url = new URL(router.resolve({ name: 'review', query }).href, window.location.origin).href;
+  copyingLink.value = true; copyNotice.value = '';
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('clipboard unavailable');
+    await navigator.clipboard.writeText(url);
+    if (alive && request === copySequence && periodKey.value === key) copyNotice.value = '本期链接已复制，仅包含时间。打开时显示对方当前家庭的数据，请先登录并确认家庭。';
+  } catch (_) {
+    if (alive && request === copySequence && periodKey.value === key) copyNotice.value = '复制失败，请检查浏览器剪贴板权限后重试。';
+  } finally { if (alive) copyingLink.value = false; }
+};
 const empty = computed(() => !!result.value && result.value.summary.memoryCount === 0 && result.value.summary.plannedMealCount === 0);
 const albumMonth = computed(() => mode.value === 'month' ? month.value : result.value?.photos?.[0]?.date?.slice(0, 7) || `${year.value}-01`);
 const summaryText = computed(() => {
@@ -109,6 +124,7 @@ watch(mode, value => {
   else month.value = `${year.value}-${month.value.slice(5, 7)}`;
 }, { flush: 'sync' });
 watch(periodKey, () => {
+  copySequence++; copyNotice.value = '';
   if (preserveInvalidRoute) { preserveInvalidRoute = false; load(); return; }
   if (route.name === 'review') {
     const query = mode.value === 'month' ? { month: month.value } : { year: year.value };
@@ -144,7 +160,7 @@ onBeforeUnmount(() => { alive = false; sequence++; window.removeEventListener('f
 
 <template>
   <div class="review-page">
-    <section class="review-hero"><div><span class="eyebrow">OUR TABLE JOURNAL · 饭桌回顾</span><h1>把日子，慢慢记下来</h1><p>从排餐、回忆和照片里，看看这段时间属于小家的味道。</p></div><div class="period-controls"><el-radio-group v-model="mode" aria-label="回顾周期"><el-radio-button label="month">月度</el-radio-button><el-radio-button label="year">年度</el-radio-button></el-radio-group><el-date-picker v-if="mode === 'month'" v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾月份" /><el-date-picker v-else v-model="year" type="year" value-format="YYYY" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾年份" /><div class="period-navigation" role="group" aria-label="切换回顾时间"><button type="button" :disabled="!canStep(-1)" :aria-label="mode === 'month' ? '上个月' : '上一年'" @click="stepPeriod(-1)">← <span>{{ mode === 'month' ? '上个月' : '上一年' }}</span></button><button type="button" :disabled="!currentInRange || period === currentPeriod()" :title="!currentInRange ? '当前日期超出可查看范围（2000–2100）' : ''" @click="goCurrent">{{ mode === 'month' ? '回到本月' : '回到今年' }}</button><button type="button" :disabled="!canStep(1)" :aria-label="mode === 'month' ? '下个月' : '下一年'" @click="stepPeriod(1)"><span>{{ mode === 'month' ? '下个月' : '下一年' }}</span> →</button></div><el-button :loading="loading" :disabled="loading" @click="load"><el-icon><Refresh /></el-icon>刷新本期</el-button></div></section>
+    <section class="review-hero"><div><span class="eyebrow">OUR TABLE JOURNAL · 饭桌回顾</span><h1>把日子，慢慢记下来</h1><p>从排餐、回忆和照片里，看看这段时间属于小家的味道。</p></div><div class="period-controls"><el-radio-group v-model="mode" aria-label="回顾周期"><el-radio-button label="month">月度</el-radio-button><el-radio-button label="year">年度</el-radio-button></el-radio-group><el-date-picker v-if="mode === 'month'" v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾月份" /><el-date-picker v-else v-model="year" type="year" value-format="YYYY" :clearable="false" :disabled-date="disabledDate" aria-label="选择回顾年份" /><div class="period-navigation" role="group" aria-label="切换回顾时间"><button type="button" :disabled="!canStep(-1)" :aria-label="mode === 'month' ? '上个月' : '上一年'" @click="stepPeriod(-1)">← <span>{{ mode === 'month' ? '上个月' : '上一年' }}</span></button><button type="button" :disabled="!currentInRange || period === currentPeriod()" :title="!currentInRange ? '当前日期超出可查看范围（2000–2100）' : ''" @click="goCurrent">{{ mode === 'month' ? '回到本月' : '回到今年' }}</button><button type="button" :disabled="!canStep(1)" :aria-label="mode === 'month' ? '下个月' : '下一年'" @click="stepPeriod(1)"><span>{{ mode === 'month' ? '下个月' : '下一年' }}</span> →</button></div><el-button :loading="loading" :disabled="loading" @click="load"><el-icon><Refresh /></el-icon>刷新本期</el-button><el-button :loading="copyingLink" :disabled="copyingLink" @click="copyPeriodLink">复制本期链接</el-button><p class="copy-notice" role="status" aria-live="polite">{{ copyNotice }}</p></div></section>
     <el-alert v-if="routeNotice" type="warning" :closable="false" show-icon :title="routeNotice" />
     <div v-if="loading" class="state-card" role="status">正在整理 {{ displayPeriod }} 的饭桌记录…</div>
     <div v-else-if="error" class="state-card" role="alert"><strong>暂时无法查看回顾</strong><p>{{ error }}</p><el-button @click="load"><el-icon><Refresh /></el-icon>重新加载</el-button></div>
@@ -175,6 +191,8 @@ onBeforeUnmount(() => { alive = false; sequence++; window.removeEventListener('f
 .period-controls :deep(.el-radio-button.is-active .el-radio-button__inner){background:var(--review-accent);border-color:var(--review-accent);color:var(--review-on-accent);box-shadow:none}
 .period-controls :deep(.el-radio-button__original-radio:focus-visible + .el-radio-button__inner){outline:3px solid var(--review-accent);outline-offset:2px}
 .period-controls > :deep(.el-button) { min-height: 44px; margin: 0; }
+.copy-notice { flex-basis: 100%; margin: 0; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.copy-notice:empty { display: none; }
 .period-navigation{display:flex;flex-wrap:wrap;gap:6px;width:100%}.period-navigation button{min-height:44px;padding:8px 12px;border:1px solid var(--border-color);border-radius:12px;background:var(--bg-primary);color:var(--text-primary);font:inherit;font-size:13px;cursor:pointer}.period-navigation button:disabled{opacity:.55;cursor:not-allowed}.period-navigation button:focus-visible{outline:3px solid var(--review-accent);outline-offset:2px}
 .review-image{position:relative;min-width:0}.meal-image{width:52px;height:52px}.feature-image{width:120px;height:120px}.image-notice{position:absolute;inset:auto 0 0;padding:3px 2px;border-radius:0 0 12px 12px;background:rgba(31,23,19,.82);color:#fff;font-size:10px;line-height:1.25;text-align:center;overflow-wrap:anywhere}.photo-card .photo-image-notice{top:8px;bottom:auto;left:8px;right:auto;padding:4px 6px;border-radius:6px;background:rgba(31,23,19,.85);color:#fff;font-size:11px;white-space:normal}
 </style>
