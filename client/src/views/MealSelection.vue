@@ -21,14 +21,23 @@ const scheduleStore = useScheduleStore();
 
 const date = computed(() => route.query.date);
 const mealType = computed(() => route.query.mealType);
-const calendarDestination = () => ({ name: 'calendar', ...(validWeekLink(date.value) ? { query: { date: date.value } } : {}) });
+const calendarDateSupported = computed(() => validWeekLink(date.value) && Number(date.value.slice(0, 4)) >= 2000 && Number(date.value.slice(0, 4)) <= 2100);
+const weekDateSupported = computed(() => {
+  if (!validWeekLink(date.value)) return false;
+  const [year, month, day] = date.value.split('-').map(Number);
+  const start = new Date(year, month - 1, day); start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+  const key = value => `${String(value.getFullYear()).padStart(4, '0')}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+  const end = new Date(start); end.setDate(end.getDate() + 6);
+  return validWeekLink(key(start)) && validWeekLink(key(end));
+});
+const calendarDestination = () => !validWeekLink(date.value) ? { name: 'calendar' } : calendarDateSupported.value ? { name: 'calendar', query: { date: date.value } } : weekDateSupported.value ? { name: 'weeklyPlan', query: { week: date.value } } : null;
 const cancelDestination = () => {
   const id = route.query.suggestedMealId;
   if (route.query.fromWishlist === '1' && typeof route.query.wishlistId === 'string' && /^[a-z\d_-]{1,128}$/i.test(route.query.wishlistId)) {
     const view = readWishlistViewState(window.history.state?.eatwhatWishlistView, currentSessionScope());
     return { name: 'wishlist', ...(view ? { state: { eatwhatWishlistView: view } } : {}) };
   }
-  if (route.query.fromRecipe !== '1' || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id)) return calendarDestination();
+  if (route.query.fromRecipe !== '1' || typeof id !== 'string' || !/^[a-z\d_-]{1,128}$/i.test(id)) return calendarDestination() || { name: 'meals' };
   const query = filterCatalogQuery(route.query);
   if (validWeekLink(route.query.shoppingWeek)) query.shoppingWeek = route.query.shoppingWeek;
   else if (validWeekLink(route.query.calendarDate)) query.calendarDate = route.query.calendarDate;
@@ -53,6 +62,7 @@ const expectedVersion = ref(null);
 const wishSnapshot = ref(null);
 const wishNotice = ref('');
 const suggestionNotice = ref('');
+const savedOutsideRange = ref(false);
 const searchQuery = ref('');
 const selectedMeals = ref([]);
 const initialIds = ref([]);
@@ -277,7 +287,7 @@ const saveSelection = async () => {
       finally { confirmingEmpty.value = false; }
     }
     
-    await scheduleStore.setMeal(date.value, mealType.value, mealIds, { expectedVersion: expectedVersion.value });
+    const saved = await scheduleStore.setMeal(date.value, mealType.value, mealIds, { expectedVersion: expectedVersion.value });
     const suggestedId = typeof route.query.suggestedMealId === 'string' ? route.query.suggestedMealId : '';
     const wishlistId = typeof route.query.wishlistId === 'string' ? route.query.wishlistId : '';
     if (wishlistId && suggestedId && mealIds.some(id => String(id) === suggestedId)) {
@@ -290,8 +300,11 @@ const saveSelection = async () => {
     }
     
     initialIds.value = idsFor(selectedMeals.value);
+    expectedVersion.value = saved.updatedAt;
     isSaving.value = false;
-    await router.push(calendarDestination());
+    const destination = calendarDestination();
+    if (destination) await router.push(destination);
+    else savedOutsideRange.value = true;
     
   } catch (error) {
     if (error?.code === 'SCHEDULE_CONFLICT') {
@@ -419,7 +432,7 @@ const loadSelection = async ({ includeSuggestion = true } = {}) => {
   // 检查必要参数
   if (!validWeekLink(date.value) || !['breakfast', 'lunch', 'dinner'].includes(mealType.value)) {
     ElMessage.error('缺少必要参数');
-    router.push(calendarDestination());
+    router.push(calendarDestination() || { name: 'meals' });
     return;
   }
 
@@ -524,6 +537,7 @@ onBeforeRouteUpdate(async (to, from) => {
 watch(() => route.fullPath, () => {
   selectedMeals.value = [];
   initialIds.value = [];
+  savedOutsideRange.value = false;
   conflict.value = false;
   saveUncertain.value = false;
   loadSelection();
@@ -561,6 +575,8 @@ onBeforeUnmount(() => {
     </el-alert>
     <el-alert v-if="wishNotice" type="info" :closable="false" show-icon :title="wishNotice" />
     <el-alert v-if="suggestionNotice" type="warning" :closable="false" show-icon :title="suggestionNotice" />
+    <el-alert v-if="validWeekLink(date) && !calendarDateSupported" type="info" :closable="false" show-icon :title="weekDateSupported ? '此日期超出日历支持范围；保存后将打开对应周计划。' : '此日期超出日历和完整周计划支持范围；保存后会留在本页供核对。'" />
+    <el-alert v-if="savedOutsideRange" type="success" :closable="false" show-icon :title="selectionDirty ? '上次安排已保存；本页之后的改动尚未保存。此日期无法在日历或周计划中打开。' : '安排已保存；此日期无法在日历或周计划中打开，当前内容可留在本页核对。'" />
     
     <div ref="selectionInfo" class="selection-info" tabindex="-1" aria-label="已选菜品">
       <div class="selected-count">
