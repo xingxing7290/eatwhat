@@ -202,6 +202,23 @@ async function main () {
     await page.goto(`${base}/dashboard`)
     await page.getByText('暂时没有新的想吃提醒').waitFor()
     await page.getByText('还没有饭后照片').waitFor()
+    await page.getByText('在饭后回忆中添加照片，就能在这里看到。').waitFor()
+    await page.setViewportSize({ width: 320, height: 844 })
+    assert.equal(await page.locator('.compact-empty').count(), 2)
+    for (const empty of await page.locator('.compact-empty').all()) assert.ok((await empty.boundingBox()).height <= 130, 'empty cards should remain compact on mobile')
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.compact-empty strong', '.compact-empty p']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+        assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    if (process.env.EATWHAT_DASHBOARD_EMPTY_SHOT) { await page.waitForTimeout(500); await page.screenshot({ path: process.env.EATWHAT_DASHBOARD_EMPTY_SHOT, fullPage: true }) }
     for (const [name, target] of [['查看想吃清单', '/wishlist'], ['打开饭桌相册', '/photo-album'], ['记录饭后回忆', '/memories']]) {
       const link = page.getByRole('link', { name })
       assert.equal(await link.getAttribute('href'), target)

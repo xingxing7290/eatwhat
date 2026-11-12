@@ -190,7 +190,7 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onRe
       <el-card>
         <template #header><div class="card-title"><el-icon><Star /></el-icon><span>家人想吃提醒</span></div></template>
         <p class="wishlist-context">家人提出或支持的待完成心愿，最多显示 6 条。</p>
-        <el-empty v-if="!summary.partnerWishlist?.length" description="暂时没有新的想吃提醒" />
+        <div v-if="!summary.partnerWishlist?.length" class="compact-empty"><el-icon aria-hidden="true"><Star /></el-icon><div><strong>暂时没有新的想吃提醒</strong><p>可以到想吃清单记录灵感，或看看已有心愿。</p></div></div>
         <div v-else class="wishlist-list">
           <div v-for="item in summary.partnerWishlist" :key="item._id || item.id" class="wishlist-row">
             <div><strong>{{ item.title }}</strong><p>{{ wishDescription(item) }}</p></div>
@@ -202,7 +202,7 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onRe
 
       <el-card>
         <template #header><div class="card-title"><el-icon><Picture /></el-icon><span>最近饭桌照片</span></div></template>
-        <el-empty v-if="!summary.recentPhotos?.length" description="还没有饭后照片" />
+        <div v-if="!summary.recentPhotos?.length" class="compact-empty"><el-icon aria-hidden="true"><Picture /></el-icon><div><strong>还没有饭后照片</strong><p>在饭后回忆中添加照片，就能在这里看到。</p></div></div>
         <div v-else class="photo-strip">
           <router-link v-for="(photo, index) in summary.recentPhotos" :key="photoKey(photo, index)" :to="photoLink(photo)" class="photo-tile" :aria-label="`前往饭桌相册：${photo.title || photo.date || '饭桌照片'}`">
             <img v-if="!failedPhotos.has(photoKey(photo, index))" :src="resolveUploadedImage(photo.photo)" :alt="photo.title || photo.date || '饭桌照片'" loading="lazy" @error="photoError($event, photo, index)" />
@@ -253,6 +253,10 @@ h1 span { color: var(--dashboard-accent-ink); }
 .meal-row, .wishlist-row { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border-light); }
 .wishlist-row > div { min-width: 0; overflow-wrap: anywhere; }
 .wishlist-context { margin: 0 0 4px; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+.compact-empty { display: flex; align-items: flex-start; gap: 12px; margin-top: 10px; padding: 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); }
+.compact-empty .el-icon { flex: none; margin-top: 2px; font-size: 20px; }
+.compact-empty strong { font-size: 14px; }
+.compact-empty p { margin: 5px 0 0; color: var(--text-primary); font-size: 13px; line-height: 1.5; }
 .wishlist-row .el-button { flex-shrink: 0; min-height: 44px; }
 .meal-tags, .hint-list { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .meal-tags { flex: 1; min-width: 0; align-items: center; }
