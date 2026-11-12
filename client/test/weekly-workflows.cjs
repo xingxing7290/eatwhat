@@ -119,6 +119,9 @@ async function main () {
     assert.equal(await draftJump.getByRole('button').count(), 7)
     assert.equal(await currentJump.getByRole('button').count(), 7)
     const lastDraftDay = draftJump.getByRole('button', { name: '定位草稿 2026-11-01 周日' })
+    assert.match(await lastDraftDay.innerText(), /变动 1 餐/)
+    assert.match(await lastDraftDay.getAttribute('aria-description'), /1 餐不同/)
+    assert.ok((await contrast(page, '.draft-card .day-change')).ratio >= 4.5)
     assert.ok((await lastDraftDay.boundingBox()).height >= 44)
     await lastDraftDay.focus()
     await page.keyboard.press('Enter')
@@ -248,6 +251,9 @@ async function main () {
     await tuesdayDialog.getByRole('button', { name: '移除番茄炒蛋' }).click()
     await tuesdayDialog.getByRole('button', { name: '保存到草稿' }).click()
     expectedPlan[1].meals.dinner = []
+    const unchangedDay = draftJump.getByRole('button', { name: '定位草稿 2026-10-27 周二' })
+    assert.match(await unchangedDay.innerText(), /无变动/)
+    assert.match(await unchangedDay.getAttribute('aria-description'), /0 餐不同/)
 
     draftMode = 'mismatch'
     await page.getByRole('button', { name: '生成草稿' }).click()
@@ -274,6 +280,7 @@ async function main () {
     assert.equal(await page.getByText('规则生成草稿').count(), 1, 'uncertain writes must retain the adjusted draft for reference')
     await page.locator('.draft-card').getByText('麻婆豆腐', { exact: true }).waitFor()
     await page.getByText('这份草稿保留供参考，不能直接应用', { exact: false }).waitFor()
+    assert.equal(await draftJump.locator('.day-change').count(), 0, 'an uncertain apply must hide the comparison until the draft is rebased')
     for (const width of [320, 1280]) for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
       await page.setViewportSize({ width, height: 844 })
       await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
