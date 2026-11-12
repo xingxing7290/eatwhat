@@ -102,11 +102,13 @@ async function main () {
       if (failMealList) return route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: '菜品测试读取失败' }) })
       if (url.searchParams.get('search') === 'slow') {
         await new Promise(resolve => { releaseSlowSearch = resolve })
-        data = { data: [meals[0]], total: 1 }
-      } else if (url.searchParams.get('search') === 'fast') data = { data: [meals[1]], total: 1 }
+        data = { data: [meals[0]], total: 1, page: Number(url.searchParams.get('page')), limit: Number(url.searchParams.get('limit')) }
+      } else if (url.searchParams.get('search') === 'fast') data = { data: [meals[1]], total: 1, page: Number(url.searchParams.get('page')), limit: Number(url.searchParams.get('limit')) }
       else if (simulateMealPagination && url.searchParams.has('page')) {
         const pageNumber = Number(url.searchParams.get('page'))
-        data = { data: [pageNumber === 2 && !shrinkMealList ? meals[1] : meals[0]], total: shrinkMealList ? 1 : 9 }
+        const limit = Number(url.searchParams.get('limit'))
+        const all = shrinkMealList ? [meals[0]] : [meals[0], ...Array.from({ length: 7 }, (_, index) => ({ ...meals[0], _id: `pagination-${index}`, name: `分页菜${index}` })), meals[1]]
+        data = { data: all.slice((pageNumber - 1) * limit, pageNumber * limit), total: all.length, page: pageNumber, limit }
       } else if (url.searchParams.get('category')) {
         const filtered = meals.filter(meal => meal.category === url.searchParams.get('category'))
         data = { data: filtered, total: filtered.length }
@@ -594,7 +596,7 @@ async function main () {
   await page.getByRole('button', { name: '重新加载' }).click()
   await page.getByText('还没有相关回忆').waitFor()
   failMemories = true
-  await page.getByRole('button', { name: '记录做过' }).click()
+  await page.getByRole('button', { name: '记录做过', exact: true }).click()
   await page.getByText('无法加载回忆').waitFor()
   assert.equal(await page.getByText('还没有饭后回忆').count(), 0)
   assert.equal(new URL(page.url()).searchParams.get('mealId'), 'meal-a')
