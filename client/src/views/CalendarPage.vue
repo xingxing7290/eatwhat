@@ -45,6 +45,7 @@ const arrangingWish = ref('');
 const nameLoading = ref(false);
 const nameWarning = ref('');
 const wishlistError = ref('');
+const wishlistLoading = ref(false);
 let monthSequence = 0;
 let nameSequence = 0;
 
@@ -116,13 +117,16 @@ const monthSummary = computed(() => calendarDays.value.reduce((summary, date) =>
 
 // 获取该月所有日期的安排
 const loadPartnerWishlist = async (sequence = monthSequence) => {
-  wishlistError.value = '';
+  if (wishlistLoading.value || !active || sequence !== monthSequence) return;
+  wishlistLoading.value = true;
   try {
     const items = await api.wishlist.list({ status: 'open' });
     if (!active || sequence !== monthSequence) return;
     if (!Array.isArray(items) || items.some(item => !item || typeof item.partnerSignal !== 'boolean')) throw new Error('想吃提醒数据不完整或服务器不支持家庭提醒');
     partnerWishlist.value = items.filter(item => item.partnerSignal).slice(0, 3);
+    wishlistError.value = '';
   } catch (error) { if (active && sequence === monthSequence) { partnerWishlist.value = []; wishlistError.value = error?.message === '想吃提醒数据不完整或服务器不支持家庭提醒' ? error.message : '暂时无法读取想吃提醒'; } }
+  finally { if (active && sequence === monthSequence) wishlistLoading.value = false; }
 };
 const wishlistMealId = item => item?.mealId && typeof item.mealId === 'object' && !item.mealId.archived ? item.mealId._id || item.mealId.id : '';
 const wishlistNeedsRecipe = item => item?.mealId?.archived ? '菜品已移入回收站' : item?.mealLinkStatus === 'unavailable' ? '关联菜品不可用' : item?.mealLinkStatus === 'unlinked' ? '尚未关联菜品' : '请先核对关联菜品';
@@ -202,7 +206,7 @@ const fetchMonthSchedules = async (scrollTarget = true) => {
   isLoading.value = true;
   loadError.value = '';
   nameLoading.value = false; nameWarning.value = ''; meals.value = [];
-  wishlistError.value = '';
+  wishlistError.value = ''; wishlistLoading.value = false;
   partnerWishlist.value = [];
   
   try {
@@ -546,7 +550,7 @@ onBeforeUnmount(() => {
       <span>{{ nameLoading ? '正在补全旧版排餐中的菜品名称…' : nameWarning }}</span>
       <el-button v-if="nameWarning && !nameLoading" link type="primary" @click="resolveMealNames(scheduleStore.schedules)">重试菜品名称</el-button>
     </div>
-    <div v-if="!isLoading && !loadError && wishlistError" class="calendar-notice" role="status"><span>{{ wishlistError }}，不影响查看日历。</span><el-button link type="primary" @click="loadPartnerWishlist()">重试提醒</el-button><router-link :to="{ name: 'wishlist' }">查看想吃清单 →</router-link></div>
+    <div v-if="!isLoading && !loadError && (wishlistError || wishlistLoading)" class="calendar-notice" role="status"><span>{{ wishlistLoading ? '正在读取家人想吃提醒，不影响查看日历。' : `${wishlistError}，不影响查看日历。` }}</span><el-button v-if="wishlistError" link type="primary" :disabled="wishlistLoading" @click="loadPartnerWishlist()">{{ wishlistLoading ? '正在重试' : '重试提醒' }}</el-button><router-link :to="{ name: 'wishlist' }">查看想吃清单 →</router-link></div>
 
     <section v-if="partnerWishlist.length" class="partner-wishlist-banner" aria-label="家人最近想吃">
       <div class="wishlist-banner-heading"><strong>家人最近想吃</strong><router-link :to="{ name: 'wishlist' }">查看全部想吃 →</router-link></div>

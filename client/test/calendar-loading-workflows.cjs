@@ -12,7 +12,7 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
     await page.clock.setFixedTime(new Date(2026, 9, 28, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
-    let mode = 'populated'; let failB = true; let wishFailed = false; let wishReadFail = false; let wishHold = false; let releaseWish; let wishFresh = null; let wishes = []; let release; let catalogCalls = 0; let inflight = 0; let peak = 0; const mealCalls = []
+    let mode = 'populated'; let failB = true; let wishFailed = false; let wishListHold = false; let releaseWishList; let wishListCalls = 0; let wishReadFail = false; let wishHold = false; let releaseWish; let wishFresh = null; let wishes = []; let release; let catalogCalls = 0; let inflight = 0; let peak = 0; const mealCalls = []
     const errors = []; page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -36,7 +36,7 @@ async function main () {
         if (id === 'b' && failB) return route.fulfill({ status: 503, json: { error: '单项菜品读取失败' } })
         return route.fulfill({ json: { _id: id, name: mode === 'race' ? (oldRequest ? '旧月份菜名' : '新月份菜名') : id === 'a' ? '旧版菜甲' : '旧版菜乙' } })
       }
-      if (path === '/wishlist') return wishFailed ? route.fulfill({ status: 503, json: { error: '提醒读取失败' } }) : route.fulfill({ json: wishes })
+      if (path === '/wishlist') { wishListCalls++; if (wishListHold) await new Promise(resolve => { releaseWishList = resolve }); return wishFailed ? route.fulfill({ status: 503, json: { error: '提醒读取失败' } }) : route.fulfill({ json: wishes }) }
       if (path === '/wishlist/wish-linked') {
         if (wishHold) await new Promise(resolve => { releaseWish = resolve })
         return wishReadFail ? route.fulfill({ status: 503, json: { error: '心愿读取失败' } }) : route.fulfill({ json: wishFresh })
@@ -77,7 +77,15 @@ async function main () {
     assert.equal(await page.getByRole('region', { name: '家人最近想吃' }).count(), 0, 'incomplete reminder data must not be presented as a reliable empty result')
     assert.equal(await page.getByRole('link', { name: '查看想吃清单 →' }).getAttribute('href'), '/wishlist')
     wishes = [...validWishes, { _id: 'own-wish', title: '我自己的心愿', partnerSignal: false }]
+    wishListHold = true
+    const beforeRetry = wishListCalls
     await page.getByRole('button', { name: '重试提醒' }).click()
+    await page.getByText('正在读取家人想吃提醒，不影响查看日历。').waitFor()
+    assert.equal(await page.getByRole('button', { name: '正在重试' }).isDisabled(), true)
+    for (let i = 0; i < 100 && !releaseWishList; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseWishList, 'function')
+    assert.equal(wishListCalls, beforeRetry + 1, 'retry should issue one request')
+    wishListHold = false; releaseWishList()
     await page.getByRole('link', { name: '在想吃清单中核对先关联菜' }).waitFor()
     assert.equal(await page.getByText('我自己的心愿').count(), 0, 'personal wishes must not be presented as a partner reminder')
     await page.setViewportSize({ width: 390, height: 844 })
