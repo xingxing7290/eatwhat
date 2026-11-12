@@ -22,7 +22,7 @@ async function main () {
         if (mode === 'hold') { probeStarted(); await new Promise(resolve => { releaseProbe = resolve }) }
         return route.fulfill({ json: { supportsHouseholdScope: true, householdId: req.headers()['x-eatwhat-household'] } })
       }
-      if (path === '/api/meals' && req.method() === 'POST') { writes++; sentHeader = req.headers()['x-eatwhat-household']; return route.fulfill({ status: 201, json: { _id: 'created', name: '我的草稿' } }) }
+      if (path === '/api/meals' && req.method() === 'POST') { writes++; sentHeader = req.headers()['x-eatwhat-household']; return route.fulfill({ status: 201, json: { _id: 'created', name: '我的草稿', householdId: household, ingredients: [], steps: [] } }) }
       reads++
       return route.fulfill({ json: { data: [], total: 0 } })
     })
