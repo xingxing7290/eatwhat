@@ -11,11 +11,14 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; let releaseMemories; let slowMemories = true; let emptyMemories = false; let failReports = true; let reportMode = 'unknown'; let reportWrites = 0; let malformed = false; let longRecipe = false; let scheduleWrites = 0
+    const errors = []; let releaseMemories; let slowMemories = true; let emptyMemories = false; let failReports = true; let reportMode = 'unknown'; let reportWrites = 0; let malformed = false; let longRecipe = false; let scheduleWrites = 0; let wallAvailable = false; let holdWall = false; let releaseWall
     const meal = { _id: 'meal-a', name: '测试菜', imageUrl: 'http://127.0.0.1/uploads/old.jpg', ingredients: ['鸡蛋', { name: '番茄', amount: '2个' }], steps: [{ description: '切好', imageUrl: '/broken-step.png' }, '炒熟'], photos: [image, '/broken-wall.png'], tags: [], healthTags: [] }
     const memory = { _id: 'memory-a', date: '2026-10-28', mealType: 'dinner', title: '好吃的一餐', note: '很满足', mood: '开心', photos: [], mealIds: [meal], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: 'v1', updatedAt: '2026-10-28T12:00:00.000Z' } }
     page.on('pageerror', error => errors.push(error.message))
-    await page.route('**/broken-*.png', route => route.fulfill({ status: 404, body: '' }))
+    await page.route('**/broken-*.png', async route => {
+      if (holdWall && route.request().url().endsWith('/broken-wall.png')) await new Promise(resolve => { releaseWall = resolve })
+      return wallAvailable && route.request().url().endsWith('/broken-wall.png') ? route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>' }) : route.fulfill({ status: 404, body: '' })
+    })
     await page.route('**/uploads/old.jpg', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
@@ -101,6 +104,27 @@ async function main () {
     await page.keyboard.press('ArrowRight')
     await viewer.getByText('2 / 2').waitFor()
     await viewer.locator('img[alt="图片暂不可用"]').waitFor()
+    await viewer.getByText('照片暂时无法加载，菜谱内容不会改变。').waitFor()
+    await viewer.getByText('也可使用键盘 ← → 切换照片').waitFor()
+    await viewer.getByRole('button', { name: '重试这张照片' }).focus()
+    await page.keyboard.press('ArrowLeft')
+    await viewer.getByText('1 / 2').waitFor()
+    await page.waitForFunction(() => document.activeElement?.classList.contains('photo-preview'))
+    await page.keyboard.press('ArrowRight')
+    await viewer.getByText('照片暂时无法加载，菜谱内容不会改变。').waitFor()
+    holdWall = true
+    await viewer.getByRole('button', { name: '重试这张照片' }).focus(); await page.keyboard.press('Enter')
+    await viewer.getByText('正在重试这张照片，菜谱内容不会改变。').waitFor()
+    assert.equal(await viewer.getByRole('button', { name: '正在重试…' }).getAttribute('aria-disabled'), 'true')
+    for (let i = 0; i < 100 && !releaseWall; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseWall, 'function')
+    holdWall = false; releaseWall()
+    await viewer.getByText('照片暂时无法加载，菜谱内容不会改变。').waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), '重试这张照片')
+    wallAvailable = true; await page.keyboard.press('Enter')
+    await viewer.getByText('照片暂时无法加载，菜谱内容不会改变。').waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.classList.contains('photo-preview'))
+    assert.equal(reportWrites, 0, 'retrying a photo must not submit feedback')
     await page.keyboard.press('Escape'); await viewer.waitFor({ state: 'hidden' })
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '查看第 2 张菜品照片')
     await page.getByRole('button', { name: '查看第 1 步照片' }).click()

@@ -43,6 +43,11 @@ const reportMatches = ref(0);
 const reportListTruncated = ref(false);
 const reportError = ref('');
 const viewedPhoto = ref(null);
+const previewUnavailable = ref(false);
+const previewRetrying = ref(false);
+const previewAttempt = ref(0);
+const previewImage = ref(null);
+const previewRetryButton = ref(null);
 const scheduleDialog = ref(false);
 const scheduleDate = ref('');
 const scheduleType = ref('dinner');
@@ -192,10 +197,25 @@ const load = async () => {
 };
 const fallbackImage = event => handleUploadedImageError(event, defaultImage);
 const fallbackCover = event => { if (!event.target?.isConnected) return; fallbackImage(event); if (event.target.dataset.placeholder === '1') coverFailed.value = true; };
-const showPhoto = (images, index, title, event, gallery = false) => { if (images.length && index >= 0 && index < images.length) { photoFocus = { origin: event.currentTarget, index: gallery ? index : null }; viewedPhoto.value = { images, index, title }; } };
+const resetPreview = image => { previewUnavailable.value = imageFor(image) === defaultImage; previewRetrying.value = false; previewAttempt.value = 0; };
+const showPhoto = (images, index, title, event, gallery = false) => { if (images.length && index >= 0 && index < images.length) { resetPreview(images[index]); photoFocus = { origin: event.currentTarget, index: gallery ? index : null }; viewedPhoto.value = { images, index, title }; } };
+const previewError = event => {
+  const image = event.target;
+  if (!image?.isConnected || Number(image.dataset.attempt) !== previewAttempt.value) return;
+  fallbackImage(event);
+  if (image.dataset.placeholder === '1') { previewUnavailable.value = true; previewRetrying.value = false; }
+};
+const previewLoaded = async event => {
+  const image = event.target;
+  if (!image?.isConnected || image.dataset.placeholder === '1' || !viewedPhoto.value || imageFor(viewedPhoto.value.images[viewedPhoto.value.index]) === defaultImage || Number(image.dataset.attempt) !== previewAttempt.value) return;
+  const restoreFocus = document.activeElement === previewRetryButton.value?.$el;
+  previewUnavailable.value = false; previewRetrying.value = false;
+  if (restoreFocus) { await nextTick(); if (viewedPhoto.value && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true }); }
+};
+const retryPreview = () => { if (!viewedPhoto.value || previewRetrying.value || imageFor(viewedPhoto.value.images[viewedPhoto.value.index]) === defaultImage) return; previewRetrying.value = true; previewAttempt.value++; };
 const closePhoto = () => { viewedPhoto.value = null; };
 const restorePhotoFocus = async () => { const target = photoFocus; photoFocus = null; await new Promise(resolve => setTimeout(resolve, 0)); if (!target || photoFocus || !target.origin?.isConnected) return; const active = document.activeElement; if (active && active !== document.body && active !== target.origin && active.isConnected) return; (target.index === null ? target.origin : photoGrid.value?.querySelectorAll('button')[target.index] || target.origin).focus(); };
-const movePhoto = direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.images.length) { viewedPhoto.value.index = next; if (photoFocus && photoFocus.index !== null) photoFocus.index = next; } };
+const movePhoto = async direction => { if (!viewedPhoto.value) return; const next = viewedPhoto.value.index + direction; if (next >= 0 && next < viewedPhoto.value.images.length) { const viewer = viewedPhoto.value; const restoreFocus = document.activeElement === previewRetryButton.value?.$el; viewer.index = next; resetPreview(viewer.images[next]); if (photoFocus && photoFocus.index !== null) photoFocus.index = next; if (restoreFocus) { await nextTick(); if (viewedPhoto.value === viewer && viewer.index === next && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true }); } } };
 const onPhotoKey = event => {
   if (!viewedPhoto.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
   const target = event.target instanceof Element ? event.target : null;
@@ -331,7 +351,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
         <p>{{ meal.tips }}</p>
       </el-card>
     </template>
-    <el-dialog :model-value="!!viewedPhoto" title="菜品照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) closePhoto() }" @close="closePhoto" @close-auto-focus="restorePhotoFocus"><template v-if="viewedPhoto"><img :key="`${viewedPhoto.index}-${viewedPhoto.images[viewedPhoto.index]}`" class="photo-preview" :src="imageFor(viewedPhoto.images[viewedPhoto.index])" :alt="viewedPhoto.title" @error="fallbackImage" /><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张菜品照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.images.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.images.length - 1" aria-label="下一张菜品照片" @click="movePhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
+    <el-dialog :model-value="!!viewedPhoto" title="菜品照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) closePhoto() }" @close="closePhoto" @close-auto-focus="restorePhotoFocus"><template v-if="viewedPhoto"><img ref="previewImage" :key="`${viewedPhoto.index}-${viewedPhoto.images[viewedPhoto.index]}-${previewAttempt}`" :data-attempt="previewAttempt" class="photo-preview" tabindex="-1" :src="imageFor(viewedPhoto.images[viewedPhoto.index])" :alt="viewedPhoto.title" @load="previewLoaded" @error="previewError" /><el-alert v-if="previewUnavailable" class="photo-load-alert" type="warning" :closable="false" show-icon :title="previewRetrying ? '正在重试这张照片，菜谱内容不会改变。' : '照片暂时无法加载，菜谱内容不会改变。'"><el-button v-if="imageFor(viewedPhoto.images[viewedPhoto.index]) !== defaultImage" ref="previewRetryButton" link type="primary" :aria-disabled="previewRetrying" @click="retryPreview">{{ previewRetrying ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张菜品照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.images.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.images.length - 1" aria-label="下一张菜品照片" @click="movePhoto(1)">下一张</el-button></div><p v-if="viewedPhoto.images.length > 1" class="photo-key-hint">也可使用键盘 ← → 切换照片</p><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
 </template>
 
@@ -389,6 +409,8 @@ h1 { margin: 0; color: var(--text-primary); }
 .memory-pagination { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 12px; color: var(--text-primary); font-size: 13px; }
 .memory-pagination :deep(.el-button) { min-height: 44px; margin: 0; }
 .photo-preview { display: block; width: 100%; max-height: 420px; object-fit: contain; border-radius: 16px; background: var(--bg-secondary); }
+.photo-load-alert { margin-top: 12px; }
+.photo-key-hint { margin: 0 0 12px; color: var(--text-secondary); text-align: center; font-size: 13px; }
 .photo-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 12px 0; color: var(--text-secondary); font-size: 13px; }
 .photo-nav .el-button { margin: 0; min-height: 44px; }
 .tips-card p { white-space: pre-wrap; }
