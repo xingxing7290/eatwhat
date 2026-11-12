@@ -448,4 +448,9 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 :global(html.dark) .generation-alert { --notice-ink: #ffe4bd; background: #543b29; }
 :global(html.dark .shopping-page) { --shopping-accent: var(--secondary-color); }
 @media (max-width: 720px) { .list-tools { padding: 18px; } .list-heading { align-items: stretch; flex-direction: column; } .list-heading :deep(.el-input) { width: 100%; } .list-heading :deep(.el-input__wrapper) { min-height: 44px; } }
+@media (max-width: 400px) {
+  .item-row { align-items: stretch; flex-direction: column; gap: 0; }
+  .item-row :deep(.el-checkbox) { width: 100%; box-sizing: border-box; }
+  .item-actions { justify-content: flex-end; }
+}
 </style>
