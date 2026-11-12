@@ -9,6 +9,7 @@ async function main () {
   const html = fs.readFileSync(path.join(__dirname, '../../server/public/guest-order.html'))
   const server = http.createServer((req, res) => { res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' }); res.end(html) })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  const base = `http://127.0.0.1:${server.address().port}`
   const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROME_PATH || undefined })
   try {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
@@ -19,6 +20,14 @@ async function main () {
     meals[0].imageUrl = '   '
     meals[2].imageUrl = '/broken-guest-photo'
     meals[3].imageUrl = '/valid-guest-photo'
+    meals[5].imageUrl = 'http://127.0.0.1/uploads/guest-old.png?v=1'
+    meals[6].imageUrl = 'https://external.example/uploads/guest-external.png'
+    const uploadRequests = []
+    await page.route('**/uploads/**', route => {
+      const url = new URL(route.request().url()); uploadRequests.push(url.href)
+      if (url.origin === base && url.pathname === '/api/uploads/guest-old.png') return route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="9" height="9"/>' })
+      return route.fulfill({ status: 404, body: '' })
+    })
     await page.route('**/broken-guest-photo', route => route.fulfill({ status: 404, body: '' }))
     await page.route('**/valid-guest-photo', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>' }))
     const longName = 'LongDishName'.repeat(8); meals[1].name = longName
@@ -66,6 +75,16 @@ async function main () {
     await page.waitForFunction(() => [...document.querySelectorAll('.meal')].find(card => card.textContent.includes('菜品0003'))?.querySelector('img')?.naturalWidth === 8)
     await goodImage.scrollIntoViewIfNeeded()
     assert.equal(await goodImage.evaluate(img => { const box = img.getBoundingClientRect(); return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === img }), true, 'loaded photos must appear above the placeholder')
+    const legacyCard = page.locator('.meal').filter({ hasText: '菜品0005' })
+    await legacyCard.scrollIntoViewIfNeeded()
+    await page.waitForFunction(() => [...document.querySelectorAll('.meal')].find(card => card.textContent.includes('菜品0005'))?.querySelector('img')?.naturalWidth === 9)
+    assert.ok(uploadRequests.includes(`${base}/uploads/guest-old.png?v=1`), 'same-host legacy upload must use the current origin')
+    assert.ok(uploadRequests.includes(`${base}/api/uploads/guest-old.png?v=1`), 'failed local upload must retry the API route')
+    const externalCard = page.locator('.meal').filter({ hasText: '菜品0006' })
+    await externalCard.scrollIntoViewIfNeeded()
+    await externalCard.locator('.photo img').waitFor({ state: 'detached' })
+    assert.ok(uploadRequests.includes('https://external.example/uploads/guest-external.png'))
+    assert.equal(uploadRequests.some(url => url.startsWith(base) && url.includes('guest-external.png')), false, 'external images must never be retried against the local server')
     assert.equal(await page.getByText('第 1 / 28 页').count(), 2)
     await page.setViewportSize({ width: 320, height: 844 })
     const longCard = page.locator('.meal').filter({ hasText: longName })

@@ -373,7 +373,10 @@
         if (typeof value !== 'string' || !value.trim()) return '';
         try {
           const url = new URL(value, location.origin);
-          return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
+          if (!['http:', 'https:'].includes(url.protocol)) return '';
+          const upload = url.pathname.startsWith('/uploads/') || url.pathname.startsWith('/api/uploads/');
+          if (upload && url.hostname === location.hostname && !url.port && url.origin !== location.origin) return `${location.origin}${url.pathname}${url.search}${url.hash}`;
+          return url.href;
         } catch (_) { return ''; }
       }
 
@@ -491,7 +494,13 @@
         const imageUrl = safeImageUrl(meal.imageUrl);
         if (imageUrl) {
           const image = document.createElement('img'); image.loading = 'lazy'; image.alt = meal.name || '菜品'; image.src = imageUrl;
-          image.addEventListener('error', () => image.remove());
+          image.addEventListener('error', () => {
+            const url = new URL(image.src);
+            if (url.origin === location.origin && url.pathname.startsWith('/uploads/') && image.dataset.retried !== '1') {
+              image.dataset.retried = '1'; image.src = `${location.origin}/api${url.pathname}${url.search}${url.hash}`; return;
+            }
+            image.remove();
+          });
           photo.appendChild(image);
         }
         const badge = document.createElement('span'); badge.className = 'selected-badge'; badge.textContent = item?.quantity || '';
