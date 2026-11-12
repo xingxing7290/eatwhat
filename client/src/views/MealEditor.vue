@@ -63,6 +63,9 @@ const newStep = reactive({ description: '', imageFile: null, imagePreview: '' })
 // Key by the step object, so undo follows the step when it is reordered.
 const stepImageUndo = reactive(new WeakMap());
 const stepKeys = new WeakMap();
+const ingredientKeys = new WeakMap();
+let nextIngredientKey = 0;
+const ingredientKey = item => { if (!ingredientKeys.has(item)) ingredientKeys.set(item, `ingredient-${++nextIngredientKey}`); return ingredientKeys.get(item); };
 const stepsContainer = ref(null);
 let nextStepKey = 0;
 const stepKey = step => {
@@ -122,6 +125,20 @@ const undoIngredientRemoval = async () => {
   form.ingredients.splice(index, 0, removed.item);
   await nextTick();
   if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) ingredientList.value?.querySelectorAll('.ingredient-item input[aria-label$="项食材名称"]')[index]?.focus();
+};
+const moveIngredient = async (index, direction) => {
+  const target = index + direction;
+  if (target < 0 || target >= form.ingredients.length) return;
+  const source = document.activeElement;
+  const [item] = form.ingredients.splice(index, 1);
+  form.ingredients.splice(target, 0, item);
+  const key = ingredientKey(item);
+  await nextTick();
+  const focused = document.activeElement;
+  if (focused && focused !== document.body && focused !== source && focused.isConnected) return;
+  const row = Array.from(ingredientList.value?.querySelectorAll('[data-ingredient-key]') || []).find(element => element.dataset.ingredientKey === key);
+  const preferred = row?.querySelector(direction < 0 ? '[data-ingredient-action="up"]' : '[data-ingredient-action="down"]');
+  (preferred && !preferred.disabled ? preferred : row?.querySelector('input'))?.focus({ preventScroll: true });
 };
 const addStep = () => {
   if (!newStep.description.trim() && !newStep.imageFile) return ElMessage.warning('请输入做法步骤或选择步骤图');
@@ -352,7 +369,7 @@ watch(() => route.params.id, load, { immediate: true });
         <el-card><template #header>食材</template>
           <p class="ingredient-help">可直接修改已有食材和用量。保存后，已生成的购物清单不会自动更新。</p>
           <div class="inline-form"><el-input v-model="newIngredient.name" placeholder="食材" aria-label="新食材名称" /><el-input v-model="newIngredient.amount" placeholder="用量" aria-label="新食材用量" /><el-button type="primary" aria-label="添加食材" @click="addIngredient"><el-icon><Plus /></el-icon></el-button></div>
-          <div v-if="form.ingredients.length" ref="ingredientList" class="ingredient-list"><div v-for="(item, index) in form.ingredients" :key="index" class="ingredient-item"><label><span>食材 {{ index + 1 }}</span><el-input v-model="item.name" :aria-label="`第 ${index + 1} 项食材名称`" /></label><label><span>用量</span><el-input v-model="item.amount" :aria-label="`第 ${index + 1} 项食材用量`" placeholder="可选" /></label><el-button type="danger" circle :aria-label="`删除第 ${index + 1} 项食材`" @click="removeIngredient(index, $event)"><el-icon><Delete /></el-icon></el-button></div></div>
+          <div v-if="form.ingredients.length" ref="ingredientList" class="ingredient-list"><div v-for="(item, index) in form.ingredients" :key="ingredientKey(item)" class="ingredient-item" :data-ingredient-key="ingredientKey(item)"><label><span>食材 {{ index + 1 }}</span><el-input v-model="item.name" :aria-label="`第 ${index + 1} 项食材名称`" /></label><label><span>用量</span><el-input v-model="item.amount" :aria-label="`第 ${index + 1} 项食材用量`" placeholder="可选" /></label><div class="ingredient-actions"><el-button v-if="form.ingredients.length > 1" data-ingredient-action="up" :disabled="index === 0" :aria-label="`上移第 ${index + 1} 项食材`" @click="moveIngredient(index, -1)">↑</el-button><el-button v-if="form.ingredients.length > 1" data-ingredient-action="down" :disabled="index === form.ingredients.length - 1" :aria-label="`下移第 ${index + 1} 项食材`" @click="moveIngredient(index, 1)">↓</el-button><el-button type="danger" circle :aria-label="`删除第 ${index + 1} 项食材`" @click="removeIngredient(index, $event)"><el-icon><Delete /></el-icon></el-button></div></div></div>
           <el-empty v-else description="暂无食材" />
           <div v-if="removedIngredients.length" class="photo-undo" role="status"><span>已移除 {{ removedIngredients.length }} 项食材，保存后生效。</span><el-button ref="undoIngredientButton" link type="primary" @click="undoIngredientRemoval">撤销最近移除的食材</el-button></div>
         </el-card>
@@ -389,8 +406,9 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .ingredient-item { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; align-items: end; gap: 10px; padding: 12px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); }
 .ingredient-item label { display: grid; min-width: 0; gap: 6px; color: var(--text-primary); font-size: 13px; }
 .ingredient-item :deep(.el-input__wrapper) { min-height: 44px; }
-.ingredient-item .el-button { min-width: 44px; min-height: 44px; margin: 0; }
-@media (max-width: 480px) { .ingredient-item { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ingredient-item .el-button { grid-column: 1 / -1; justify-self: end; } }
+.ingredient-actions { display: flex; justify-content: flex-end; gap: 6px; }
+.ingredient-actions .el-button { min-width: 44px; min-height: 44px; margin: 0; }
+@media (max-width: 600px) { .ingredient-item { grid-template-columns: repeat(2, minmax(0, 1fr)); } .ingredient-actions { grid-column: 1 / -1; } }
 .cover-box { position: relative; width: 100%; height: 260px; padding: 0; border: 1px dashed var(--border-color); border-radius: 10px; display: flex; align-items: center; justify-content: center; color: var(--text-primary); overflow: hidden; background: var(--bg-secondary); cursor: pointer; font: inherit; }
 .cover-box:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 3px; }
 .cover-box:disabled { cursor: not-allowed; opacity: .65; }
