@@ -90,6 +90,7 @@ const validDate = value => {
   const time = Date.parse(`${value}T00:00:00Z`);
   return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value;
 };
+const calendarSupportsDate = value => validWeekLink(value) && Number(value.slice(0, 4)) >= 2000 && Number(value.slice(0, 4)) <= 2100;
 const periodOf = item => !validDate(item?.date) ? 'unknown' : item.date >= today.value ? 'upcoming' : 'past';
 const periodNames = { upcoming: '即将到来', past: '往日菜单', unknown: '日期待核对' };
 const periodOptions = computed(() => [{ key: 'all', label: '全部' }, { key: 'upcoming', label: '即将到来' }, { key: 'past', label: '已过去' }, ...((boardMode.value ? boardCounts.value.unknown > 0 || period.value === 'unknown' : menus.value.some(item => periodOf(item) === 'unknown')) ? [{ key: 'unknown', label: '日期待核对' }] : [])]);
@@ -484,7 +485,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
       <el-card v-for="item in group.items" :key="item._id || item.id" class="menu-card" :data-menu-id="item._id || item.id">
         <div class="card-top"><div><h2>{{ item.title }}</h2><p>{{ item.date }} · {{ item.theme || '温馨菜单' }}</p></div><div class="card-actions"><el-button link type="primary" :disabled="loading || !!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="loading || !!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
         <span class="day-badge">{{ dayLabel(item) }}</span>
-        <router-link v-if="validWeekLink(item.date)" class="menu-calendar-link" :to="{ name: 'calendar', query: { date: item.date } }" :aria-label="`查看${item.title || '纪念日菜单'}的${item.date}日历安排`">查看当天日历 →</router-link>
+        <router-link v-if="calendarSupportsDate(item.date)" class="menu-calendar-link" :to="{ name: 'calendar', query: { date: item.date } }" :aria-label="`查看${item.title || '纪念日菜单'}的${item.date}日历安排`">查看当天日历 →</router-link><span v-else-if="validDate(item.date)" class="calendar-range-note">当天日历支持 2000–2100 年</span>
         <p class="desc">{{ item.description || '没有备注，也可以是一份默契。' }}</p>
         <p v-if="item.supportsUnavailableMealVisibility && Object.keys(mealTypeText).some(key => item.meals?.[key]?.some(meal => meal === null))" class="unavailable-note">部分菜品不可用，原有引用仍保留在菜单中。</p>
         <div v-if="item.photos?.length" class="photos"><button v-for="(photo, index) in item.photos" :key="`${index}-${photo}`" type="button" class="photo-button" :aria-label="`查看${item.title || '纪念日'}的第 ${index + 1} 张照片`" @click="openPhoto(item, index)"><img :key="photoVersion(photo)" :src="imageFor(photo)" alt="" @error="imageError" /></button></div>
@@ -537,6 +538,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
 .empty-actions .el-button, .empty-action { min-height: 44px; margin: 0; }
 .calendar-explanation { font-size: 13px; line-height: 1.6; }
 .menu-calendar-link { display: inline-flex; align-items: center; min-height: 44px; margin-left: 10px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.calendar-range-note { display: inline-block; margin: 8px 0 0 10px; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
 .menu-calendar-link:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 2px; }
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .anniversary-page { display: flex; flex-direction: column; gap: 18px; }
