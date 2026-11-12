@@ -601,8 +601,8 @@ onBeforeUnmount(() => {
     </div>
     
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载月度安排：${loadError}`"><el-button link type="primary" @click="fetchMonthSchedules()">重新加载</el-button></el-alert>
-    <div v-if="!isLoading && !loadError" class="month-summary" aria-label="本月安排概览">
-      <span class="month-summary-title">本月安排概览</span>
+    <div v-if="!isLoading && !loadError" class="month-summary" aria-label="所选月份安排概览">
+      <span class="month-summary-title">{{ currentMonthText }}安排概览</span>
       <span>已显示 <strong>{{ monthSummary.days }}</strong> 天安排</span>
       <span>共 <strong>{{ monthSummary.slots }}</strong> 个餐次</span>
       <small>以最近一次读取为准</small>
