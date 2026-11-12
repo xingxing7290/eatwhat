@@ -332,6 +332,20 @@ const setStatus = (item, status) => {
   if (!validWishVersion(item)) return ElMessage.warning('服务器未提供有效的记录版本，暂时不能安全修改状态');
   return runAction(item, '状态更新', () => api.wishlist.updateStatus(item._id, status, item.editVersion), result => result?._id === item._id && result.status === status);
 };
+const markPlanned = async item => {
+  if (!item?._id || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value || !validWishVersion(item)) return;
+  const expectedId = item._id;
+  const expectedVersion = { ...item.editVersion };
+  confirmingId.value = expectedId;
+  try {
+    await ElMessageBox.confirm('这只会把想吃记录标记为已安排，不会在日历中创建餐次。如需实际排餐，请使用“选择日期安排”或“安排今天晚餐”。', '仅标记清单状态？', { type: 'warning', confirmButtonText: '仅标记状态', cancelButtonText: '返回' });
+  } catch (_) { return; }
+  finally { confirmingId.value = ''; }
+  if (!alive || busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
+  const latest = items.value.find(row => row._id === expectedId);
+  if (!latest || latest.status !== 'open' || !sameVersion(latest.editVersion, expectedVersion)) return ElMessage.warning('想吃记录已变化，请先刷新核对');
+  return setStatus(latest, 'planned');
+};
 const remove = async (item) => {
   if (busy.value || loading.value || loadError.value || actionIssue.value || actionLocked.value) return;
   if (pendingLinks[item._id] || uncertainCreates[item._id]) return ElMessage.warning('请先核对菜谱创建或关联结果，再删除记录');
@@ -529,7 +543,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
             <p v-if="item.mealId?.archived === true" class="pending-note">关联菜谱已移入回收站，请恢复后再安排。</p>
             <el-button v-if="item.mealId" size="small" :aria-description="`针对${item.title}`" :disabled="busy || loading || !!actionIssue || actionLocked || !canSchedule(item)" @click="arrangeToday(item)"><el-icon><Calendar /></el-icon>安排今天晚餐</el-button>
             <el-button v-if="item.mealId" size="small" :aria-description="`针对${item.title}`" :disabled="busy || loading || !!actionIssue || actionLocked || !canSchedule(item)" @click="openSchedule(item)">选择日期安排</el-button>
-            <el-button v-if="item.status === 'open'" size="small" :aria-description="`针对${item.title}`" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'planned')">标记已安排</el-button>
+            <el-button v-if="item.status === 'open'" size="small" :aria-description="`仅更改${item.title}的清单状态，不会修改日历`" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="markPlanned(item)">标记已安排</el-button>
             <el-button v-if="item.status !== 'done'" size="small" type="success" :aria-description="`针对${item.title}`" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'done')"><el-icon><Check /></el-icon>完成</el-button>
             <el-button v-if="item.status !== 'open'" size="small" :aria-description="`针对${item.title}`" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item)" @click="setStatus(item, 'open')">重新想吃</el-button>
             <el-button size="small" type="danger" :disabled="busy || loading || !!actionIssue || actionLocked || !validWishVersion(item) || !!pendingLinks[item._id] || !!uncertainCreates[item._id]" :aria-label="`删除${item.title}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button>
