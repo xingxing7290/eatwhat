@@ -36,6 +36,10 @@ async function main () {
             const box = await checkbox.boundingBox()
             assert.ok(box.width >= 44 && box.height >= 44, `${width} ingredient checkbox must have a usable touch target`)
           }
+          for (const selector of ['.group-jump > span', '.group-jump button']) {
+            const result = await contrast(page, selector)
+            assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${result.ratio}`)
+          }
           assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
         }
       }

@@ -91,6 +91,12 @@ const filteredItems = computed(() => {
   });
 });
 const groups = computed(() => Object.keys(categoryText).map(key => ({ key, label: categoryText[key], items: filteredItems.value.filter(item => categoryKey(item) === key) })).filter(group => group.items.length));
+const jumpToGroup = key => {
+  const target = Array.from(groupGrid.value?.querySelectorAll('[data-shopping-group]') || []).find(element => element.dataset.shoppingGroup === key);
+  if (!target) return;
+  target.scrollIntoView({ block: 'start', behavior: 'auto' });
+  target.focus({ preventScroll: true });
+};
 const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; quantityOnly.value = false; await nextTick(); searchInput.value?.focus(); };
 const editDirty = computed(() => !!editingItem.value && JSON.stringify(editForm) !== editInitial.value);
 const editLatest = computed(() => editingItem.value ? (list.value.items || []).find(item => item._id === editingItem.value.id) : null);
@@ -350,10 +356,14 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
       <p class="filter-count-note">数量为所选周全部食材，不受搜索或其他筛选影响。</p>
       <div class="filter-buttons"><button type="button" :class="{ active: quantityOnly }" :aria-pressed="quantityOnly" @click="quantityOnly = !quantityOnly">仅看用量待核对（{{ quantityReviewCount }}）</button></div>
       <button v-if="filtersActive && filteredItems.length" type="button" class="filter-reset" @click="resetFilters">清除筛选</button>
+      <nav v-if="groups.length > 1" class="group-jump" aria-label="快速定位食材分类">
+        <span>定位分类</span>
+        <button v-for="group in groups" :key="group.key" type="button" :aria-label="`定位${group.label}，当前显示 ${group.items.length} 项`" @click="jumpToGroup(group.key)">{{ group.label }} <small>{{ group.items.length }}</small></button>
+      </nav>
     </section>
     <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加"><el-button type="primary" class="empty-add" :disabled="disabled" @click="focusAddItem">填写新食材 ↓</el-button></el-empty>
     <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><div class="empty-filter-actions"><el-button type="primary" @click="searchInput?.focus()">调整搜索</el-button><el-button @click="resetFilters">清除筛选</el-button></div></el-empty>
-    <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
+    <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key" class="shopping-group" :data-shopping-group="group.key" tabindex="-1"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
 <el-card><template #header><strong>添加食材</strong></template><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :aria-invalid="addNameError ? 'true' : undefined" :aria-describedby="addNameError ? 'add-name-error' : undefined" :disabled="disabled" @input="addNameError = false" @keydown.enter="addItemOnEnter" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div><p v-if="addNameError" id="add-name-error" class="field-error" role="alert">请输入食材名称，数量和分类会保留。</p></el-card>
     </template>
     <el-dialog v-model="copyDialogVisible" title="手动复制待买清单" width="min(560px, 92vw)"><p class="copy-help">浏览器未允许自动复制。以下是点击时的快照；清单之后的变化不会自动更新。</p><el-input ref="snapshotInput" :model-value="copiedSnapshot" type="textarea" :rows="10" readonly aria-label="待买清单快照" /><template #footer><el-button @click="selectSnapshot">全选内容</el-button><el-button type="primary" @click="copyDialogVisible = false">完成</el-button></template></el-dialog>
@@ -391,6 +401,12 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .progress-loading { padding: 18px 24px; border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-secondary); color: var(--text-primary); }
 .filter-reset { min-height: 44px; margin-top: 8px; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .filter-reset:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.group-jump { display: flex; align-items: center; gap: 8px; max-width: 100%; overflow-x: auto; margin-top: 14px; padding: 3px 2px 8px; }
+.group-jump > span { flex: none; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+.group-jump button { flex: none; min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); cursor: pointer; }
+.group-jump small { font-size: 12px; }
+.group-jump button:focus-visible, .shopping-group:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.shopping-group { scroll-margin-top: 90px; }
 .generation-context { padding: 14px 20px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; }
 .generation-context p { margin: 5px 0 0; color: var(--text-secondary); line-height: 1.6; }
 .edit-note { color: var(--text-primary); line-height: 1.6; font-size: 13px; }
