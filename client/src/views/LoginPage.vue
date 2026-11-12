@@ -57,7 +57,7 @@
             @input="loginError = ''"
           >
             <template #suffix>
-              <button type="button" class="password-toggle" :disabled="loading" :aria-pressed="showPassword" @click="showPassword = !showPassword">显示密码</button>
+              <button type="button" class="password-toggle" :disabled="loading" :aria-pressed="showPassword" aria-label="显示密码" @click="showPassword = !showPassword">{{ showPassword ? '隐藏密码' : '显示密码' }}</button>
             </template>
           </el-input>
         </el-form-item>
