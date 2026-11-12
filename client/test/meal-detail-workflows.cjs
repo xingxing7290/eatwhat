@@ -155,7 +155,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small', '.ingredient-row.prepared label span']) {
+        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small', '.ingredient-row.prepared label span', '.cooking-timer strong', '.cooking-timer label', '.cooking-timer select', '.cooking-timer output', '.cooking-timer p', '.cooking-timer small', '.cooking-timer button:not([aria-disabled="true"])']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
         }
