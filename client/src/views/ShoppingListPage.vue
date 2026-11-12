@@ -33,6 +33,9 @@ const groupGrid = ref(null);
 const filterGroup = ref(null);
 const searchInput = ref(null);
 const addNameInput = ref(null);
+const editNameInput = ref(null);
+const addNameError = ref(false);
+const editNameError = ref(false);
 const focusAddItem = () => addNameInput.value?.focus();
 const categoryText = { vegetable: '蔬菜', meat_egg: '肉蛋', staple: '主食', seasoning: '调料', other: '其他' };
 const categoryKey = item => Object.prototype.hasOwnProperty.call(categoryText, item.category) ? item.category : 'other';
@@ -139,7 +142,7 @@ const uncertain = computed(() => !!mutationIssue.value);
 const versionAvailable = computed(() => list.value.supportsConditionalUpdates === true && Number.isSafeInteger(list.value.listVersion) && list.value.listVersion >= 0);
 const disabled = computed(() => loading.value || working.value || changingWeek.value || !!loadError.value || !!mutationIssue.value || !versionAvailable.value);
 useDraftGuard({ dirty: draftDirty, busy: working, uncertain, label: '购物清单' });
-const clearForm = () => { form.name = ''; form.amount = ''; form.category = 'other'; editingItem.value = null; editInitial.value = ''; };
+const clearForm = () => { form.name = ''; form.amount = ''; form.category = 'other'; addNameError.value = false; editNameError.value = false; editingItem.value = null; editInitial.value = ''; };
 const acceptList = (result, requestedWeek, previousVersion = null) => {
   if (!result || !Array.isArray(result.items) || result.weekStart !== monday(requestedWeek)) throw new Error('购物清单响应不完整');
   const ids = result.items.map(item => item?._id);
@@ -229,7 +232,8 @@ const generate = async () => {
   } finally { working.value = false; }
 };
 const addItem = async () => {
-  if (!form.name.trim()) return ElMessage.warning('请输入食材名称');
+  if (!form.name.trim()) { addNameError.value = true; ElMessage.warning('请输入食材名称'); await nextTick(); addNameInput.value?.focus(); return; }
+  addNameError.value = false;
   if (!weekStart.value || disabled.value) return;
   const payload = { ...form, name: form.name.trim(), amount: form.amount.trim() };
   const matches = item => item.manual && item.name === payload.name && (item.amount || '') === payload.amount && item.category === payload.category;
@@ -259,6 +263,7 @@ const addItemOnEnter = event => {
 };
 const beginEdit = item => {
   if (disabled.value) return;
+  editNameError.value = false;
   editingItem.value = { id: item._id, manual: !!item.manual };
   Object.assign(editForm, { name: item.name, amount: item.amount || '', category: categoryKey(item), markPending: false });
   editInitial.value = JSON.stringify(editForm);
@@ -268,12 +273,13 @@ const closeEdit = async () => {
   if (editDirty.value) {
     try { await ElMessageBox.confirm('修改尚未保存，关闭后会丢失。', '放弃食材修改？', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); } catch (_) { return; }
   }
-  editingItem.value = null; editInitial.value = '';
+  editingItem.value = null; editInitial.value = ''; editNameError.value = false;
 };
 const saveEdit = async () => {
   if (!editingItem.value || disabled.value) return;
   const name = editForm.name.trim();
-  if (!name) return ElMessage.warning('请输入食材名称');
+  if (!name) { editNameError.value = true; ElMessage.warning('请输入食材名称'); await nextTick(); editNameInput.value?.focus(); return; }
+  editNameError.value = false;
   const id = editingItem.value.id;
   if (!list.value.items.some(item => item._id === id)) return ElMessage.warning('该食材已不存在，请关闭编辑并核对清单');
   const fields = { name, amount: editForm.amount.trim(), category: editForm.category };
@@ -348,7 +354,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
     <el-empty v-if="!loading && !list.items?.length" description="还没有购物项，先从排餐生成或手动添加"><el-button type="primary" class="empty-add" :disabled="disabled" @click="focusAddItem">填写新食材 ↓</el-button></el-empty>
     <el-empty v-else-if="!loading && !filteredItems.length" description="没有符合条件的食材"><div class="empty-filter-actions"><el-button type="primary" @click="searchInput?.focus()">调整搜索</el-button><el-button @click="resetFilters">清除筛选</el-button></div></el-empty>
     <section v-else ref="groupGrid" class="group-grid"><el-card v-for="group in groups" :key="group.key"><template #header><div class="group-heading"><strong>{{ group.label }}</strong><span>{{ group.items.length }} 项</span></div></template><div v-for="item in group.items" :key="item._id" class="item-row" :data-item-id="item._id" :class="{ checked: item.checked }"><el-checkbox :model-value="item.checked" :disabled="disabled" @change="() => toggle(item)"><strong>{{ item.name }}</strong><span>{{ item.amount }}</span><span v-if="!item.manual && item.quantityComplete === false" class="quantity-notice">用量待核对</span></el-checkbox><div class="item-actions"><el-tag size="small" :type="item.manual ? 'warning' : 'info'">{{ item.manual ? '手动' : '排餐' }}</el-tag><el-button link :disabled="disabled" :aria-label="`编辑${item.name}`" @click="beginEdit(item)">编辑</el-button><el-button type="danger" link :disabled="disabled" :aria-label="`删除${item.name}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div></el-card></section>
-    <el-card><template #header><strong>添加食材</strong></template><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div></el-card>
+<el-card><template #header><strong>添加食材</strong></template><div class="add-row"><el-input ref="addNameInput" v-model="form.name" placeholder="食材名称" aria-label="食材名称" :aria-invalid="addNameError ? 'true' : undefined" :aria-describedby="addNameError ? 'add-name-error' : undefined" :disabled="disabled" @input="addNameError = false" @keydown.enter="addItemOnEnter" /><el-input v-model="form.amount" placeholder="数量/备注" aria-label="数量或备注" :disabled="disabled" @keydown.enter="addItemOnEnter" /><el-select v-model="form.category" aria-label="食材分类" :disabled="disabled"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select><el-button type="primary" :disabled="disabled" @click="addItem"><el-icon><Plus /></el-icon>添加食材</el-button></div><p v-if="addNameError" id="add-name-error" class="field-error" role="alert">请输入食材名称，数量和分类会保留。</p></el-card>
     </template>
     <el-dialog v-model="copyDialogVisible" title="手动复制待买清单" width="min(560px, 92vw)"><p class="copy-help">浏览器未允许自动复制。以下是点击时的快照；清单之后的变化不会自动更新。</p><el-input ref="snapshotInput" :model-value="copiedSnapshot" type="textarea" :rows="10" readonly aria-label="待买清单快照" /><template #footer><el-button @click="selectSnapshot">全选内容</el-button><el-button type="primary" @click="copyDialogVisible = false">完成</el-button></template></el-dialog>
     <el-dialog :model-value="!!editingItem" title="编辑购物食材" width="min(520px, 92vw)" :close-on-click-modal="false" :before-close="closeEdit">
@@ -363,7 +369,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
         <template v-else><p>来源菜谱可能已修改或不可用，请打开后核对食材。</p><p v-if="sourceLoading" role="status">正在读取来源菜谱名称…</p><p v-if="sourceError" role="status">部分菜谱名称暂不可用，仍可打开核对。 <button ref="sourceRetryButton" type="button" :disabled="sourceLoading" @click="loadSourceNames">{{ sourceLoading ? '正在重试' : '重试名称' }}</button></p><nav aria-label="购物食材的来源菜谱"><router-link v-for="(id, index) in editSourceMeals" :key="id" :to="{ name: 'MealDetail', params: { id }, query: { shoppingWeek: monday(weekStart) } }" :aria-label="sourceNames[id] ? `查看来源菜谱：${sourceNames[id].name}` : `查看来源菜谱 ${index + 1}`">{{ sourceNames[id] ? sourceNames[id].name : `来源菜谱 ${index + 1}` }}{{ sourceNames[id]?.archived ? '（已归档）' : '' }} →</router-link></nav></template>
       </div>
       <el-form label-position="top" :disabled="disabled">
-        <el-form-item label="食材名称"><el-input v-model="editForm.name" aria-label="编辑食材名称" @keydown.enter="saveEditOnEnter" /></el-form-item>
+        <el-form-item label="食材名称"><el-input ref="editNameInput" v-model="editForm.name" aria-label="编辑食材名称" :aria-invalid="editNameError ? 'true' : undefined" :aria-describedby="editNameError ? 'edit-name-error' : undefined" @input="editNameError = false" @keydown.enter="saveEditOnEnter" /><p v-if="editNameError" id="edit-name-error" class="field-error" role="alert">请输入食材名称，其他修改会保留。</p></el-form-item>
         <el-form-item label="数量或备注"><el-input v-model="editForm.amount" aria-label="编辑数量或备注" @keydown.enter="saveEditOnEnter" /></el-form-item>
         <el-form-item label="分类"><el-select v-model="editForm.category" aria-label="编辑食材分类"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item v-if="editLatest?.checked"><el-checkbox v-model="editForm.markPending">保存后将此项改为待买</el-checkbox><small class="edit-note">不勾选则保留已买状态。</small></el-form-item>
@@ -380,6 +386,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .copy-tools .el-button { min-height: 44px; margin: 0; }
 .empty-filter-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
 .empty-filter-actions .el-button, .empty-add { min-height: 44px; margin: 0; }
+.field-error { flex-basis: 100%; margin: 6px 0 0; color: var(--text-primary); font-size: 13px; font-weight: 700; line-height: 1.5; }
 .copy-tools p, .copy-help { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .progress-loading { padding: 18px 24px; border: 1px solid var(--border-color); border-radius: 20px; background: var(--bg-secondary); color: var(--text-primary); }
 .filter-reset { min-height: 44px; margin-top: 8px; padding: 6px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
