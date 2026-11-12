@@ -10,6 +10,7 @@ import CreateRecoveryNotice from '@/components/CreateRecoveryNotice.vue';
 import { usePhotoRemovalUndo } from '@/composables/usePhotoRemovalUndo';
 import { resolveUploadedImage, handleUploadedImageError } from '@/utils/uploadedImage.mjs';
 import { normalizeMealSearch } from '@/utils/mealSearch.mjs';
+import { currentSessionScope, sessionIsCurrent } from '@/services/sessionScope';
 import placeholder from '@/assets/meal-placeholder.svg';
 
 const memories = ref([]);
@@ -39,6 +40,31 @@ const timelineTotal = ref(0);
 const timelineCapable = ref(false);
 const timelineSearch = ref(initialTimeline.search);
 const timelineSearchInput = ref(null);
+const copyingMemoryId = ref('');
+const manualMemoryLink = ref('');
+const manualMemoryInput = ref(null);
+const memoryLinkNotice = ref('');
+const clearMemoryLink = () => { manualMemoryLink.value = ''; memoryLinkNotice.value = ''; };
+const copyMemoryLink = async item => {
+  const id = String(item?._id || item?.id || '');
+  if (copyingMemoryId.value || !/^[a-z\d_-]{1,128}$/i.test(id) || !validMemoryDate(item?.date)) return;
+  const scope = currentSessionScope();
+  if (!scope.token || !scope.householdId || !sessionIsCurrent(scope)) return ElMessage.warning('请先确认当前登录和小家');
+  const source = document.activeElement;
+  const link = new URL(router.resolve({ name: 'memories', query: { month: item.date.slice(0, 7), edit: id } }).href, window.location.origin).href;
+  copyingMemoryId.value = id; clearMemoryLink();
+  try {
+    await navigator.clipboard.writeText(link);
+    if (alive && sessionIsCurrent(scope)) { memoryLinkNotice.value = '链接已复制。接收者需登录同一小家，打开后将进入该回忆的编辑界面。'; ElMessage.success('回忆链接已复制'); }
+  } catch (_) {
+    if (!alive || !sessionIsCurrent(scope)) return;
+    manualMemoryLink.value = link;
+    memoryLinkNotice.value = '无法自动复制，请手动复制。接收者需登录同一小家，打开后将进入该回忆的编辑界面。';
+    await nextTick();
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused === source || !focused.isConnected) { manualMemoryInput.value?.input?.focus(); manualMemoryInput.value?.input?.select(); }
+  } finally { copyingMemoryId.value = ''; }
+};
 const timelineElement = ref(null);
 const timelinePageStatus = ref(null);
 const timelineMonth = ref(initialTimeline.month);
@@ -581,8 +607,8 @@ const reviewDelete = async () => {
   else { deleteReviewMessage.value = message; deleteIssue.value = ''; deleteTargetId.value = ''; }
   checkingDelete.value = false;
 };
-onMounted(() => { window.addEventListener('keydown', onPhotoKey); load(); });
-onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); if (timelineUrlTimer) clearTimeout(timelineUrlTimer); window.removeEventListener('keydown', onPhotoKey); });
+onMounted(() => { window.addEventListener('keydown', onPhotoKey); window.addEventListener('eatwhat-session-changed', clearMemoryLink); window.addEventListener('eatwhat-session-expired', clearMemoryLink); window.addEventListener('eatwhat-session-adopted', clearMemoryLink); load(); });
+onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mealTimer) clearTimeout(mealTimer); if (timelineTimer) clearTimeout(timelineTimer); if (timelineUrlTimer) clearTimeout(timelineUrlTimer); window.removeEventListener('keydown', onPhotoKey); window.removeEventListener('eatwhat-session-changed', clearMemoryLink); window.removeEventListener('eatwhat-session-expired', clearMemoryLink); window.removeEventListener('eatwhat-session-adopted', clearMemoryLink); });
 </script>
 
 <template>
@@ -606,6 +632,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       <div class="filter-row"><label>月份<input v-model="timelineMonth" type="month" aria-label="按月份筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label><label>餐次<select v-model="timelineMealType" aria-label="按餐次筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部餐次</option><option v-for="(label, key) in mealTypeText" :key="key" :value="key">{{ label }}</option></select></label><label>照片<select v-model="timelinePhotos" aria-label="按照片筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部回忆</option><option value="yes">有照片</option><option value="no">无照片</option></select></label><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="resetFilters">清除筛选</button></div>
       <nav v-if="timelineMonth" class="related-period" aria-label="查看所选月份的其他内容"><div><router-link v-if="relatedAlbumMonth" :to="{ name: 'photoAlbum', query: { month: relatedAlbumMonth } }">查看 {{ relatedAlbumMonth }} 相册 →</router-link><router-link v-if="relatedReviewMonth" :to="{ name: 'review', query: { month: relatedReviewMonth } }">查看 {{ relatedReviewMonth }} 饭桌回顾 →</router-link></div><p v-if="relatedAlbumMonth || relatedReviewMonth">仅保留月份；搜索、餐次和照片筛选不会随跳转保留。</p><p v-if="!relatedReviewMonth">饭桌回顾支持 2000 至 2100 年。</p></nav>
     </section>
+    <div v-if="memoryLinkNotice" class="memory-link-copy" role="status"><span>{{ memoryLinkNotice }}</span><el-input v-if="manualMemoryLink" ref="manualMemoryInput" :model-value="manualMemoryLink" readonly aria-label="手动复制回忆链接" @focus="$event.target.select()" /><button type="button" @click="clearMemoryLink">关闭提示</button></div>
     <div v-loading="loading" ref="timelineElement" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
       <el-empty v-else-if="!loading && !visibleMemories.length" :description="filtersActive ? '没有符合条件的饭后回忆' : '还没有饭后回忆'">
@@ -618,7 +645,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         <h2 tabindex="-1">{{ date }}</h2>
         <div class="memory-grid">
           <el-card v-for="item in items" :key="item._id" class="memory-card">
-            <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><div class="card-actions"><el-button type="primary" link :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title || '这条回忆'}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title || '这条回忆'}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
+            <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><div class="card-actions"><el-button link :loading="copyingMemoryId === String(item._id || item.id)" :disabled="!!copyingMemoryId" :aria-label="`复制${item.title || '这条回忆'}的链接`" @click="copyMemoryLink(item)">复制链接</el-button><el-button type="primary" link :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title || '这条回忆'}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title || '这条回忆'}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
             <h3>{{ item.title || '温馨一餐' }}</h3>
             <p>{{ item.note || '没有文字，也是一段回忆。' }}</p>
             <div class="meta"><span>{{ item.mood || '日常' }}</span><el-rate :model-value="item.rating || 0" disabled size="small" /></div>
@@ -665,6 +692,10 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
 </template>
 
 <style scoped>
+.memory-link-copy { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.memory-link-copy :deep(.el-input) { flex: 1 1 260px; min-width: 0; }
+.memory-link-copy button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.memory-link-copy button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .field-error { width: 100%; margin: 6px 0 0; color: var(--text-primary); font-size: 13px; font-weight: 700; line-height: 1.5; }
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .memory-page { display: flex; flex-direction: column; gap: 18px; }
