@@ -255,10 +255,18 @@ const retryPreview = () => {
   if (!viewedPhoto.value || previewRetrying.value || imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]) === placeholder) return;
   previewRetrying.value = true; previewAttempt.value++;
 };
-const moveMemoryPhoto = direction => {
+const moveMemoryPhoto = async direction => {
   if (!viewedPhoto.value) return;
   const next = viewedPhoto.value.index + direction;
-  if (next >= 0 && next < viewedPhoto.value.photos.length) { viewedPhoto.value.index = next; setPreviewState(viewedPhoto.value.photos[next]); }
+  if (next >= 0 && next < viewedPhoto.value.photos.length) {
+    const viewer = viewedPhoto.value;
+    const restoreFocus = document.activeElement === previewRetryButton.value?.$el;
+    viewer.index = next; setPreviewState(viewer.photos[next]);
+    if (restoreFocus) {
+      await nextTick();
+      if (viewedPhoto.value === viewer && viewer.index === next && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true });
+    }
+  }
 };
 const onPhotoKey = event => {
   if (!viewedPhoto.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
@@ -588,7 +596,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || confirmingMeals" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || confirmingMeals" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
-    <el-dialog :model-value="!!viewedPhoto" title="饭后照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img ref="previewImage" :key="`${viewedPhoto.index}-${viewedPhoto.photos[viewedPhoto.index]}-${previewAttempt}`" :data-attempt="previewAttempt" class="photo-preview" tabindex="-1" :src="imageFor(viewedPhoto.photos[viewedPhoto.index])" :alt="viewedPhoto.title" @load="previewLoaded" @error="previewError" /><el-alert v-if="previewUnavailable" class="photo-load-alert" type="warning" :closable="false" show-icon :title="previewRetrying ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button v-if="imageFor(viewedPhoto.photos[viewedPhoto.index]) !== placeholder" ref="previewRetryButton" link type="primary" :aria-disabled="previewRetrying" @click="retryPreview">{{ previewRetrying ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张回忆照片" @click="moveMemoryPhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.photos.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.photos.length - 1" aria-label="下一张回忆照片" @click="moveMemoryPhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
+    <el-dialog :model-value="!!viewedPhoto" title="饭后照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img ref="previewImage" :key="`${viewedPhoto.index}-${viewedPhoto.photos[viewedPhoto.index]}-${previewAttempt}`" :data-attempt="previewAttempt" class="photo-preview" tabindex="-1" :src="imageFor(viewedPhoto.photos[viewedPhoto.index])" :alt="viewedPhoto.title" @load="previewLoaded" @error="previewError" /><el-alert v-if="previewUnavailable" class="photo-load-alert" type="warning" :closable="false" show-icon :title="previewRetrying ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button v-if="imageFor(viewedPhoto.photos[viewedPhoto.index]) !== placeholder" ref="previewRetryButton" link type="primary" :aria-disabled="previewRetrying" @click="retryPreview">{{ previewRetrying ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张回忆照片" @click="moveMemoryPhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.photos.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.photos.length - 1" aria-label="下一张回忆照片" @click="moveMemoryPhoto(1)">下一张</el-button></div><p v-if="viewedPhoto.photos.length > 1" class="photo-key-hint">也可使用键盘 ← → 切换照片</p><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
 </template>
 
@@ -626,6 +634,7 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .photo-load-alert { margin-top: 12px; }
 .photo-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 12px 0; color: var(--text-secondary); font-size: 13px; }
 .photo-nav .el-button { margin: 0; min-height: 44px; }
+.photo-key-hint { margin: 0 0 12px; color: var(--text-secondary); text-align: center; font-size: 13px; }
 .meal-help { color: var(--text-secondary); line-height: 1.5; }
 .timeline-note { color: var(--text-secondary); font-size: 13px; }
 .memory-filters { --memory-accent: color-mix(in srgb,var(--secondary-color) 45%,#33211a); padding: 22px 24px; border: 1px solid var(--border-color); border-radius: 22px; background: var(--bg-primary); box-shadow: 0 8px 24px var(--shadow-color); }

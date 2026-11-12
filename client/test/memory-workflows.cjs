@@ -68,6 +68,13 @@ async function main () {
     await viewer.getByText('2 / 2').waitFor()
     await viewer.locator('img[alt="图片暂不可用"]').waitFor()
     await viewer.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    await viewer.getByText('也可使用键盘 ← → 切换照片').waitFor()
+    await viewer.getByRole('button', { name: '重试这张照片' }).focus()
+    await page.keyboard.press('ArrowLeft')
+    await viewer.getByText('1 / 2').waitFor()
+    await page.waitForFunction(() => document.activeElement?.classList.contains('photo-preview'))
+    await page.keyboard.press('ArrowRight')
+    await viewer.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
     holdImage = true
     await viewer.getByRole('button', { name: '重试这张照片' }).focus(); await page.keyboard.press('Enter')
     await viewer.getByText('正在重试这张照片，回忆记录仍然保留。').waitFor()
