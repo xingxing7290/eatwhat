@@ -14,8 +14,11 @@ async function main () {
     await page.route('**/api/**', route => route.fulfill({ json: route.request().url().endsWith('/auth/household-scope') ? { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } : data }))
     await page.goto(`${base}/review`)
     await page.getByRole('heading', { name: '常出现在饭桌上的菜' }).waitFor()
+    await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }))
+    await page.getByRole('button', { name: '复制本期链接' }).click()
+    await page.getByRole('textbox', { name: '手动复制本期链接' }).waitFor()
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
-    const checks = ['.intro h2', '.intro p', '.metric span', '.metric strong', '.metric small', '.metric-note', '.favorites h2', '.explain', '.meal-row strong', '.meal-row small', '.rank', '.bar-row span', '.bar-row strong', '.mood-list span', '.current-note', '.recent-list strong', '.period-controls .el-radio-button.is-active .el-radio-button__inner', '.period-navigation button:first-child']
+    const checks = ['.intro h2', '.intro p', '.metric span', '.metric strong', '.metric small', '.metric-note', '.favorites h2', '.explain', '.meal-row strong', '.meal-row small', '.rank', '.bar-row span', '.bar-row strong', '.mood-list span', '.current-note', '.recent-list strong', '.period-controls .el-radio-button.is-active .el-radio-button__inner', '.period-navigation button:first-child', '.manual-copy label', '.manual-copy input', '.copy-notice']
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const [width, height] of [[1280, 900], [390, 844]]) {
@@ -32,6 +35,7 @@ async function main () {
         if (width === 390) assert.ok((await page.locator('.period-navigation button').first().boundingBox()).height >= 44, 'period navigation needs a touch-sized target')
       }
     }
+    await page.keyboard.press('Tab')
     await page.getByRole('radio', { name: '年度' }).focus()
     const focused = await page.getByRole('radio', { name: '年度' }).evaluate(input => ({ visible: input.matches(':focus-visible'), outline: getComputedStyle(input.nextElementSibling).outlineStyle }))
     assert.equal(focused.visible, true)
