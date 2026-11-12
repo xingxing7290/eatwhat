@@ -108,6 +108,18 @@ async function main () {
     await page.keyboard.press('Enter')
     await page.getByText('选择有变更，尚未保存').waitFor()
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '移除测试菜20', 'focus remains on the moved item at the boundary')
+    const quickActions = page.getByRole('region', { name: '当前餐次快捷操作' })
+    await page.setViewportSize({ width: 320, height: 844 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'quick actions fit a narrow mobile viewport')
+    for (const button of await quickActions.getByRole('button').all()) assert.ok((await button.boundingBox()).height >= 44)
+    await page.setViewportSize({ width: 390, height: 844 })
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight / 2))
+    assert.equal(await quickActions.evaluate(node => { const box = node.getBoundingClientRect(); return box.top >= 0 && box.bottom <= innerHeight }), true, 'mobile actions stay in the viewport while browsing')
+    assert.ok((await quickActions.getByRole('button', { name: '保存当前餐次' }).boundingBox()).height >= 44)
+    await quickActions.getByRole('button', { name: '已选 2 道 · 查看' }).focus()
+    await page.keyboard.press('Enter')
+    assert.equal(await page.evaluate(() => document.activeElement?.classList.contains('selection-info')), true)
+    assert.equal(writes.length, 0, 'reviewing selected meals must not save the schedule')
     assert.deepEqual(await page.locator('.selected-meal-item').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label'))), ['第1道：测试菜20', '第2道：测试菜19'])
     await page.evaluate(() => {
       const move = document.querySelector('[aria-label="下移测试菜20"]')
@@ -123,7 +135,7 @@ async function main () {
     await orderWarning.getByRole('button', { name: '继续编辑' }).click()
     assert.equal(new URL(page.url()).pathname, '/selection', 'reordering must be protected as an unsaved change')
     saveMode = 'success'
-    await page.getByRole('button', { name: '保存安排' }).click()
+    await quickActions.getByRole('button', { name: '保存当前餐次' }).click()
     await page.waitForURL('**/calendar?*')
     assert.deepEqual(writes[0].mealIds, ['meal-20', 'meal-19'], 'saving must preserve the reviewed order')
     writes.length = 0; version = '2026-10-29T08:00:00.000Z'; saveMode = 'uncertain'
@@ -159,7 +171,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.selection-status', '.selection-hint', '.selected-meal-tag']) {
+        for (const selector of ['.selection-status', '.selection-hint', '.selected-meal-tag', '.review-selection']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
         }

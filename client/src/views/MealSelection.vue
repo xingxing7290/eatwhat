@@ -94,7 +94,12 @@ const selectionStatus = computed(() => {
   return selectionDirty.value ? '选择有变更，尚未保存' : '与当前安排一致';
 });
 const selectedMealContainer = ref(null);
+const selectionInfo = ref(null);
 const selectionSearch = ref(null);
+const reviewSelection = () => {
+  selectionInfo.value?.scrollIntoView({ block: 'start', behavior: 'auto' });
+  selectionInfo.value?.focus({ preventScroll: true });
+};
 useDraftGuard({ dirty: selectionDirty, busy: isSaving, uncertain: saveUncertain, label: '餐食安排' });
 
 const hasActiveFilters = computed(() => {
@@ -549,7 +554,7 @@ onBeforeUnmount(() => {
     <el-alert v-if="wishNotice" type="info" :closable="false" show-icon :title="wishNotice" />
     <el-alert v-if="suggestionNotice" type="warning" :closable="false" show-icon :title="suggestionNotice" />
     
-    <div class="selection-info">
+    <div ref="selectionInfo" class="selection-info" tabindex="-1" aria-label="已选菜品">
       <div class="selected-count">
         <strong>已选择:</strong> {{ selectedMeals.length }} 个菜品
       </div>
@@ -755,6 +760,10 @@ onBeforeUnmount(() => {
       </el-skeleton>
     </section>
     </div>
+    <div v-if="selectionDirty && !isInitializing && !loadError" class="mobile-selection-bar" role="region" aria-label="当前餐次快捷操作">
+      <button type="button" class="review-selection" @click="reviewSelection">已选 {{ selectedMeals.length }} 道 · 查看</button>
+      <el-button type="primary" :disabled="isSaving || saveUncertain" :loading="isSaving" @click="saveSelection">保存当前餐次</el-button>
+    </div>
   </div>
 </template>
 
@@ -931,6 +940,9 @@ onBeforeUnmount(() => {
 .selection-status, .selection-hint { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .selection-status { font-weight: 700; }
 .selection-hint { color: var(--text-secondary); }
+.selection-info { scroll-margin-top: calc(var(--header-height, 64px) + 12px); }
+.selection-info:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.mobile-selection-bar { display: none; }
 .selected-meal-item { display: inline-flex; align-items: center; max-width: 100%; gap: 4px; }
 .selected-meal-item .selected-meal-tag { min-width: 0; }
 .move-selected { flex: 0 0 44px; min-height: 44px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 18px; cursor: pointer; }
@@ -944,6 +956,10 @@ onBeforeUnmount(() => {
 :global(.meal-selection .el-radio-button__original-radio:focus-visible + .el-radio-button__inner) { outline: 2px solid var(--secondary-color); outline-offset: 2px; }
 
 @media (max-width: 768px) {
+  .mobile-selection-bar { position: sticky; bottom: 0; z-index: 10; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 12px; padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); border: 1px solid var(--border-color); border-radius: 16px 16px 0 0; background: var(--bg-primary); box-shadow: 0 -8px 24px var(--shadow-color); }
+  .mobile-selection-bar :deep(.el-button), .review-selection { min-height: 44px; }
+  .review-selection { min-width: 0; padding: 6px 8px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-align: left; cursor: pointer; }
+  .review-selection:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
   .meal-selection {
     .page-header { align-items: flex-start; flex-direction: column; gap: 14px; }
     .header-actions { width: 100%; }
