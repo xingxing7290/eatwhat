@@ -465,6 +465,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     <section v-if="!loadError && !pendingView && (items.length || boardMode || filterActive)" class="wish-filters" aria-label="查找想吃记录">
       <div class="filter-heading"><div><h2 ref="filterHeading" tabindex="-1">查找心愿</h2><p aria-live="polite"><template v-if="boardMode">{{ loading ? '正在更新结果' : `共 ${boardTotal} 条匹配记录 · 第 ${boardPage} / ${totalPages} 页` }}</template><template v-else>显示 {{ filteredItems.length }} / {{ items.length }} 条记录</template></p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" placeholder="搜索想吃、备注、分类或关联菜谱" aria-label="搜索想吃记录" /></div>
       <div class="filter-controls"><div ref="statusFilterGroup" class="status-filters" role="group" aria-label="按状态筛选"><button v-for="option in statusOptions" :key="option.key" type="button" :class="{ active: selectedStatus === option.key }" :aria-pressed="selectedStatus === option.key" @click="selectedStatus = option.key">{{ option.label }}</button></div><label class="priority-filter">优先级 <select v-model="selectedPriority" aria-label="按优先级筛选"><option value="all">全部优先级</option><option value="high">超想吃</option><option value="normal">普通</option><option value="low">随缘</option><option value="unset">未设置</option></select></label></div>
+      <p v-if="boardMode" class="board-count-help">分组总数覆盖所有页；卡片和“本页”数量仅表示当前页。筛选时，分组数字依次表示匹配数和该状态总数。</p>
       <button v-if="filterActive && filteredItems.length && !pendingView" type="button" class="reset-filter" @click="resetFilters">清除筛选</button>
     </section>
     <div v-if="pendingView && !loadError" class="hidden-pending" role="status"><span>正在查看关联或创建结果待核对的记录。</span><el-button link type="primary" @click="showBoard">返回全部清单</el-button></div>
@@ -473,6 +474,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     <div v-else-if="!loadError" v-loading="loading" class="board" :class="{ 'single-column': selectedStatus !== 'all' }" :aria-busy="loading ? 'true' : 'false'">
       <section v-for="group in grouped" :key="group.status" class="status-column">
         <h2>{{ statusText[group.status] }} <span>{{ filterActive && !pendingView ? `${group.matched} / ${group.total}` : group.total }}</span></h2>
+        <p v-if="boardMode && !pendingView" class="page-group-count">本页 {{ group.items.length }} 条</p>
         <p v-if="!group.items.length" class="empty-column">{{ boardMode && !pendingView && group.matched ? '本页没有记录，可翻页查看' : filterActive && group.total && !pendingView ? '没有符合条件的记录' : `暂时没有${statusText[group.status]}的记录` }}</p>
         <el-card v-for="item in group.items" :key="item._id" class="wish-card" :data-wish-id="item._id">
           <div class="wish-title"><strong>{{ item.title }}</strong><el-tag>{{ priorityText[priorityBucket(item)] || '未设置' }}</el-tag></div>
@@ -574,6 +576,8 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .status-filters button.active { border: 2px solid var(--wish-accent); background: var(--bg-tertiary); font-weight: 700; }
 .status-filters button:focus-visible, .priority-filter select:focus-visible { outline: 2px solid var(--wish-accent); outline-offset: 3px; }
 .priority-filter { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 13px; }
+.board-count-help, .page-group-count { margin: 10px 0 0; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
+.page-group-count { margin: -4px 0 0; }
 .hidden-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .hidden-pending :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
 .board-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); }
