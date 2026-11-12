@@ -34,10 +34,11 @@ async function main () {
     const session = { title: '测试菜单', householdName: '测试家庭', status: 'open', canOrder: true, supportsGuestMenuPagination: true }
     let slowStarted
     const slowRequest = new Promise(resolve => { slowStarted = resolve })
-    let failedOnce = false; let holdPage = false; let pageFail = false; let releasePage
+    let failedOnce = false; let holdPage = false; let pageFail = false; let releasePage; let menuReads = 0
     await page.route('**/guest-orders/public/**', async route => {
       const url = new URL(route.request().url())
       if (url.searchParams.has('statusOnly')) return route.fulfill({ json: { session } })
+      menuReads++
       const query = (url.searchParams.get('search') || '').toLowerCase()
       const category = url.searchParams.get('category') || ''
       const number = Number(url.searchParams.get('page')); const limit = Number(url.searchParams.get('limit'))
@@ -172,6 +173,16 @@ async function main () {
     await page.getByRole('button', { name: '上一页（顶部）' }).click()
     await page.getByText('第 2 / 28 页').first().waitFor()
     await page.locator('.meal').filter({ hasText: '菜品0024' }).getByRole('button', { name: '＋ 想吃' }).click()
+    const returnSearch = page.getByRole('button', { name: '回到搜索 ↑' })
+    assert.ok((await returnSearch.boundingBox()).height >= 44)
+    assert.ok((await contrast(page, '#returnMenuSearch')).ratio >= 4.5)
+    const readsBeforeJump = menuReads; const cartBeforeJump = await cartStatus.innerText(); const urlBeforeJump = page.url()
+    await returnSearch.focus(); await page.keyboard.press('Enter')
+    assert.equal(await page.evaluate(() => document.activeElement.id), 'search')
+    assert.equal(menuReads, readsBeforeJump, 'returning to search must not reload the menu')
+    assert.equal(await cartStatus.innerText(), cartBeforeJump, 'returning to search must preserve the cart')
+    assert.equal(page.url(), urlBeforeJump)
+    await page.getByText('第 2 / 28 页').first().waitFor()
     await page.getByRole('button', { name: '查看点菜单' }).click()
     await page.locator('.cart-row').filter({ hasText: '菜品0000' }).waitFor()
     await page.locator('.cart-row').filter({ hasText: '菜品0024' }).waitFor()

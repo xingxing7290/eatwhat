@@ -109,7 +109,7 @@
       cursor: pointer;
     }
     .filter.active { color: white; background: #ad3c29; border-color: #ad3c29; }
-    .filter:focus-visible, .menu-pagination button:focus-visible, .menu-retry:focus-visible, #menuHeading:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
+    .filter:focus-visible, .menu-pagination button:focus-visible, .menu-retry:focus-visible, #returnMenuSearch:focus-visible, #menuHeading:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
     .section-head { display: flex; align-items: end; justify-content: space-between; margin: 20px 2px 12px; }
     .section-head h2 { margin: 0; font-size: 21px; }
     .count { color: var(--muted); font-size: 13px; font-weight: 800; }
@@ -180,6 +180,7 @@
     .menu-pagination.top { justify-content: flex-end; margin: 0 0 14px; }
     .menu-pagination button, .menu-retry { min-height: 40px; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; color: var(--cocoa); background: var(--paper); cursor: pointer; font-weight: 800; }
     .menu-retry { display: block; min-height: 44px; margin: 12px auto 0; }
+    #returnMenuSearch { display: block; min-height: 44px; margin: 16px auto 0; padding: 0 14px; border: 1px solid var(--line); border-radius: 13px; color: var(--cocoa); background: var(--paper); cursor: pointer; font-weight: 800; }
     .cart-bar {
       position: fixed;
       z-index: 20;
@@ -284,6 +285,7 @@
     <nav class="menu-pagination top" id="menuPaginationTop" aria-label="菜单顶部分页" hidden><button type="button" id="menuPreviousTop" aria-label="上一页（顶部）">上一页</button><span id="menuPageInfoTop" aria-live="polite"></span><button type="button" id="menuNextTop" aria-label="下一页（顶部）">下一页</button></nav>
     <section class="grid" id="mealGrid" aria-busy="true"><div class="empty">正在端上菜单…</div></section>
     <nav class="menu-pagination" id="menuPagination" aria-label="菜单分页" hidden><button type="button" id="menuPrevious">上一页</button><span id="menuPageInfo"></span><button type="button" id="menuNext">下一页</button></nav>
+    <button type="button" id="returnMenuSearch" hidden>回到搜索 ↑</button>
   </main>
 
   <div class="cart-bar" id="cartBar">
@@ -548,6 +550,7 @@
         const focusRole = focused?.dataset.focusRole;
         const meals = visibleMeals();
         $('mealGrid').setAttribute('aria-busy', String(state.menuLoading));
+        $('returnMenuSearch').hidden = state.menuLoading || !!state.menuError || !state.session || !meals.length;
         $('legacyMenuNote').hidden = !(state.menuSupported === false && state.meals.length >= 600);
         const paginationHidden = state.menuSupported !== true || state.menuLoading || !!state.menuError || !state.menu || state.menu.totalPages <= 1;
         $('menuPagination').hidden = paginationHidden; $('menuPaginationTop').hidden = paginationHidden;
@@ -941,6 +944,7 @@
       }
 
       $('search').addEventListener('input', event => { state.search = event.target.value; state.menuPage = 1; if (state.menuSupported === false) { renderFilters(); renderMeals(); } else queueMenu(); });
+      $('returnMenuSearch').addEventListener('click', () => { $('search').scrollIntoView({ block: 'center', behavior: 'auto' }); $('search').focus({ preventScroll: true }); });
       function changeMenuPage(delta, sourceId) {
         if (state.menuSupported !== true || state.menuLoading || !state.menu || state.menuPage + delta < 1 || state.menuPage + delta > state.menu.totalPages) return;
         const source = $(sourceId);
