@@ -69,6 +69,7 @@ const copyingIngredients = ref(false);
 const ingredientCopyOpen = ref(false);
 const ingredientSnapshot = ref('');
 const ingredientSnapshotInput = ref(null);
+const ingredientCopyScope = ref('all');
 watch(() => JSON.stringify([route.params.id, meal.value?.steps]), () => { completedSteps.value = new Set(); });
 watch(() => JSON.stringify([route.params.id, meal.value?.ingredients]), () => { preparedIngredients.value = new Set(); });
 const ingredientName = (item, index) => (typeof item === 'string' ? item : typeof item?.name === 'string' ? item.name : '').trim() || `食材 ${index + 1}`;
@@ -84,19 +85,21 @@ const resetIngredients = async event => {
   await nextTick();
   if (hadFocus && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) ingredientList.value?.querySelector('input[type="checkbox"]')?.focus();
 };
-const copyIngredients = async () => {
+const copyIngredients = async (onlyUnprepared = false) => {
   if (copyingIngredients.value || !meal.value?.ingredients?.length || loading.value) return;
   const sequence = loadSequence;
   const clean = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
   const lines = meal.value.ingredients.map((item, index) => {
+    if (onlyUnprepared && preparedIngredients.value.has(index)) return null;
     const name = clean(ingredientName(item, index));
     const amount = typeof item === 'string' ? '' : clean(item?.amount);
     return `- ${name}${amount ? `：${amount}` : '（用量未填写）'}`;
-  });
-  const text = [`${clean(meal.value.name)} · 食材清单`, '当前菜谱快照，不会更新购物清单。', ...lines].join('\n');
+  }).filter(Boolean);
+  if (!lines.length) return;
+  const text = [`${clean(meal.value.name)} · ${onlyUnprepared ? '未备食材' : '食材清单'}`, onlyUnprepared ? '点击时未标记备好的食材，不会更新购物清单。' : '当前菜谱快照，不会更新购物清单。', ...lines].join('\n');
   copyingIngredients.value = true;
-  try { await navigator.clipboard.writeText(text); if (sequence === loadSequence) ElMessage.success('已复制菜谱食材；购物清单未改变'); }
-  catch (_) { if (sequence === loadSequence) { ingredientSnapshot.value = text; ingredientCopyOpen.value = true; } }
+  try { await navigator.clipboard.writeText(text); if (sequence === loadSequence) ElMessage.success(`${onlyUnprepared ? '已复制未备食材' : '已复制菜谱食材'}；购物清单未改变`); }
+  catch (_) { if (sequence === loadSequence) { ingredientCopyScope.value = onlyUnprepared ? 'pending' : 'all'; ingredientSnapshot.value = text; ingredientCopyOpen.value = true; } }
   finally { if (sequence === loadSequence) copyingIngredients.value = false; }
 };
 const selectIngredientSnapshot = () => { const input = ingredientSnapshotInput.value?.textarea; if (input) { input.focus(); input.select(); } };
@@ -338,7 +341,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <template #header>食材清单</template>
           <el-empty v-if="!meal.ingredients?.length" description="暂无食材"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充食材 →</router-link></el-empty>
           <div v-else ref="ingredientList" class="ingredient-list">
-            <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients">{{ copyingIngredients ? '正在复制…' : '复制食材清单' }}</button><small>备菜标记仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
+            <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients(false)">复制食材清单</button><button v-if="preparedIngredients.size" type="button" :disabled="copyingIngredients || preparedIngredients.size >= meal.ingredients.length" @click="copyIngredients(true)">复制未备食材</button><small v-if="copyingIngredients" role="status">正在复制…</small><small>备菜标记仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
             <div v-for="(item, index) in meal.ingredients" :key="index" class="ingredient-row" :class="{ prepared: preparedIngredients.has(index) }">
               <label><input type="checkbox" :checked="preparedIngredients.has(index)" :aria-label="`第 ${index + 1} 项${ingredientName(item, index)}已备好`" @change="toggleIngredient(index)" /><span>{{ ingredientName(item, index) }}</span></label><strong>{{ typeof item === 'string' ? '' : item?.amount }}</strong>
             </div>
@@ -396,7 +399,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
         <p>{{ meal.tips }}</p>
       </el-card>
     </template>
-    <el-dialog v-model="ingredientCopyOpen" title="手动复制食材清单" width="min(560px, 92vw)" @opened="selectIngredientSnapshot"><p class="copy-hint">浏览器未允许自动复制。以下是点击时的菜谱快照，之后的修改不会自动更新。</p><el-input ref="ingredientSnapshotInput" :model-value="ingredientSnapshot" type="textarea" :rows="8" readonly aria-label="菜谱食材快照" /><template #footer><el-button @click="selectIngredientSnapshot">全选内容</el-button><el-button type="primary" @click="ingredientCopyOpen = false">完成</el-button></template></el-dialog>
+    <el-dialog v-model="ingredientCopyOpen" :title="ingredientCopyScope === 'pending' ? '手动复制未备食材' : '手动复制食材清单'" width="min(560px, 92vw)" @opened="selectIngredientSnapshot"><p class="copy-hint">浏览器未允许自动复制。以下是点击时的菜谱快照，之后的修改不会自动更新。</p><el-input ref="ingredientSnapshotInput" :model-value="ingredientSnapshot" type="textarea" :rows="8" readonly aria-label="菜谱食材快照" /><template #footer><el-button @click="selectIngredientSnapshot">全选内容</el-button><el-button type="primary" @click="ingredientCopyOpen = false">完成</el-button></template></el-dialog>
     <el-dialog :model-value="!!viewedPhoto" title="菜品照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) closePhoto() }" @close="closePhoto" @close-auto-focus="restorePhotoFocus"><template v-if="viewedPhoto"><img ref="previewImage" :key="`${viewedPhoto.index}-${viewedPhoto.images[viewedPhoto.index]}-${previewAttempt}`" :data-attempt="previewAttempt" class="photo-preview" tabindex="-1" :src="imageFor(viewedPhoto.images[viewedPhoto.index])" :alt="viewedPhoto.title" @load="previewLoaded" @error="previewError" /><el-alert v-if="previewUnavailable" class="photo-load-alert" type="warning" :closable="false" show-icon :title="previewRetrying ? '正在重试这张照片，菜谱内容不会改变。' : '照片暂时无法加载，菜谱内容不会改变。'"><el-button v-if="imageFor(viewedPhoto.images[viewedPhoto.index]) !== defaultImage" ref="previewRetryButton" link type="primary" :aria-disabled="previewRetrying" @click="retryPreview">{{ previewRetrying ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张菜品照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.images.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.images.length - 1" aria-label="下一张菜品照片" @click="movePhoto(1)">下一张</el-button></div><p v-if="viewedPhoto.images.length > 1" class="photo-key-hint">也可使用键盘 ← → 切换照片</p><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
 </template>
