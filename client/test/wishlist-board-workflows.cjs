@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5179'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Wishlist checks require a local server')
 
@@ -53,10 +54,27 @@ async function main () {
     await openColumn.getByText('本页 12 条').waitFor()
     assert.equal(await page.locator('.wish-card').count(), 12)
     assert.equal(requests[0].view, 'board')
+    const statusJump = page.getByRole('navigation', { name: '快速定位想吃分组' })
+    const plannedJump = statusJump.getByRole('button', { name: '定位已安排分组，本页 0 条' })
+    assert.ok((await plannedJump.boundingBox()).height >= 44)
+    const beforeJump = page.url(); const readsBeforeJump = requests.length
+    await plannedJump.focus(); await page.keyboard.press('Enter')
+    assert.equal(await page.evaluate(() => document.activeElement?.tagName === 'H2' && document.activeElement?.parentElement?.dataset.wishStatus === 'planned'), true)
+    assert.equal(page.url(), beforeJump)
+    assert.equal(requests.length, readsBeforeJump, 'group navigation must not reload or alter the board')
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
+    for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      const result = await contrast(page, '.status-jump button')
+      assert.ok(result.ratio >= 4.5, `${dark} ${theme}: ${result.ratio}`)
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
     await page.getByRole('textbox', { name: '搜索想吃记录' }).fill('心愿')
     await page.getByRole('group', { name: '按状态筛选' }).getByRole('button', { name: '想吃', exact: true }).click()
     await page.getByLabel('按优先级筛选').selectOption('normal')
     await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
+    assert.equal(await statusJump.count(), 0, 'a single selected status needs no group navigation')
     for (const fault of ['status', 'priority', 'counts']) {
       boardFault = fault
       await page.getByRole('button', { name: '刷新当前结果' }).click()

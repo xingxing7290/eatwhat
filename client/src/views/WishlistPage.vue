@@ -72,7 +72,14 @@ const searchInput = ref(null);
 const addWishButton = ref(null);
 const pageStatus = ref(null);
 const filterHeading = ref(null);
+const boardElement = ref(null);
 const listErrorAlert = ref(null);
+const jumpToStatus = status => {
+  const target = Array.from(boardElement.value?.querySelectorAll('[data-wish-status]') || []).find(element => element.dataset.wishStatus === status)?.querySelector('h2');
+  if (!target) return;
+  target.scrollIntoView({ block: 'start', behavior: 'auto' });
+  target.focus({ preventScroll: true });
+};
 const initialForm = ref(JSON.stringify(form));
 const dirty = computed(() => JSON.stringify(form) !== initialForm.value);
 const recovery = useUncertainCreate({ reload: () => load(), loadError, close: () => { dialogVisible.value = false; }, discard: () => reset(), reopen: () => { dialogVisible.value = true; }, label: '想吃记录' });
@@ -484,10 +491,11 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
     </section>
     <div v-if="pendingView && !loadError" class="hidden-pending" role="status"><span>正在查看关联或创建结果待核对的记录。</span><el-button link type="primary" @click="showBoard">返回全部清单</el-button></div>
     <div v-if="!loadError && !loading && hiddenPendingCount" class="hidden-pending" role="status"><span>有 {{ hiddenPendingCount }} 条关联或创建结果待核对的记录不在当前结果中。</span><el-button link type="primary" @click="showPending">查看待核对记录</el-button></div>
+    <nav v-if="!loadError && !loading && filteredItems.length && grouped.length > 1" class="status-jump" aria-label="快速定位想吃分组"><span>定位分组</span><button v-for="group in grouped" :key="group.status" type="button" :aria-label="`定位${statusText[group.status]}分组，本页 ${group.items.length} 条`" @click="jumpToStatus(group.status)">{{ statusText[group.status] }} <small>{{ group.items.length }}</small></button></nav>
     <el-empty v-if="!loadError && !loading && !pendingView && filterActive && !filteredItems.length" description="没有符合条件的想吃记录"><div class="empty-filter-actions"><el-button type="primary" @click="searchInput?.focus()">调整搜索</el-button><el-button @click="resetFilters">清除筛选</el-button></div></el-empty>
-    <div v-else-if="!loadError" v-loading="loading" class="board" :class="{ 'single-column': selectedStatus !== 'all' }" :aria-busy="loading ? 'true' : 'false'">
-      <section v-for="group in loading && !items.length ? [] : grouped" :key="group.status" class="status-column">
-        <h2>{{ statusText[group.status] }} <span>{{ filterActive && !pendingView ? `${group.matched} / ${group.total}` : group.total }}</span></h2>
+    <div v-else-if="!loadError" ref="boardElement" v-loading="loading" class="board" :class="{ 'single-column': selectedStatus !== 'all' }" :aria-busy="loading ? 'true' : 'false'">
+      <section v-for="group in loading && !items.length ? [] : grouped" :key="group.status" class="status-column" :data-wish-status="group.status">
+        <h2 tabindex="-1">{{ statusText[group.status] }} <span>{{ filterActive && !pendingView ? `${group.matched} / ${group.total}` : group.total }}</span></h2>
         <p v-if="boardMode && !pendingView" class="page-group-count">本页 {{ group.items.length }} 条</p>
         <p v-if="!group.items.length" class="empty-column">{{ boardMode && !pendingView && group.matched ? '本页没有记录，可翻页查看' : filterActive && group.total && !pendingView ? '没有符合条件的记录' : `暂时没有${statusText[group.status]}的记录` }}</p>
         <el-card v-for="item in group.items" :key="item._id" class="wish-card" :data-wish-id="item._id">
@@ -591,6 +599,10 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .status-filters button:focus-visible, .priority-filter select:focus-visible { outline: 2px solid var(--wish-accent); outline-offset: 3px; }
 .priority-filter { display: flex; align-items: center; gap: 8px; color: var(--text-primary); font-size: 13px; }
 .board-count-help, .page-group-count { margin: 10px 0 0; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
+.status-jump { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-primary); font-size: 13px; }
+.status-jump button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.status-jump small { font-size: 12px; }
+.status-jump button:focus-visible, .status-column h2:focus-visible { outline: 2px solid var(--wish-accent); outline-offset: 3px; }
 .page-group-count { margin: -4px 0 0; }
 .hidden-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; padding: 12px 16px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .hidden-pending :deep(.el-button) { min-height: 44px; color: var(--text-primary); font-weight: 700; text-decoration: underline; }
