@@ -28,7 +28,7 @@ async function main () {
     await page.clock.setFixedTime(new Date(2026, 9, 29, 12))
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', username: 'test', householdId: 'home-a' })) })
     const errors = []; page.on('pageerror', error => errors.push(error.message))
-    let scenario = 'normal'; let slowStarted; let recipeWrites = 0
+    let scenario = 'normal'; let slowStarted; let recipeWrites = 0; let reviewRequests = 0; let releaseRefresh
     const slowRequest = new Promise(resolve => { slowStarted = resolve })
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
@@ -51,6 +51,8 @@ async function main () {
       }
       if (url.pathname.startsWith('/api/review/')) {
         const type = url.pathname.endsWith('/yearly') ? 'year' : 'month'; const label = url.searchParams.get(type === 'year' ? 'year' : 'month')
+        reviewRequests++
+        if (scenario === 'hold-refresh') await new Promise(resolve => { releaseRefresh = resolve })
         if (label === '2026-02') { slowStarted(); await new Promise(resolve => setTimeout(resolve, 1200)) }
         if (scenario === 'failure') return route.fulfill({ status: 503, json: { error: '暂时无法读取' } })
         const data = fixture(type, label)
@@ -72,6 +74,21 @@ async function main () {
     await page.getByRole('heading', { name: '把日子，慢慢记下来' }).waitFor()
     await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
+    await page.getByText('统计来自所选期间的排餐和回忆，是读取时的快照', { exact: false }).waitFor()
+    const refreshButton = page.getByRole('button', { name: '刷新本期' })
+    assert.ok((await refreshButton.boundingBox()).height >= 44)
+    const originalUrl = page.url(); const beforeRefresh = reviewRequests
+    scenario = 'hold-refresh'
+    await refreshButton.focus(); await page.keyboard.press('Enter')
+    await page.getByText('正在整理 2026 年 10 月 的饭桌记录', { exact: false }).waitFor()
+    assert.equal(await refreshButton.isDisabled(), true)
+    for (let i = 0; i < 100 && !releaseRefresh; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseRefresh, 'function')
+    scenario = 'normal'; releaseRefresh()
+    await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
+    assert.equal(reviewRequests, beforeRefresh + 1, 'refresh should read the current period once')
+    assert.equal(page.url(), originalUrl, 'refresh must not change the selected period or navigation history')
+    assert.equal(recipeWrites, 0, 'refresh must not write to recipes')
     await page.locator('.meal-image').getByText('图片暂不可用').waitFor()
     await page.locator('.feature-image').getByText('图片暂不可用').waitFor()
     await page.locator('.photo-card').getByText('图片暂不可用').waitFor()
@@ -138,6 +155,10 @@ async function main () {
     await page.getByText('2026 年 11 月 · OUR STORY', { exact: true }).waitFor()
     await page.getByRole('radio', { name: '年度' }).focus(); await page.keyboard.press('Space')
     await page.getByText('2026 年 · OUR STORY', { exact: true }).waitFor()
+    const yearlyRefresh = page.waitForResponse(response => new URL(response.url()).pathname === '/api/review/yearly' && new URL(response.url()).searchParams.get('year') === '2026')
+    await refreshButton.click(); await yearlyRefresh
+    await page.getByText('2026 年 · OUR STORY', { exact: true }).waitFor()
+    assert.equal(new URL(page.url()).searchParams.get('year'), '2026', 'annual refresh must retain the selected year')
     assert.equal(await page.getByRole('link', { name: /番茄炒蛋/ }).getAttribute('href'), '/meals/detail/meal-a?reviewYear=2026')
     await navigation.getByRole('button', { name: '下一年' }).click()
     await page.getByText('2027 年 · OUR STORY', { exact: true }).waitFor()
