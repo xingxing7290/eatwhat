@@ -31,6 +31,7 @@ async function main () {
     let releaseSlow
     let legacyCatalog = false
     let failCatalog = false
+    let wrongCategory = false
     let holdCurrent = true; let releaseCurrent
     const planned = () => dates.map(date => ({ date, meals: { ...emptyMeals(), dinner: [meal._id] } }))
     let expectedPlan = planned()
@@ -48,7 +49,8 @@ async function main () {
         const rows = search === 'slow' ? [meal] : search === 'fast' ? [extra] : catalog.filter(item => (!search || item.name.includes(search)) && (!url.searchParams.get('category') || item.category === url.searchParams.get('category')))
         const current = Number(url.searchParams.get('page') || 1)
         const limit = Number(url.searchParams.get('limit') || 8)
-        if (search === '坏页') data = { data: [meal], page: 2, limit, total: 1 }
+        if (wrongCategory && url.searchParams.get('category') === '川菜') data = { data: [meal], page: current, limit, total: 1 }
+        else if (search === '坏页') data = { data: [meal], page: 2, limit, total: 1 }
         else if (search === '重复') data = { data: [meal, meal], page: 1, limit, total: 2 }
         else if (search === '缺项') data = { data: [meal], page: 1, limit, total: 2 }
         else if (search === '无分页') data = { data: [meal], total: 10 }
@@ -158,7 +160,13 @@ async function main () {
     assert.deepEqual(await dialog.locator('.chosen-item').evaluateAll(rows => rows.map(row => row.getAttribute('aria-label'))), ['第1道：麻婆豆腐', '第2道：番茄炒蛋'])
     assert.equal(await page.evaluate(() => document.activeElement?.getAttribute('aria-label')), '移除麻婆豆腐')
     assert.equal(applyCalls, 0, 'reordering in the picker must not write to the calendar')
+    wrongCategory = true
     await dialog.getByRole('complementary', { name: '周计划菜品分类' }).getByRole('button', { name: '川菜' }).click()
+    await dialog.getByText('菜品分类结果与筛选条件不一致', { exact: false }).waitFor()
+    assert.equal(await dialog.locator('.meal-option').count(), 0, 'wrong-category results must not be selectable')
+    assert.equal(await dialog.getByRole('button', { name: '移除麻婆豆腐' }).count(), 1, 'a failed catalog check must preserve selections')
+    wrongCategory = false
+    await dialog.locator('.catalog-error').getByRole('button', { name: '重试' }).click()
     await search.fill('找不到的菜')
     await dialog.getByText('没有找到符合筛选条件的菜品。').waitFor()
     await dialog.getByRole('status').getByText('共 0 道匹配菜品').waitFor()

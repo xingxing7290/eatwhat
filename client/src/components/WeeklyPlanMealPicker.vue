@@ -49,6 +49,7 @@ const load = async () => {
     const result = await api.meal.getAllMeals(params);
     if (!alive || ticket !== sequence) return;
     const { rows, total: count } = normalizeMealSearch(result, query.value, limit, { page: page.value, category: category.value, uncategorized: uncategorized.value });
+    if (params.category && rows.some(meal => meal.category !== params.category)) throw new Error('菜品分类结果与筛选条件不一致，请重试');
     if (page.value > Math.max(1, Math.ceil(count / limit))) { page.value = Math.max(1, Math.ceil(count / limit)); return load(); }
     meals.value = rows;
     total.value = count;
