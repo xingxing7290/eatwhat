@@ -126,6 +126,8 @@ onBeforeRouteLeave(confirmTimerLeave);
 watch([timerMinutes, timerCustomMinutes], resetCookingTimer);
 watch(() => route.params.id, resetCookingTimer);
 const cookingSteps = ref(null);
+const showIncompleteOnly = ref(false);
+const incompleteToggle = ref(null);
 const nextIncompleteStep = computed(() => (meal.value?.steps || []).findIndex((_, index) => !completedSteps.value.has(index)));
 const focusNextStep = () => {
   if (nextIncompleteStep.value < 0) return;
@@ -149,7 +151,7 @@ const ingredientCopyReady = ref(false);
 const ingredientSnapshot = ref('');
 const ingredientSnapshotInput = ref(null);
 const ingredientCopyScope = ref('all');
-watch(() => JSON.stringify([route.params.id, meal.value?.steps]), () => { completedSteps.value = new Set(); });
+watch(() => JSON.stringify([route.params.id, meal.value?.steps]), () => { completedSteps.value = new Set(); showIncompleteOnly.value = false; });
 watch(() => JSON.stringify([route.params.id, meal.value?.ingredients]), () => { preparedIngredients.value = new Set(); showUnpreparedOnly.value = false; });
 const ingredientName = (item, index) => (typeof item === 'string' ? item : typeof item?.name === 'string' ? item.name : '').trim() || `食材 ${index + 1}`;
 const toggleIngredient = async (index, event) => {
@@ -200,10 +202,20 @@ const copyIngredients = async (onlyUnprepared = false) => {
   finally { if (sequence === loadSequence) copyingIngredients.value = false; }
 };
 const selectIngredientSnapshot = () => { const input = ingredientSnapshotInput.value?.textarea; if (input) { input.focus(); input.select(); } };
-const toggleStep = index => {
+const toggleStep = async (index, event) => {
+  const source = event?.currentTarget;
+  const hadFocus = source && document.activeElement === source;
   const next = new Set(completedSteps.value);
   if (next.has(index)) next.delete(index); else next.add(index);
   completedSteps.value = next;
+  if (showIncompleteOnly.value && next.has(index) && hadFocus) {
+    await nextTick();
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused === source || !focused.isConnected) {
+      const remaining = [...(cookingSteps.value?.querySelectorAll('.step-toggle') || [])].filter(button => button.getClientRects().length);
+      (remaining.find(button => Number(button.dataset.stepIndex) > index) || remaining.at(-1) || incompleteToggle.value)?.focus({ preventScroll: true });
+    }
+  }
 };
 const memoryPages = computed(() => Math.max(1, Math.ceil(memoryTotal.value / memoryPageSize)));
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
@@ -458,12 +470,13 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
           </div>
           <el-empty v-if="!meal.steps?.length" description="暂无做法"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充做法 →</router-link></el-empty>
           <div v-else ref="cookingSteps" class="steps-list">
-            <div class="cooking-progress"><p aria-live="polite">本次已完成 {{ completedSteps.size }} / {{ meal.steps.length }} 步 · {{ nextIncompleteStep < 0 ? '全部完成' : `下一步：第 ${nextIncompleteStep + 1} 步` }}</p><button class="next-step" type="button" :disabled="nextIncompleteStep < 0" @click="focusNextStep">定位下一步</button><button v-if="completedSteps.size" type="button" @click="resetSteps">重置进度</button><small>仅在当前页面保留，刷新后重置，不会修改菜谱。</small></div>
-            <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
+            <div class="cooking-progress"><p aria-live="polite">本次已完成 {{ completedSteps.size }} / {{ meal.steps.length }} 步 · {{ nextIncompleteStep < 0 ? '全部完成' : `下一步：第 ${nextIncompleteStep + 1} 步` }}</p><button class="next-step" type="button" :disabled="nextIncompleteStep < 0" @click="focusNextStep">定位下一步</button><button ref="incompleteToggle" type="button" :aria-pressed="showIncompleteOnly" @click="showIncompleteOnly = !showIncompleteOnly">仅看未完成步骤{{ showIncompleteOnly ? ' · 已开启' : '' }}</button><button v-if="completedSteps.size" type="button" @click="resetSteps">重置进度</button><small>进度和筛选仅在当前页面保留，刷新后重置，不会修改菜谱。</small></div>
+            <p v-if="showIncompleteOnly && nextIncompleteStep < 0" class="ingredients-complete" role="status">所有步骤已完成。可关闭筛选查看全部步骤，或重置进度。</p>
+            <div v-for="(step, index) in meal.steps" :key="index" v-show="!showIncompleteOnly || !completedSteps.has(index)" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
               <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`, $event)" ><img :key="imageVersion(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
               <p :id="`recipe-step-description-${index}`">{{ typeof step === 'string' ? step : step?.description }}</p>
-              <button type="button" class="step-toggle" :aria-describedby="`recipe-step-description-${index}`" :aria-pressed="completedSteps.has(index)" :aria-label="`${completedSteps.has(index) ? '取消完成' : '标记完成'}第 ${index + 1} 步`" @click="toggleStep(index)">{{ completedSteps.has(index) ? '已完成 ✓' : '标记完成' }}</button>
+              <button type="button" class="step-toggle" :aria-describedby="`recipe-step-description-${index}`" :aria-pressed="completedSteps.has(index)" :aria-label="`${completedSteps.has(index) ? '取消完成' : '标记完成'}第 ${index + 1} 步`" :data-step-index="index" @click="toggleStep(index, $event)">{{ completedSteps.has(index) ? '已完成 ✓' : '标记完成' }}</button>
             </div>
           </div>
         </el-card>
