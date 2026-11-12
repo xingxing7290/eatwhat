@@ -480,6 +480,11 @@
         if (state.busy || state.pending || state.accessReadBlocked || state.uncertainReadBlocked) return;
         if (!canOrder()) return toast('主人已经锁单，暂时不能修改');
         if (next > 0 && !state.cart.has(String(meal._id)) && state.cart.size >= MAX_DISHES) return toast('每次最多选择 50 道菜，请先移除其他菜品');
+        const selected = state.cart.get(String(meal._id));
+        if (next <= 0 && selected && (selected.quantity > 1 || String(selected.note || '').trim())) {
+          if (!confirm(`将移除“${selected.meal.name}”的全部 ${selected.quantity} 份及该菜备注。此操作只修改本页，提交后才会通知主人。确定移除吗？`)) return;
+          if (state.busy || state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder() || state.cart.get(String(meal._id)) !== selected) return;
+        }
         const wasAtLimit = state.cart.size >= MAX_DISHES;
         if (next <= 0) { state.cart.delete(String(meal._id)); state.unavailable.delete(String(meal._id)); }
         else state.cart.set(String(meal._id), { meal, quantity: Math.min(20, next), note: state.cart.get(String(meal._id))?.note || '' });
@@ -664,7 +669,7 @@
           itemNote.addEventListener('input', event => { item.note = event.target.value; renderDraftStatus(); });
           stepper.append(minus, quantity, plus); row.append(copy, stepper, itemNote);
           if (unavailable) { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-unavailable'; remove.dataset.focusRole = 'remove'; remove.textContent = `移除${item.meal.name}`; remove.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder(); remove.addEventListener('click', () => setQuantity(item.meal, 0)); row.append(remove); }
-          else { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-dish'; remove.dataset.focusRole = 'remove'; remove.textContent = '移除这道菜'; remove.setAttribute('aria-label', `移除${item.meal.name}的全部份数`); remove.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder(); remove.addEventListener('click', () => { if ((item.quantity > 1 || String(item.note || '').trim()) && !confirm(`将移除“${item.meal.name}”的全部 ${item.quantity} 份及该菜备注。此操作只修改本页，提交后才会通知主人。确定移除吗？`)) return; setQuantity(item.meal, 0); }); row.append(remove); }
+          else { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-dish'; remove.dataset.focusRole = 'remove'; remove.textContent = '移除这道菜'; remove.setAttribute('aria-label', `移除${item.meal.name}的全部份数`); remove.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder(); remove.addEventListener('click', () => setQuantity(item.meal, 0)); row.append(remove); }
           return row;
         });
         if (!rows.length) {
