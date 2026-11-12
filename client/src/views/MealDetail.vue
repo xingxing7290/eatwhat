@@ -73,6 +73,22 @@ const timerDuration = computed(() => {
 });
 const timerSeconds = ref(300);
 const timerState = ref('idle');
+const timerAnchor = ref(null);
+const timerOutsideView = ref(false);
+const floatingTimer = ref(null);
+let timerObserver = null;
+watch(timerAnchor, element => {
+  timerObserver?.disconnect(); timerObserver = null; timerOutsideView.value = false;
+  if (!element || typeof IntersectionObserver === 'undefined') return;
+  timerObserver = new IntersectionObserver(async entries => {
+    if (entries[0]?.target !== timerAnchor.value) return;
+    const restoreFocus = entries[0].isIntersecting && document.activeElement === floatingTimer.value;
+    timerOutsideView.value = !entries[0].isIntersecting;
+    if (restoreFocus) { await nextTick(); if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) timerAnchor.value?.focus({ preventScroll: true }); }
+  }, { threshold: 0 });
+  timerObserver.observe(element);
+}, { flush: 'post' });
+const revealTimer = () => { timerAnchor.value?.scrollIntoView({ block: 'center', behavior: 'auto' }); timerAnchor.value?.focus({ preventScroll: true }); };
 let timerDeadline = 0; let cookingTimer = null;
 const timerDisplay = computed(() => timerState.value === 'idle' && timerDuration.value === null ? '--:--' : `${String(Math.floor(timerSeconds.value / 60)).padStart(2, '0')}:${String(timerSeconds.value % 60).padStart(2, '0')}`);
 const stopTimerInterval = () => { if (cookingTimer) clearInterval(cookingTimer); cookingTimer = null; };
@@ -346,7 +362,7 @@ onBeforeRouteUpdate(async (to, from) => {
 watch(() => route.params.id, load, { immediate: true });
 window.addEventListener('keydown', onPhotoKey);
 window.addEventListener('beforeunload', warnTimerBeforeUnload);
-onBeforeUnmount(() => { stopTimerInterval(); loadSequence++; memorySequence++; reportSequence++; window.removeEventListener('keydown', onPhotoKey); window.removeEventListener('beforeunload', warnTimerBeforeUnload); });
+onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSequence++; memorySequence++; reportSequence++; window.removeEventListener('keydown', onPhotoKey); window.removeEventListener('beforeunload', warnTimerBeforeUnload); });
 </script>
 
 <template>
@@ -419,7 +435,9 @@ onBeforeUnmount(() => { stopTimerInterval(); loadSequence++; memorySequence++; r
 
         <el-card>
           <template #header>做法步骤</template>
+          <div ref="timerAnchor" class="timer-anchor" tabindex="-1" aria-label="烹饪计时器位置">
           <div class="cooking-timer" aria-label="烹饪计时器"><div><strong>烹饪计时器</strong><label>时长 <select v-model.number="timerMinutes" :disabled="timerState === 'running' || timerState === 'paused'" aria-label="计时时长"><option v-for="minutes in [1, 3, 5, 10, 15, 30, 60, 90]" :key="minutes" :value="minutes">{{ minutes }} 分钟</option><option value="custom">自定义</option></select></label><label v-if="timerMinutes === 'custom'">分钟 <input v-model="timerCustomMinutes" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="自定义计时分钟数" :aria-invalid="timerDuration === null ? 'true' : undefined" aria-describedby="timer-duration-help" :disabled="timerState === 'running' || timerState === 'paused'" /></label><output class="timer-display" aria-live="off" :aria-label="timerDuration === null ? '时长无效' : `剩余 ${timerDisplay}`">{{ timerDisplay }}</output></div><small v-if="timerMinutes === 'custom'" id="timer-duration-help">请输入 1 至 180 的整数分钟。</small><div class="timer-actions"><button type="button" :aria-disabled="timerDuration === null" @click="timerState === 'running' ? pauseCookingTimer() : startCookingTimer()">{{ timerState === 'running' ? '暂停计时' : timerState === 'paused' ? '继续计时' : timerState === 'finished' ? '再次计时' : '开始计时' }}</button><button type="button" :aria-disabled="timerState === 'idle'" @click="resetCookingTimer">重置计时</button></div><p role="status" aria-live="polite">{{ timerDuration === null ? '请输入有效的计时时长。' : timerState === 'finished' ? '计时结束，请检查食物。' : timerState === 'paused' ? '计时已暂停。' : timerState === 'running' ? '计时进行中。' : '选择时长后开始。' }}</p><small>仅在当前页面显示，不保证后台提醒，没有声音；离开或刷新页面后重置。</small></div>
+          </div>
           <el-empty v-if="!meal.steps?.length" description="暂无做法"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充做法 →</router-link></el-empty>
           <div v-else ref="cookingSteps" class="steps-list">
             <div class="cooking-progress"><p aria-live="polite">本次已完成 {{ completedSteps.size }} / {{ meal.steps.length }} 步 · {{ nextIncompleteStep < 0 ? '全部完成' : `下一步：第 ${nextIncompleteStep + 1} 步` }}</p><button class="next-step" type="button" :disabled="nextIncompleteStep < 0" @click="focusNextStep">定位下一步</button><button v-if="completedSteps.size" type="button" @click="resetSteps">重置进度</button><small>仅在当前页面保留，刷新后重置，不会修改菜谱。</small></div>
@@ -469,6 +487,7 @@ onBeforeUnmount(() => { stopTimerInterval(); loadSequence++; memorySequence++; r
         <p>{{ meal.tips }}</p>
       </el-card>
     </template>
+    <button v-if="timerOutsideView && timerState !== 'idle'" ref="floatingTimer" type="button" class="floating-timer" :aria-label="timerState === 'finished' ? '计时结束，返回计时器' : `${timerState === 'paused' ? '计时已暂停' : '计时中'}，剩余 ${timerDisplay}，返回计时器`" @click="revealTimer"><span>{{ timerState === 'finished' ? '计时结束' : timerState === 'paused' ? '已暂停' : '计时中' }}</span><strong>{{ timerDisplay }}</strong><span aria-hidden="true">↑</span></button>
     <el-dialog v-model="ingredientCopyOpen" :title="ingredientCopyScope === 'pending' ? '手动复制未备食材' : '手动复制食材清单'" width="min(560px, 92vw)" @opened="selectIngredientSnapshot"><p class="copy-hint">浏览器未允许自动复制。以下是点击时的菜谱快照，之后的修改不会自动更新。</p><el-input ref="ingredientSnapshotInput" :model-value="ingredientSnapshot" type="textarea" :rows="8" readonly aria-label="菜谱食材快照" /><template #footer><el-button @click="selectIngredientSnapshot">全选内容</el-button><el-button type="primary" @click="ingredientCopyOpen = false">完成</el-button></template></el-dialog>
     <el-dialog :model-value="!!viewedPhoto" title="菜品照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) closePhoto() }" @close="closePhoto" @close-auto-focus="restorePhotoFocus"><template v-if="viewedPhoto"><img ref="previewImage" :key="`${viewedPhoto.index}-${viewedPhoto.images[viewedPhoto.index]}-${previewAttempt}`" :data-attempt="previewAttempt" class="photo-preview" tabindex="-1" :src="imageFor(viewedPhoto.images[viewedPhoto.index])" :alt="viewedPhoto.title" @load="previewLoaded" @error="previewError" /><el-alert v-if="previewUnavailable" class="photo-load-alert" type="warning" :closable="false" show-icon :title="previewRetrying ? '正在重试这张照片，菜谱内容不会改变。' : '照片暂时无法加载，菜谱内容不会改变。'"><el-button v-if="imageFor(viewedPhoto.images[viewedPhoto.index]) !== defaultImage" ref="previewRetryButton" link type="primary" :aria-disabled="previewRetrying" @click="retryPreview">{{ previewRetrying ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张菜品照片" @click="movePhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.images.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.images.length - 1" aria-label="下一张菜品照片" @click="movePhoto(1)">下一张</el-button></div><p v-if="viewedPhoto.images.length > 1" class="photo-key-hint">也可使用键盘 ← → 切换照片</p><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
@@ -538,6 +557,10 @@ h1 { margin: 0; color: var(--text-primary); }
 .cooking-timer :is(button, select, input):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .timer-display { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; }
 .cooking-timer p, .cooking-timer small { margin: 0; line-height: 1.5; }
+.timer-anchor:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.floating-timer { position: fixed; z-index: 20; right: max(12px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 7px; min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 8px 24px var(--shadow-color); font: inherit; font-size: 13px; cursor: pointer; }
+.floating-timer strong { font-variant-numeric: tabular-nums; }
+.floating-timer:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 2px; }
 .step-toggle { grid-column: 1 / -1; justify-self: start; }
 .step-toggle[aria-pressed="true"] { font-weight: 700; background: var(--bg-tertiary); }
 .cooking-progress button:focus-visible, .step-toggle:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
