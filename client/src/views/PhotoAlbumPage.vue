@@ -46,6 +46,10 @@ let viewerEpoch = 0;
 let focusAfterLoad = false;
 const selected = computed(() => selectedIndex.value === null ? null : data.value.photos[selectedIndex.value] || null);
 const lastPage = computed(() => Math.max(1, Math.ceil(data.value.total / pageSize)));
+const pageJump = ref('');
+const pageJumpError = ref('');
+const pageJumpInput = ref(null);
+watch([month, page], () => { pageJump.value = ''; pageJumpError.value = ''; });
 const photoPosition = computed(() => selectedIndex.value === null ? 0 : (loadedPage.value - 1) * pageSize + selectedIndex.value + 1);
 const visibleRange = computed(() => data.value.photos.length ? `本页第 ${(loadedPage.value - 1) * pageSize + 1}–${(loadedPage.value - 1) * pageSize + data.value.photos.length} 张` : '');
 const reviewMonth = computed(() => /^\d{4}-(0[1-9]|1[0-2])$/.test(month.value) && Number(month.value.slice(0, 4)) >= 2000 && Number(month.value.slice(0, 4)) <= 2100 ? month.value : '');
@@ -147,6 +151,19 @@ const goCurrentMonth = () => {
   month.value = currentMonth.value; changeMonth();
 };
 const changePage = next => { if (loading.value || next < 1 || next > lastPage.value) return; page.value = next; clearLocationLink(); selectedIndex.value = null; returnFocusIndex.value = 0; focusAfterLoad = true; load(); };
+const jumpToPage = () => {
+  if (loading.value || loadError.value) return;
+  const text = pageJump.value.trim();
+  const target = Number(text);
+  if (!/^[1-9]\d*$/.test(text) || !Number.isSafeInteger(target) || target > lastPage.value) {
+    pageJumpError.value = `请输入 1 至 ${lastPage.value} 的页码。`;
+    pageJumpInput.value?.focus();
+    return;
+  }
+  pageJumpError.value = '';
+  if (target === page.value) { pageJump.value = ''; return; }
+  changePage(target);
+};
 const returnToFirstPage = () => {
   if (loading.value || page.value <= 1) return;
   page.value = 1; clearLocationLink(); selectedIndex.value = null;
@@ -331,12 +348,18 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', on
     <el-alert v-if="locateNotice" type="warning" :closable="false" show-icon :title="locateNotice"><el-button v-if="locateRetry" link type="primary" :loading="loading" @click="loadLocation">重新定位</el-button></el-alert>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`相册暂时无法加载：${loadError}`"><el-button ref="retryButton" link type="primary" @click="load()">重新加载</el-button><el-button v-if="page > 1" link type="primary" @click="returnToFirstPage">返回第一页</el-button></el-alert>
     <el-empty v-else-if="!loading && !data.photos.length" description="这个月还没有饭桌照片"><p class="album-empty-hint">照片来自饭后回忆，可在回忆中添加或补充照片。</p><router-link class="album-empty-link" :to="{ name: 'memories', query: { month } }">前往 {{ month }} 回忆 →</router-link></el-empty>
-<template v-else-if="!loading"><p class="page-range">{{ visibleRange }} · 按相册顺序浏览</p><div ref="photoGrid" class="album-grid"><button v-for="(item, index) in data.photos" :key="`${item.memoryId}-${item.photoIndex ?? index}-${item.photo}`" class="photo-card" type="button" :aria-label="`查看${item.date} ${item.title || '饭桌照片'}，第 ${(page - 1) * pageSize + index + 1} 张${failedPhotos.has(photoKey(item)) ? '，照片暂不可用' : ''}`" @click="openPhoto(index)"><img loading="lazy" decoding="async" :key="gridImageVersion(item)" data-photo-surface="grid" :data-photo-key="photoKey(item)" :data-photo-attempt="gridAttempts[photoKey(item)] || 0" :src="imageFor(item)" :alt="item.title || item.date" @load="imageLoaded" @error="imageError" /><strong class="photo-title" :title="item.title || '饭桌回忆'">{{ item.title || '饭桌回忆' }}</strong><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span><span v-if="failedPhotos.has(photoKey(item))" class="photo-error">照片暂不可用</span></button></div><nav v-if="data.total > pageSize" class="pagination" aria-label="相册分页"><el-button :disabled="loading || page <= 1" @click="changePage(page - 1)">上一页</el-button><span aria-live="polite" aria-atomic="true">第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="loading || page >= lastPage" @click="changePage(page + 1)">下一页</el-button></nav></template>
+<template v-else-if="!loading"><p class="page-range">{{ visibleRange }} · 按相册顺序浏览</p><div ref="photoGrid" class="album-grid"><button v-for="(item, index) in data.photos" :key="`${item.memoryId}-${item.photoIndex ?? index}-${item.photo}`" class="photo-card" type="button" :aria-label="`查看${item.date} ${item.title || '饭桌照片'}，第 ${(page - 1) * pageSize + index + 1} 张${failedPhotos.has(photoKey(item)) ? '，照片暂不可用' : ''}`" @click="openPhoto(index)"><img loading="lazy" decoding="async" :key="gridImageVersion(item)" data-photo-surface="grid" :data-photo-key="photoKey(item)" :data-photo-attempt="gridAttempts[photoKey(item)] || 0" :src="imageFor(item)" :alt="item.title || item.date" @load="imageLoaded" @error="imageError" /><strong class="photo-title" :title="item.title || '饭桌回忆'">{{ item.title || '饭桌回忆' }}</strong><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span><span v-if="failedPhotos.has(photoKey(item))" class="photo-error">照片暂不可用</span></button></div><nav v-if="data.total > pageSize" class="pagination" aria-label="相册分页"><el-button :disabled="loading || page <= 1" @click="changePage(page - 1)">上一页</el-button><span aria-live="polite" aria-atomic="true">第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="loading || page >= lastPage" @click="changePage(page + 1)">下一页</el-button><form v-if="lastPage > 2" class="album-page-jump" @submit.prevent="jumpToPage"><label for="album-page-number">跳至</label><input id="album-page-number" ref="pageJumpInput" v-model="pageJump" type="text" inputmode="numeric" autocomplete="off" maxlength="8" :aria-invalid="pageJumpError ? 'true' : undefined" :aria-describedby="pageJumpError ? 'album-page-error' : undefined" @input="pageJumpError = ''" /><span>页</span><button type="submit">跳转</button><span v-if="pageJumpError" id="album-page-error" class="album-page-error" role="alert">{{ pageJumpError }}</span></form></nav></template>
     <el-dialog :model-value="!!selected" title="饭桌回忆" width="min(680px, 92vw)" @update:model-value="val => { if (!val) closeViewer() }" @close="closeViewer" @close-auto-focus="schedulePhotoFocus"><template v-if="selected"><img ref="viewerPreview" :key="imageVersion(selected)" data-photo-surface="preview" :data-photo-key="photoKey(selected)" :data-photo-attempt="photoAttempts[photoKey(selected)] || 0" class="preview" tabindex="-1" :src="imageFor(selected)" :alt="selected.title || '饭桌照片'" @load="imageLoaded" @error="imageError" /><el-alert v-if="failedPreviews.has(photoKey(selected))" class="photo-load-alert" type="warning" :closable="false" show-icon :title="retryingPhotos.has(photoKey(selected)) ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button link type="primary" :aria-disabled="retryingPhotos.has(photoKey(selected))" @click="retryPhoto(selected)">{{ retryingPhotos.has(photoKey(selected)) ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="viewer-nav"><el-button :disabled="loading || photoPosition <= 1" aria-label="上一张照片" @click="navigatePhoto(-1)">上一张</el-button><span aria-live="polite">{{ photoPosition }} / {{ data.total }}</span><el-button :disabled="loading || photoPosition >= data.total" aria-label="下一张照片" @click="navigatePhoto(1)">下一张</el-button></div><div class="viewer-shortcuts"><el-button :disabled="loading || photoPosition <= 1" @click="jumpToBoundary('first')">第一张</el-button><span>也可使用键盘 ← → 切换照片</span><el-button :disabled="loading || photoPosition >= data.total" @click="jumpToBoundary('last')">最后一张</el-button></div><div class="photo-link-tools"><el-button :loading="copyingPhotoLink" :disabled="loading" @click="copyPhotoLocation">复制照片位置</el-button><p v-if="photoLinkNotice" role="status">{{ photoLinkNotice }}</p><el-input v-if="manualPhotoLink" ref="photoLinkInput" :model-value="manualPhotoLink" readonly aria-label="手动复制照片位置" @focus="$event.target.select()" /></div><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="(meal, index) in (Array.isArray(selected.meals) ? selected.meals : [])" :key="meal?._id || meal?.id || index" class="album-meal-tag"><router-link v-if="linkedMealId(meal)" class="album-meal-link" :to="{ name: 'MealDetail', params: { id: linkedMealId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal?.name || '菜品不可用' }}</span></el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /><div class="memory-link"><router-link :to="{ name: 'memories', query: { edit: selected.memoryId, month } }">编辑这条饭后回忆 →</router-link></div></template></el-dialog>
   </div>
 </template>
 
 <style scoped>
+.pagination { flex-wrap: wrap; }
+.album-page-jump { display: inline-flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 6px; color: var(--text-primary); font-size: 13px; }
+.album-page-jump input { width: 72px; min-height: 44px; box-sizing: border-box; padding: 8px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.album-page-jump button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.album-page-jump input:focus-visible, .album-page-jump button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.album-page-error { flex-basis: 100%; color: var(--text-primary); font-weight: 700; text-align: center; }
 .photo-link-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0; color: var(--text-primary); }
 .photo-link-tools .el-button { min-height: 44px; margin: 0; }
 .photo-link-tools p { flex: 1 1 220px; margin: 0; font-size: 13px; line-height: 1.6; }
