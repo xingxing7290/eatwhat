@@ -251,7 +251,12 @@ const navigateToMealSelection = (date, type) => {
 };
 
 // 切换月份
+const canChangeMonth = delta => {
+  const index = getYear(currentDate.value) * 12 + getMonth(currentDate.value) + delta;
+  return index >= 100 * 12 && index <= 9998 * 12 + 11;
+};
 const changeMonth = (delta) => {
+  if (isLoading.value || blocked.value || !canChangeMonth(delta)) return;
   shouldScrollToToday.value = false;
   targetedDate.value = '';
   invalidDateLink.value = false;
@@ -494,7 +499,7 @@ onBeforeUnmount(() => {
           <div class="month-navigation">
             <el-button 
               @click="changeMonth(-1)" 
-              :disabled="isLoading || blocked"
+              :disabled="isLoading || blocked || !canChangeMonth(-1)"
               aria-label="上个月"
               class="nav-btn"
             >
@@ -505,7 +510,7 @@ onBeforeUnmount(() => {
             
             <el-button 
               @click="changeMonth(1)" 
-              :disabled="isLoading || blocked"
+              :disabled="isLoading || blocked || !canChangeMonth(1)"
               aria-label="下个月"
               class="nav-btn"
             >
@@ -527,6 +532,7 @@ onBeforeUnmount(() => {
 
     <div v-if="targetedDate" class="calendar-notice" role="status"><span>已定位到 {{ targetedDate }}，请核对相应餐次。</span><router-link :to="{ name: 'weeklyPlan', query: { week: targetedDate } }">查看该日期所在周计划 →</router-link></div>
     <div v-else-if="invalidDateLink" class="calendar-notice" role="status">日历链接中的日期无效，已打开当前月份。</div>
+    <div v-if="!canChangeMonth(-1) || !canChangeMonth(1)" class="calendar-notice" role="status">日历支持 0100 年 1 月至 9998 年 12 月，可通过“今天”返回当前月份。</div>
 
     <el-alert v-if="deleteIssue" class="delete-review" type="warning" :closable="false" show-icon :title="deleteIssue.conflict ? '安排已被其他成员修改，本次没有删除。' : '删除结果未确认，请先核对最新安排。'">
       <p>{{ deleteIssue.date }} {{ mealTypes.find(type => type.key === deleteIssue.type)?.label }}：{{ deleteIssue.checked ? (deleteIssue.count ? `当前有 ${deleteIssue.count} 道菜` : '当前没有安排') : '尚未核对' }}</p>
@@ -552,7 +558,7 @@ onBeforeUnmount(() => {
       <div class="mobile-nav-controls">
         <el-button 
           @click="changeMonth(-1)" 
-          :disabled="isLoading || blocked"
+          :disabled="isLoading || blocked || !canChangeMonth(-1)"
           aria-label="上个月"
           size="small"
           class="mobile-nav-btn"
@@ -564,7 +570,7 @@ onBeforeUnmount(() => {
         
         <el-button 
           @click="changeMonth(1)" 
-          :disabled="isLoading || blocked"
+          :disabled="isLoading || blocked || !canChangeMonth(1)"
           aria-label="下个月"
           size="small"
           class="mobile-nav-btn"

@@ -189,6 +189,23 @@ async function main () {
     await page.locator('.mobile-date-card.today').waitFor()
     await page.waitForTimeout(500)
     assert.deepEqual(await page.evaluate(() => window.__calendarScrollTargets), [], 'a failed today request must not scroll later after a retry')
+    for (const width of [390, 1280]) {
+      await page.setViewportSize({ width, height: 844 })
+      const nav = width === 390 ? page.locator('.mobile-month-nav') : page.locator('.page-header')
+      await page.goto(`${base}/calendar?month=0100-01`)
+      await page.getByLabel('本月安排概览').waitFor()
+      await page.getByText('日历支持 0100 年 1 月至 9998 年 12 月', { exact: false }).waitFor()
+      assert.equal(await nav.getByRole('button', { name: '上个月' }).isDisabled(), true)
+      assert.equal(await nav.getByRole('button', { name: '下个月' }).isEnabled(), true)
+      await nav.getByRole('button', { name: '下个月' }).click()
+      await page.waitForURL('**/calendar?month=0100-02')
+      await page.goto(`${base}/calendar?month=9998-12`)
+      await page.getByLabel('本月安排概览').waitFor()
+      assert.equal(await nav.getByRole('button', { name: '下个月' }).isDisabled(), true)
+      assert.equal(await nav.getByRole('button', { name: '上个月' }).isEnabled(), true)
+      await nav.getByRole('button', { name: '上个月' }).click()
+      await page.waitForURL('**/calendar?month=9998-11')
+    }
     assert.deepEqual(errors, [])
     console.log('Calendar navigation checks passed: recipe details and editing, themes, dated selection, history and invalid links')
   } finally { await browser.close() }
