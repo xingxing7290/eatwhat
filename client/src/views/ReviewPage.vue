@@ -92,6 +92,7 @@ const imageFor = value => {
   try { const url = new URL(resolved, window.location.origin); return ['http:', 'https:'].includes(url.protocol) ? url.href : placeholder; } catch (_) { return placeholder; }
 };
 const imageError = (event, key) => {
+  if (!event.target?.isConnected) return;
   handleUploadedImageError(event, placeholder);
   if (event.target?.dataset.placeholder === '1') failedImages.value = new Set([...failedImages.value, key]);
 };
