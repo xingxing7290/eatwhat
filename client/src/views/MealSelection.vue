@@ -219,11 +219,15 @@ const toggleMealSelection = (meal) => {
     selectedMeals.value.splice(index, 1);
   }
 };
-const removeSelectedMeal = async meal => {
+const removeSelectedMeal = async (meal, event) => {
   const index = selectedMeals.value.findIndex(item => String(item._id || item.id) === String(meal._id || meal.id));
   if (index < 0 || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
   toggleMealSelection(meal);
   await nextTick();
+  const focused = document.activeElement;
+  if (!hadFocus || (focused && focused !== document.body && focused !== source && focused.isConnected)) return;
   const buttons = selectedMealContainer.value?.querySelectorAll('.selected-meal-tag:not([disabled])') || [];
   if (buttons.length) buttons[Math.min(index, buttons.length - 1)].focus();
   else selectionSearch.value?.focus();
@@ -571,7 +575,7 @@ onBeforeUnmount(() => {
           type="button"
           :aria-label="`移除${meal.name}`"
           :disabled="isInitializing || isSaving || loadError || saveUncertain"
-          @click="removeSelectedMeal(meal)"
+          @click="removeSelectedMeal(meal, $event)"
           class="selected-meal-tag"
         >
           {{ meal.name }} <span aria-hidden="true">×</span>
