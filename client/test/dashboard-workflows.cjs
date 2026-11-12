@@ -82,10 +82,28 @@ async function main () {
     await page.goto(`${base}/dashboard`)
     await page.getByText('家人想吃的菜').waitFor()
     mode = 'failed'
-    await page.getByRole('button', { name: '安排晚餐' }).click()
+    await page.getByRole('button', { name: '安排晚餐' }).focus(); await page.keyboard.press('Enter')
     await page.locator('.load-error').getByText('饭桌暂时不可用').waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent.trim() === '重新加载')
     assert.equal(new URL(page.url()).pathname, '/dashboard')
     assert.equal(await page.locator('.dashboard-grid').count(), 0)
+    for (const action of ['安排今天', '安排2026-10-29早餐']) {
+      mode = 'valid'
+      await page.getByRole('button', { name: '重新加载' }).click()
+      await page.getByRole('button', { name: action, exact: true }).focus()
+      mode = 'failed'; await page.keyboard.press('Enter')
+      await page.locator('.load-error').getByText('饭桌暂时不可用').waitFor()
+      await page.waitForFunction(() => document.activeElement?.textContent.trim() === '重新加载')
+    }
+    mode = 'valid'; await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByRole('button', { name: '安排今天', exact: true }).focus()
+    mode = 'hold'; release = undefined; await page.keyboard.press('Enter')
+    for (let i = 0; i < 100 && !release; i++) await new Promise(resolve => setTimeout(resolve, 50))
+    assert.equal(typeof release, 'function')
+    await page.getByRole('button', { name: '逛逛菜谱' }).focus()
+    mode = 'failed'; release()
+    await page.locator('.load-error').getByText('饭桌暂时不可用').waitFor()
+    assert.equal(await page.getByRole('button', { name: '逛逛菜谱' }).evaluate(node => document.activeElement === node), true, 'do not steal focus moved during a request')
     mode = 'valid'
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('家人想吃的菜').waitFor()

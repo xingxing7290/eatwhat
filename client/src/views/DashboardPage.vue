@@ -91,16 +91,23 @@ const refreshDashboard = async () => {
     (loadError.value ? retryButton.value : refreshButton.value)?.$el?.focus({ preventScroll: true });
   }
 };
+const focusRetryAfterActionFailure = async origin => {
+  if (!loadError.value) return;
+  await nextTick();
+  const focused = document.activeElement;
+  if (active && (!focused || focused === document.body || focused === origin || !focused.isConnected)) retryButton.value?.$el?.focus({ preventScroll: true });
+};
 const arrangeWishlistDinner = async (item) => {
   if (arranging.value || loading.value) return;
   const shownMealId = String(wishMealId(item) || '');
   if (!shownMealId) return router.push('/wishlist');
   const shownDate = summary.value?.today;
   const wishId = String(item._id || item.id || '');
+  const origin = document.activeElement;
   arranging.value = wishId;
   try {
     const fresh = await load();
-    if (!active || !fresh) return;
+    if (!active || !fresh) { await focusRetryAfterActionFailure(origin); return; }
     const current = fresh.partnerWishlist.find(wish => String(wish._id || wish.id || '') === wishId);
     const id = wishMealId(current);
     if (!current || !id) { ElMessage.warning('心愿已变化，请先在想吃清单中核对'); return router.push('/wishlist'); }
@@ -112,10 +119,11 @@ const openTodaySlot = async type => {
   if (!summary.value || loading.value || arranging.value || !mealTypeText[type]) return;
   const shownDate = summary.value.today;
   const hadMeals = summary.value.todaySchedule.meals[type].length > 0;
+  const origin = document.activeElement;
   arranging.value = `slot:${type}`;
   try {
     const fresh = await load();
-    if (!active || !fresh) return;
+    if (!active || !fresh) { await focusRetryAfterActionFailure(origin); return; }
     const hasMeals = fresh.todaySchedule.meals[type].length > 0;
     if (fresh.today !== shownDate || hasMeals !== hadMeals) return ElMessage.warning('日期或餐次安排已变化，请先核对首页后再操作');
     if (hasMeals) return router.push({ name: 'calendar', query: { date: fresh.today } });
@@ -125,10 +133,11 @@ const openTodaySlot = async type => {
 const openTodayCalendar = async () => {
   if (!summary.value || loading.value || arranging.value) return;
   const shownDate = summary.value.today;
+  const origin = document.activeElement;
   arranging.value = 'calendar';
   try {
     const fresh = await load();
-    if (!active || !fresh) return;
+    if (!active || !fresh) { await focusRetryAfterActionFailure(origin); return; }
     if (fresh.today !== shownDate) return ElMessage.warning('日期已变化，请核对更新后的首页再安排');
     return router.push({ name: 'calendar', query: { date: fresh.today } });
   } finally { arranging.value = ''; }
