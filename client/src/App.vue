@@ -308,7 +308,7 @@ onBeforeUnmount(() => {
             <router-link to="/weekly-plan" class="nav-link" @click="closeMobileMenu">周计划</router-link>
             <router-link to="/meals" class="nav-link" :class="{ 'section-active': mealSubpage }" :aria-current="mealSubpage ? 'location' : route.path === '/meals' ? 'page' : undefined" @click="closeMobileMenu">菜品</router-link>
             <router-link to="/shopping-list" class="nav-link" @click="closeMobileMenu">购物清单</router-link>
-            <el-dropdown trigger="click">
+            <el-dropdown trigger="click" popper-class="app-more-menu">
               <button class="nav-more" :class="{ 'section-active': currentMoreSection }" :aria-current="currentMoreSection ? 'location' : undefined" :aria-description="currentMoreSection ? `当前：${currentMoreSection}` : undefined" type="button" aria-label="更多功能">更多<span v-if="currentMoreSection" class="nav-more-current" aria-hidden="true"> · {{ currentMoreSection }}</span> <el-icon><ArrowDown /></el-icon></button>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -1368,6 +1368,9 @@ html[data-theme] .el-popper {
 .nav-more-current { font-weight: 700; }
 .app-header .header-left .main-nav .nav-link.section-active { color: var(--text-primary); background: var(--bg-secondary); }
 .el-dropdown-menu__item a { color: inherit; text-decoration: none; display: block; width: 100%; }
+.app-more-menu .el-dropdown-menu__item { padding: 0; }
+.app-more-menu .el-dropdown-menu__item a { box-sizing: border-box; min-height: 44px; display: flex; align-items: center; padding: 5px 16px; }
+.app-more-menu .el-dropdown-menu__item a:focus-visible { outline: 2px solid currentColor; outline-offset: -3px; }
 .app-header .header-right .desktop-actions .desktop-logout-btn { display: none; }
 .mobile-nav-link.router-link-active, .mobile-nav-link.section-active { color: var(--secondary-color); background: var(--bg-secondary); font-weight: 700; }
 .app-header .header-right .mobile-menu-btn { color: var(--text-primary); }
