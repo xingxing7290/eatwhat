@@ -87,7 +87,11 @@ async function main () {
     await page.getByText('很长的测试食材名称用于检查手机端换行不应该溢出屏幕', { exact: true }).waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     assert.match(await input.inputValue(), /很长的测试食材/)
+    await page.getByText('当前已加载的清单中有 1 项同名食材', { exact: false }).waitFor()
+    assert.equal(await input.getAttribute('aria-describedby'), 'add-duplicate-hint')
+    assert.equal(await page.getByRole('button', { name: '添加食材' }).isEnabled(), true, 'duplicate hint must not prevent intentional additions')
     await input.fill('第二项')
+    assert.equal(await page.locator('#add-duplicate-hint').count(), 0)
     mode = 'malformed'
     await page.getByRole('button', { name: '添加食材' }).click()
     await page.getByText('操作结果未确认', { exact: false }).waitFor()
