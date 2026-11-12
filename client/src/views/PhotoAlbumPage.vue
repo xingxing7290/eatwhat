@@ -34,6 +34,10 @@ const pageSize = 24;
 const selectedIndex = ref(null);
 const photoGrid = ref(null);
 const viewerPreview = ref(null);
+const photoLinkInput = ref(null);
+const copyingPhotoLink = ref(false);
+const photoLinkNotice = ref('');
+const manualPhotoLink = ref('');
 const retryButton = ref(null);
 const refreshButton = ref(null);
 const previousMonthButton = ref(null);
@@ -76,6 +80,7 @@ const closeViewer = () => {
   returnFocusIndex.value = selectedIndex.value;
   viewerEpoch++;
   selectedIndex.value = null;
+  photoLinkNotice.value = ''; manualPhotoLink.value = '';
   if (loading.value) focusAfterLoad = true;
 };
 const load = async (openAt = null, viewerToken = null) => {
@@ -187,6 +192,40 @@ const onKey = event => {
   });
 };
 const photoKey = item => JSON.stringify([item.memoryId, item.photoIndex ?? null, item.photo]);
+watch(() => selected.value ? photoKey(selected.value) : '', () => { photoLinkNotice.value = ''; manualPhotoLink.value = ''; });
+const copyPhotoLocation = async () => {
+  const item = selected.value;
+  if (!item || copyingPhotoLink.value || loading.value) return;
+  const epoch = viewerEpoch; const key = photoKey(item); const selectedMonth = month.value;
+  const source = document.activeElement;
+  copyingPhotoLink.value = true; photoLinkNotice.value = ''; manualPhotoLink.value = '';
+  try {
+    const query = { month: selectedMonth };
+    let precise = false;
+    if (/^[a-f\d]{24}$/i.test(item.memoryId) && Number.isSafeInteger(item.photoIndex) && item.photoIndex >= 0 && window.crypto?.subtle && typeof TextEncoder !== 'undefined') {
+      try {
+        const digest = await window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(item.photo));
+        const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+        Object.assign(query, { memoryId: item.memoryId, photoIndex: String(item.photoIndex), fingerprint });
+        precise = true;
+      } catch (_) { /* Fall back to the month when hashing is unavailable. */ }
+    }
+    if (epoch !== viewerEpoch || !selected.value || photoKey(selected.value) !== key || month.value !== selectedMonth) return;
+    const link = new URL(router.resolve({ name: 'photoAlbum', query }).href, window.location.origin).href;
+    const description = precise ? '链接用于定位这张照片；如服务器不支持定位，将显示月份相册。' : '当前环境无法生成精确位置，链接将打开该月份相册。';
+    try {
+      await navigator.clipboard.writeText(link);
+      if (epoch === viewerEpoch && selected.value && photoKey(selected.value) === key) photoLinkNotice.value = `已复制。${description} 对方需登录并切换到相同小家。`;
+    } catch (_) {
+      if (epoch !== viewerEpoch || !selected.value || photoKey(selected.value) !== key) return;
+      manualPhotoLink.value = link;
+      photoLinkNotice.value = `无法自动复制，请手动复制。${description} 对方需登录并切换到相同小家。`;
+      await nextTick();
+      const focused = document.activeElement;
+      if (!focused || focused === document.body || focused === source || !focused.isConnected) { photoLinkInput.value?.input?.focus(); photoLinkInput.value?.input?.select(); }
+    }
+  } finally { copyingPhotoLink.value = false; }
+};
 const imageFor = item => resolveUploadedImage(item.photo) || placeholder;
 const imageVersion = item => `${photoKey(item)}:${photoAttempts.value[photoKey(item)] || 0}`;
 const gridImageVersion = item => `${photoKey(item)}:${gridAttempts.value[photoKey(item)] || 0}`;
@@ -293,11 +332,15 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', on
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`相册暂时无法加载：${loadError}`"><el-button ref="retryButton" link type="primary" @click="load()">重新加载</el-button><el-button v-if="page > 1" link type="primary" @click="returnToFirstPage">返回第一页</el-button></el-alert>
     <el-empty v-else-if="!loading && !data.photos.length" description="这个月还没有饭桌照片"><p class="album-empty-hint">照片来自饭后回忆，可在回忆中添加或补充照片。</p><router-link class="album-empty-link" :to="{ name: 'memories', query: { month } }">前往 {{ month }} 回忆 →</router-link></el-empty>
 <template v-else-if="!loading"><p class="page-range">{{ visibleRange }} · 按相册顺序浏览</p><div ref="photoGrid" class="album-grid"><button v-for="(item, index) in data.photos" :key="`${item.memoryId}-${item.photoIndex ?? index}-${item.photo}`" class="photo-card" type="button" :aria-label="`查看${item.date} ${item.title || '饭桌照片'}，第 ${(page - 1) * pageSize + index + 1} 张${failedPhotos.has(photoKey(item)) ? '，照片暂不可用' : ''}`" @click="openPhoto(index)"><img loading="lazy" decoding="async" :key="gridImageVersion(item)" data-photo-surface="grid" :data-photo-key="photoKey(item)" :data-photo-attempt="gridAttempts[photoKey(item)] || 0" :src="imageFor(item)" :alt="item.title || item.date" @load="imageLoaded" @error="imageError" /><strong class="photo-title" :title="item.title || '饭桌回忆'">{{ item.title || '饭桌回忆' }}</strong><span>{{ item.date }} · {{ mealTypeText[item.mealType] || '一餐' }}</span><span v-if="failedPhotos.has(photoKey(item))" class="photo-error">照片暂不可用</span></button></div><nav v-if="data.total > pageSize" class="pagination" aria-label="相册分页"><el-button :disabled="loading || page <= 1" @click="changePage(page - 1)">上一页</el-button><span aria-live="polite" aria-atomic="true">第 {{ page }} / {{ lastPage }} 页</span><el-button :disabled="loading || page >= lastPage" @click="changePage(page + 1)">下一页</el-button></nav></template>
-    <el-dialog :model-value="!!selected" title="饭桌回忆" width="min(680px, 92vw)" @update:model-value="val => { if (!val) closeViewer() }" @close="closeViewer" @close-auto-focus="schedulePhotoFocus"><template v-if="selected"><img ref="viewerPreview" :key="imageVersion(selected)" data-photo-surface="preview" :data-photo-key="photoKey(selected)" :data-photo-attempt="photoAttempts[photoKey(selected)] || 0" class="preview" tabindex="-1" :src="imageFor(selected)" :alt="selected.title || '饭桌照片'" @load="imageLoaded" @error="imageError" /><el-alert v-if="failedPreviews.has(photoKey(selected))" class="photo-load-alert" type="warning" :closable="false" show-icon :title="retryingPhotos.has(photoKey(selected)) ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button link type="primary" :aria-disabled="retryingPhotos.has(photoKey(selected))" @click="retryPhoto(selected)">{{ retryingPhotos.has(photoKey(selected)) ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="viewer-nav"><el-button :disabled="loading || photoPosition <= 1" aria-label="上一张照片" @click="navigatePhoto(-1)">上一张</el-button><span aria-live="polite">{{ photoPosition }} / {{ data.total }}</span><el-button :disabled="loading || photoPosition >= data.total" aria-label="下一张照片" @click="navigatePhoto(1)">下一张</el-button></div><div class="viewer-shortcuts"><el-button :disabled="loading || photoPosition <= 1" @click="jumpToBoundary('first')">第一张</el-button><span>也可使用键盘 ← → 切换照片</span><el-button :disabled="loading || photoPosition >= data.total" @click="jumpToBoundary('last')">最后一张</el-button></div><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="(meal, index) in (Array.isArray(selected.meals) ? selected.meals : [])" :key="meal?._id || meal?.id || index" class="album-meal-tag"><router-link v-if="linkedMealId(meal)" class="album-meal-link" :to="{ name: 'MealDetail', params: { id: linkedMealId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal?.name || '菜品不可用' }}</span></el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /><div class="memory-link"><router-link :to="{ name: 'memories', query: { edit: selected.memoryId, month } }">编辑这条饭后回忆 →</router-link></div></template></el-dialog>
+    <el-dialog :model-value="!!selected" title="饭桌回忆" width="min(680px, 92vw)" @update:model-value="val => { if (!val) closeViewer() }" @close="closeViewer" @close-auto-focus="schedulePhotoFocus"><template v-if="selected"><img ref="viewerPreview" :key="imageVersion(selected)" data-photo-surface="preview" :data-photo-key="photoKey(selected)" :data-photo-attempt="photoAttempts[photoKey(selected)] || 0" class="preview" tabindex="-1" :src="imageFor(selected)" :alt="selected.title || '饭桌照片'" @load="imageLoaded" @error="imageError" /><el-alert v-if="failedPreviews.has(photoKey(selected))" class="photo-load-alert" type="warning" :closable="false" show-icon :title="retryingPhotos.has(photoKey(selected)) ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button link type="primary" :aria-disabled="retryingPhotos.has(photoKey(selected))" @click="retryPhoto(selected)">{{ retryingPhotos.has(photoKey(selected)) ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="viewer-nav"><el-button :disabled="loading || photoPosition <= 1" aria-label="上一张照片" @click="navigatePhoto(-1)">上一张</el-button><span aria-live="polite">{{ photoPosition }} / {{ data.total }}</span><el-button :disabled="loading || photoPosition >= data.total" aria-label="下一张照片" @click="navigatePhoto(1)">下一张</el-button></div><div class="viewer-shortcuts"><el-button :disabled="loading || photoPosition <= 1" @click="jumpToBoundary('first')">第一张</el-button><span>也可使用键盘 ← → 切换照片</span><el-button :disabled="loading || photoPosition >= data.total" @click="jumpToBoundary('last')">最后一张</el-button></div><div class="photo-link-tools"><el-button :loading="copyingPhotoLink" :disabled="loading" @click="copyPhotoLocation">复制照片位置</el-button><p v-if="photoLinkNotice" role="status">{{ photoLinkNotice }}</p><el-input v-if="manualPhotoLink" ref="photoLinkInput" :model-value="manualPhotoLink" readonly aria-label="手动复制照片位置" @focus="$event.target.select()" /></div><h3>{{ selected.title || selected.date }}</h3><p>{{ selected.date }} · {{ mealTypeText[selected.mealType] || '一餐' }} · {{ selected.mood || '日常心情' }}</p><div class="meal-tags"><el-tag v-for="(meal, index) in (Array.isArray(selected.meals) ? selected.meals : [])" :key="meal?._id || meal?.id || index" class="album-meal-tag"><router-link v-if="linkedMealId(meal)" class="album-meal-link" :to="{ name: 'MealDetail', params: { id: linkedMealId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal?.name || '菜品不可用' }}</span></el-tag></div><p class="note">{{ selected.note }}</p><el-rate :model-value="selected.rating || 0" disabled /><div class="memory-link"><router-link :to="{ name: 'memories', query: { edit: selected.memoryId, month } }">编辑这条饭后回忆 →</router-link></div></template></el-dialog>
   </div>
 </template>
 
 <style scoped>
+.photo-link-tools { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin: 12px 0; color: var(--text-primary); }
+.photo-link-tools .el-button { min-height: 44px; margin: 0; }
+.photo-link-tools p { flex: 1 1 220px; margin: 0; font-size: 13px; line-height: 1.6; }
+.photo-link-tools :deep(.el-input) { flex-basis: 100%; }
 .album-meal-tag { max-width: 100%; height: auto; white-space: normal; padding: 0 8px; color: var(--text-primary); background: var(--bg-secondary); border-color: var(--border-color); }
 .album-meal-link { display: inline-flex; align-items: center; min-height: 44px; max-width: 100%; color: inherit; text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
 .album-meal-link:focus-visible { outline: 3px solid var(--text-primary); outline-offset: 2px; }
