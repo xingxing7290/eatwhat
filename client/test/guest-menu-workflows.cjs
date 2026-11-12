@@ -16,6 +16,7 @@ async function main () {
     const errors = []
     page.on('pageerror', error => errors.push(error.message))
     const meals = Array.from({ length: 650 }, (_, i) => ({ _id: i.toString(16).padStart(24, '0'), name: i === 649 ? '末页特色菜' : i === 648 ? '延迟旧结果' : `菜品${String(i).padStart(4, '0')}`, category: i < 325 ? '热菜' : '素菜' }))
+    meals[0].imageUrl = '   '
     meals[2].imageUrl = '/broken-guest-photo'
     meals[3].imageUrl = '/valid-guest-photo'
     await page.route('**/broken-guest-photo', route => route.fulfill({ status: 404, body: '' }))
@@ -50,6 +51,10 @@ async function main () {
     await page.goto(`http://127.0.0.1:${server.address().port}/guest-order/menu-test`)
     await page.getByText('650 道菜', { exact: false }).waitFor()
     assert.equal(await page.locator('.meal').count(), 24)
+    const emptyImageCard = page.locator('.meal').filter({ hasText: '菜品0000' })
+    assert.equal(await emptyImageCard.locator('.photo img').count(), 0, 'blank image URLs must not request the site root as an image')
+    assert.equal(await page.locator('.meal').filter({ hasText: '菜品0004' }).locator('.photo img').count(), 0, 'missing images must use the placeholder without a request')
+    await emptyImageCard.getByText('暂无菜图').waitFor()
     const fallbackCard = page.locator('.meal').filter({ hasText: '菜品0002' })
     await fallbackCard.locator('.photo img').waitFor({ state: 'detached' })
     assert.equal(await fallbackCard.locator('.fallback svg').getAttribute('aria-hidden'), 'true')
