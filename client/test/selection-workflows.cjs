@@ -105,6 +105,14 @@ async function main () {
       assert.ok((await radio.locator('xpath=..').locator('.el-radio-button__inner').boundingBox()).height >= 44)
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    const mobilePagination = page.locator('.mobile-pagination')
+    const pageInfo = mobilePagination.locator(':scope > span')
+    assert.ok((await pageInfo.boundingBox()).height < 25, 'pagination text should remain on one line at 320px')
+    assert.equal(await pageInfo.evaluate(node => node.scrollWidth <= node.clientWidth), true)
+    const pageButtons = await mobilePagination.getByRole('button').all()
+    const pageBoxes = await Promise.all(pageButtons.map(button => button.boundingBox()))
+    assert.ok(pageBoxes.every(box => box.height >= 44 && box.width >= 44), 'pagination controls must remain touch-sized')
+    assert.ok(Math.abs(pageBoxes[0].y - pageBoxes[1].y) < 1, 'pagination buttons should align below the page number')
     if (process.env.EATWHAT_SELECTION_SHOT) await page.screenshot({ path: process.env.EATWHAT_SELECTION_SHOT, fullPage: true })
     const longLayoutFits = await page.locator('.selected-meal-item').first().evaluate(row => {
       const tag = row.querySelector('.selected-meal-tag')

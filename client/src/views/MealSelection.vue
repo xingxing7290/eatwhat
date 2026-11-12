@@ -1007,8 +1007,9 @@ onBeforeUnmount(() => {
   .category-list button { min-height: 44px; padding: 10px 6px; font-size: 12px; border-radius: 10px; }
   .metadata-warning { padding: 8px 4px 0; }
   .desktop-pagination { display: none !important; }
-  .mobile-pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 18px; font-size: 12px; color: var(--text-secondary); }
-  .mobile-pagination :deep(.el-button) { min-height: 44px; padding: 8px 10px; }
+  .mobile-pagination { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 8px; margin-top: 18px; font-size: 12px; color: var(--text-secondary); }
+  .mobile-pagination span { grid-column: 1 / -1; grid-row: 1; text-align: center; white-space: nowrap; }
+  .mobile-pagination :deep(.el-button) { width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 8px 6px; }
 }
 @media (max-width: 400px) {
   .meal-selection :deep(.meal-image-container) { width: 72px; height: 72px; flex-basis: 72px; margin: 8px; }
