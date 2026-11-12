@@ -135,6 +135,17 @@ const totalPages = computed(() => Math.max(1, Math.ceil(boardTotal.value / board
 const pendingIds = () => [...new Set([...Object.keys(pendingLinks), ...Object.keys(uncertainCreates)])];
 const validItems = rows => Array.isArray(rows) && rows.every(item => item && typeof item._id === 'string' && !!item._id && typeof item.title === 'string' && !!item.title.trim()) && new Set(rows.map(item => item._id)).size === rows.length;
 const validCounts = counts => counts && ['open', 'planned', 'done', 'unknown'].every(key => Number.isSafeInteger(counts[key]) && counts[key] >= 0);
+const boardRowsAgree = (result, query) => {
+  const keys = ['open', 'planned', 'done', 'unknown'];
+  if (keys.some(key => result.matched[key] > result.totals[key] || (query.status !== 'all' && key !== query.status && result.matched[key] !== 0))) return false;
+  const pageCounts = { open: 0, planned: 0, done: 0, unknown: 0 };
+  for (const item of result.items) {
+    const status = statusBucket(item);
+    if ((query.status !== 'all' && status !== query.status) || (query.priority !== 'all' && priorityBucket(item) !== query.priority)) return false;
+    pageCounts[status]++;
+  }
+  return keys.every(key => pageCounts[key] <= result.matched[key]);
+};
 
 const load = async () => {
   if (filterTimer) { clearTimeout(filterTimer); filterTimer = null; }
@@ -159,7 +170,7 @@ const load = async () => {
     if (!alive || sequence !== listSequence) return;
     if (!pendingView.value && result?.supportsWishlistBoard === true) {
       const sum = counts => Object.values(counts).reduce((a, b) => a + b, 0);
-      if (result.page !== query.page || result.limit !== boardLimit || result.search !== query.search || result.status !== query.status || result.priority !== query.priority || !validCounts(result.matched) || !validCounts(result.totals) || !Number.isSafeInteger(result.total) || result.total !== sum(result.matched) || sum(result.matched) > sum(result.totals) || !validItems(result.items) || result.items.length !== Math.min(boardLimit, Math.max(0, result.total - (query.page - 1) * boardLimit))) throw new Error('分页清单数据不完整');
+      if (result.page !== query.page || result.limit !== boardLimit || result.search !== query.search || result.status !== query.status || result.priority !== query.priority || !validCounts(result.matched) || !validCounts(result.totals) || !Number.isSafeInteger(result.total) || result.total !== sum(result.matched) || sum(result.matched) > sum(result.totals) || !validItems(result.items) || result.items.length !== Math.min(boardLimit, Math.max(0, result.total - (query.page - 1) * boardLimit)) || !boardRowsAgree(result, query)) throw new Error('分页清单数据不完整或与筛选条件不一致');
       boardMode.value = true; boardTotal.value = result.total; boardMatched.value = result.matched; boardTotals.value = result.totals;
       if (boardPage.value > totalPages.value) { boardPage.value = totalPages.value; return load(); }
       items.value = result.items;

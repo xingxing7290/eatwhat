@@ -11,7 +11,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const rows = Array.from({ length: 29 }, (_, i) => ({ _id: `w${String(i).padStart(2, '0')}`, title: `心愿${String(i).padStart(2, '0')}`, note: '', category: '家常', status: i < 20 ? 'open' : i < 26 ? 'planned' : i < 28 ? 'done' : 'legacy', priority: 'normal', votes: [], supportsSafeMealLink: true, supportsMealLinkVisibility: true, mealLinkStatus: 'unlinked', createdAt: new Date(1700000000000 - i * 1000).toISOString() }))
     rows[12].mealId = { _id: 'm1', name: '家常菜' }
-    const errors = []; const requests = []; let releaseSlow; let releasePage; let holdPage = false; let failPage = false; let detailError = false; let preflight = 'ok'; let createRequests = 0
+    const errors = []; const requests = []; let releaseSlow; let releasePage; let holdPage = false; let failPage = false; let detailError = false; let preflight = 'ok'; let createRequests = 0; let boardFault = ''
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -38,7 +38,11 @@ async function main () {
         const filtered = rows.filter(row => (query.status === 'all' || bucket(row) === query.status) && (query.priority === 'all' || row.priority === query.priority) && (!query.search || [row.title, row.note, row.category].some(value => value.includes(query.search))))
         filtered.forEach(row => matched[bucket(row)]++)
         const number = Number(query.page); const limit = Number(query.limit)
-        return route.fulfill({ json: { supportsWishlistBoard: true, page: number, limit, search: query.search, status: query.status, priority: query.priority, matched, totals, total: filtered.length, items: filtered.slice((number - 1) * limit, number * limit) } })
+        const result = { supportsWishlistBoard: true, page: number, limit, search: query.search, status: query.status, priority: query.priority, matched, totals, total: filtered.length, items: filtered.slice((number - 1) * limit, number * limit).map(row => ({ ...row })) }
+        if (boardFault === 'status') result.items[0].status = 'planned'
+        if (boardFault === 'priority') result.items[0].priority = 'high'
+        if (boardFault === 'counts') { result.matched.open++; result.total++ }
+        return route.fulfill({ json: result })
       }
       return route.fulfill({ json: {} })
     })
@@ -53,6 +57,15 @@ async function main () {
     await page.getByRole('group', { name: '按状态筛选' }).getByRole('button', { name: '想吃', exact: true }).click()
     await page.getByLabel('按优先级筛选').selectOption('normal')
     await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
+    for (const fault of ['status', 'priority', 'counts']) {
+      boardFault = fault
+      await page.getByRole('button', { name: '刷新当前结果' }).click()
+      await page.getByText('分页清单数据不完整或与筛选条件不一致', { exact: false }).waitFor()
+      assert.equal(await page.locator('.wish-card').count(), 0, `${fault} data must not be shown as a valid filtered board`)
+      boardFault = ''
+      await page.getByRole('button', { name: '重新加载' }).click()
+      await page.getByText('共 20 条匹配记录 · 第 1 / 2 页').waitFor()
+    }
     await page.getByRole('button', { name: '下一页' }).focus()
     await page.keyboard.press('Enter')
     await page.getByText('共 20 条匹配记录 · 第 2 / 2 页').waitFor()
