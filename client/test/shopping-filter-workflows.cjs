@@ -13,7 +13,7 @@ async function main () {
       localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' }))
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => { if (window.__clipboardFail) throw new Error('clipboard denied'); window.__copiedShopping = text } } })
     })
-    let version = 1; let writes = 0; let holdInitial = true; let releaseInitial; let generatedFrom = `week:2026-10-26:${new Date(2026, 9, 28, 10, 15).getTime()}`
+    let version = 1; let writes = 0; let holdInitial = true; let releaseInitial; let failNextWeek = false; let generatedFrom = `week:2026-10-26:${new Date(2026, 9, 28, 10, 15).getTime()}`
     let items = [
       { _id: 'egg', name: '鸡蛋', amount: '2个', category: 'meat_egg', checked: true, manual: true },
       { _id: 'milk', name: '牛奶', amount: '1L', category: 'other', checked: true, manual: true },
@@ -24,7 +24,7 @@ async function main () {
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
-      if (path === '/shopping-list' && request.method() === 'GET') { if (holdInitial) await new Promise(resolve => { releaseInitial = resolve }); return route.fulfill({ json: snapshot() }) }
+      if (path === '/shopping-list' && request.method() === 'GET') { if (holdInitial) await new Promise(resolve => { releaseInitial = resolve }); const week = url.searchParams.get('weekStart'); if (week === '2026-11-02') return failNextWeek ? route.fulfill({ status: 503, json: { error: '清单暂不可用' } }) : route.fulfill({ json: { ...snapshot(), weekStart: week, items: [] } }); return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/generate' && request.method() === 'POST') { writes++; return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/items' && request.method() === 'POST') { const body = request.postDataJSON(); assert.equal(body.expectedVersion, version); writes++; version++; items = [...items, { _id: 'new-item', name: body.name, amount: body.amount, category: body.category, checked: false, manual: true }]; return route.fulfill({ json: snapshot() }) }
       if (path === '/shopping-list/purchased' && request.method() === 'DELETE') { assert.equal(Number(url.searchParams.get('expectedVersion')), version); writes++; version++; items = items.filter(item => !item.checked); return route.fulfill({ json: snapshot() }) }
@@ -134,6 +134,22 @@ async function main () {
     await page.getByRole('button', { name: '打开待买快照' }).click()
     assert.equal(await snapshotField.inputValue(), copied)
     await copyDialog.getByRole('button', { name: '完成' }).click()
+    await page.getByRole('button', { name: '复制全部待买项' }).click()
+    await page.waitForFunction(() => typeof window.__rejectShoppingCopy === 'function')
+    await page.getByRole('button', { name: '下一周' }).click()
+    await page.getByText('还没有购物项，先从排餐生成或手动添加').waitFor()
+    await page.evaluate(() => window.__rejectShoppingCopy(new Error('denied after week change')))
+    await page.getByRole('button', { name: '打开待买快照' }).waitFor()
+    failNextWeek = true
+    await page.getByRole('button', { name: '刷新所选周清单' }).click()
+    await page.locator('.load-error').getByText('清单暂不可用', { exact: false }).waitFor()
+    await page.getByRole('button', { name: '打开待买快照' }).click()
+    assert.equal(await snapshotField.inputValue(), copied, 'late clipboard failure must preserve the original week snapshot even if the new week fails to load')
+    await copyDialog.getByRole('button', { name: '完成' }).click()
+    failNextWeek = false
+    await page.getByRole('button', { name: '上一周' }).click()
+    await page.getByText('显示 1 / 4 项 · 本周待买 2 项').waitFor()
+    await page.locator('.extra-tools summary').click()
     await page.evaluate(() => { navigator.clipboard.writeText = window.__originalShoppingCopy })
     await page.getByRole('button', { name: '已买', exact: true }).click()
     await page.getByText('没有符合条件的食材').waitFor()
