@@ -18,8 +18,9 @@
             <div class="avatar-preview"><img v-if="profileAvatar && !failedAvatars.has(profileAvatarKey)" :key="profileAvatarKey" :src="profileAvatar" alt="头像预览" @error="onAvatarError($event, profileAvatarKey)" /><div v-else class="avatar-placeholder" :aria-label="avatarFile ? '头像预览不可用' : '头像不可用'">{{ initial }}</div></div>
             <div class="avatar-actions">
               <input ref="fileInputRef" type="file" accept="image/*" class="file-input" @change="onFileChange" />
-              <el-button :disabled="saving || avatarUploading" @click="chooseFile">选择图片</el-button>
+              <el-button ref="chooseAvatarButton" :disabled="saving || avatarUploading" @click="chooseFile">选择图片</el-button>
               <el-button type="primary" :loading="avatarUploading" :disabled="!avatarFile || saving || !!nameIssue" @click="uploadAvatar">上传头像</el-button>
+              <el-button v-if="avatarFile" :disabled="saving || avatarUploading" @click="discardAvatarSelection">撤销头像选择</el-button>
               <span v-if="avatarFile" class="file-name">{{ avatarFile.name }} · 尚未上传</span>
             </div>
           </div>
@@ -248,6 +249,7 @@ const profileUncertain = ref(false);
 const avatarPreview = ref('');
 const failedAvatars = ref(new Set());
 const fileInputRef = ref(null);
+const chooseAvatarButton = ref(null);
 const initial = computed(() => memberInitial(user.value));
 const memberInitial = member => String(member?.displayName || member?.username || '').trim().slice(0, 1).toUpperCase() || '家';
 const avatarSource = member => resolveRecipeImage(member?.avatarUrl, '');
@@ -366,6 +368,15 @@ const clearAvatarFile = () => {
   if (avatarPreview.value) URL.revokeObjectURL(avatarPreview.value);
   avatarPreview.value = '';
   if (fileInputRef.value) fileInputRef.value.value = '';
+};
+const discardAvatarSelection = async event => {
+  if (avatarUploading.value || saving.value || !avatarFile.value) return;
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  clearAvatarFile();
+  await nextTick();
+  const focused = document.activeElement;
+  if (hadFocus && (!focused || focused === document.body || focused === source || !focused.isConnected)) chooseAvatarButton.value?.$el?.focus();
 };
 const reload = async () => {
   if (profileLoading.value || saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value) return;
@@ -511,13 +522,16 @@ const onIssueImageError = (event, issue) => {
 };
 const onFileChange = (e) => {
   const file = e.target?.files?.[0];
-  clearAvatarFile();
+  if (e.target) e.target.value = '';
   if (!file) return;
   const extension = file.name.split('.').pop()?.toLowerCase();
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream', ''];
-  if (!['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension) || !allowedTypes.includes(file.type.toLowerCase())) return ElMessage.warning('请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片');
+  if (!['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension) || !allowedTypes.includes(file.type.toLowerCase())) return ElMessage.warning(`请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片${avatarFile.value ? '；之前选择的头像仍保留' : ''}`);
+  let preview;
+  try { preview = URL.createObjectURL(file); } catch (_) { return ElMessage.warning(`无法读取所选文件${avatarFile.value ? '；之前选择的头像仍保留' : ''}`); }
+  clearAvatarFile();
   avatarFile.value = file;
-  avatarPreview.value = URL.createObjectURL(file);
+  avatarPreview.value = preview;
 };
 const importMissingDefaultMeals = async () => {
   if (defaultLoading.value || defaultUncertain.value || defaultError.value || !profileReady.value || profileError.value || joinUncertain.value || governanceLoading.value || !sessionIsCurrent()) return;
