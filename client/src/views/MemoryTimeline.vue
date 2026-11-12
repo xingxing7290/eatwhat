@@ -124,6 +124,17 @@ const previewRetryButton = ref(null);
 const photoVersions = ref({});
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
+const dateInput = ref(null);
+const dateField = ref(null);
+const dateError = ref(false);
+watch(() => form.date, value => { if (validMemoryDate(value)) dateError.value = false; });
+watch(dateError, async () => {
+  await nextTick();
+  const input = dateField.value?.$el?.querySelector('input');
+  if (!input) return;
+  if (dateError.value) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'memory-date-error'); }
+  else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
+});
 const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
 const unavailableMealCount = ref(0);
 const clearedUnavailableMeals = ref(false);
@@ -315,6 +326,7 @@ const onPhotoKey = event => {
 };
 
 const resetForm = () => {
+  dateError.value = false;
   resetPhotoUndo();
   Object.assign(form, { date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
   photoFiles.value = [];
@@ -326,6 +338,7 @@ const resetForm = () => {
 const fillEdit = item => {
   if (!(item?._id || item?.id) || !validVersion(item) || !validMemoryDate(item.date) || !Object.prototype.hasOwnProperty.call(mealTypeText, item.mealType) || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || !Array.isArray(item.mealIds) || item.mealIds.some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string'))) throw new Error('回忆数据或版本不完整，请刷新后重试');
   resetPhotoUndo();
+  dateError.value = false;
   unavailableMealCount.value = item.mealIds.filter(meal => meal === null).length;
   clearedUnavailableMeals.value = false; mealVisibilityVerified.value = item.supportsUnavailableMealVisibility === true;
   originalAvailableMeals.value = item.mealIds.filter(Boolean);
@@ -494,7 +507,8 @@ watch(() => route.fullPath, (path, previousPath) => {
   timelineTimer = setTimeout(load, 0);
 }, { flush: 'sync' });
 const save = async () => {
-  if (!form.date) return ElMessage.warning('请选择日期');
+  dateError.value = !validMemoryDate(form.date);
+  if (dateError.value) { await nextTick(); dateInput.value?.focus(); return; }
   if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value || confirmingMeals.value) return;
   if (editing.value && (!mealVisibilityVerified.value || (unavailableMealCount.value && !clearedUnavailableMeals.value)) && (clearedUnavailableMeals.value || JSON.stringify(form.mealIds) !== JSON.stringify(JSON.parse(initialForm.value).mealIds))) return ElMessage.warning('请先核对菜品完整性，再修改相关菜品');
   try {
@@ -627,7 +641,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       </el-alert>
       <el-alert v-if="editing && !mealVisibilityVerified" class="meal-integrity-alert" type="warning" :closable="false" show-icon title="当前服务器未提供菜品完整性核验，暂不能修改相关菜品；文字和照片仍可编辑。" />
       <el-form label-position="top" :disabled="saving || saveUncertain">
-        <el-form-item label="日期"><el-date-picker v-model="form.date" value-format="YYYY-MM-DD" type="date" /></el-form-item>
+        <el-form-item ref="dateField" label="日期"><el-date-picker ref="dateInput" v-model="form.date" value-format="YYYY-MM-DD" type="date" aria-label="回忆日期" /><p v-if="dateError" id="memory-date-error" class="field-error" role="alert">请选择有效日期，其他内容会保留。</p></el-form-item>
         <el-form-item label="餐次"><el-select v-model="form.mealType"><el-option v-for="(label, key) in mealTypeText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item label="相关菜品"><div v-if="editing && unavailableMealCount" class="unavailable-meals" role="status"><span v-if="!clearedUnavailableMeals">有 {{ unavailableMealCount }} 条相关菜品不可用；原引用将保留。</span><span v-else>保存后将清除这条回忆中的不可用引用。</span><el-button v-if="mealVisibilityVerified && !clearedUnavailableMeals" link type="primary" :disabled="busy" @click="clearUnavailableMeals">清除并编辑相关菜品</el-button><el-button v-else-if="clearedUnavailableMeals" link :disabled="busy" @click="undoClearUnavailableMeals">撤销清除</el-button></div><el-select v-model="form.mealIds" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" :disabled="!!editing && (!mealVisibilityVerified || (!!unavailableMealCount && !clearedUnavailableMeals))" aria-label="搜索相关菜品" placeholder="搜索菜名或食材" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select><small v-if="!mealError && mealTotal > 50" class="meal-help">仅显示前 50 道，请输入菜名或食材缩小范围。</small><el-alert v-if="mealError" type="warning" :closable="false" show-icon :title="`菜品暂时无法加载：${mealError}`"><el-button link type="primary" @click="searchMealCatalog">重试</el-button></el-alert></el-form-item>
         <el-form-item label="标题"><el-input v-model="form.title" placeholder="比如：周五晚上的番茄牛腩" /></el-form-item>
@@ -645,6 +659,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
 </template>
 
 <style scoped>
+.field-error { width: 100%; margin: 6px 0 0; color: var(--text-primary); font-size: 13px; font-weight: 700; line-height: 1.5; }
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .memory-page { display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
