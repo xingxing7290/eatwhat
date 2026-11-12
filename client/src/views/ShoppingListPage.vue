@@ -41,12 +41,29 @@ const editNameError = ref(false);
 const focusAddItem = () => addNameInput.value?.focus();
 const categoryText = { vegetable: '蔬菜', meat_egg: '肉蛋', staple: '主食', seasoning: '调料', other: '其他' };
 const categoryKey = item => Object.prototype.hasOwnProperty.call(categoryText, item.category) ? item.category : 'other';
-const monday = value => { const d = value ? new Date(...value.split('-').map((part, index) => index === 1 ? Number(part) - 1 : Number(part))) : new Date(); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const dateKey = d => `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const monday = value => { const d = value ? new Date(...value.split('-').map((part, index) => index === 1 ? Number(part) - 1 : Number(part))) : new Date(); const day = d.getDay() || 7; d.setDate(d.getDate() - day + 1); return dateKey(d); };
+const supportedWeek = value => {
+  if (!validWeekLink(value)) return false;
+  const start = monday(value); if (!validWeekLink(start)) return false;
+  const [year, month, day] = start.split('-').map(Number);
+  return Array.from({ length: 7 }, (_, index) => dateKey(new Date(year, month - 1, day + index))).every(validWeekLink);
+};
 const thisWeek = ref(monday());
 let weekClockTimer = null;
 const refreshCurrentWeek = () => { thisWeek.value = monday(); };
-const shiftedWeek = (value, offset) => { const [year, month, day] = monday(value).split('-').map(Number); const date = new Date(year, month - 1, day + offset * 7); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; };
-const weekRange = computed(() => { if (!weekStart.value) return ''; const [year, month, day] = monday(weekStart.value).split('-').map(Number); const end = new Date(year, month - 1, day + 6); return `${monday(weekStart.value)} — ${end.getFullYear()}-${String(end.getMonth() + 1).padStart(2, '0')}-${String(end.getDate()).padStart(2, '0')}`; });
+const shiftedWeek = (value, offset) => { const [year, month, day] = monday(value).split('-').map(Number); return dateKey(new Date(year, month - 1, day + offset * 7)); };
+const canMoveWeek = offset => !!weekStart.value && supportedWeek(shiftedWeek(weekStart.value, offset));
+const disabledWeekDate = date => !supportedWeek(dateKey(date));
+const weekRange = computed(() => { if (!weekStart.value) return ''; const [year, month, day] = monday(weekStart.value).split('-').map(Number); return `${monday(weekStart.value)} — ${dateKey(new Date(year, month - 1, day + 6))}`; });
+const calendarSupportsDate = date => /^\d{4}-\d{2}-\d{2}$/.test(date) && Number(date.slice(0, 4)) >= 2000 && Number(date.slice(0, 4)) <= 2100;
+const calendarReviewDates = computed(() => generationDates.value.filter(calendarSupportsDate));
+const weekHasUnsupportedCalendarDates = computed(() => {
+  if (!weekStart.value) return false;
+  const [year, month, day] = monday(weekStart.value).split('-').map(Number);
+  return Array.from({ length: 7 }, (_, index) => dateKey(new Date(year, month - 1, day + index))).some(date => !calendarSupportsDate(date));
+});
+const fallbackCalendarDate = computed(() => weekStart.value && !generationDates.value.length && calendarSupportsDate(monday(weekStart.value)) ? monday(weekStart.value) : '');
 const generationTime = computed(() => {
   if (!weekStart.value || typeof list.value.generatedFrom !== 'string') return '';
   const match = /^week:(\d{4}-\d{2}-\d{2}):(\d+)$/.exec(list.value.generatedFrom);
@@ -190,6 +207,7 @@ const load = async () => {
 const syncWeekUrl = () => { const week = monday(weekStart.value); if (route.name === 'shoppingList' && route.query.week !== week) void router.replace({ name: 'shoppingList', query: { week } }); };
 const changeWeek = async (updateUrl = true) => {
   if (!weekChoice.value || changingWeek.value) return false;
+  if (!supportedWeek(weekChoice.value)) { weekChoice.value = weekStart.value; ElMessage.warning('请选择完整处于 0100 至 9998 年范围内的一周'); return false; }
   if (monday(weekChoice.value) === monday(weekStart.value)) { weekStart.value = weekChoice.value; weekLinkNotice.value = ''; if (updateUrl) syncWeekUrl(); return true; }
   changingWeek.value = true;
   try {
@@ -200,11 +218,11 @@ const changeWeek = async (updateUrl = true) => {
     clearForm(); mutationIssue.value = ''; generationNotice.value = ''; generationDates.value = []; weekStart.value = weekChoice.value; weekLinkNotice.value = ''; await load(); if (updateUrl) syncWeekUrl(); return true;
   } finally { changingWeek.value = false; }
 };
-const moveWeek = offset => { if (loading.value || working.value || changingWeek.value || !weekStart.value) return; weekChoice.value = shiftedWeek(weekStart.value, offset); changeWeek(); };
+const moveWeek = offset => { if (loading.value || working.value || changingWeek.value || !canMoveWeek(offset)) return; weekChoice.value = shiftedWeek(weekStart.value, offset); changeWeek(); };
 const returnToCurrentWeek = () => { if (!loading.value && !working.value && !changingWeek.value) { weekChoice.value = monday(); changeWeek(); } };
 onBeforeRouteUpdate(async to => {
   if (to.name !== 'shoppingList' || to.query.week === route.query.week) return true;
-  if (to.query.week !== undefined && !validWeekLink(to.query.week)) { ElMessage.warning('购物清单链接中的日期无效'); return false; }
+  if (to.query.week !== undefined && !supportedWeek(to.query.week)) { ElMessage.warning('购物清单链接中的日期无效或超出完整周的支持范围'); return false; }
   const next = to.query.week === undefined ? monday() : monday(to.query.week);
   if (next === monday(weekStart.value)) return true;
   if (loading.value || working.value || changingWeek.value) { ElMessage.warning('请先完成当前操作'); return false; }
@@ -216,7 +234,7 @@ onBeforeRouteUpdate(async to => {
   return true;
 });
 watch(() => route.query.week, value => {
-  if (route.name !== 'shoppingList' || (value !== undefined && !validWeekLink(value))) return;
+  if (route.name !== 'shoppingList' || (value !== undefined && !supportedWeek(value))) return;
   const next = value === undefined ? monday() : monday(value);
   if (next === monday(weekStart.value)) { weekLinkNotice.value = ''; return; }
   clearForm(); mutationIssue.value = ''; generationNotice.value = ''; generationDates.value = []; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
@@ -354,13 +372,13 @@ const remove = async item => {
   }
 };
 const clearPurchased = async () => { if (!purchased.value || disabled.value) return; working.value = true; try { try { await ElMessageBox.confirm(`将删除 ${purchased.value} 项已购食材。${filtersActive.value ? '此操作作用于所选周全部已购食材，包括筛选后未显示的项目。' : ''}`, '清空已购', { type: 'warning', confirmButtonText: '清空', cancelButtonText: '取消' }); } catch (_) { return; } await mutate((version, week) => api.shoppingList.clearPurchased(week, version), () => ElMessage.success('已清空已购'), next => next.items.every(item => !item.checked)); } finally { working.value = false; } };
-onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '购物清单链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
+onMounted(() => { const linked = route.query.week; weekStart.value = supportedWeek(linked) ? monday(linked) : monday(); if (linked !== undefined && !supportedWeek(linked)) weekLinkNotice.value = '购物清单链接中的日期无效或超出完整周的支持范围，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
 onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
 <template>
   <div class="shopping-page" v-loading="loading" element-loading-text="正在加载购物清单" :aria-busy="loading ? 'true' : 'false'">
-    <div class="page-header"><div><span class="eyebrow">SHOPPING LIST · 一周采购</span><h1>好好买菜，轻松做饭</h1><p>从排餐汇总食材，也可以补充自己需要的东西。</p><small v-if="list.weekStart">{{ list.weekStart }} 开始的一周 · {{ weekRange }}</small></div><div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || working || changingWeek" aria-label="选择购物清单日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换购物清单日期"><el-button :disabled="loading || working || changingWeek" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || working || changingWeek || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || working || changingWeek" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="disabled" @click="generate"><el-icon><ShoppingCart /></el-icon>从排餐生成</el-button><el-button :disabled="!purchased || disabled" @click="clearPurchased">清空已购</el-button></div></div>
+    <div class="page-header"><div><span class="eyebrow">SHOPPING LIST · 一周采购</span><h1>好好买菜，轻松做饭</h1><p>从排餐汇总食材，也可以补充自己需要的东西。</p><small v-if="list.weekStart">{{ list.weekStart }} 开始的一周 · {{ weekRange }}</small></div><div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled-date="disabledWeekDate" :disabled="loading || working || changingWeek" aria-label="选择购物清单日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换购物清单日期"><el-button :disabled="loading || working || changingWeek || !canMoveWeek(-1)" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || working || changingWeek || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || working || changingWeek || !canMoveWeek(1)" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="disabled" @click="generate"><el-icon><ShoppingCart /></el-icon>从排餐生成</el-button><el-button :disabled="!purchased || disabled" @click="clearPurchased">清空已购</el-button></div></div>
     <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
     <router-link v-if="weekStart" class="week-link" :to="{ name: 'weeklyPlan', query: { week: monday(weekStart) } }">查看所选周计划 →</router-link>
     <div v-if="!loadError" class="generation-context"><strong v-if="!loading">{{ generationTime ? `最近从排餐生成：${generationTime}（本机时间）` : '暂无可识别的排餐生成时间' }}</strong><p>排餐变动不会自动更新清单；请按需重新生成并核对食材。</p><el-button :loading="loading" :disabled="working || changingWeek" @click="load">刷新所选周清单</el-button><p>刷新会读取其他成员的最新更改，未提交的食材输入会保留。</p></div>
@@ -369,7 +387,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
     <template v-else>
     <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
     <el-alert v-else-if="!loading && !versionAvailable" type="warning" :closable="false" show-icon title="服务器未提供安全版本信息，购物清单暂时只能查看。" />
-    <el-alert v-if="generationNotice" class="generation-alert" type="warning" :closable="false" show-icon :title="generationNotice"><p v-if="generationDates.length">需核对的日期：{{ generationDates.join('、') }}。</p><p v-else>{{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}可能跨月，请核对整周的安排。</p><router-link class="calendar-link" :to="{ name: 'calendar', query: { date: generationDates[0] || monday(weekStart) } }">前往日历核对</router-link><el-button link @click="generationNotice = ''; generationDates = []">关闭提示</el-button><nav v-if="generationDates.length > 1" class="affected-dates" aria-label="按日期核对购物清单"><span>逐日核对：</span><router-link v-for="date in generationDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
+    <el-alert v-if="generationNotice" class="generation-alert" type="warning" :closable="false" show-icon :title="generationNotice"><p v-if="generationDates.length">需核对的日期：{{ generationDates.join('、') }}。</p><p v-else>{{ monday(weekStart) === thisWeek ? '本周' : '所选周' }}可能跨月，请核对整周的安排。</p><router-link v-if="calendarReviewDates.length || fallbackCalendarDate" class="calendar-link" :to="{ name: 'calendar', query: { date: calendarReviewDates[0] || fallbackCalendarDate } }">前往日历核对</router-link><p v-if="calendarReviewDates.length !== generationDates.length || (!generationDates.length && weekHasUnsupportedCalendarDates)">部分或全部日期超出日历支持范围（2000–2100 年），请在周计划中核对或联系管理员。</p><el-button link @click="generationNotice = ''; generationDates = []">关闭提示</el-button><nav v-if="calendarReviewDates.length > 1" class="affected-dates" aria-label="按日期核对购物清单"><span>逐日核对：</span><router-link v-for="date in calendarReviewDates" :key="date" :to="{ name: 'calendar', query: { date } }" :aria-label="`查看 ${date} 的排餐`">{{ date }}</router-link></nav></el-alert>
     <div v-if="loading" class="progress-loading" role="status">正在读取所选周采购进度…</div>
     <div v-else class="progress-card"><div><span>采购进度</span><strong>{{ purchased }} / {{ list.items?.length || 0 }}</strong><small>项已买好</small></div><el-progress :percentage="list.items?.length ? Math.round(purchased / list.items.length * 100) : 0" :show-text="false" /></div>
     <section v-if="!loading && list.items?.length" class="list-tools" aria-label="查找购物食材">
