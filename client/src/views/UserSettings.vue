@@ -262,7 +262,7 @@ const dirty = computed(() => reloadDirty.value || !!joinCode.value.trim() || joi
 const validNameVersion = value => !!value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 && (value.revision === null || (typeof value.revision === 'string' && value.revision.length > 0 && value.revision.length <= 128));
 const nameVersionAvailable = computed(() => household.value.supportsConditionalNameUpdate === true && validNameVersion(household.value.nameVersion));
 const mutationPending = computed(() => saving.value || avatarUploading.value || householdSaving.value || nameChecking.value || refreshing.value || joining.value || defaultLoading.value || !!resolvingIssue.value);
-const manualCopyValid = computed(() => !!manualCopy.value && profileReady.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && household.value.id === manualCopy.value.home && household.value.inviteCode === manualCopy.value.code && sessionIsCurrent(manualCopy.value.scope));
+const manualCopyValid = computed(() => !!manualCopy.value && profileReady.value && !profileLoading.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && !joining.value && household.value.id === manualCopy.value.home && household.value.inviteCode === manualCopy.value.code && sessionIsCurrent(manualCopy.value.scope));
 const selectManualCopy = () => { if (manualCopyValid.value) { manualCopyInput.value?.input?.focus(); manualCopyInput.value?.input?.select(); } };
 if (rawInvitedCode) {
   hashParams.delete('invite');
@@ -472,15 +472,15 @@ const joinHousehold = async () => {
   finally { joining.value = false; }
 };
 const copyInvitation = async kind => {
-  if (!profileReady.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || !household.value.inviteCode || !sessionIsCurrent()) return;
+  if (!profileReady.value || profileLoading.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || joining.value || !household.value.inviteCode || !sessionIsCurrent()) return;
   const code = household.value.inviteCode; const home = household.value.id; const scope = currentSessionScope();
   // URL fragments are not sent in the HTTP request or server access logs.
   const href = router.resolve({ name: 'accountApply', hash: `#invite=${encodeURIComponent(code)}` }).href;
   const value = kind === 'link' ? new URL(href, window.location.origin).href : code;
-  const isCurrent = () => profileReady.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && household.value.id === home && household.value.inviteCode === code && sessionIsCurrent(scope);
-  try { await navigator.clipboard.writeText(value); if (isCurrent()) ElMessage.success(kind === 'link' ? '邀请链接已复制' : '邀请码已复制'); else ElMessage.warning('复制期间家庭或邀请码已变化，请重新核对。'); }
+  const isCurrent = () => profileReady.value && !profileLoading.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && !joining.value && household.value.id === home && household.value.inviteCode === code && sessionIsCurrent(scope);
+  try { await navigator.clipboard.writeText(value); if (isCurrent()) ElMessage.success(kind === 'link' ? '邀请链接已复制' : '邀请码已复制'); else ElMessage.warning('复制期间家庭操作正在进行或状态已变化，请重新核对。'); }
   catch (_) {
-    if (!isCurrent()) return ElMessage.warning('复制期间家庭或邀请码已变化，请重新核对。');
+    if (!isCurrent()) return ElMessage.warning('复制期间家庭操作正在进行或状态已变化，请重新核对。');
     manualCopy.value = { kind, value, code, home, scope }; manualCopyOpen.value = true;
   }
 };

@@ -146,6 +146,19 @@ async function main () {
     assert.equal(await page.getByRole('textbox', { name: '手动复制的邀请码' }).count(), 0, 'session changes must close the manual-copy dialog')
     await page.evaluate(() => { navigator.clipboard.writeText = window.__originalClipboardWrite })
 
+    await page.evaluate(() => { navigator.clipboard.writeText = () => new Promise(resolve => { window.__resolveInviteCopy = resolve }) })
+    await card.getByRole('button', { name: '复制邀请链接' }).click()
+    await page.waitForFunction(() => typeof window.__resolveInviteCopy === 'function')
+    await card.getByRole('textbox', { name: '要加入的小家邀请码' }).fill('HOMEB1')
+    await card.getByRole('button', { name: '加入', exact: true }).click()
+    await page.getByText('确认切换小家', { exact: true }).waitFor()
+    await page.evaluate(() => window.__resolveInviteCopy())
+    await page.getByText('复制期间家庭操作正在进行或状态已变化，请重新核对。').waitFor()
+    await page.getByRole('button', { name: '取消' }).click()
+    await card.getByRole('textbox', { name: '要加入的小家邀请码' }).fill('')
+    await page.evaluate(() => { navigator.clipboard.writeText = window.__originalClipboardWrite })
+    assert.equal(joinCalls, 0, 'cancelling the family change must not submit a join')
+
     refreshMode = 'malformed'
     await card.getByRole('button', { name: '刷新', exact: true }).click()
     await page.getByRole('button', { name: '刷新邀请码' }).click()
