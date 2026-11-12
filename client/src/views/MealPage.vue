@@ -1335,7 +1335,11 @@ onBeforeUnmount(() => {
 .archive-pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 14px; color: var(--text-secondary); }
 .archive-pagination .el-button + .el-button, .header-actions .el-button + .el-button { margin-left: 0; }
 .mobile-pagination { display:none; align-items:center; justify-content:center; gap:12px; margin-top:18px; color:var(--text-secondary); }
-@media (max-width:768px) { .mobile-pagination { display:flex; } }
+@media (max-width:768px) {
+  .mobile-pagination { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px 8px; }
+  .mobile-pagination > span { grid-column:1 / -1; grid-row:1; text-align:center; white-space:nowrap; }
+  .mobile-pagination :deep(.el-button) { width:100%; min-width:0; min-height:44px; margin:0; padding:8px 6px; }
+}
 .meal-page {
   min-height: 100vh;
   background: var(--bg-secondary);
