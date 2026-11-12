@@ -65,6 +65,19 @@ async function main () {
     assert.equal(await page.locator('.cover-button').getAttribute('aria-describedby'), 'cover-notice')
     await page.getByText('鸡蛋', { exact: true }).waitFor()
     await page.getByText('炒熟', { exact: true }).waitFor()
+    await page.getByText('本次已备好 0 / 2 项').waitFor()
+    await page.getByText('仅在当前页面保留，刷新后重置，不会修改菜谱或购物清单。').waitFor()
+    const prepared = page.getByRole('checkbox', { name: '第 1 项鸡蛋已备好' })
+    assert.ok((await prepared.locator('..').boundingBox()).height >= 44)
+    await prepared.focus(); await page.keyboard.press('Space')
+    await page.getByText('本次已备好 1 / 2 项').waitFor()
+    assert.equal(await prepared.isChecked(), true)
+    await page.getByRole('button', { name: '重置备菜' }).focus(); await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '第 1 项鸡蛋已备好')
+    assert.equal(await prepared.isChecked(), false)
+    await prepared.check()
+    assert.equal(scheduleWrites, 0, 'preparing ingredients must not change the calendar')
+    assert.equal(reportWrites, 0, 'preparing ingredients must not submit feedback')
     await page.getByText('本次已完成 0 / 2 步').waitFor()
     await page.getByText('仅在当前页面保留，刷新后重置，不会修改菜谱。').waitFor()
     const firstStep = page.getByRole('button', { name: '标记完成第 1 步' })
@@ -81,11 +94,12 @@ async function main () {
     await page.getByRole('button', { name: '标记完成第 1 步' }).click()
     await page.reload()
     await page.getByText('本次已完成 0 / 2 步').waitFor()
+    await page.getByText('本次已备好 0 / 2 项').waitFor()
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle']) {
+        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
         }
