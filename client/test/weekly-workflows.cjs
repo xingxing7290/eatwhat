@@ -63,6 +63,7 @@ async function main () {
         const days = planned()
         const preview = days.map(day => ({ date: day.date, meals: { ...emptyMeals(), dinner: [meal] }, hints: [] }))
         if (draftMode === 'mismatch') preview[0].meals.dinner = [{ _id: 'meal-b', name: '另一道菜' }]
+        if (draftMode === 'duplicate') { days[0].meals.dinner = [meal._id, meal._id]; preview[0].meals.dinner = [meal, meal] }
         data = { weekStart: dates[0], days, preview, generationPolicy }
       } else if (req.method() === 'POST' && pathname === '/weekly-plans/apply') {
         applyCalls++
@@ -254,6 +255,13 @@ async function main () {
     await page.getByText('草稿预览与提交菜品不一致').waitFor()
     assert.equal(generateCalls, 2)
     assert.equal(await page.getByText('规则生成草稿').count(), 1, 'invalid replacement must not destroy the existing draft')
+    draftMode = 'duplicate'
+    await page.getByRole('button', { name: '生成草稿' }).click()
+    await page.getByRole('button', { name: '重新生成', exact: true }).click()
+    await page.getByText('草稿中同一餐次包含重复菜品，请重新生成').waitFor()
+    assert.equal(generateCalls, 3)
+    await page.locator('.draft-card').getByText('麻婆豆腐', { exact: true }).waitFor()
+    assert.equal(applyCalls, 0, 'rejecting an invalid generated draft must not write to the calendar')
     await page.getByRole('button', { name: '应用到日历' }).click()
     await page.getByRole('button', { name: '确认替换' }).click()
     await page.getByText('草稿已保留，请调整无效菜品或重新检查后重试。').waitFor()

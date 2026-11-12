@@ -147,6 +147,7 @@ const validateDraft = (result, requestedWeek) => {
     if (day?.date !== dates[index] || preview?.date !== dates[index] || !validMeals(day.meals) || !validMeals(preview.meals)) throw new Error('草稿日期或餐次不完整');
     for (const type of Object.keys(mealTypes)) {
       const ids = day.meals[type]; const shown = preview.meals[type];
+      if (new Set(ids).size !== ids.length) throw new Error('草稿中同一餐次包含重复菜品，请重新生成');
       if (ids.some(id => typeof id !== 'string' || !id) || shown.length !== ids.length || shown.some((meal, i) => String(mealId(meal)) !== ids[i] || typeof meal?.name !== 'string' || !meal.name.trim())) throw new Error('草稿预览与提交菜品不一致');
     }
   }
