@@ -13,7 +13,7 @@ async function main () {
     const rows = Array.from({ length: 205 }, (_, index) => ({ _id: `memory-${index}`, date: `2025-01-${String(28 - index % 28).padStart(2, '0')}`, title: `历史回忆${String(index).padStart(3, '0')}`, note: index === 204 ? '最后一条特别记号' : '', mood: '温馨', mealType: index % 2 ? 'lunch' : 'dinner', photos: index % 3 ? [] : ['/uploads/photo.png'], mealIds: [], supportsConditionalEdit: true, supportsConditionalDelete: true, editVersion: { revision: `v${index}`, updatedAt: '2026-01-01T00:00:00.000Z' } }))
     rows[0].mealIds = [{ _id: 'meal-a', name: '家常菜' }, null, { _id: 'bad/id', name: '异常菜品' }]
     rows[0].supportsUnavailableMealVisibility = true
-    let legacy = false; let invalidDate = false; let mismatch = ''; let releaseSlow; const requests = []; const errors = []
+    let legacy = false; let invalidDate = false; let mismatch = ''; let releaseSlow; let holdPage = false; let releasePage; let failPage = false; const requests = []; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.context().route('**/api/**', async route => {
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -22,6 +22,8 @@ async function main () {
       if (path === '/memories' && url.searchParams.has('mealId')) return route.fulfill({ json: [] })
       if (path !== '/memories' || req.method() !== 'GET') return route.fulfill({ json: {} })
       const query = Object.fromEntries(url.searchParams); requests.push(query)
+      if (query.page === '2' && holdPage) await new Promise(resolve => { releasePage = resolve })
+      if (query.page === '2' && failPage) return route.fulfill({ status: 503, json: { error: '分页暂不可用' } })
       if (legacy) return route.fulfill({ json: rows.slice(0, 200).map((row, index) => invalidDate && index === 0 ? { ...row, date: '2025-02-29' } : row) })
       if (query.search === '历史回忆001') await new Promise(resolve => { releaseSlow = resolve })
       const filtered = rows.filter(row => (!query.month || row.date.startsWith(`${query.month}-`)) && (query.mealType === 'all' || row.mealType === query.mealType) && (query.photos === 'all' || (row.photos.length > 0) === (query.photos === 'yes')) && (!query.search || [row.title, row.note, row.mood].some(value => value.includes(query.search))))
@@ -100,9 +102,28 @@ async function main () {
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
     assert.equal(await page.locator('.memory-card').count(), 12)
     assert.equal(requests[0].view, 'timeline')
-    await page.getByRole('button', { name: '下一页' }).click()
+    await page.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
     await page.getByText('共 205 条回忆 · 第 2 / 18 页').waitFor()
+    await page.waitForFunction(() => document.activeElement?.closest('.timeline-pagination') && document.activeElement.textContent.trim() === '第 2 / 18 页')
     await page.getByText('历史回忆012', { exact: true }).waitFor()
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
+    holdPage = true
+    await page.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
+    for (let i = 0; i < 100 && !releasePage; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releasePage, 'function')
+    const lateSearch = page.getByRole('searchbox', { name: '搜索回忆' })
+    await lateSearch.focus(); holdPage = false; releasePage()
+    await page.getByText('共 205 条回忆 · 第 2 / 18 页').waitFor()
+    assert.equal(await lateSearch.evaluate(node => document.activeElement === node), true, 'late pagination must not steal focus')
+    await page.getByRole('button', { name: '上一页' }).click()
+    await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
+    failPage = true
+    await page.getByRole('button', { name: '下一页' }).focus(); await page.keyboard.press('Enter')
+    await page.getByText('无法加载回忆：分页暂不可用').waitFor()
+    await page.waitForFunction(() => document.activeElement?.getAttribute('placeholder') === '搜索标题、心情或笔记')
+    failPage = false; await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByText('共 205 条回忆 · 第 2 / 18 页').waitFor()
     rows[12].title = '历史回忆012·家人更新'
     await page.getByRole('button', { name: '刷新当前结果' }).click()
     await page.getByText('历史回忆012·家人更新', { exact: true }).waitFor()

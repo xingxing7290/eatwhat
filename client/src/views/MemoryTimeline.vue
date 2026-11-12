@@ -39,6 +39,7 @@ const timelineTotal = ref(0);
 const timelineCapable = ref(false);
 const timelineSearch = ref(initialTimeline.search);
 const timelineSearchInput = ref(null);
+const timelinePageStatus = ref(null);
 const timelineMonth = ref(initialTimeline.month);
 const timelineMealType = ref(initialTimeline.mealType);
 const timelinePhotos = ref(initialTimeline.photos);
@@ -427,9 +428,15 @@ const load = async () => {
   } catch (e) { if (alive && sequence === memorySequence) loadError.value = e?.error || e?.message || '加载饭后回忆失败'; }
   finally { if (alive && sequence === memorySequence) loading.value = false; }
 };
-const changeTimelinePage = next => {
+const changeTimelinePage = async (next, event) => {
   if (loading.value || deleteIssue.value || deletingId.value || checkingDelete.value || next < 1 || next > timelinePages.value || next === timelinePage.value) return;
-  timelinePage.value = next; scheduleTimelineUrl(); load();
+  const origin = event.currentTarget; const hadFocus = document.activeElement === origin;
+  timelinePage.value = next; scheduleTimelineUrl();
+  const sequence = memorySequence + 1;
+  await load(); await nextTick();
+  const focused = document.activeElement;
+  if (!alive || sequence !== memorySequence || !hadFocus || (focused && focused !== document.body && focused !== origin && focused.isConnected)) return;
+  (loadError.value ? timelineSearchInput.value : timelinePageStatus.value || timelineSearchInput.value)?.focus({ preventScroll: true });
 };
 watch([timelineSearch, timelineMonth, timelineMealType, timelinePhotos], () => {
   if (applyingTimelineRoute) return;
@@ -573,7 +580,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         </div>
       </section>
     </div>
-    <nav v-if="timelineCapable && !loadError && timelineTotal > timelineLimit" class="timeline-pagination" aria-label="回忆分页"><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage <= 1" @click="changeTimelinePage(timelinePage - 1)">上一页</el-button><span aria-live="polite">第 {{ timelinePage }} / {{ timelinePages }} 页</span><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage >= timelinePages" @click="changeTimelinePage(timelinePage + 1)">下一页</el-button></nav>
+    <nav v-if="timelineCapable && !loadError && timelineTotal > timelineLimit" class="timeline-pagination" aria-label="回忆分页"><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage <= 1" @click="changeTimelinePage(timelinePage - 1, $event)">上一页</el-button><span ref="timelinePageStatus" tabindex="-1" aria-live="polite" aria-atomic="true">第 {{ timelinePage }} / {{ timelinePages }} 页</span><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage >= timelinePages" @click="changeTimelinePage(timelinePage + 1, $event)">下一页</el-button></nav>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑饭后回忆' : '记录饭后回忆'" width="min(560px, 92vw)" :close-on-click-modal="!saving && !confirmingMeals" :close-on-press-escape="!saving && !confirmingMeals" :show-close="!saving && !confirmingMeals">
       <CreateRecoveryNotice v-if="saveUncertain" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -664,6 +671,7 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .timeline { display: flex; flex-direction: column; gap: 18px; }
 .timeline-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); }
 .timeline-pagination :deep(.el-button) { min-height: 44px; }
+.timeline-pagination span:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 :global(html.dark .memory-filters) { --memory-accent: var(--secondary-color); }
 .meal-names { justify-content: flex-start; flex-wrap: wrap; margin-top: 10px; }
 .memory-meal-tag { max-width: 100%; height: auto; white-space: normal; padding: 0 8px; color: var(--text-primary); background: var(--bg-secondary); border-color: var(--border-color); }
