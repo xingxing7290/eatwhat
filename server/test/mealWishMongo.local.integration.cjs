@@ -1867,6 +1867,9 @@ async function main() {
       assert.equal(await shoppingEditB.getByRole('textbox', { name: '编辑数量或备注' }).inputValue(), '6个');
       await shoppingEditB.getByRole('button', { name: '重新加载并核对' }).click();
       await shoppingEditB.locator('.edit-current').getByText('浏览器鸡蛋 · 3个 · 其他 · 待买').waitFor();
+      assert.equal(await shoppingEditB.getByRole('textbox', { name: '编辑数量或备注' }).inputValue(), '6个', 'conflict recovery must retain the local draft');
+      assert.equal(await shoppingEditB.getByRole('button', { name: '保存修改' }).isDisabled(), true, 'a changed ingredient must be reviewed before saving');
+      await shoppingEditB.getByRole('button', { name: '已核对当前内容' }).click();
       await shoppingEditB.getByRole('button', { name: '保存修改' }).click();
       await shoppingEditB.waitFor({ state: 'hidden' });
       assert.equal((await request('/shopping-list?weekStart=2026-10-26', { token: tokenA })).data.items.find(item => item.name === '浏览器鸡蛋').amount, '6个');
