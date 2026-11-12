@@ -26,6 +26,8 @@ const form = reactive({ name: '', amount: '', category: 'other' });
 const editingItem = ref(null);
 const editForm = reactive({ name: '', amount: '', category: 'other', markPending: false });
 const editInitial = ref('');
+const editBaselineFingerprint = ref('');
+const editReviewedFingerprint = ref('');
 const search = ref('');
 const statusFilter = ref('all');
 const quantityOnly = ref(false);
@@ -100,6 +102,10 @@ const jumpToGroup = key => {
 const resetFilters = async () => { search.value = ''; statusFilter.value = 'all'; quantityOnly.value = false; await nextTick(); searchInput.value?.focus(); };
 const editDirty = computed(() => !!editingItem.value && JSON.stringify(editForm) !== editInitial.value);
 const editLatest = computed(() => editingItem.value ? (list.value.items || []).find(item => item._id === editingItem.value.id) : null);
+const editFingerprint = item => JSON.stringify([item.name, item.amount || '', item.category ?? null, item.checked, item.manual ?? null, item.quantityComplete ?? null, Array.isArray(item.sourceMealIds) ? [...item.sourceMealIds].map(String).sort() : null]);
+const latestEditFingerprint = computed(() => editLatest.value ? editFingerprint(editLatest.value) : '');
+const editChangedElsewhere = computed(() => !!latestEditFingerprint.value && latestEditFingerprint.value !== editBaselineFingerprint.value);
+const editNeedsReview = computed(() => editChangedElsewhere.value && latestEditFingerprint.value !== editReviewedFingerprint.value);
 const editSourceMeals = computed(() => {
   const ids = Array.isArray(editLatest.value?.sourceMealIds) ? editLatest.value.sourceMealIds : [];
   return [...new Set(ids.map(value => typeof value === 'string' ? value.toLowerCase() : '').filter(value => /^[a-f\d]{24}$/.test(value)))];
@@ -148,7 +154,7 @@ const uncertain = computed(() => !!mutationIssue.value);
 const versionAvailable = computed(() => list.value.supportsConditionalUpdates === true && Number.isSafeInteger(list.value.listVersion) && list.value.listVersion >= 0);
 const disabled = computed(() => loading.value || working.value || changingWeek.value || !!loadError.value || !!mutationIssue.value || !versionAvailable.value);
 useDraftGuard({ dirty: draftDirty, busy: working, uncertain, label: '购物清单' });
-const clearForm = () => { form.name = ''; form.amount = ''; form.category = 'other'; addNameError.value = false; editNameError.value = false; editingItem.value = null; editInitial.value = ''; };
+const clearForm = () => { form.name = ''; form.amount = ''; form.category = 'other'; addNameError.value = false; editNameError.value = false; editingItem.value = null; editInitial.value = ''; editBaselineFingerprint.value = ''; editReviewedFingerprint.value = ''; };
 const acceptList = (result, requestedWeek, previousVersion = null) => {
   if (!result || !Array.isArray(result.items) || result.weekStart !== monday(requestedWeek)) throw new Error('购物清单响应不完整');
   const ids = result.items.map(item => item?._id);
@@ -273,16 +279,23 @@ const beginEdit = item => {
   editingItem.value = { id: item._id, manual: !!item.manual };
   Object.assign(editForm, { name: item.name, amount: item.amount || '', category: categoryKey(item), markPending: false });
   editInitial.value = JSON.stringify(editForm);
+  editBaselineFingerprint.value = editFingerprint(item); editReviewedFingerprint.value = editBaselineFingerprint.value;
 };
 const closeEdit = async () => {
   if (working.value || loading.value) return;
   if (editDirty.value) {
     try { await ElMessageBox.confirm('修改尚未保存，关闭后会丢失。', '放弃食材修改？', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); } catch (_) { return; }
   }
-  editingItem.value = null; editInitial.value = ''; editNameError.value = false;
+  editingItem.value = null; editInitial.value = ''; editBaselineFingerprint.value = ''; editReviewedFingerprint.value = ''; editNameError.value = false;
+};
+const acknowledgeEditReview = async event => {
+  const restoreFocus = document.activeElement === event.currentTarget;
+  editReviewedFingerprint.value = latestEditFingerprint.value;
+  await nextTick();
+  if (restoreFocus && document.activeElement === document.body && editingItem.value) editNameInput.value?.focus();
 };
 const saveEdit = async () => {
-  if (!editingItem.value || disabled.value) return;
+  if (!editingItem.value || disabled.value || editNeedsReview.value) return;
   const name = editForm.name.trim();
   if (!name) { editNameError.value = true; ElMessage.warning('请输入食材名称'); await nextTick(); editNameInput.value?.focus(); return; }
   editNameError.value = false;
@@ -294,7 +307,7 @@ const saveEdit = async () => {
   working.value = true;
   try {
     await mutate((version, week) => api.shoppingList.updateItem(id, { ...fields, ...(markPending ? { checked: false } : {}), weekStart: week, expectedVersion: version }), () => {
-      editingItem.value = null; editInitial.value = '';
+      editingItem.value = null; editInitial.value = ''; editBaselineFingerprint.value = ''; editReviewedFingerprint.value = '';
       ElMessage.success(filtersActive.value ? '食材已更新；如未显示，可清除筛选查看' : '食材已更新');
     }, next => next.items.some(item => item._id === id && item.name === fields.name && (item.amount || '') === fields.amount && item.category === fields.category && item.checked === expectedChecked));
   } finally { working.value = false; }
@@ -369,8 +382,10 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
     <el-dialog :model-value="!!editingItem" title="编辑购物食材" width="min(520px, 92vw)" :close-on-click-modal="false" :before-close="closeEdit">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法核对购物清单：${loadError}`"><el-button link type="primary" :disabled="loading || working" @click="load">重试</el-button></el-alert>
       <el-alert v-if="mutationIssue" type="warning" :closable="false" show-icon :title="mutationIssue"><el-button link type="primary" :disabled="loading || working" @click="load">重新加载并核对</el-button></el-alert>
-      <div v-if="!loading && !loadError && editLatest" class="edit-current"><strong>清单当前内容</strong><p>{{ editLatest.name }} · {{ editLatest.amount || '未填写数量' }} · {{ categoryText[categoryKey(editLatest)] }} · {{ editLatest.checked ? '已买' : '待买' }}</p></div>
+      <div class="edit-refresh"><el-button :loading="loading" :disabled="working" @click="load">刷新当前清单</el-button><span>读取家人的最新修改，保留下方草稿。</span></div>
+      <div v-if="!loading && !loadError && editLatest" class="edit-current"><strong>清单当前内容</strong><p>{{ editLatest.name }} · {{ editLatest.amount || '未填写数量' }} · {{ categoryText[categoryKey(editLatest)] }} · {{ editLatest.checked ? '已买' : '待买' }}</p><small>{{ editLatest.manual ? '手动添加' : editLatest.quantityComplete === false ? '排餐生成 · 用量待核对' : editLatest.quantityComplete === true ? '排餐生成 · 用量已完整' : '排餐生成 · 用量状态未提供' }}</small></div>
       <el-alert v-else-if="!loading && !loadError && editingItem" type="warning" :closable="false" show-icon title="该食材已不在当前清单中，请关闭编辑并核对。" />
+      <el-alert v-if="!loading && !loadError && editChangedElsewhere" class="edit-review-alert" type="warning" :closable="false" show-icon :title="editNeedsReview ? '这项食材在打开编辑后发生了变化，请核对当前内容。' : '已核对当前内容；保存会使用下方草稿。'"><p>你的草稿仍保留；再次发生变化时需要重新核对。</p><el-button v-if="editNeedsReview" link type="primary" @click="acknowledgeEditReview">已核对当前内容</el-button></el-alert>
       <p v-if="editingItem && !editingItem.manual" class="edit-note">这项来自排餐；重新生成清单时，名称和数量可能被排餐数据覆盖，已购状态也可能变化。清单中的修改不会改变菜谱；用量待核对的提示需在菜谱中补全后重新生成才会更新。</p>
       <div v-if="editingItem && !editingItem.manual && !loading && !loadError" class="source-recipes">
         <strong>来源菜谱</strong>
@@ -383,7 +398,7 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
         <el-form-item label="分类"><el-select v-model="editForm.category" aria-label="编辑食材分类"><el-option v-for="(label,key) in categoryText" :key="key" :label="label" :value="key" /></el-select></el-form-item>
         <el-form-item v-if="editLatest?.checked"><el-checkbox v-model="editForm.markPending">保存后将此项改为待买</el-checkbox><small class="edit-note">不勾选则保留已买状态。</small></el-form-item>
       </el-form>
-      <template #footer><el-button :disabled="working || loading" @click="closeEdit">取消</el-button><el-button type="primary" :loading="working" :disabled="disabled || !editLatest" @click="saveEdit">保存修改</el-button></template>
+      <template #footer><el-button :disabled="working || loading" @click="closeEdit">取消</el-button><el-button type="primary" :loading="working" :disabled="disabled || !editLatest || editNeedsReview" @click="saveEdit">保存修改</el-button></template>
     </el-dialog>
   </div>
 </template>
@@ -417,6 +432,13 @@ onBeforeUnmount(() => { active = false; loadSequence++; sourceSequence++; window
 .edit-note { color: var(--text-primary); line-height: 1.6; font-size: 13px; }
 .edit-current { padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); overflow-wrap: anywhere; font-size: 13px; }
 .edit-current p { margin: 6px 0 0; line-height: 1.6; }
+.edit-refresh { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-bottom: 12px; color: var(--text-primary); font-size: 13px; }
+.edit-refresh .el-button { min-height: 44px; margin: 0; }
+.edit-review-alert { --edit-review-ink: #623a10; background: #fff1db; color: var(--edit-review-ink); }
+.edit-review-alert :deep(.el-alert__title), .edit-review-alert :deep(.el-alert__description), .edit-review-alert :deep(.el-alert__icon), .edit-review-alert :deep(.el-button) { color: var(--edit-review-ink); }
+.edit-review-alert :deep(.el-button) { min-height: 44px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+.edit-review-alert :deep(.el-button:focus-visible) { outline: 2px solid currentColor; outline-offset: 2px; }
+:global(html.dark) .edit-review-alert { --edit-review-ink: #ffe4bd; background: #543b29; }
 .source-recipes { margin: 12px 0; color: var(--text-primary); font-size: 13px; }
 .source-recipes p { margin: 6px 0; line-height: 1.6; }
 .source-recipes button { min-height: 44px; padding: 4px 6px; border: 0; background: none; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }

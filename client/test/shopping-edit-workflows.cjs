@@ -105,6 +105,11 @@ async function main () {
     await page.getByRole('button', { name: '继续编辑' }).click()
     assert.equal(new URL(page.url()).pathname, '/shopping-list', 'following a source link must protect the unsaved edit')
     assert.equal(await amount.inputValue(), '两把')
+    items = items.map(item => item._id !== 'generated' ? { ...item, amount: '其他项目更新' } : item); version++
+    await dialog.getByRole('button', { name: '刷新当前清单' }).click()
+    await page.waitForFunction(() => !document.querySelector('[aria-label="编辑数量或备注"]')?.disabled)
+    assert.equal(await amount.inputValue(), '两把', 'refreshing unrelated changes preserves the draft')
+    assert.equal(await dialog.getByRole('button', { name: '保存修改' }).isEnabled(), true, 'unrelated changes do not require item review')
     mode = 'conflict'
     await dialog.getByRole('button', { name: '保存修改' }).click()
     await dialog.getByText('其他成员更新了购物清单', { exact: false }).waitFor()
@@ -118,6 +123,31 @@ async function main () {
     await page.waitForFunction(() => !document.querySelector('[aria-label="编辑数量或备注"]')?.disabled)
     assert.equal(await amount.inputValue(), '两把', 'reloading after a conflict must retain the edit draft')
     await dialog.locator('.edit-current').getByText('菠菜 · 家人修改 · 蔬菜 · 待买').waitFor()
+    await dialog.getByText('这项食材在打开编辑后发生了变化', { exact: false }).waitFor()
+    assert.equal(await dialog.getByRole('button', { name: '保存修改' }).isDisabled(), true, 'changed item requires an explicit review')
+    await page.setViewportSize({ width: 320, height: 844 })
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.edit-review-alert .el-alert__title', '.edit-review-alert p', '.edit-review-alert button']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    await page.setViewportSize({ width: 390, height: 844 })
+    await dialog.getByRole('button', { name: '已核对当前内容' }).focus()
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '编辑食材名称')
+    assert.equal(await dialog.getByRole('button', { name: '保存修改' }).isEnabled(), true)
+    items = items.map(item => item._id === 'generated' ? { ...item, amount: '家人再次修改' } : item); version++
+    await dialog.getByRole('button', { name: '刷新当前清单' }).click()
+    await dialog.locator('.edit-current').getByText('菠菜 · 家人再次修改 · 蔬菜 · 待买').waitFor()
+    assert.equal(await amount.inputValue(), '两把', 'refresh must preserve the draft')
+    assert.equal(await dialog.getByRole('button', { name: '保存修改' }).isDisabled(), true, 'a subsequent change requires a new review')
+    await dialog.getByRole('button', { name: '已核对当前内容' }).click()
     await dialog.getByRole('button', { name: '保存修改' }).click()
     await dialog.waitFor({ state: 'hidden' })
     assert.equal(items.find(item => item._id === 'generated').amount, '两把')
