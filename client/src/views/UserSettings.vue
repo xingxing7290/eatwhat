@@ -17,11 +17,12 @@
           <div class="avatar-row">
             <div class="avatar-preview"><img v-if="profileAvatar && !failedAvatars.has(profileAvatarKey)" :key="profileAvatarKey" :src="profileAvatar" alt="头像预览" @error="onAvatarError($event, profileAvatarKey)" /><div v-else class="avatar-placeholder" :aria-label="avatarFile ? '头像预览不可用' : '头像不可用'">{{ initial }}</div></div>
             <div class="avatar-actions">
-              <input ref="fileInputRef" type="file" accept="image/*" class="file-input" @change="onFileChange" />
+              <input ref="fileInputRef" type="file" accept=".jpg,.jpeg,.png,.gif,.webp,.heic,.heif,image/jpeg,image/png,image/gif,image/webp,image/heic,image/heif" class="file-input" @change="onFileChange" />
               <el-button ref="chooseAvatarButton" :disabled="saving || avatarUploading" @click="chooseFile">选择图片</el-button>
               <el-button type="primary" :loading="avatarUploading" :disabled="!avatarFile || saving || !!nameIssue" @click="uploadAvatar">上传头像</el-button>
               <el-button v-if="avatarFile" :disabled="saving || avatarUploading" @click="discardAvatarSelection">撤销头像选择</el-button>
               <span v-if="avatarFile" class="file-name">{{ avatarFile.name }} · 尚未上传</span>
+              <small class="avatar-hint">支持 JPG、PNG、GIF、WebP、HEIC、HEIF，单张最多 30 MB；实际以上传服务器设置为准。</small>
             </div>
           </div>
         </el-form-item>
@@ -527,6 +528,7 @@ const onFileChange = (e) => {
   const extension = file.name.split('.').pop()?.toLowerCase();
   const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'application/octet-stream', ''];
   if (!['jpeg', 'jpg', 'png', 'gif', 'webp', 'heic', 'heif'].includes(extension) || !allowedTypes.includes(file.type.toLowerCase())) return ElMessage.warning(`请选择 JPG、PNG、GIF、WebP、HEIC 或 HEIF 图片${avatarFile.value ? '；之前选择的头像仍保留' : ''}`);
+  if (file.size > 30 * 1024 * 1024) return ElMessage.warning(`头像图片不能超过 30 MB${avatarFile.value ? '；之前选择的头像仍保留' : ''}`);
   let preview;
   try { preview = URL.createObjectURL(file); } catch (_) { return ElMessage.warning(`无法读取所选文件${avatarFile.value ? '；之前选择的头像仍保留' : ''}`); }
   clearAvatarFile();
@@ -631,6 +633,7 @@ onBeforeUnmount(() => { settingsAlive = false; window.removeEventListener('befor
 .avatar-preview img, .member-avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .avatar-placeholder { font-weight: 700; color: var(--text-primary); }
 .avatar-actions, .invite-row, .member-list { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.avatar-hint { flex-basis: 100%; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
 .invite-row .el-input { flex: 1; min-width: 220px; }
 .invite-row small { width: 100%; }
 .name-review { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; margin-top: 8px; overflow-wrap: anywhere; }
