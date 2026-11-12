@@ -90,10 +90,18 @@ let midnightTimer = null;
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
 const titleInput = ref(null);
 const dateInput = ref(null);
+const dateField = ref(null);
 const titleError = ref(false);
 const dateError = ref(false);
 watch(() => form.title, value => { if (value.trim()) titleError.value = false; });
 watch(() => form.date, value => { if (validDate(value)) dateError.value = false; });
+watch(dateError, async () => {
+  await nextTick();
+  const input = dateField.value?.$el?.querySelector('input');
+  if (!input) return;
+  if (dateError.value) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'anniversary-date-error'); }
+  else { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
+});
 const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
 const unavailableMeals = reactive({ breakfast: 0, lunch: 0, dinner: 0 });
 const clearedSlots = reactive({ breakfast: false, lunch: false, dinner: false });
@@ -547,7 +555,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
       <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="菜单模板"><div class="template-list"><el-button v-for="tpl in templates" :key="tpl.key" size="small" @click="applyTemplate(tpl)">{{ tpl.title }}</el-button><span v-if="templateLoading" class="photo-hint">正在加载模板…</span><span v-else-if="!templateError && !templates.length" class="photo-hint">暂无模板，可以直接填写菜单。</span><el-alert v-if="templateError" type="warning" :closable="false" :title="`模板暂不可用：${templateError}`"><el-button link type="primary" @click="loadTemplates">重试</el-button></el-alert></div></el-form-item>
         <el-form-item label="标题"><el-input ref="titleInput" v-model="form.title" maxlength="100" show-word-limit placeholder="比如：三周年晚餐" :aria-invalid="titleError ? 'true' : undefined" :aria-describedby="titleError ? 'anniversary-title-error' : undefined" /><p v-if="titleError" id="anniversary-title-error" class="field-error" role="alert">请填写菜单标题，其他内容会保留。</p></el-form-item>
-        <el-form-item label="日期"><el-date-picker ref="dateInput" v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" aria-label="菜单日期" :aria-invalid="dateError ? 'true' : undefined" :aria-describedby="dateError ? 'anniversary-date-error' : undefined" /><p v-if="dateError" id="anniversary-date-error" class="field-error" role="alert">请选择有效日期，其他内容会保留。</p></el-form-item>
+        <el-form-item ref="dateField" label="日期"><el-date-picker ref="dateInput" v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" aria-label="菜单日期" /><p v-if="dateError" id="anniversary-date-error" class="field-error" role="alert">请选择有效日期，其他内容会保留。</p></el-form-item>
         <el-form-item label="主题"><el-input v-model="form.theme" placeholder="家常、烛光、火锅、露营..." /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.description" type="textarea" rows="3" /></el-form-item>
         <el-form-item v-for="(label, key) in mealTypeText" :key="key" :label="label">
