@@ -892,7 +892,7 @@ onBeforeUnmount(() => {
         <button v-for="filter in activeFilters" :key="filter.key" type="button" class="active-filter-chip" :aria-label="`移除${filter.label}筛选`" @click="removeActiveFilter(filter.key)"><span>{{ filter.label }}</span><span aria-hidden="true">×</span></button>
       </div>
       <div v-if="tagLoadFailed" class="tag-error" role="status">标签可能不完整，当前仅显示已加载的数据。<button ref="tagRetryButton" type="button" :disabled="tagLoading" @click="loadTags">{{ tagLoading ? '正在重试' : '重试标签' }}</button></div>
-      <div v-if="!loading && !loadError" class="results-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
+      <div v-if="!loading && !loadError" class="results-summary" aria-live="polite">{{ hasActiveFilters ? '筛选结果' : '全部菜品' }} · {{ totalMeals }} 道<span v-if="displayedMeals.length && totalMeals > pageSize"> · 本页第 {{ (currentPage - 1) * pageSize + 1 }}–{{ (currentPage - 1) * pageSize + displayedMeals.length }} 道</span><span v-if="currentView === 'grouped'"> · 按当前页分组</span></div>
         </div>
 
     <div class="catalog-layout">

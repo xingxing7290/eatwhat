@@ -42,6 +42,7 @@ async function main () {
     await page.getByText('分类可能不完整').waitFor()
     await page.getByText('标签可能不完整', { exact: false }).waitFor()
     await page.getByRole('button', { name: '查看家常菜01' }).first().waitFor()
+    assert.match(await page.locator('.results-summary').innerText(), /本页第 1–8 道/)
     assert.equal(await page.locator('.meals-grid [role="button"] button').count(), 0, 'recipe actions must not be nested in another button')
     assert.equal(await search.getAttribute('maxlength'), '200')
     assert.equal(await search.getAttribute('aria-describedby'), 'catalog-search-hint')
@@ -87,6 +88,7 @@ async function main () {
     await page.getByLabel('菜品分页').getByRole('button', { name: '下一页' }).focus()
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: '查看家常菜09' }).first().waitFor()
+    assert.match(await page.locator('.results-summary').innerText(), /本页第 9–16 道/)
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '菜品列表')
     await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('q') === '家常菜' && q.get('category') === '家常菜' && q.get('page') === '2' })
     const resultUrl = page.url(); const readsBeforeSearchJump = requests.length
