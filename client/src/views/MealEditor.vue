@@ -68,6 +68,10 @@ const bulkIngredientError = ref('');
 const bulkIngredientNotice = ref('');
 const bulkIngredientInput = ref(null);
 const newStep = reactive({ description: '', imageFile: null, imagePreview: '' });
+const bulkSteps = ref('');
+const bulkStepError = ref('');
+const bulkStepNotice = ref('');
+const bulkStepInput = ref(null);
 // Key by the step object, so undo follows the step when it is reordered.
 const stepImageUndo = reactive(new WeakMap());
 const stepKeys = new WeakMap();
@@ -105,7 +109,7 @@ const photoError = (file) => {
 };
 const makePreview = (file) => { const url = URL.createObjectURL(file.raw); previews.add(url); return url; };
 const releasePreview = (url) => { if (previews.delete(url)) URL.revokeObjectURL(url); };
-const dirty = computed(() => JSON.stringify(form) !== initialForm.value || !!imageFile.value || !!photoFiles.value.length || !!newIngredient.name.trim() || !!newIngredient.amount.trim() || !!bulkIngredients.value.trim() || !!newStep.description.trim() || !!newStep.imageFile);
+const dirty = computed(() => JSON.stringify(form) !== initialForm.value || !!imageFile.value || !!photoFiles.value.length || !!newIngredient.name.trim() || !!newIngredient.amount.trim() || !!bulkIngredients.value.trim() || !!newStep.description.trim() || !!newStep.imageFile || !!bulkSteps.value.trim());
 
 const totalTime = computed(() => Number(form.prepTime || 0) + Number(form.cookTime || 0));
 const difficultyOptions = [{ label: '简单', value: 'easy' }, { label: '适中', value: 'medium' }, { label: '费工夫', value: 'hard' }];
@@ -173,6 +177,15 @@ const addStep = () => {
   if (!newStep.description.trim() && !newStep.imageFile) return ElMessage.warning('请输入做法步骤或选择步骤图');
   form.steps.push({ description: newStep.description.trim(), imageUrl: newStep.imagePreview || '', imageFile: newStep.imageFile || null });
   newStep.description = ''; newStep.imageFile = null; newStep.imagePreview = '';
+};
+const addBulkSteps = () => {
+  bulkStepError.value = ''; bulkStepNotice.value = '';
+  const rows = bulkSteps.value.split(/\r?\n/).map(text => text.trim()).filter(Boolean);
+  if (!rows.length) { bulkStepError.value = '请先输入步骤，每行一步。'; bulkStepInput.value?.focus(); return; }
+  if (rows.length > 100 || bulkSteps.value.length > 10000) { bulkStepError.value = '每次最多添加 100 行、10000 个字符；原文字仍保留。'; bulkStepInput.value?.focus(); return; }
+  form.steps.push(...rows.map(description => ({ description, imageUrl: '' })));
+  bulkSteps.value = '';
+  bulkStepNotice.value = `已添加 ${rows.length} 步到当前草稿，请核对顺序；保存菜谱后才会生效。`;
 };
 const releaseRemovedStep = step => {
   releasePreview(step.imageUrl);
@@ -280,7 +293,7 @@ const load = async () => {
   Object.assign(form, emptyForm());
   removedPhotos.value = []; removedIngredients.value = []; removedSteps.value = [];
   Object.assign(newIngredient, { name: '', amount: '' }); newIngredientError.value = false; bulkIngredients.value = ''; bulkIngredientError.value = ''; bulkIngredientNotice.value = '';
-  Object.assign(newStep, { description: '', imageFile: null, imagePreview: '' });
+  Object.assign(newStep, { description: '', imageFile: null, imagePreview: '' }); bulkSteps.value = ''; bulkStepError.value = ''; bulkStepNotice.value = '';
   imageFile.value = null; imagePreview.value = ''; photoFiles.value = [];
   saved.value = false; saveUncertain.value = false; conflict.value = false;
   supportsConditionalEdit.value = false; editVersion.value = null;
@@ -338,7 +351,7 @@ const submit = async () => {
     if (invalidStep >= 0) { invalidTarget = () => formRef.value?.$el?.querySelector(`[aria-label="第 ${invalidStep + 1} 步描述"]`)?.focus(); return ElMessage.warning(`第 ${invalidStep + 1} 步没有文字或图片，请先补充或删除`); }
     if (form.steps.filter(step => step.imageFile?.raw).length > 20) return ElMessage.warning('每次最多上传 20 张步骤图片');
     if ([imageFile.value, ...photoFiles.value, ...form.steps.map(step => step.imageFile)].filter(Boolean).some(photoError)) return ElMessage.warning('请检查选择的图片格式和大小');
-    if (newIngredient.name.trim() || newIngredient.amount.trim() || bulkIngredients.value.trim() || newStep.description.trim() || newStep.imageFile) {
+    if (newIngredient.name.trim() || newIngredient.amount.trim() || bulkIngredients.value.trim() || newStep.description.trim() || newStep.imageFile || bulkSteps.value.trim()) {
       try { await ElMessageBox.confirm('还有未添加到列表的食材或步骤，继续保存不会包含这些内容。', '检查未添加的内容', { type: 'warning', confirmButtonText: '仍要保存', cancelButtonText: '返回添加' }); } catch (_) { return; }
     }
     try {
@@ -417,7 +430,7 @@ watch(() => route.params.id, load, { immediate: true });
         <el-card><template #header>食材</template>
           <p class="ingredient-help">可直接修改已有食材和用量。保存后，已生成的购物清单不会自动更新。</p>
           <div class="inline-form"><el-input ref="newIngredientInput" v-model="newIngredient.name" placeholder="食材" aria-label="新食材名称" :aria-invalid="newIngredientError ? 'true' : undefined" :aria-describedby="newIngredientError ? 'new-ingredient-error' : undefined" @input="newIngredientError = false" @keydown.enter="addIngredientOnEnter" /><el-input v-model="newIngredient.amount" placeholder="用量" aria-label="新食材用量" @keydown.enter="addIngredientOnEnter" /><el-button type="primary" aria-label="添加食材" @click="addIngredient"><el-icon><Plus /></el-icon></el-button></div><p v-if="newIngredientError" id="new-ingredient-error" class="ingredient-error" role="alert">请输入食材名称，已填写的用量会保留。</p>
-          <details class="bulk-ingredients"><summary>批量添加食材</summary><p>每行一项，用“名称 | 用量”分隔；没有用量可只写名称。不会自动合并重复食材。</p><el-input ref="bulkIngredientInput" v-model="bulkIngredients" type="textarea" :rows="4" aria-label="批量食材" :aria-invalid="bulkIngredientError ? 'true' : undefined" :aria-describedby="bulkIngredientError ? 'bulk-ingredient-error' : 'bulk-ingredient-help'" placeholder="例如：鸡蛋 | 2个&#10;番茄 | 1个" @input="bulkIngredientError = ''; bulkIngredientNotice = ''" /><small id="bulk-ingredient-help">每次最多 100 行、10000 个字符。</small><p v-if="bulkIngredientError" id="bulk-ingredient-error" class="ingredient-error" role="alert">{{ bulkIngredientError }}</p><el-button type="primary" @click="addBulkIngredients">添加到食材列表</el-button><p v-if="bulkIngredientNotice" class="bulk-notice" role="status">{{ bulkIngredientNotice }}</p></details>
+          <details class="bulk-entry bulk-ingredients"><summary>批量添加食材</summary><p>每行一项，用“名称 | 用量”分隔；没有用量可只写名称。不会自动合并重复食材。</p><el-input ref="bulkIngredientInput" v-model="bulkIngredients" type="textarea" :rows="4" aria-label="批量食材" :aria-invalid="bulkIngredientError ? 'true' : undefined" :aria-describedby="bulkIngredientError ? 'bulk-ingredient-error' : 'bulk-ingredient-help'" placeholder="例如：鸡蛋 | 2个&#10;番茄 | 1个" @input="bulkIngredientError = ''; bulkIngredientNotice = ''" /><small id="bulk-ingredient-help">每次最多 100 行、10000 个字符。</small><p v-if="bulkIngredientError" id="bulk-ingredient-error" class="ingredient-error" role="alert">{{ bulkIngredientError }}</p><el-button type="primary" @click="addBulkIngredients">添加到食材列表</el-button><p v-if="bulkIngredientNotice" class="bulk-notice" role="status">{{ bulkIngredientNotice }}</p></details>
           <div v-if="form.ingredients.length" ref="ingredientList" class="ingredient-list"><div v-for="(item, index) in form.ingredients" :key="ingredientKey(item)" class="ingredient-item" :data-ingredient-key="ingredientKey(item)"><label><span>食材 {{ index + 1 }}</span><el-input v-model="item.name" :aria-label="`第 ${index + 1} 项食材名称`" /></label><label><span>用量</span><el-input v-model="item.amount" :aria-label="`第 ${index + 1} 项食材用量`" placeholder="可选" /></label><div class="ingredient-actions"><el-button v-if="form.ingredients.length > 1" data-ingredient-action="up" :disabled="index === 0" :aria-label="`上移第 ${index + 1} 项食材`" @click="moveIngredient(index, -1)">↑</el-button><el-button v-if="form.ingredients.length > 1" data-ingredient-action="down" :disabled="index === form.ingredients.length - 1" :aria-label="`下移第 ${index + 1} 项食材`" @click="moveIngredient(index, 1)">↓</el-button><el-button type="danger" circle :aria-label="`删除第 ${index + 1} 项食材`" @click="removeIngredient(index, $event)"><el-icon><Delete /></el-icon></el-button></div></div></div>
           <el-empty v-else description="暂无食材" />
           <div v-if="removedIngredients.length" class="photo-undo" role="status"><span>已移除 {{ removedIngredients.length }} 项食材，保存后生效。</span><el-button ref="undoIngredientButton" link type="primary" @click="undoIngredientRemoval">撤销最近移除的食材</el-button></div>
@@ -425,6 +438,7 @@ watch(() => route.params.id, load, { immediate: true });
 
         <el-card><template #header>做法步骤</template>
           <div class="step-editor"><el-input v-model="newStep.description" type="textarea" rows="2" placeholder="写下一个步骤" aria-label="新步骤描述" /><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onNewStepImage"><el-button><el-icon><Upload /></el-icon>步骤图</el-button></el-upload><img v-if="newStep.imagePreview" :src="newStep.imagePreview" alt="待添加步骤图" /><el-button v-if="newStep.imageFile" @click="clearNewStepImage">移除待添加步骤图</el-button><el-button type="primary" @click="addStep">添加步骤</el-button></div>
+          <details class="bulk-entry bulk-steps"><summary>批量添加步骤</summary><p>每行添加为一步，空行会跳过并移除首尾空格，不会自动删除编号。添加后可逐步调整和配图。</p><el-input ref="bulkStepInput" v-model="bulkSteps" type="textarea" :rows="4" aria-label="批量步骤" :aria-invalid="bulkStepError ? 'true' : undefined" :aria-describedby="bulkStepError ? 'bulk-step-error' : 'bulk-step-help'" placeholder="例如：洗净切块&#10;热锅翻炒" @input="bulkStepError = ''; bulkStepNotice = ''" /><small id="bulk-step-help">每次最多 100 行、10000 个字符。</small><p v-if="bulkStepError" id="bulk-step-error" class="ingredient-error" role="alert">{{ bulkStepError }}</p><el-button type="primary" @click="addBulkSteps">添加到步骤列表</el-button><p v-if="bulkStepNotice" class="bulk-notice" role="status">{{ bulkStepNotice }}</p></details>
           <div v-if="form.steps.length" ref="stepsContainer" class="steps"><div v-for="(step, index) in form.steps" :key="stepKey(step)" class="step-item" :data-step-key="stepKey(step)"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :key="step.imageUrl" :src="imageFor(step.imageUrl)" :alt="`步骤 ${index + 1} 图片`" @error="imageError" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button v-if="step.imageUrl || step.imageFile" size="small" :aria-label="`移除第 ${index + 1} 步图片`" @click="clearStepImage(step)">移除图</el-button><el-button v-if="stepImageUndo.has(step)" size="small" :aria-label="`撤销第 ${index + 1} 步图片修改`" @click="undoStepImage(step)">撤销图片修改</el-button><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index, $event)">删除</el-button></div></div></div>
           <el-empty v-else description="暂无做法步骤" />
           <div v-if="removedSteps.length" class="photo-undo" role="status"><span>可撤销最近 {{ removedSteps.length }} 步；删除保存后生效，最多保留 10 步供撤销。</span><el-button ref="undoStepButton" link type="primary" @click="undoStepRemoval">撤销最近移除的步骤</el-button></div>
@@ -452,15 +466,15 @@ h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC
 .field-hint-error { color: var(--el-color-danger); }
 .inline-form { display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; margin-bottom: 12px; }
 .ingredient-error { margin: -4px 0 12px; color: var(--text-primary); font-size: 13px; font-weight: 700; line-height: 1.5; }
-.bulk-ingredients { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
-.bulk-ingredients summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 700; }
-.bulk-ingredients summary::before { content: '▸'; margin-right: 6px; }
-.bulk-ingredients[open] summary::before { transform: rotate(90deg); }
-.bulk-ingredients summary:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
-.bulk-ingredients p, .bulk-ingredients small { line-height: 1.6; }
-.bulk-ingredients small { display: block; margin: 6px 0; }
-.bulk-ingredients .ingredient-error { margin: 6px 0; }
-.bulk-ingredients :deep(.el-button) { min-height: 44px; margin: 0; }
+.bulk-entry { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
+.bulk-entry summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-weight: 700; }
+.bulk-entry summary::before { content: '▸'; margin-right: 6px; }
+.bulk-entry[open] summary::before { transform: rotate(90deg); }
+.bulk-entry summary:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.bulk-entry p, .bulk-entry small { line-height: 1.6; }
+.bulk-entry small { display: block; margin: 6px 0; }
+.bulk-entry .ingredient-error { margin: 6px 0; }
+.bulk-entry :deep(.el-button) { min-height: 44px; margin: 0; }
 .bulk-notice { margin: 8px 0 0; }
 .ingredient-help { color: var(--text-primary); font-size: 13px; line-height: 1.6; margin: 0 0 12px; }
 .ingredient-list { display: grid; gap: 10px; }
