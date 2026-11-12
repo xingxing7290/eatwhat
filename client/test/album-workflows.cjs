@@ -50,6 +50,9 @@ async function main () {
     })
     await page.goto(`${base}/photo-album`)
     await page.getByText('2026-10 · 30 张照片').waitFor()
+    await page.getByText('本页第 1–24 张 · 按相册顺序浏览').waitFor()
+    assert.equal(await page.locator('.photo-card img').count(), 24)
+    assert.equal(await page.locator('.photo-card img[loading="lazy"][decoding="async"]').count(), 24)
     const refresh = page.getByRole('button', { name: '刷新当前相册' })
     assert.ok((await refresh.boundingBox()).height >= 44)
     const originalUrl = page.url(); const previousReads = reads.length
@@ -86,6 +89,7 @@ async function main () {
     assert.ok((await longTitleDialog.getByRole('button', { name: '最后一张' }).boundingBox()).height >= 44)
     await longTitleDialog.getByRole('button', { name: '最后一张' }).click()
     await longTitleDialog.getByRole('heading', { name: '照片30' }).waitFor()
+    await page.getByText('本页第 25–30 张 · 按相册顺序浏览').waitFor({ state: 'attached' })
     await page.waitForURL(/month=2026-10.*page=2/)
     assert.equal(await longTitleDialog.getByRole('button', { name: '最后一张' }).isDisabled(), true)
     await longTitleDialog.getByRole('button', { name: '第一张' }).click()
