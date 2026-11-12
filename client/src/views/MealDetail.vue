@@ -140,6 +140,8 @@ const resetSteps = async event => {
   if (hadFocus && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) cookingSteps.value?.querySelector('.next-step')?.focus();
 };
 const preparedIngredients = ref(new Set());
+const showUnpreparedOnly = ref(false);
+const unpreparedToggle = ref(null);
 const ingredientList = ref(null);
 const copyingIngredients = ref(false);
 const ingredientCopyOpen = ref(false);
@@ -148,12 +150,22 @@ const ingredientSnapshot = ref('');
 const ingredientSnapshotInput = ref(null);
 const ingredientCopyScope = ref('all');
 watch(() => JSON.stringify([route.params.id, meal.value?.steps]), () => { completedSteps.value = new Set(); });
-watch(() => JSON.stringify([route.params.id, meal.value?.ingredients]), () => { preparedIngredients.value = new Set(); });
+watch(() => JSON.stringify([route.params.id, meal.value?.ingredients]), () => { preparedIngredients.value = new Set(); showUnpreparedOnly.value = false; });
 const ingredientName = (item, index) => (typeof item === 'string' ? item : typeof item?.name === 'string' ? item.name : '').trim() || `食材 ${index + 1}`;
-const toggleIngredient = index => {
+const toggleIngredient = async (index, event) => {
+  const source = event?.target;
+  const hadFocus = source && document.activeElement === source;
   const next = new Set(preparedIngredients.value);
   if (next.has(index)) next.delete(index); else next.add(index);
   preparedIngredients.value = next;
+  if (showUnpreparedOnly.value && next.has(index) && hadFocus) {
+    await nextTick();
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused === source || !focused.isConnected) {
+      const remaining = [...(ingredientList.value?.querySelectorAll('input[type="checkbox"]') || [])].filter(input => input.getClientRects().length);
+      (remaining.find(input => Number(input.dataset.ingredientIndex) > index) || remaining.at(-1) || unpreparedToggle.value)?.focus({ preventScroll: true });
+    }
+  }
 };
 const resetIngredients = async event => {
   const source = event.currentTarget;
@@ -430,10 +442,11 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
           <template #header><span ref="ingredientHeading" class="detail-section-heading" tabindex="-1">食材清单</span></template>
           <el-empty v-if="!meal.ingredients?.length" description="暂无食材"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充食材 →</router-link></el-empty>
           <div v-else ref="ingredientList" class="ingredient-list">
-            <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients(false)">复制食材清单</button><button v-if="preparedIngredients.size" type="button" :disabled="copyingIngredients || preparedIngredients.size >= meal.ingredients.length" @click="copyIngredients(true)">复制未备食材</button><small v-if="copyingIngredients" role="status">正在复制…</small><small>备菜标记仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
+            <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button ref="unpreparedToggle" type="button" :aria-pressed="showUnpreparedOnly" @click="showUnpreparedOnly = !showUnpreparedOnly">仅看未备食材{{ showUnpreparedOnly ? ' · 已开启' : '' }}</button><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients(false)">复制食材清单</button><button v-if="preparedIngredients.size" type="button" :disabled="copyingIngredients || preparedIngredients.size >= meal.ingredients.length" @click="copyIngredients(true)">复制未备食材</button><small v-if="copyingIngredients" role="status">正在复制…</small><small>备菜标记和筛选仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
             <div v-if="ingredientCopyReady" class="ingredient-copy-recovery" role="status"><span>自动复制未完成，可手动复制点击时的快照。</span><button type="button" @click="ingredientCopyOpen = true">打开手动复制</button></div>
-            <div v-for="(item, index) in meal.ingredients" :key="index" class="ingredient-row" :class="{ prepared: preparedIngredients.has(index) }">
-              <label><input type="checkbox" :checked="preparedIngredients.has(index)" :aria-label="`第 ${index + 1} 项${ingredientName(item, index)}已备好`" @change="toggleIngredient(index)" /><span>{{ ingredientName(item, index) }}</span></label><strong>{{ typeof item === 'string' ? '' : item?.amount }}</strong>
+            <p v-if="showUnpreparedOnly && preparedIngredients.size === meal.ingredients.length" class="ingredients-complete" role="status">食材已全部备好。可关闭筛选查看全部，或重置备菜标记。</p>
+            <div v-for="(item, index) in meal.ingredients" :key="index" v-show="!showUnpreparedOnly || !preparedIngredients.has(index)" class="ingredient-row" :class="{ prepared: preparedIngredients.has(index) }">
+              <label><input type="checkbox" :checked="preparedIngredients.has(index)" :aria-label="`第 ${index + 1} 项${ingredientName(item, index)}已备好`" :data-ingredient-index="index" @change="toggleIngredient(index, $event)" /><span>{{ ingredientName(item, index) }}</span></label><strong>{{ typeof item === 'string' ? '' : item?.amount }}</strong>
             </div>
           </div>
         </el-card>
@@ -542,6 +555,7 @@ h1 { margin: 0; color: var(--text-primary); }
 .ingredient-row.prepared label span { text-decoration: line-through; text-decoration-thickness: 1px; }
 .ingredient-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .ingredient-progress p { margin: 0; font-weight: 700; }
+.ingredients-complete { margin: 12px 0; padding: 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .ingredient-progress small { flex-basis: 100%; font-size: 12px; line-height: 1.5; }
 .ingredient-progress button { min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
 .ingredient-progress button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
