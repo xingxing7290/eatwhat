@@ -89,6 +89,20 @@ async function main () {
     await page.getByText('本次已备好 1 / 2 项').waitFor()
     assert.equal(await prepared.isChecked(), true)
     assert.equal(await prepared.evaluate(node => node.closest('.ingredient-row')?.classList.contains('prepared')), true)
+    const sectionNav = page.getByRole('navigation', { name: '菜谱内容导航' })
+    const beforeSectionUrl = page.url(); let sectionReads = 0
+    const countSectionRead = request => { if (new URL(request.url()).pathname.startsWith('/api/')) sectionReads++ }
+    page.on('request', countSectionRead)
+    for (const [label, target] of [['做法', '做法步骤'], ['照片', '照片墙'], ['回忆', '饭后回忆'], ['食材', '食材清单']]) {
+      const button = sectionNav.getByRole('button', { name: label, exact: true })
+      assert.ok((await button.boundingBox()).height >= 44)
+      await button.focus(); await page.keyboard.press('Enter')
+      assert.equal(await page.evaluate(() => document.activeElement?.textContent.trim()), target)
+    }
+    page.off('request', countSectionRead)
+    assert.equal(page.url(), beforeSectionUrl)
+    assert.equal(sectionReads, 0, 'section navigation must not reload recipe data')
+    assert.equal(await prepared.isChecked(), true, 'section navigation must retain preparation progress')
     await page.getByRole('button', { name: '复制未备食材' }).click()
     const pendingDialog = page.getByRole('dialog', { name: '手动复制未备食材' })
     const pendingSnapshot = await pendingDialog.getByRole('textbox', { name: '菜谱食材快照' }).inputValue()
@@ -155,7 +169,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small', '.ingredient-row.prepared label span', '.cooking-timer strong', '.cooking-timer label', '.cooking-timer select', '.cooking-timer output', '.cooking-timer p', '.cooking-timer small', '.cooking-timer button:not([aria-disabled="true"])']) {
+        for (const selector of ['.detail-sections button', '.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small', '.ingredient-row.prepared label span', '.cooking-timer strong', '.cooking-timer label', '.cooking-timer select', '.cooking-timer output', '.cooking-timer p', '.cooking-timer small', '.cooking-timer button:not([aria-disabled="true"])']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
         }

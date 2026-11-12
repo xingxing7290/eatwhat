@@ -28,6 +28,10 @@ const memoryPagination = ref(false);
 const memoryNav = ref(null);
 const memoryRetry = ref(null);
 const memoryHeading = ref(null);
+const ingredientHeading = ref(null);
+const stepsHeading = ref(null);
+const photoHeading = ref(null);
+const jumpToDetailSection = element => { element?.scrollIntoView({ block: 'center', behavior: 'auto' }); element?.focus({ preventScroll: true }); };
 let memoryFocus = '';
 const loading = ref(false);
 const memoryLoading = ref(false);
@@ -420,9 +424,10 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
         </div>
       </section>
 
+      <nav class="detail-sections" aria-label="菜谱内容导航"><span>快速查看</span><button type="button" @click="jumpToDetailSection(ingredientHeading)">食材</button><button type="button" @click="jumpToDetailSection(stepsHeading)">做法</button><button type="button" @click="jumpToDetailSection(photoHeading)">照片</button><button type="button" @click="jumpToDetailSection(memoryHeading)">回忆</button></nav>
       <section class="content-grid">
         <el-card>
-          <template #header>食材清单</template>
+          <template #header><span ref="ingredientHeading" class="detail-section-heading" tabindex="-1">食材清单</span></template>
           <el-empty v-if="!meal.ingredients?.length" description="暂无食材"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充食材 →</router-link></el-empty>
           <div v-else ref="ingredientList" class="ingredient-list">
             <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients(false)">复制食材清单</button><button v-if="preparedIngredients.size" type="button" :disabled="copyingIngredients || preparedIngredients.size >= meal.ingredients.length" @click="copyIngredients(true)">复制未备食材</button><small v-if="copyingIngredients" role="status">正在复制…</small><small>备菜标记仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
@@ -434,7 +439,7 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
         </el-card>
 
         <el-card>
-          <template #header>做法步骤</template>
+          <template #header><span ref="stepsHeading" class="detail-section-heading" tabindex="-1">做法步骤</span></template>
           <div ref="timerAnchor" class="timer-anchor" tabindex="-1" aria-label="烹饪计时器位置">
           <div class="cooking-timer" aria-label="烹饪计时器"><div><strong>烹饪计时器</strong><label>时长 <select v-model.number="timerMinutes" :disabled="timerState === 'running' || timerState === 'paused'" aria-label="计时时长"><option v-for="minutes in [1, 3, 5, 10, 15, 30, 60, 90]" :key="minutes" :value="minutes">{{ minutes }} 分钟</option><option value="custom">自定义</option></select></label><label v-if="timerMinutes === 'custom'">分钟 <input v-model="timerCustomMinutes" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="自定义计时分钟数" :aria-invalid="timerDuration === null ? 'true' : undefined" aria-describedby="timer-duration-help" :disabled="timerState === 'running' || timerState === 'paused'" /></label><output class="timer-display" aria-live="off" :aria-label="timerDuration === null ? '时长无效' : `剩余 ${timerDisplay}`">{{ timerDisplay }}</output></div><small v-if="timerMinutes === 'custom'" id="timer-duration-help">请输入 1 至 180 的整数分钟。</small><div class="timer-actions"><button type="button" :aria-disabled="timerDuration === null" @click="timerState === 'running' ? pauseCookingTimer() : startCookingTimer()">{{ timerState === 'running' ? '暂停计时' : timerState === 'paused' ? '继续计时' : timerState === 'finished' ? '再次计时' : '开始计时' }}</button><button type="button" :aria-disabled="timerState === 'idle'" @click="resetCookingTimer">重置计时</button></div><p role="status" aria-live="polite">{{ timerDuration === null ? '请输入有效的计时时长。' : timerState === 'finished' ? '计时结束，请检查食物。' : timerState === 'paused' ? '计时已暂停。' : timerState === 'running' ? '计时进行中。' : '选择时长后开始。' }}</p><small>仅在当前页面显示，不保证后台提醒，没有声音；离开或刷新页面后重置。</small></div>
           </div>
@@ -453,7 +458,7 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
 
       <section class="content-grid">
         <el-card>
-          <template #header>照片墙</template>
+          <template #header><span ref="photoHeading" class="detail-section-heading" tabindex="-1">照片墙</span></template>
           <div v-if="photos.length" ref="photoGrid" class="photo-grid">
             <button v-for="(photo, index) in photos" :key="`${index}-${photo}`" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 张菜品照片`" @click="showPhoto(photos, index, meal.name, $event, true)"><img :key="imageVersion(photo)" :src="imageFor(photo)" :alt="`第 ${index + 1} 张菜品照片`" @error="fallbackImage" /></button>
           </div>
@@ -461,7 +466,7 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
         </el-card>
 
         <el-card>
-          <template #header><span ref="memoryHeading" tabindex="-1">饭后回忆</span></template>
+          <template #header><span ref="memoryHeading" class="detail-section-heading" tabindex="-1">饭后回忆</span></template>
           <span class="sr-only" role="status" aria-atomic="true">{{ memoryLoading ? '正在加载相关回忆' : memoryError ? '相关回忆加载失败' : memoryPagination ? `共 ${memoryTotal} 条相关回忆，第 ${memoryPage} / ${memoryPages} 页` : `共 ${memoryTotal} 条相关回忆` }}</span>
           <el-alert v-if="memoryError" type="error" :closable="false" show-icon :title="`无法加载相关回忆：${memoryError}`"><el-button ref="memoryRetry" link type="primary" :loading="memoryLoading" @click="reloadMemories">重新加载</el-button></el-alert>
           <p v-else-if="memoryLoading" class="memory-date">正在加载相关回忆…</p>
@@ -502,6 +507,9 @@ onBeforeUnmount(() => { timerObserver?.disconnect(); stopTimerInterval(); loadSe
 .schedule-fields input:focus-visible { outline: 3px solid var(--secondary-color); outline-offset: 2px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .meal-detail { display: flex; flex-direction: column; gap: 18px; }
+.detail-sections { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--text-primary); font-size: 13px; }
+.detail-sections button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.detail-sections button:focus-visible, .detail-section-heading:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .detail-toolbar { display: flex; justify-content: space-between; gap: 12px; }
 .toolbar-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
 .toolbar-actions :deep(.el-button + .el-button) { margin-left: 0; }
