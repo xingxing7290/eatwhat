@@ -38,7 +38,7 @@ async function main () {
     await page.getByText('菜品不可用', { exact: true }).first().waitFor()
     await page.goto(`${base}/calendar`)
     await page.getByText('部分菜品已不可用', { exact: false }).waitFor()
-    await page.getByText('菜品不可用', { exact: true }).first().waitFor()
+    await page.locator('.mobile-only').getByText('菜品不可用', { exact: true }).first().waitFor()
     await page.locator('.mobile-only').getByRole('button', { name: '删除2026-10-28晚餐' }).click()
     const confirm = page.getByRole('dialog', { name: '删除确认' })
     await confirm.getByText('此操作会清除该餐次的全部菜品，包括不可用记录', { exact: false }).waitFor()
