@@ -339,7 +339,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <el-empty v-if="!meal.ingredients?.length" description="暂无食材"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充食材 →</router-link></el-empty>
           <div v-else ref="ingredientList" class="ingredient-list">
             <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients">{{ copyingIngredients ? '正在复制…' : '复制食材清单' }}</button><small>备菜标记仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
-            <div v-for="(item, index) in meal.ingredients" :key="index" class="ingredient-row">
+            <div v-for="(item, index) in meal.ingredients" :key="index" class="ingredient-row" :class="{ prepared: preparedIngredients.has(index) }">
               <label><input type="checkbox" :checked="preparedIngredients.has(index)" :aria-label="`第 ${index + 1} 项${ingredientName(item, index)}已备好`" @change="toggleIngredient(index)" /><span>{{ ingredientName(item, index) }}</span></label><strong>{{ typeof item === 'string' ? '' : item?.amount }}</strong>
             </div>
           </div>
@@ -438,6 +438,8 @@ h1 { margin: 0; color: var(--text-primary); }
 .ingredient-row input { flex: none; width: 20px; height: 20px; margin: 0; accent-color: var(--secondary-color); }
 .ingredient-row input:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .ingredient-row > strong { text-align: right; }
+.ingredient-row.prepared { padding-right: 8px; padding-left: 8px; border-radius: 10px; background: var(--bg-secondary); color: var(--text-primary); }
+.ingredient-row.prepared label span { text-decoration: line-through; text-decoration-thickness: 1px; }
 .ingredient-progress { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin-bottom: 8px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .ingredient-progress p { margin: 0; font-weight: 700; }
 .ingredient-progress small { flex-basis: 100%; font-size: 12px; line-height: 1.5; }

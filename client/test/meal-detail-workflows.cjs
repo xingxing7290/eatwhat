@@ -88,6 +88,8 @@ async function main () {
     await prepared.focus(); await page.keyboard.press('Space')
     await page.getByText('本次已备好 1 / 2 项').waitFor()
     assert.equal(await prepared.isChecked(), true)
+    assert.equal(await prepared.evaluate(node => node.closest('.ingredient-row')?.classList.contains('prepared')), true)
+    if (process.env.EATWHAT_INGREDIENT_SHOT) await page.locator('.ingredient-list').screenshot({ path: process.env.EATWHAT_INGREDIENT_SHOT })
     await page.getByRole('button', { name: '重置备菜' }).focus(); await page.keyboard.press('Enter')
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '第 1 项鸡蛋已备好')
     assert.equal(await prepared.isChecked(), false)
@@ -111,11 +113,12 @@ async function main () {
     await page.reload()
     await page.getByText('本次已完成 0 / 2 步').waitFor()
     await page.getByText('本次已备好 0 / 2 项').waitFor()
+    await page.getByRole('checkbox', { name: '第 1 项鸡蛋已备好' }).check()
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small']) {
+        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle', '.ingredient-progress p', '.ingredient-progress small', '.ingredient-row.prepared label span']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
         }
