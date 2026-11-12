@@ -25,6 +25,7 @@ async function main () {
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/login`)
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
     const username = page.getByRole('textbox', { name: '用户名' })
     const password = page.getByLabel('密码', { exact: true })
     await username.fill('   ')
@@ -39,13 +40,16 @@ async function main () {
     await page.getByText('请输入密码', { exact: true }).last().waitFor()
     await page.waitForFunction(() => document.activeElement?.id === 'login-password')
     assert.equal(calls, 0, 'invalid forms must not send a login request')
-    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
+    await page.waitForFunction(() => {
+      const errors = [...document.querySelectorAll('.login-form .el-form-item__error')].filter(node => node.isConnected && node.getClientRects().length)
+      return errors.length === 1 && errors[0].textContent.trim() === '请输入密码'
+    })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        const result = await contrast(page, '.el-form-item__error')
-        assert.ok(result.ratio >= 4.5, `validation ${dark ? 'dark' : 'light'} ${theme}: ${result.ratio}`)
+        const result = await contrast(page, '.login-form .el-form-item.is-error .el-form-item__error:visible')
+        assert.ok(result.ratio >= 4.5, `validation ${dark ? 'dark' : 'light'} ${theme}: ${JSON.stringify(result)}`)
       }
     }
     await username.fill(' test ')
