@@ -12,6 +12,14 @@ const search = ref(''); const statusFilter = ref(''); const listPage = ref(1); c
 const createOpen = ref(false); const detailOpen = ref(false); const detailLoading = ref(false);
 const selectedId = ref(''); const detail = ref(null); const detailError = ref('');
 const expandedOrders = ref([]);
+const orderSearch = ref('');
+const matchingOrders = computed(() => {
+  const query = orderSearch.value.trim().toLocaleLowerCase();
+  return (detail.value?.orders || []).map((order, index) => ({ order, index })).filter(({ order }) => {
+    if (!query) return true;
+    return [order.guestName, order.note, ...order.items.flatMap(item => [item.name, item.note])].some(value => String(value || '').toLocaleLowerCase().includes(query));
+  });
+});
 const allOrdersExpanded = computed(() => !!detail.value?.orders?.length && detail.value.orders.every(order => expandedOrders.value.includes(order.id)));
 const expandAllOrders = () => { if (!allOrdersExpanded.value) expandedOrders.value = (detail.value?.orders || []).map(order => order.id); };
 const collapseAllOrders = () => { if (expandedOrders.value.length) expandedOrders.value = []; };
@@ -221,13 +229,13 @@ async function readDetail(id, review = false) {
 }
 async function openDetail(item) {
   if (working.value || mutationIssue.value) return;
-  selectedId.value = item.id; detail.value = null; expandedOrders.value = []; detailOpen.value = true; editing.value = false;
+  selectedId.value = item.id; detail.value = null; expandedOrders.value = []; orderSearch.value = ''; detailOpen.value = true; editing.value = false;
   await readDetail(item.id);
 }
 async function closeDetail(done) {
   if (working.value || mutationIssue.value) return ElMessage.warning('请先完成操作或核对最新状态');
   if (editDirty.value) { try { await ElMessageBox.confirm('关闭会放弃尚未保存的宴请信息。', '放弃修改？', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); } catch (_) { return; } }
-  editing.value = false; detailSequence++; detail.value = null; expandedOrders.value = []; selectedId.value = ''; done();
+  editing.value = false; detailSequence++; detail.value = null; expandedOrders.value = []; orderSearch.value = ''; selectedId.value = ''; done();
 }
 async function closeCreate(done) {
   if (working.value || pending.value) return ElMessage.warning('请先完成或核对安全创建');
@@ -255,7 +263,7 @@ async function retryCreate() {
     if (!validVersion(item) || !safeShareUrl(item.shareUrl)) throw new Error('创建结果不完整');
     try { clearPending(); } catch (_) { ElMessage.warning('已创建，但无法清除安全凭证，可再次安全核对'); }
     form.title = ''; form.eventAt = null; form.hours = 72; createOpen.value = false;
-    selectedId.value = item.id; detail.value = item; detailOpen.value = true; editing.value = false;
+    selectedId.value = item.id; detail.value = item; orderSearch.value = ''; detailOpen.value = true; editing.value = false;
     ElMessage.success(result.replayed ? '已找回原来的宴请' : '宴请已创建');
     await load();
   } catch (error) { ElMessage.warning(error?.error || error?.message || '创建结果未确认，请使用安全重试'); }
@@ -369,13 +377,16 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
         <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input ref="shareInput" :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
         <div class="status-actions"><el-button v-if="detailStatus === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detailStatus === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
         <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><p v-if="summaryNeedsManualReview" class="dialog-note" role="status">部分旧点单缺少菜品标识，无法逐菜自动核对，请对照下方客人点菜单确认。</p><p v-else-if="summaryDetailsMismatch" class="dialog-note" role="alert">汇总中的客人或备注与点菜单不一致，请以下方客人点菜单为准并重新核对。</p><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
-        <section v-if="detail.orders.length" class="orders"><div class="orders-heading"><h3>客人点菜单</h3><div class="inline-actions"><el-button :aria-disabled="allOrdersExpanded" @click="expandAllOrders">全部展开</el-button><el-button :aria-disabled="!expandedOrders.length" @click="collapseAllOrders">全部收起</el-button></div></div><p v-if="hasDuplicateGuestNames" class="dialog-note" role="status">有客人使用相同称呼，汇总中的称呼会合并；请按下方序号逐份核对。</p><el-collapse v-model="expandedOrders"><el-collapse-item v-for="(order, orderIndex) in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · 第 ${orderIndex + 1} 份 · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
+        <section v-if="detail.orders.length" class="orders"><div class="orders-heading"><h3>客人点菜单</h3><div class="inline-actions"><el-button :aria-disabled="allOrdersExpanded" @click="expandAllOrders">全部展开</el-button><el-button :aria-disabled="!expandedOrders.length" @click="collapseAllOrders">全部收起</el-button></div></div><div class="order-search"><el-input v-model="orderSearch" clearable maxlength="100" aria-label="搜索客人点菜单" placeholder="搜索客人、菜品或备注" /><p aria-live="polite">显示 {{ matchingOrders.length }} / {{ detail.orders.length }} 份；仅筛选下方列表，上方汇总不变。展开或收起作用于全部点菜单。</p></div><p v-if="hasDuplicateGuestNames" class="dialog-note" role="status">有客人使用相同称呼，汇总中的称呼会合并；请按下方序号逐份核对。</p><p v-if="!matchingOrders.length" class="order-search-empty">没有匹配的点菜单，请调整搜索。</p><el-collapse v-else v-model="expandedOrders"><el-collapse-item v-for="{ order, index: orderIndex } in matchingOrders" :key="order.id" :name="order.id" :title="`${order.guestName} · 第 ${orderIndex + 1} 份 · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
       </template>
     </el-dialog>
   </div>
 </template>
 
 <style scoped>
+.order-search { margin: 12px 0; }
+.order-search :deep(.el-input__wrapper) { min-height: 44px; }
+.order-search p, .order-search-empty { margin: 6px 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
 .empty-actions .el-button { min-height: 44px; margin: 0; }
 .inline-actions .el-button, .status-actions .el-button, .alert-actions .el-button, .card-bottom .el-button, .empty-card .el-button { min-height: 44px; }
