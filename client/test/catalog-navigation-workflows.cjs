@@ -24,6 +24,7 @@ async function main () {
         if (mode === 'legacy') return route.fulfill({ json: meals })
         if (mode === 'legacy-object') return route.fulfill({ json: { data: meals, total: meals.length } })
         if (mode === 'partial-object') return route.fulfill({ json: { data: meals.slice(0, 8), total: meals.length } })
+        if (mode === 'wrong-filter') return route.fulfill({ json: { data: [meals[2]], total: 1, page: 1, limit: 8 } })
         if (mode === 'missing') return route.fulfill({ json: { data: null, total: 0 } })
         if (mode === 'duplicate') return route.fulfill({ json: { data: [meals[0], meals[0]], total: 2, page: 1, limit: 8 } })
         if (mode === 'wrong-page') return route.fulfill({ json: { data: meals.slice(0, 8), total: 20, page: 2, limit: 8 } })
@@ -215,6 +216,12 @@ async function main () {
       mode = failure; await page.goto(`${base}/meals`)
       await page.getByText('无法加载菜品', { exact: false }).waitFor()
       assert.equal(await page.locator('.meal-card-wrapper').count(), 0, `${failure} response must not be displayed as a valid catalog`)
+    }
+    mode = 'wrong-filter'
+    for (const query of ['category=其他分类', 'category=家常菜&subcategory=其他子类', 'difficulty=hard', 'tag=其他标签', 'favorite=1']) {
+      await page.goto(`${base}/meals?${query}`)
+      await page.getByText('菜品结果与筛选条件不一致', { exact: false }).waitFor()
+      assert.equal(await page.locator('.meal-card-wrapper').count(), 0, `${query} must not expose unrelated results`)
     }
     mode = 'normal'
     for (const [view, width] of [['grid', 390], ['list', 320], ['table', 1280]]) {

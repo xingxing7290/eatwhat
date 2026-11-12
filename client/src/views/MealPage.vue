@@ -293,6 +293,7 @@ const fetchMeals = async () => {
     else if (result.page != null || result.limit != null) {
       if (result.page !== requestedPage || result.limit !== pageSize.value || rows.length !== Math.min(pageSize.value, Math.max(0, total - (requestedPage - 1) * pageSize.value))) throw new Error('菜品分页数据不完整或已发生变化，请重试');
     }
+    if (rows.some(meal => (params.category?.trim() && meal.category !== params.category.trim()) || (params.subcategory?.trim() && meal.subcategory !== params.subcategory.trim()) || (params.difficulty?.trim() && meal.difficulty !== params.difficulty.trim()) || (params.tag?.trim() && (!Array.isArray(meal.tags) || !meal.tags.includes(params.tag.trim()))) || (params.favorite === 'true' && meal.favorite !== true))) throw new Error('菜品结果与筛选条件不一致，请重新加载');
     const lastPage = Math.max(1, Math.ceil(total / pageSize.value));
     if (currentPage.value > lastPage) {
       currentPage.value = lastPage;
