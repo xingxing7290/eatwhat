@@ -51,6 +51,8 @@ let linkTimer = null;
 let listSequence = 0;
 let alive = true;
 const form = reactive({ title: '', note: '', category: '', priority: 'normal' });
+const titleInput = ref(null);
+const titleError = ref(false);
 const restoredView = readWishlistViewState(window.history.state?.eatwhatWishlistView, currentSessionScope());
 const search = ref(restoredView?.search || '');
 const selectedStatus = ref(restoredView?.status || 'all');
@@ -221,12 +223,14 @@ watch([search, selectedStatus, selectedPriority], () => {
 }, { flush: 'sync' });
 const reset = () => {
   Object.assign(form, { title: '', note: '', category: '', priority: 'normal' });
+  titleError.value = false;
   editing.value = null; editIssue.value = ''; editReviewed.value = false; latestEdit.value = null; latestError.value = '';
   initialForm.value = JSON.stringify(form);
 };
 const fillEdit = item => {
   if (!(item?._id || item?.id) || !canEdit(item) || typeof item.title !== 'string' || !item.title.trim() || typeof item.note !== 'string' || typeof item.category !== 'string' || !Object.prototype.hasOwnProperty.call(priorityText, item.priority)) throw new Error('想吃记录或版本不完整，请刷新后重试');
   Object.assign(form, { title: item.title, note: item.note, category: item.category, priority: item.priority });
+  titleError.value = false;
   editing.value = { id: String(item._id || item.id), version: { ...item.editVersion } };
   editIssue.value = ''; editReviewed.value = false; latestEdit.value = null; latestError.value = '';
   initialForm.value = JSON.stringify(form);
@@ -279,7 +283,7 @@ const discardEditDraft = async () => {
   reset(); dialogVisible.value = false;
 };
 const save = async () => {
-  if (!form.title.trim()) return ElMessage.warning('请填写想吃什么');
+  if (!form.title.trim()) { titleError.value = true; await nextTick(); titleInput.value?.focus(); return; }
   if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || actionIssue.value || actionId.value) return;
   saving.value = true;
   try {
@@ -544,7 +548,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
       </el-alert>
       <p v-if="editing" class="edit-hint">只修改想吃记录，不会改动已关联的菜谱、投票或排餐。</p>
       <el-form label-position="top" :disabled="saving || saveUncertain">
-        <el-form-item label="想吃什么"><el-input v-model="form.title" maxlength="100" show-word-limit placeholder="比如：冬阴功火锅、楼下那家牛肉面" /></el-form-item>
+        <el-form-item label="想吃什么"><el-input ref="titleInput" v-model="form.title" maxlength="100" show-word-limit placeholder="比如：冬阴功火锅、楼下那家牛肉面" :aria-invalid="titleError ? 'true' : undefined" :aria-describedby="titleError ? 'wish-title-error' : undefined" @input="titleError = false" /><p v-if="titleError" id="wish-title-error" class="field-error" role="alert">请填写想吃什么，其他内容会保留。</p></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="3" /></el-form-item>
         <el-form-item label="分类"><el-input v-model="form.category" placeholder="外食、家常、甜品、周末计划..." /></el-form-item>
         <el-form-item label="优先级"><el-select v-model="form.priority"><el-option label="随缘" value="low" /><el-option label="普通" value="normal" /><el-option label="超想吃" value="high" /></el-select></el-form-item>
@@ -567,6 +571,7 @@ onBeforeUnmount(() => { alive = false; linkSequence++; listSequence++; if (linkT
 </template>
 
 <style scoped>
+.field-error { width: 100%; margin: 6px 0 0; color: var(--text-primary); font-size: 13px; font-weight: 700; line-height: 1.5; }
 .reset-filter { min-height: 44px; padding: 8px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .reset-filter:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .empty-filter-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
