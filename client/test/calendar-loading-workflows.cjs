@@ -45,6 +45,8 @@ async function main () {
     })
     await page.goto(`${base}/calendar`)
     await page.locator('.desktop-only .meal-item').filter({ hasText: '已填充的菜' }).waitFor()
+    await page.getByLabel('本月安排概览').getByText('已显示 1 天安排').waitFor()
+    await page.getByLabel('本月安排概览').getByText('共 1 个餐次').waitFor()
     assert.equal(catalogCalls, 0)
     assert.deepEqual(mealCalls, [])
     assert.equal(await page.getByText('无法加载月度安排', { exact: false }).count(), 0)
@@ -174,10 +176,12 @@ async function main () {
     mode = 'bulk'; peak = 0
     await page.goto(`${base}/calendar?month=2026-10`)
     await page.locator('.desktop-only .meal-item').filter({ hasText: '补全菜品 legacy-12' }).waitFor()
+    await page.getByLabel('本月安排概览').getByText('共 1 个餐次').waitFor()
     assert.ok(peak > 1 && peak <= 6, `legacy lookups must be bounded: ${peak}`)
     mode = 'invalid'
     await page.reload()
     await page.getByText('月度安排日期或餐次不完整', { exact: false }).waitFor()
+    assert.equal(await page.getByLabel('本月安排概览').count(), 0, 'failed reads must not present stale summary counts')
     assert.equal(await page.locator('.calendar-grid:visible').count(), 0)
     mode = 'invalid-items'
     await page.getByRole('button', { name: '重新加载' }).click()

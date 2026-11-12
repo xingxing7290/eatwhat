@@ -105,6 +105,14 @@ const getDateSchedule = (date) => {
   const formattedDate = format(date, 'yyyy-MM-dd');
   return scheduleStore.getScheduleByDate(formattedDate);
 };
+const monthSummary = computed(() => calendarDays.value.reduce((summary, date) => {
+  if (!date) return summary;
+  const schedule = getDateSchedule(date);
+  const slots = mealTypes.filter(type => schedule?.meals?.[type.key]?.length).length;
+  if (slots) summary.days++;
+  summary.slots += slots;
+  return summary;
+}, { days: 0, slots: 0 }));
 
 // 获取该月所有日期的安排
 const loadPartnerWishlist = async (sequence = monthSequence) => {
@@ -583,7 +591,13 @@ onBeforeUnmount(() => {
     </div>
     
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载月度安排：${loadError}`"><el-button link type="primary" @click="fetchMonthSchedules()">重新加载</el-button></el-alert>
-    <el-skeleton v-else :loading="isLoading" animated>
+    <div v-if="!isLoading && !loadError" class="month-summary" aria-label="本月安排概览">
+      <span class="month-summary-title">本月安排概览</span>
+      <span>已显示 <strong>{{ monthSummary.days }}</strong> 天安排</span>
+      <span>共 <strong>{{ monthSummary.slots }}</strong> 个餐次</span>
+      <small>以最近一次读取为准</small>
+    </div>
+    <el-skeleton v-if="!loadError" :loading="isLoading" animated>
       <template #default>
         <!-- 桌面端日历网格 -->
         <div class="calendar-grid desktop-only">
@@ -1645,5 +1659,9 @@ onBeforeUnmount(() => {
 .wishlist-reminder-title small { color: var(--text-primary); font-size: 12px; }
 .wishlist-reminders .el-button, .wishlist-reminders a { flex-shrink: 0; min-height: 44px; }
 .wishlist-reminders a { display: inline-flex; align-items: center; }
+.month-summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 18px; padding: 12px 18px; border: 1px solid var(--border-color); border-radius: 16px; background: var(--bg-primary); color: var(--text-primary); font-size: 13px; }
+.month-summary-title { font-weight: 700; }
+.month-summary strong { font-size: 16px; }
+.month-summary small { color: var(--text-primary); font-size: 12px; }
 @media (max-width: 400px) { .wishlist-reminders li { flex-wrap: wrap; } }
 </style>
