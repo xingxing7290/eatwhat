@@ -39,6 +39,7 @@ const timelineTotal = ref(0);
 const timelineCapable = ref(false);
 const timelineSearch = ref(initialTimeline.search);
 const timelineSearchInput = ref(null);
+const timelineElement = ref(null);
 const timelinePageStatus = ref(null);
 const timelineMonth = ref(initialTimeline.month);
 const timelineMealType = ref(initialTimeline.mealType);
@@ -182,6 +183,15 @@ const grouped = computed(() => visibleMemories.value.reduce((acc, item) => {
   acc[key].push(item);
   return acc;
 }, {}));
+const jumpToMemoryDate = event => {
+  const date = event.target.value;
+  event.target.value = '';
+  if (!date) return;
+  const heading = Array.from(timelineElement.value?.querySelectorAll('[data-memory-date]') || []).find(section => section.dataset.memoryDate === date)?.querySelector('h2');
+  if (!heading) return;
+  heading.scrollIntoView({ block: 'start', behavior: 'auto' });
+  heading.focus({ preventScroll: true });
+};
 const mealId = meal => String(meal?._id || meal?.id || '');
 const linkedMealId = meal => {
   const id = meal?._id || meal?.id;
@@ -557,15 +567,16 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       <div class="filter-row"><label>月份<input v-model="timelineMonth" type="month" aria-label="按月份筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete" /></label><label>餐次<select v-model="timelineMealType" aria-label="按餐次筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部餐次</option><option v-for="(label, key) in mealTypeText" :key="key" :value="key">{{ label }}</option></select></label><label>照片<select v-model="timelinePhotos" aria-label="按照片筛选回忆" :disabled="!!deleteIssue || !!deletingId || checkingDelete"><option value="all">全部回忆</option><option value="yes">有照片</option><option value="no">无照片</option></select></label><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="resetFilters">清除筛选</button></div>
       <nav v-if="timelineMonth" class="related-period" aria-label="查看所选月份的其他内容"><div><router-link v-if="relatedAlbumMonth" :to="{ name: 'photoAlbum', query: { month: relatedAlbumMonth } }">查看 {{ relatedAlbumMonth }} 相册 →</router-link><router-link v-if="relatedReviewMonth" :to="{ name: 'review', query: { month: relatedReviewMonth } }">查看 {{ relatedReviewMonth }} 饭桌回顾 →</router-link></div><p v-if="relatedAlbumMonth || relatedReviewMonth">仅保留月份；搜索、餐次和照片筛选不会随跳转保留。</p><p v-if="!relatedReviewMonth">饭桌回顾支持 2000 至 2100 年。</p></nav>
     </section>
-    <div v-loading="loading" class="timeline">
+    <div v-loading="loading" ref="timelineElement" class="timeline">
       <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载回忆：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
       <el-empty v-else-if="!loading && !visibleMemories.length" :description="filtersActive ? '没有符合条件的饭后回忆' : '还没有饭后回忆'">
         <div v-if="filtersActive" class="empty-actions"><el-button type="primary" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="timelineSearchInput?.focus()">调整搜索</el-button><el-button :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="clearEmptyFilters">清除全部筛选</el-button></div>
         <el-button v-else type="primary" :disabled="!!deletingId || !!deleteIssue || !!editIssue" @click="startCreate">记录第一餐</el-button>
       </el-empty>
       <p v-if="!loading && !loadError && !timelineCapable && memories.length >= 200" class="timeline-note">当前服务器最多返回最近 200 条；筛选只覆盖已返回的记录。请升级服务器以浏览全部历史回忆。</p>
-      <section v-for="(items, date) in (loadError ? {} : grouped)" :key="date" class="day-group">
-        <h2>{{ date }}</h2>
+      <label v-if="!loading && !loadError && Object.keys(grouped).length > 1" class="date-jump">定位当前显示日期<select aria-label="定位当前显示的回忆日期" :value="''" @change="jumpToMemoryDate"><option value="">选择日期（{{ Object.keys(grouped).length }} 天）</option><option v-for="(items, date) in grouped" :key="date" :value="date">{{ date }} · {{ items.length }} 条</option></select></label>
+      <section v-for="(items, date) in (loadError ? {} : grouped)" :key="date" class="day-group" :data-memory-date="date">
+        <h2 tabindex="-1">{{ date }}</h2>
         <div class="memory-grid">
           <el-card v-for="item in items" :key="item._id" class="memory-card">
             <div class="memory-top"><el-tag>{{ mealTypeText[item.mealType] || item.mealType }}</el-tag><div class="card-actions"><el-button type="primary" link :disabled="!!deletingId || saving || !!deleteIssue || !!saveUncertain || (!!editIssue && editing?.id !== String(item._id || item.id))" :aria-label="`编辑${item.title || '这条回忆'}`" @click="startEdit(item)"><el-icon><Edit /></el-icon>编辑</el-button><el-button type="danger" link :disabled="!!deletingId || saving || !!deleteIssue || deleteBlocked || !canDelete(item)" :aria-label="`删除${item.title || '这条回忆'}`" @click="remove(item)"><el-icon><Delete /></el-icon></el-button></div></div>
@@ -626,6 +637,9 @@ h1, h2, h3 { margin: 0; color: var(--text-primary); }
 h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}
 .page-header p { color: var(--text-secondary); margin: 6px 0 0; }
 .day-group { display: flex; flex-direction: column; gap: 12px; }
+.date-jump { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--text-primary); font-size: 13px; font-weight: 700; }
+.date-jump select { min-height: 44px; max-width: 100%; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.date-jump select:focus-visible, .day-group h2:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .memory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 280px), 1fr)); gap: 14px; }
 .memory-top, .meta, .meal-names { display: flex; align-items: center; gap: 8px; justify-content: space-between; }
 .card-actions { display: flex; align-items: center; flex-shrink: 0; }

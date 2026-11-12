@@ -33,6 +33,15 @@ async function main () {
     })
     await page.goto(`${base}/memories?month=2025-01`)
     await page.getByText('共 205 条回忆 · 第 1 / 18 页').waitFor()
+    const dateJump = page.getByLabel('定位当前显示的回忆日期')
+    assert.ok((await dateJump.boundingBox()).height >= 44)
+    assert.equal(await dateJump.locator('option').count(), 13, 'date choices describe only the current page')
+    const priorUrl = page.url(); const priorReads = requests.length
+    await dateJump.selectOption('2025-01-17')
+    assert.equal(await page.evaluate(() => document.activeElement?.tagName === 'H2' && document.activeElement?.parentElement?.dataset.memoryDate === '2025-01-17'), true)
+    assert.equal(await dateJump.inputValue(), '')
+    assert.equal(page.url(), priorUrl)
+    assert.equal(requests.length, priorReads, 'date navigation must not load or mutate records')
     invalidDate = true
     await page.getByRole('button', { name: '刷新当前结果' }).click()
     await page.getByText('无法加载回忆：回忆包含无效日期，请检查数据或联系管理员').waitFor()
@@ -73,7 +82,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.related-period a', '.related-period p', '.memory-meal-link']) {
+        for (const selector of ['.related-period a', '.related-period p', '.memory-meal-link', '.date-jump select']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }
