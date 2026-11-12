@@ -57,6 +57,24 @@ const previewImage = ref(null);
 const previewRetryButton = ref(null);
 const photoVersions = ref({});
 const photoFiles = ref([]);
+const photoUpload = ref(null);
+const photoPicker = ref(null);
+const choosePhotos = () => photoUpload.value?.$el?.querySelector('input[type="file"]')?.click();
+const removeQueuedPhoto = async (file, event) => {
+  if (saving.value || saveUncertain.value) return;
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  const index = photoFiles.value.findIndex(item => item.uid === file.uid);
+  if (index < 0) return;
+  await photoUpload.value?.handleRemove(file);
+  await nextTick();
+  const focused = document.activeElement;
+  if (hadFocus && (!focused || focused === document.body || focused === source || !focused.isConnected)) {
+    const next = photoFiles.value[Math.min(index, photoFiles.value.length - 1)];
+    const buttons = Array.from(photoUpload.value?.$el?.querySelectorAll('.queued-photo-remove') || []);
+    (buttons.find(button => button.dataset.queuedUid === String(next?.uid)) || photoPicker.value)?.focus();
+  }
+};
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const today = ref(localToday());
 const search = ref('');
@@ -525,7 +543,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
           <el-select v-model="form.meals[key]" multiple filterable remote reserve-keyword :remote-method="searchMeals" :loading="mealLoading" :disabled="!!editing && (!mealVisibilityVerified || (!!unavailableMeals[key] && !clearedSlots[key]))" :aria-label="`搜索${label}菜品`" placeholder="搜索菜名或食材" style="width: 100%;" @visible-change="openMealOptions" @change="rememberMeals"><el-option v-for="meal in mealOptions" :key="mealId(meal)" :label="meal.name" :value="mealId(meal)" /></el-select>
           <small v-if="!mealError && mealTotal > 50" class="photo-hint">仅显示前 50 道，请输入菜名或食材缩小范围。</small><el-alert v-if="mealError" type="warning" :closable="false" :title="`菜品暂时无法加载：${mealError}`"><el-button link type="primary" @click="searchMealCatalog">重试</el-button></el-alert>
         </el-form-item>
-        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" ref="existingPhotoGrid" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles"><el-icon><Picture /></el-icon></el-upload><small class="photo-hint" aria-live="polite">已有 {{ form.existingPhotos.length }} 张，本次选择 {{ photoFiles.length }} / 12 张。每次最多上传 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。移除后需保存才生效。</small></el-form-item>
+        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" ref="existingPhotoGrid" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload ref="photoUpload" class="anniversary-photo-upload" action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :on-change="handlePhotoChange" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles"><template #file="{ file, index }"><div class="queued-photo"><img :src="file.url" alt="" /><span :title="file.name">{{ file.name }}</span><button type="button" class="queued-photo-remove" :data-queued-uid="file.uid" :disabled="saving || saveUncertain" :aria-label="`移除第 ${index + 1} 张待上传照片：${file.name}`" @click.stop="removeQueuedPhoto(file, $event)">移除照片</button></div></template></el-upload><button ref="photoPicker" type="button" class="anniversary-photo-picker" :disabled="saving || saveUncertain" aria-describedby="anniversary-photo-help" @click="choosePhotos"><el-icon aria-hidden="true"><Picture /></el-icon>添加菜单照片</button><small id="anniversary-photo-help" class="photo-hint" aria-live="polite">已有 {{ form.existingPhotos.length }} 张，本次选择 {{ photoFiles.length }} / 12 张。每次最多上传 12 张，单张不超过 30MB（实际以上传服务器设置为准）；支持 JPG、PNG、GIF、WebP、HEIC、HEIF。待上传照片可逐张移除；移除已有照片需保存才生效。</small></el-form-item>
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || !!confirmingSlot" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || !!confirmingSlot" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
@@ -576,6 +594,15 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .latest-summary { margin-top: 8px; padding: 12px; border-radius: 10px; background: var(--bg-primary); overflow-wrap: anywhere; }
 .latest-summary p { margin: 6px 0; }
 .existing-photos { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; margin-bottom: 12px; }
+.anniversary-photo-upload :deep(.el-upload--picture-card) { display: none; }
+.anniversary-photo-picker { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.anniversary-photo-picker:focus-visible, .queued-photo-remove:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.anniversary-photo-picker:disabled, .queued-photo-remove:disabled { opacity: .6; cursor: not-allowed; }
+.anniversary-photo-upload :deep(.el-upload-list--picture-card .el-upload-list__item) { width: 148px; height: auto; min-height: 148px; overflow: hidden; }
+.queued-photo { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.queued-photo img { width: 100%; height: 76px; object-fit: cover; border-radius: 8px; background: var(--bg-secondary); }
+.queued-photo span { min-width: 0; color: var(--text-primary); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.queued-photo-remove { min-height: 44px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; cursor: pointer; }
 .existing-photo { display: grid; gap: 6px; width: 90px; }
 .existing-photo img { width: 90px; height: 72px; border-radius: 8px; object-fit: cover; }
 .photo-undo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 10px; color: var(--text-primary); font-size: 13px; }
