@@ -47,16 +47,19 @@
             id="login-password"
             ref="passwordInput"
             v-model="form.password" 
-            type="password" 
+            :type="showPassword ? 'text' : 'password'"
             placeholder="请输入密码" 
-            show-password 
             size="large"
             :prefix-icon="Lock"
             class="custom-input"
             autocomplete="current-password"
             :disabled="loading"
             @input="loginError = ''"
-          />
+          >
+            <template #suffix>
+              <button type="button" class="password-toggle" :disabled="loading" :aria-pressed="showPassword" @click="showPassword = !showPassword">显示密码</button>
+            </template>
+          </el-input>
         </el-form-item>
 
         <div class="login-options">
@@ -102,6 +105,7 @@ const formRef = ref()
 const usernameInput = ref()
 const passwordInput = ref()
 const loading = ref(false)
+const showPassword = ref(false)
 const loginError = ref('')
 const form = ref({ username: '', password: '' })
 const rememberPassword = ref(false)
@@ -353,6 +357,9 @@ onMounted(loadRememberedLogin)
   margin-bottom: 20px;
 }
 .field-label { display: block; margin-bottom: 8px; color: var(--text-primary); font-size: 14px; font-weight: 700; }
+.password-toggle { min-height: 44px; padding: 0 6px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+.password-toggle:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; border-radius: 6px; }
+.password-toggle:disabled { cursor: not-allowed; opacity: 0.6; }
 .login-error { margin: 0 0 12px; padding: 12px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); line-height: 1.5; overflow-wrap: anywhere; }
 .footer-tips a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 4px; border-radius: 2px; }
 

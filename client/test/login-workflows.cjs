@@ -26,8 +26,31 @@ async function main () {
     })
     await page.goto(`${base}/login`)
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' })
+    for (const width of [320, 768, 1280]) {
+      await page.setViewportSize({ width, height: 320 })
+      await page.evaluate(() => window.scrollTo(0, 0))
+      const top = await page.locator('.login-card').evaluate(node => node.getBoundingClientRect().top)
+      assert.ok(top >= 0, `login card must not be clipped at the top on ${width}px wide short screens: ${top}`)
+      await page.getByRole('link', { name: '创建账号' }).scrollIntoViewIfNeeded()
+      assert.equal(await page.getByRole('link', { name: '创建账号' }).isVisible(), true)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    }
+    await page.setViewportSize({ width: 320, height: 760 })
     const username = page.getByRole('textbox', { name: '用户名' })
     const password = page.getByLabel('密码', { exact: true })
+    const passwordToggle = page.getByRole('button', { name: '显示密码' })
+    await password.fill('private-password')
+    await password.focus(); await page.keyboard.press('Tab')
+    assert.equal(await passwordToggle.evaluate(node => document.activeElement === node), true, 'password visibility must be reachable by keyboard')
+    assert.ok((await passwordToggle.boundingBox()).height >= 44)
+    await page.keyboard.press('Space')
+    assert.equal(await password.getAttribute('type'), 'text')
+    assert.equal(await passwordToggle.getAttribute('aria-pressed'), 'true')
+    assert.equal(await password.inputValue(), 'private-password')
+    await page.keyboard.press('Enter')
+    assert.equal(await password.getAttribute('type'), 'password')
+    assert.equal(await passwordToggle.getAttribute('aria-pressed'), 'false')
+    assert.equal(calls, 0, 'password visibility must not submit the form')
     await username.fill('   ')
     await password.fill('private-password')
     await password.press('Enter')
@@ -80,7 +103,7 @@ async function main () {
         await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.field-label', '.login-error', '.app-subtitle']) {
+          for (const selector of ['.field-label', '.login-error', '.app-subtitle', '.password-toggle']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
           }
