@@ -67,6 +67,7 @@ const preparedIngredients = ref(new Set());
 const ingredientList = ref(null);
 const copyingIngredients = ref(false);
 const ingredientCopyOpen = ref(false);
+const ingredientCopyReady = ref(false);
 const ingredientSnapshot = ref('');
 const ingredientSnapshotInput = ref(null);
 const ingredientCopyScope = ref('all');
@@ -88,6 +89,7 @@ const resetIngredients = async event => {
 const copyIngredients = async (onlyUnprepared = false) => {
   if (copyingIngredients.value || !meal.value?.ingredients?.length || loading.value) return;
   const sequence = loadSequence;
+  const source = document.activeElement;
   const clean = value => typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
   const lines = meal.value.ingredients.map((item, index) => {
     if (onlyUnprepared && preparedIngredients.value.has(index)) return null;
@@ -97,9 +99,16 @@ const copyIngredients = async (onlyUnprepared = false) => {
   }).filter(Boolean);
   if (!lines.length) return;
   const text = [`${clean(meal.value.name)} · ${onlyUnprepared ? '未备食材' : '食材清单'}`, onlyUnprepared ? '点击时未标记备好的食材，不会更新购物清单。' : '当前菜谱快照，不会更新购物清单。', ...lines].join('\n');
-  copyingIngredients.value = true;
+  copyingIngredients.value = true; ingredientCopyReady.value = false;
   try { await navigator.clipboard.writeText(text); if (sequence === loadSequence) ElMessage.success(`${onlyUnprepared ? '已复制未备食材' : '已复制菜谱食材'}；购物清单未改变`); }
-  catch (_) { if (sequence === loadSequence) { ingredientCopyScope.value = onlyUnprepared ? 'pending' : 'all'; ingredientSnapshot.value = text; ingredientCopyOpen.value = true; } }
+  catch (_) {
+    if (sequence === loadSequence) {
+      ingredientCopyScope.value = onlyUnprepared ? 'pending' : 'all'; ingredientSnapshot.value = text;
+      const focused = document.activeElement;
+      if (!focused || focused === document.body || focused === source || !focused.isConnected) ingredientCopyOpen.value = true;
+      else ingredientCopyReady.value = true;
+    }
+  }
   finally { if (sequence === loadSequence) copyingIngredients.value = false; }
 };
 const selectIngredientSnapshot = () => { const input = ingredientSnapshotInput.value?.textarea; if (input) { input.focus(); input.select(); } };
@@ -217,7 +226,7 @@ const changeMemoryPage = page => { if (!memoryLoading.value && page >= 1 && page
 const load = async () => {
   const id = route.params.id;
   const sequence = ++loadSequence;
-  copyingIngredients.value = false; ingredientCopyOpen.value = false; ingredientSnapshot.value = '';
+  copyingIngredients.value = false; ingredientCopyOpen.value = false; ingredientCopyReady.value = false; ingredientSnapshot.value = '';
   if (typeof id !== 'string' || !id) return;
   loading.value = true;
   mealError.value = '';
@@ -342,6 +351,7 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <el-empty v-if="!meal.ingredients?.length" description="暂无食材"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充食材 →</router-link></el-empty>
           <div v-else ref="ingredientList" class="ingredient-list">
             <div class="ingredient-progress"><p aria-live="polite">本次已备好 {{ preparedIngredients.size }} / {{ meal.ingredients.length }} 项</p><button v-if="preparedIngredients.size" type="button" @click="resetIngredients">重置备菜</button><button type="button" :disabled="copyingIngredients" @click="copyIngredients(false)">复制食材清单</button><button v-if="preparedIngredients.size" type="button" :disabled="copyingIngredients || preparedIngredients.size >= meal.ingredients.length" @click="copyIngredients(true)">复制未备食材</button><small v-if="copyingIngredients" role="status">正在复制…</small><small>备菜标记仅在当前页面保留，刷新后重置。复制当前菜谱快照，不会修改菜谱或购物清单。</small></div>
+            <div v-if="ingredientCopyReady" class="ingredient-copy-recovery" role="status"><span>自动复制未完成，可手动复制点击时的快照。</span><button type="button" @click="ingredientCopyOpen = true">打开手动复制</button></div>
             <div v-for="(item, index) in meal.ingredients" :key="index" class="ingredient-row" :class="{ prepared: preparedIngredients.has(index) }">
               <label><input type="checkbox" :checked="preparedIngredients.has(index)" :aria-label="`第 ${index + 1} 项${ingredientName(item, index)}已备好`" @change="toggleIngredient(index)" /><span>{{ ingredientName(item, index) }}</span></label><strong>{{ typeof item === 'string' ? '' : item?.amount }}</strong>
             </div>
@@ -448,6 +458,9 @@ h1 { margin: 0; color: var(--text-primary); }
 .ingredient-progress small { flex-basis: 100%; font-size: 12px; line-height: 1.5; }
 .ingredient-progress button { min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
 .ingredient-progress button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.ingredient-copy-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 12px; color: var(--text-primary); font-size: 13px; }
+.ingredient-copy-recovery button { min-height: 44px; padding: 4px 0; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.ingredient-copy-recovery button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .copy-hint { color: var(--text-primary); font-size: 13px; line-height: 1.6; }
 .steps-list, .memory-list { display: flex; flex-direction: column; gap: 12px; }
 .cooking-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
