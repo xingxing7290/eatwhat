@@ -34,6 +34,8 @@ const imagePreview = ref('');
 const photoFiles = ref([]);
 const removedPhotos = ref([]);
 const removedIngredients = ref([]);
+const removedSteps = ref([]);
+const undoStepButton = ref(null);
 const ingredientList = ref(null);
 const undoIngredientButton = ref(null);
 const existingPhotoGrid = ref(null);
@@ -153,13 +155,32 @@ const addStep = () => {
   form.steps.push({ description: newStep.description.trim(), imageUrl: newStep.imagePreview || '', imageFile: newStep.imageFile || null });
   newStep.description = ''; newStep.imageFile = null; newStep.imagePreview = '';
 };
-const removeStep = (index) => {
-  const [step] = form.steps.splice(index, 1);
-  if (!step) return;
+const releaseRemovedStep = step => {
   releasePreview(step.imageUrl);
   const previous = stepImageUndo.get(step);
   if (previous) releasePreview(previous.imageUrl);
   stepImageUndo.delete(step);
+};
+const removeStep = async (index, event) => {
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  const [step] = form.steps.splice(index, 1);
+  if (!step) return;
+  removedSteps.value.push({ step, index });
+  if (removedSteps.value.length > 10) releaseRemovedStep(removedSteps.value.shift().step);
+  await nextTick();
+  if (hadFocus && (!document.activeElement || document.activeElement === document.body || document.activeElement === source || !document.activeElement.isConnected)) undoStepButton.value?.$el?.focus();
+};
+const undoStepRemoval = async () => {
+  const removed = removedSteps.value.pop();
+  if (!removed) return;
+  const index = Math.min(removed.index, form.steps.length);
+  form.steps.splice(index, 0, removed.step);
+  const key = stepKey(removed.step);
+  await nextTick();
+  if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) {
+    Array.from(stepsContainer.value?.querySelectorAll('[data-step-key]') || []).find(row => row.dataset.stepKey === key)?.querySelector('textarea')?.focus();
+  }
 };
 const moveStep = async (index, delta) => {
   const target = index + delta;
@@ -238,7 +259,7 @@ const load = async () => {
   for (const url of previews) URL.revokeObjectURL(url);
   previews.clear();
   Object.assign(form, emptyForm());
-  removedPhotos.value = []; removedIngredients.value = [];
+  removedPhotos.value = []; removedIngredients.value = []; removedSteps.value = [];
   Object.assign(newIngredient, { name: '', amount: '' }); newIngredientError.value = false;
   Object.assign(newStep, { description: '', imageFile: null, imagePreview: '' });
   imageFile.value = null; imagePreview.value = ''; photoFiles.value = [];
@@ -384,8 +405,9 @@ watch(() => route.params.id, load, { immediate: true });
 
         <el-card><template #header>做法步骤</template>
           <div class="step-editor"><el-input v-model="newStep.description" type="textarea" rows="2" placeholder="写下一个步骤" aria-label="新步骤描述" /><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="onNewStepImage"><el-button><el-icon><Upload /></el-icon>步骤图</el-button></el-upload><img v-if="newStep.imagePreview" :src="newStep.imagePreview" alt="待添加步骤图" /><el-button v-if="newStep.imageFile" @click="clearNewStepImage">移除待添加步骤图</el-button><el-button type="primary" @click="addStep">添加步骤</el-button></div>
-          <div v-if="form.steps.length" ref="stepsContainer" class="steps"><div v-for="(step, index) in form.steps" :key="stepKey(step)" class="step-item" :data-step-key="stepKey(step)"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :key="step.imageUrl" :src="imageFor(step.imageUrl)" :alt="`步骤 ${index + 1} 图片`" @error="imageError" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button v-if="step.imageUrl || step.imageFile" size="small" :aria-label="`移除第 ${index + 1} 步图片`" @click="clearStepImage(step)">移除图</el-button><el-button v-if="stepImageUndo.has(step)" size="small" :aria-label="`撤销第 ${index + 1} 步图片修改`" @click="undoStepImage(step)">撤销图片修改</el-button><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index)">删除</el-button></div></div></div>
+          <div v-if="form.steps.length" ref="stepsContainer" class="steps"><div v-for="(step, index) in form.steps" :key="stepKey(step)" class="step-item" :data-step-key="stepKey(step)"><div class="step-no">{{ index + 1 }}</div><img v-if="step.imageUrl" :key="step.imageUrl" :src="imageFor(step.imageUrl)" :alt="`步骤 ${index + 1} 图片`" @error="imageError" /><div v-else class="step-placeholder">无步骤图</div><el-input v-model="step.description" type="textarea" rows="2" :aria-label="`第 ${index + 1} 步描述`" /><div class="step-actions"><el-upload action="#" :accept="photoAccept" :auto-upload="false" :show-file-list="false" :on-change="file => onStepImage(index, file)"><el-button size="small" :aria-label="`更换第 ${index + 1} 步图片`">换图</el-button></el-upload><el-button v-if="step.imageUrl || step.imageFile" size="small" :aria-label="`移除第 ${index + 1} 步图片`" @click="clearStepImage(step)">移除图</el-button><el-button v-if="stepImageUndo.has(step)" size="small" :aria-label="`撤销第 ${index + 1} 步图片修改`" @click="undoStepImage(step)">撤销图片修改</el-button><el-button size="small" :aria-label="`上移第 ${index + 1} 步`" :disabled="index===0" @click="moveStep(index,-1)">上移</el-button><el-button size="small" :aria-label="`下移第 ${index + 1} 步`" :disabled="index===form.steps.length-1" @click="moveStep(index,1)">下移</el-button><el-button size="small" type="danger" :aria-label="`删除第 ${index + 1} 步`" @click="removeStep(index, $event)">删除</el-button></div></div></div>
           <el-empty v-else description="暂无做法步骤" />
+          <div v-if="removedSteps.length" class="photo-undo" role="status"><span>可撤销最近 {{ removedSteps.length }} 步；删除保存后生效，最多保留 10 步供撤销。</span><el-button ref="undoStepButton" link type="primary" @click="undoStepRemoval">撤销最近移除的步骤</el-button></div>
         </el-card>
 
         <el-card><template #header>烹饪技巧和来源</template><el-form-item label="小贴士"><el-input v-model="form.tips" type="textarea" rows="3" /></el-form-item><div class="two-cols"><el-form-item label="来源"><el-input v-model="form.source" /></el-form-item><el-form-item label="来源链接/位置"><el-input v-model="form.sourcePath" /></el-form-item></div></el-card>
