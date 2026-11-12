@@ -11,6 +11,10 @@ const capabilities = ref(null); const capabilitiesError = ref(''); const session
 const search = ref(''); const statusFilter = ref(''); const listPage = ref(1); const listPagination = ref(null); const paginationAvailable = ref(false);
 const createOpen = ref(false); const detailOpen = ref(false); const detailLoading = ref(false);
 const selectedId = ref(''); const detail = ref(null); const detailError = ref('');
+const expandedOrders = ref([]);
+const allOrdersExpanded = computed(() => !!detail.value?.orders?.length && detail.value.orders.every(order => expandedOrders.value.includes(order.id)));
+const expandAllOrders = () => { if (!allOrdersExpanded.value) expandedOrders.value = (detail.value?.orders || []).map(order => order.id); };
+const collapseAllOrders = () => { if (expandedOrders.value.length) expandedOrders.value = []; };
 const pending = ref(null); const mutationIssue = ref(null); const editing = ref(false);
 const headerRefresh = ref(null);
 const listSearchInput = ref(null);
@@ -205,6 +209,7 @@ async function readDetail(id, review = false) {
     const item = acceptSession(result?.session, true);
     if (item.id !== id) throw new Error('宴请记录不匹配');
     detail.value = item;
+    expandedOrders.value = expandedOrders.value.filter(orderId => item.orders.some(order => order.id === orderId));
     if (review && mutationIssue.value) mutationIssue.value.checked = true;
   } catch (error) {
     if (alive && sequence === detailSequence) {
@@ -216,13 +221,13 @@ async function readDetail(id, review = false) {
 }
 async function openDetail(item) {
   if (working.value || mutationIssue.value) return;
-  selectedId.value = item.id; detail.value = null; detailOpen.value = true; editing.value = false;
+  selectedId.value = item.id; detail.value = null; expandedOrders.value = []; detailOpen.value = true; editing.value = false;
   await readDetail(item.id);
 }
 async function closeDetail(done) {
   if (working.value || mutationIssue.value) return ElMessage.warning('请先完成操作或核对最新状态');
   if (editDirty.value) { try { await ElMessageBox.confirm('关闭会放弃尚未保存的宴请信息。', '放弃修改？', { type: 'warning', confirmButtonText: '放弃修改', cancelButtonText: '继续编辑' }); } catch (_) { return; } }
-  editing.value = false; detailSequence++; detail.value = null; selectedId.value = ''; done();
+  editing.value = false; detailSequence++; detail.value = null; expandedOrders.value = []; selectedId.value = ''; done();
 }
 async function closeCreate(done) {
   if (working.value || pending.value) return ElMessage.warning('请先完成或核对安全创建');
@@ -364,7 +369,7 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
         <section class="share-panel"><div><span class="eyebrow">GUEST LINK</span><h3>客人点菜链接</h3><p>请只分享给受邀客人，任何持有链接的人都可以查看菜单。</p><p v-if="linkExpired">链接已过期，不能重新开放或更换。</p></div><el-input ref="shareInput" :model-value="canShare ? safeShareUrl(detail.shareUrl) : ''" readonly aria-label="客人点菜链接" placeholder="链接暂不可用，请先核对" /><div class="inline-actions"><el-button :disabled="!canShare || working || linkExpired" @click="copyLink"><el-icon><Link /></el-icon>复制链接</el-button><el-button :disabled="!canChange || linkExpired || !['open', 'locked'].includes(detail.status)" @click="rotateLink">更换链接</el-button></div></section>
         <div class="status-actions"><el-button v-if="detailStatus === 'open'" :disabled="!canChange || editing" @click="setStatus('locked')">锁单</el-button><el-button v-if="detailStatus === 'locked'" :disabled="!canChange || editing || linkExpired" @click="setStatus('open')">继续点菜</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" :disabled="!canChange || editing" @click="setStatus('completed')">标记完成</el-button><el-button v-if="['open', 'locked', 'expired'].includes(detailStatus)" type="danger" plain :disabled="!canChange || editing" @click="setStatus('cancelled')">取消宴请</el-button></div>
         <section class="summary"><div class="summary-head"><div><span class="eyebrow">ORDER SUMMARY</span><h3>大家想吃</h3></div><span>{{ detail.summary.guestCount }} 份点菜单 · {{ detail.summary.totalQuantity }} 份菜</span></div><p v-if="summaryNeedsManualReview" class="dialog-note" role="status">部分旧点单缺少菜品标识，无法逐菜自动核对，请对照下方客人点菜单确认。</p><p v-else-if="summaryDetailsMismatch" class="dialog-note" role="alert">汇总中的客人或备注与点菜单不一致，请以下方客人点菜单为准并重新核对。</p><div v-if="!detail.summary.dishes.length" class="summary-empty">还没有客人提交点菜单。</div><div v-else class="dish-list"><div v-for="dish in detail.summary.dishes" :key="dish.mealId || dish.name" class="dish-row"><div><strong>{{ dish.name }}</strong><small>{{ (dish.guestNames || []).join('、') }}</small><small v-for="(note, index) in dish.notes || []" :key="index">{{ note }}</small></div><b>× {{ dish.quantity }}</b></div></div></section>
-        <section v-if="detail.orders.length" class="orders"><h3>客人点菜单</h3><p v-if="hasDuplicateGuestNames" class="dialog-note" role="status">有客人使用相同称呼，汇总中的称呼会合并；请按下方序号逐份核对。</p><el-collapse><el-collapse-item v-for="(order, orderIndex) in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · 第 ${orderIndex + 1} 份 · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
+        <section v-if="detail.orders.length" class="orders"><div class="orders-heading"><h3>客人点菜单</h3><div class="inline-actions"><el-button :aria-disabled="allOrdersExpanded" @click="expandAllOrders">全部展开</el-button><el-button :aria-disabled="!expandedOrders.length" @click="collapseAllOrders">全部收起</el-button></div></div><p v-if="hasDuplicateGuestNames" class="dialog-note" role="status">有客人使用相同称呼，汇总中的称呼会合并；请按下方序号逐份核对。</p><el-collapse v-model="expandedOrders"><el-collapse-item v-for="(order, orderIndex) in detail.orders" :key="order.id" :name="order.id" :title="`${order.guestName} · 第 ${orderIndex + 1} 份 · ${dateText(order.submittedAt)}`"><p v-for="(item, index) in order.items || []" :key="index">{{ item.name }} × {{ item.quantity }}<span v-if="item.note"> · {{ item.note }}</span></p><p v-if="order.note" class="muted">整单备注：{{ order.note }}</p></el-collapse-item></el-collapse></section>
       </template>
     </el-dialog>
   </div>
@@ -387,4 +392,8 @@ onBeforeUnmount(() => { alive = false; listSequence++; detailSequence++; window.
 .list-filters{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.list-filters .el-input{flex:1;min-width:180px}.list-filters .el-select{width:180px}.list-filters .el-button{margin:0}.legacy-note{margin:0;color:var(--text-primary);font-size:13px}.list-pagination{display:flex;justify-content:center;align-items:center;gap:12px;color:var(--text-primary);font-size:13px}.list-pagination.top{justify-content:flex-end}.list-pagination .el-button{margin:0}@media(max-width:720px){.list-filters .el-input{flex-basis:100%}.list-filters .el-select{flex:1;min-width:0}.list-filters :deep(.el-input__wrapper),.list-filters :deep(.el-select__wrapper),.list-filters .el-button,.list-pagination .el-button{min-height:44px}}
 .list-pagination span:focus-visible,.section-head h2:focus-visible,.list-error-focus:focus-visible{outline:2px solid var(--text-primary);outline-offset:3px}
 .field-hint,.field-error{flex-basis:100%;margin:6px 0 0;color:var(--text-primary);font-size:13px;line-height:1.5}.field-error{font-weight:700}
+.orders-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.orders-heading h3 { margin: 0; }
+.orders-heading .el-button { min-height: 44px; }
+.orders-heading .el-button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
 </style>
