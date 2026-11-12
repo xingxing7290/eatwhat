@@ -2371,6 +2371,31 @@ onBeforeUnmount(() => {
   :global(.meal-page .view-switcher .el-radio-button) { flex: 1; }
   :global(.meal-page .view-switcher .el-radio-button__inner) { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 3px; padding-inline: 2px; }
 }
+@media (max-width: 480px) {
+  .catalog-content .meals-list { gap: 10px; }
+  .catalog-content .meal-list-item { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; padding: 8px; }
+  .catalog-content .meal-list-image { grid-column: 1; grid-row: 1; width: 72px; height: 72px; margin: 0; border-radius: 14px; }
+  .catalog-content .list-image-notice { right: 2px; bottom: 2px; padding: 3px 4px; font-size: 9px; }
+  .catalog-content .meal-list-info, .catalog-content .meal-list-header { display: contents; }
+  .catalog-content .meal-list-name { grid-column: 2; grid-row: 1; align-self: center; min-width: 0; margin: 0; overflow-wrap: anywhere; font-size: 15px; }
+  .catalog-content .meal-list-actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 4px; }
+  .catalog-content .meal-list-actions :deep(.el-button) { display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; width: 44px; min-width: 44px; min-height: 44px; margin: 0; padding: 3px; border-radius: 12px; }
+  .catalog-content .meal-list-actions :deep(.el-button)::after { font-size: 10px; line-height: 1; white-space: nowrap; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="查看"])::after { content: '查看'; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="加入想吃"])::after { content: '想吃'; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="在详情反馈"])::after { content: '反馈'; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="编辑"])::after { content: '编辑'; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="移入回收站"])::after { content: '回收'; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="查看"]:not(:disabled)) { background: #485965; color: #fff; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="加入想吃"]:not(:disabled)) { background: #82431d; color: #fff; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="在详情反馈"]:not(:disabled)) { background: #785019; color: #fff; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="编辑"]:not(:disabled)) { background: #5d526e; color: #fff; }
+  .catalog-content .meal-list-actions :deep(.el-button[aria-label^="移入回收站"]:not(:disabled)) { background: #903d3d; color: #fff; }
+  .catalog-content .meal-list-description, .catalog-content .meal-list-meta { grid-column: 1 / -1; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+  .catalog-content .meal-list-tags { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+  .catalog-content .meal-list-tags :deep(.el-tag) { max-width: 100%; height: auto; white-space: normal; }
+  .catalog-content .meal-list-tags :deep(.el-tag__content) { overflow-wrap: anywhere; }
+}
 .results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
 .wish-recovery { margin-bottom: 12px; }
 .wish-recovery p { margin: 4px 0 8px; line-height: 1.5; }

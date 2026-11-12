@@ -93,6 +93,26 @@ async function main () {
     await page.evaluate(() => { window.__originalCatalogTimeout = window.setTimeout; window.setTimeout = (fn, delay, ...args) => delay === 200 ? window.__originalCatalogTimeout(() => {}, 30000) : window.__originalCatalogTimeout(fn, delay, ...args) })
     await page.getByRole('radio', { name: '列表视图' }).focus(); await page.keyboard.press('Space')
     await page.locator('.meals-list').getByRole('button', { name: '查看家常菜09' }).first().waitFor()
+    const compactList = page.locator('.meal-list-item').first()
+    const compactBox = await compactList.boundingBox()
+    const compactImage = await compactList.locator('.meal-list-image').boundingBox()
+    assert.ok(compactImage.width >= 72 && compactImage.height >= 72 && compactBox.height < 230, 'mobile list cards should retain a thumbnail while remaining compact')
+    const compactActions = await compactList.locator('.meal-list-actions button').all()
+    assert.equal(compactActions.length, 5, 'the compact list must retain all actions')
+    for (const button of compactActions) {
+      const box = await button.boundingBox()
+      assert.ok(box && box.width >= 44 && box.height >= 44 && box.x >= compactBox.x && box.x + box.width <= compactBox.x + compactBox.width + 1, 'all list actions must fit and remain touch-sized')
+    }
+    assert.deepEqual(await compactList.locator('.meal-list-actions button').evaluateAll(buttons => buttons.map(button => getComputedStyle(button, '::after').content.replaceAll('"', ''))), ['查看', '想吃', '反馈', '编辑', '回收'])
+    assert.equal(await compactList.locator('.meal-list-name').evaluate(node => { const original = node.textContent; node.textContent = 'LongRecipeName'.repeat(15); const fits = node.scrollWidth <= node.clientWidth && document.documentElement.scrollWidth <= innerWidth; node.textContent = original; return fits }), true, 'long names must wrap inside compact list cards')
+    await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
+    for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      for (const selector of ['.meal-list-name', '.meal-list-actions button[aria-label^="查看"]', '.meal-list-actions button[aria-label^="加入想吃"]', '.meal-list-actions button[aria-label^="在详情反馈"]', '.meal-list-actions button[aria-label^="编辑"]']) { const result = await contrast(page, selector); assert.ok(result.ratio >= 4.5, `${dark} ${theme} ${selector}: ${JSON.stringify(result)}`) }
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
+    if (process.env.EATWHAT_CATALOG_LIST_SHOT) await page.screenshot({ path: process.env.EATWHAT_CATALOG_LIST_SHOT, fullPage: true })
     assert.equal(await page.locator('.meals-list [role="button"] button').count(), 0, 'list actions must not be nested in another button')
     await page.waitForFunction(() => { const q = new URL(location.href).searchParams; return q.get('page') === '2' && q.get('view') === 'list' })
     assert.equal(requests.length, requestCountBeforeViewChange, 'changing presentation must not reload or reset the current page')
