@@ -57,6 +57,9 @@ async function main () {
         if (scenario === 'noimage') { data.topMeals[0].imageUrl = ''; data.bestMemory.photos = ['/api/uploads/valid.svg']; data.photos[0].photo = '/api/uploads/valid.svg' }
         if (scenario === 'legacy') delete data.supportsHouseholdScopedReview
         if (scenario === 'malformed') data.range.end = '1999-01-01'
+        if (scenario === 'meal-count') data.topMeals[0].count = 4
+        if (scenario === 'meal-duplicate') data.topMeals.push({ ...data.topMeals[0] })
+        if (scenario === 'meal-order') data.topMeals.push({ id: 'meal-b', name: '另一道菜', count: 4, scheduleCount: 4, memoryCount: 0 })
         if (scenario === 'oldphoto') { delete data.photos[0].photoIndex; delete data.photos[0].fingerprint }
         if (scenario === 'invalidphoto') data.photos[0].date = `${label}-02-31`
         if (scenario === 'long') { data.categoryStats[0].category = 'LongCategory'.repeat(20); data.moodStats[0].mood = 'LongMood'.repeat(20); data.healthTagStats[0].tag = 'LongTag'.repeat(20); data.topMeals[0].name = 'LongRecipe'.repeat(20); data.bestMemory.title = 'LongTitle'.repeat(20); data.recentMemories[0].title = 'LongTitle'.repeat(20) }
@@ -181,6 +184,12 @@ async function main () {
     assert.equal(await page.locator('.meal-row').count(), 0)
     scenario = 'malformed'; await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('回顾时间范围不完整', { exact: false }).waitFor()
+    for (const fault of ['meal-count', 'meal-duplicate', 'meal-order']) {
+      scenario = fault; await page.getByRole('button', { name: '重新加载' }).click()
+      await page.getByText('菜品统计数据不完整或不一致', { exact: false }).waitFor()
+      assert.equal(await page.locator('.meal-row').count(), 0, `${fault} must not present an unreliable ranking`)
+      assert.equal(await page.getByText('最常出现的是', { exact: false }).count(), 0)
+    }
     scenario = 'failure'; await page.getByRole('button', { name: '重新加载' }).click()
     await page.locator('.state-card').getByText('暂时无法读取', { exact: false }).waitFor()
     scenario = 'empty'; await page.getByRole('button', { name: '重新加载' }).click()

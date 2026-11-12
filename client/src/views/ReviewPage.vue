@@ -66,7 +66,7 @@ function acceptReview(data, type, label) {
   const range = expectedRange(type, label);
   if (!range || data.type !== type || data.label !== label || data.range?.start !== range.start || data.range?.end !== range.end || !data.summary) throw new Error('回顾时间范围不完整');
   if (['memoryCount', 'plannedMealCount', 'reviewedDayCount', 'photoCount', 'wishlistOpen', 'mealTotal', 'favoriteTotal'].some(key => !nonnegative(data.summary[key]))) throw new Error('回顾统计数据不完整');
-  if (!Array.isArray(data.topMeals) || data.topMeals.some(item => !item || typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name || !nonnegative(item.count) || !nonnegative(item.memoryCount) || !nonnegative(item.scheduleCount))) throw new Error('菜品统计数据不完整');
+  if (!Array.isArray(data.topMeals) || data.topMeals.some((item, index) => !item || typeof item.id !== 'string' || !item.id || typeof item.name !== 'string' || !item.name.trim() || !nonnegative(item.count) || item.count === 0 || !nonnegative(item.memoryCount) || !nonnegative(item.scheduleCount) || item.count !== item.memoryCount + item.scheduleCount || (index > 0 && item.count > data.topMeals[index - 1].count)) || new Set(data.topMeals.map(item => item.id)).size !== data.topMeals.length) throw new Error('菜品统计数据不完整或不一致');
   for (const [key, field] of [['moodStats', 'mood'], ['categoryStats', 'category'], ['healthTagStats', 'tag']]) {
     if (!Array.isArray(data[key]) || data[key].some(item => !item || typeof item[field] !== 'string' || !item[field] || !nonnegative(item.count))) throw new Error('回顾分类数据不完整');
   }
