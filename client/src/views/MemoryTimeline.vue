@@ -95,6 +95,23 @@ const linkedLoading = ref(false);
 const dialogVisible = ref(false);
 const saving = ref(false);
 const photoFiles = ref([]);
+const photoUpload = ref(null);
+const photoPicker = ref(null);
+const choosePhotos = () => photoUpload.value?.$el?.querySelector('input[type="file"]')?.click();
+const removeQueuedPhoto = async (file, event) => {
+  if (saving.value || saveUncertain.value) return;
+  const source = event.currentTarget; const hadFocus = document.activeElement === source;
+  const index = photoFiles.value.findIndex(item => item.uid === file.uid);
+  if (index < 0) return;
+  await photoUpload.value?.handleRemove(file);
+  await nextTick();
+  const focused = document.activeElement;
+  if (hadFocus && (!focused || focused === document.body || focused === source || !focused.isConnected)) {
+    const next = photoFiles.value[Math.min(index, photoFiles.value.length - 1)];
+    const buttons = Array.from(photoUpload.value?.$el?.querySelectorAll('.queued-photo-remove') || []);
+    (buttons.find(button => button.dataset.queuedUid === String(next?.uid)) || photoPicker.value)?.focus();
+  }
+};
 const viewedPhoto = ref(null);
 const previewUnavailable = ref(false);
 const previewRetrying = ref(false);
@@ -616,7 +633,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
         <el-form-item label="备注"><el-input v-model="form.note" type="textarea" rows="4" /></el-form-item>
         <el-form-item label="实际烹饪时间（分钟）"><el-input-number v-model="form.actualCookTime" :min="0" :precision="0" /></el-form-item>
         <el-form-item label="下次改进"><el-input v-model="form.nextImprovement" type="textarea" rows="2" placeholder="下次想调整什么？" /></el-form-item>
-        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" ref="existingPhotoGrid" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><el-icon><Picture /></el-icon></el-upload><small class="meal-help">每次最多上传 12 张 JPG、PNG、GIF 或 WebP，单张不超过 5MB。移除已有照片需保存才生效。</small></el-form-item>
+        <el-form-item label="照片"><div v-if="editing && form.existingPhotos.length" ref="existingPhotoGrid" class="existing-photos"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="existing-photo"><img :src="imageFor(photo)" :alt="`已有照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" plain :aria-label="`移除已有照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload ref="photoUpload" class="memory-photo-upload" action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" :disabled="saving || saveUncertain" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="handlePhotoChange"><template #file="{ file, index }"><div class="queued-photo"><img :src="file.url" alt="" /><span :title="file.name">{{ file.name }}</span><button type="button" class="queued-photo-remove" :data-queued-uid="file.uid" :disabled="saving || saveUncertain" :aria-label="`移除第 ${index + 1} 张待上传照片：${file.name}`" @click.stop="removeQueuedPhoto(file, $event)">移除照片</button></div></template></el-upload><button ref="photoPicker" type="button" class="memory-photo-picker" :disabled="saving || saveUncertain" aria-describedby="memory-photo-help" @click="choosePhotos"><el-icon aria-hidden="true"><Picture /></el-icon>添加回忆照片</button><small id="memory-photo-help" class="meal-help">每次最多上传 12 张 JPG、PNG、GIF 或 WebP，单张不超过 5MB。待上传照片可逐张移除；移除已有照片需保存才生效。</small></el-form-item>
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || confirmingMeals" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || confirmingMeals" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
@@ -648,6 +665,15 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .latest-summary { margin-top: 8px; padding: 12px; border-radius: 10px; background: var(--bg-primary); overflow-wrap: anywhere; }
 .latest-summary p { margin: 6px 0; }
 .existing-photos { display: flex; flex-wrap: wrap; gap: 10px; width: 100%; margin-bottom: 12px; }
+.memory-photo-upload :deep(.el-upload--picture-card) { display: none; }
+.memory-photo-picker { display: inline-flex; align-items: center; justify-content: center; gap: 7px; min-height: 44px; padding: 8px 14px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.memory-photo-picker:focus-visible, .queued-photo-remove:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.memory-photo-picker:disabled, .queued-photo-remove:disabled { opacity: .6; cursor: not-allowed; }
+.memory-photo-upload :deep(.el-upload-list--picture-card .el-upload-list__item) { width: 148px; height: auto; min-height: 148px; overflow: hidden; }
+.queued-photo { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.queued-photo img { width: 100%; height: 76px; object-fit: cover; border-radius: 8px; background: var(--bg-secondary); }
+.queued-photo span { min-width: 0; color: var(--text-primary); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.queued-photo-remove { min-height: 44px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); font: inherit; cursor: pointer; }
 .existing-photo { display: grid; gap: 6px; width: 90px; }
 .existing-photo img { width: 90px; height: 72px; border-radius: 8px; object-fit: cover; }
 .photo-undo { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; width: 100%; margin-bottom: 10px; color: var(--text-primary); font-size: 13px; }
