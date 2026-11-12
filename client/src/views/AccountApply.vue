@@ -65,29 +65,31 @@
         <el-form-item label="密码" prop="password">
           <el-input
             v-model="form.password"
-            type="password"
+            :type="showPassword ? 'text' : 'password'"
             placeholder="请输入密码"
-            show-password
             size="large"
             :prefix-icon="Lock"
             class="custom-input"
             autocomplete="new-password"
             aria-describedby="registration-password-hint"
-          />
+          >
+            <template #suffix><button type="button" class="password-toggle" :disabled="loading || uncertain" :aria-pressed="showPassword" aria-label="显示密码" @click="showPassword = !showPassword">{{ showPassword ? '隐藏' : '显示' }}</button></template>
+          </el-input>
         </el-form-item>
         <p id="registration-password-hint" class="password-hint">密码至少 6 个字符，UTF-8 编码不超过 72 字节；中文和表情可能占多个字节。</p>
 
         <el-form-item label="确认密码" prop="confirmPassword">
           <el-input
             v-model="form.confirmPassword"
-            type="password"
+            :type="showConfirmPassword ? 'text' : 'password'"
             placeholder="请再次输入密码"
-            show-password
             size="large"
             :prefix-icon="Lock"
             class="custom-input"
             autocomplete="new-password"
-          />
+          >
+            <template #suffix><button type="button" class="password-toggle" :disabled="loading || uncertain" :aria-pressed="showConfirmPassword" aria-label="显示确认密码" @click="showConfirmPassword = !showConfirmPassword">{{ showConfirmPassword ? '隐藏' : '显示' }}</button></template>
+          </el-input>
         </el-form-item>
 
         <el-button
@@ -124,6 +126,8 @@ const inviteInput = ref(null)
 const usernameInput = ref(null)
 const loading = ref(false)
 const uncertain = ref(false)
+const showPassword = ref(false)
+const showConfirmPassword = ref(false)
 const registrationError = ref('')
 const registrationComplete = ref(false)
 const hasExistingSession = !!localStorage.getItem('token')
@@ -368,6 +372,9 @@ const rules = {
 .mode-picker :deep(.el-radio-button.is-active .el-radio-button__inner) { color: var(--text-primary); background: var(--bg-secondary); border-color: var(--text-primary); box-shadow: -1px 0 0 0 var(--text-primary); font-weight: 700; }
 .mode-hint { margin: 10px 0 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
 .password-hint { margin: -8px 0 18px; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
+.password-toggle { min-height: 44px; padding: 0 6px; border: 0; background: transparent; color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.password-toggle:focus-visible { outline: 2px solid var(--text-primary); outline-offset: -3px; border-radius: 6px; }
+.password-toggle:disabled { cursor: not-allowed; opacity: 0.6; }
 .uncertain-alert { margin-bottom: 20px; }
 .uncertain-alert { background: var(--bg-secondary); border: 1px solid var(--border-color); }
 .uncertain-alert :deep(.el-alert__title), .uncertain-alert :deep(.el-alert__description), .uncertain-alert :deep(.el-alert__icon), .uncertain-alert :deep(.el-button) { color: var(--text-primary); }

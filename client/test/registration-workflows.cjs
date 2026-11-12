@@ -32,6 +32,22 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('autocomplete') === 'username')
     assert.equal(calls, 0, 'invalid form must not submit a registration request')
     await page.getByLabel('用户名', { exact: true }).fill('tester')
+    for (const [fieldName, buttonName] of [['密码', '显示密码'], ['确认密码', '显示确认密码']]) {
+      const field = page.getByLabel(fieldName, { exact: true })
+      const toggle = page.getByRole('button', { name: buttonName, exact: true })
+      await field.fill('password123')
+      await field.focus(); await page.keyboard.press('Tab')
+      assert.equal(await toggle.evaluate(node => document.activeElement === node), true)
+      assert.ok((await toggle.boundingBox()).height >= 44)
+      await page.keyboard.press('Space')
+      assert.equal(await field.getAttribute('type'), 'text')
+      assert.equal(await toggle.getAttribute('aria-pressed'), 'true')
+      assert.equal(await field.inputValue(), 'password123')
+      await page.keyboard.press('Enter')
+      assert.equal(await field.getAttribute('type'), 'password')
+      assert.equal(await toggle.getAttribute('aria-pressed'), 'false')
+      assert.equal(calls, 0, 'visibility toggles must not submit the form')
+    }
     await page.getByText('密码至少 6 个字符，UTF-8 编码不超过 72 字节', { exact: false }).waitFor()
     assert.match(await page.getByLabel('密码', { exact: true }).getAttribute('aria-describedby'), /registration-password-hint/)
     for (const password of ['a'.repeat(73), '中'.repeat(25)]) {
@@ -73,7 +89,7 @@ async function main () {
         await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.page-subtitle', '.mode-heading', '.mode-hint', '.password-hint', '.apply-form .el-form-item__label', '.registration-error .el-alert__title', '.mode-picker .el-radio-button:nth-child(1) .el-radio-button__inner', '.mode-picker .el-radio-button:nth-child(2) .el-radio-button__inner']) {
+          for (const selector of ['.page-subtitle', '.mode-heading', '.mode-hint', '.password-hint', '.password-toggle', '.apply-form .el-form-item__label', '.registration-error .el-alert__title', '.mode-picker .el-radio-button:nth-child(1) .el-radio-button__inner', '.mode-picker .el-radio-button:nth-child(2) .el-radio-button__inner']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
           }
@@ -84,6 +100,8 @@ async function main () {
     await page.getByLabel('用户名', { exact: true }).fill('another')
     mode = 'uncertain'; await page.getByLabel('确认密码', { exact: true }).press('Enter')
     await page.getByText('注册结果未确认').waitFor()
+    assert.equal(await page.getByRole('button', { name: '显示密码', exact: true }).isDisabled(), true)
+    assert.equal(await page.getByRole('button', { name: '显示确认密码', exact: true }).isDisabled(), true)
     assert.equal(await page.getByRole('button', { name: '创建账号', exact: true }).isDisabled(), true)
     assert.equal(calls, 4)
     assert.equal(await page.locator('.el-message--error').count(), 0)
