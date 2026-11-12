@@ -94,6 +94,10 @@ let metadataSequence = 0;
 let catalogTimer = null;
 
 const idsFor = meals => meals.map(meal => String(meal._id || meal.id));
+const clearedSelection = ref(null);
+const undoClearButton = ref(null);
+watch(() => JSON.stringify(idsFor(selectedMeals.value)), () => { clearedSelection.value = null; }, { flush: 'sync' });
+watch([date, mealType], () => { clearedSelection.value = null; });
 const selectionDirty = computed(() => JSON.stringify(idsFor(selectedMeals.value)) !== JSON.stringify(initialIds.value));
 const selectionStatus = computed(() => {
   if (isInitializing.value) return '正在核对当前安排';
@@ -255,6 +259,27 @@ const moveSelectedMeal = async (index, direction) => {
   const row = selectedMealContainer.value?.querySelectorAll('.selected-meal-item')[target];
   const requested = row?.querySelector(direction < 0 ? '.move-up' : '.move-down');
   (requested && !requested.disabled ? requested : row?.querySelector('.selected-meal-tag'))?.focus();
+};
+const clearSelectedMeals = async event => {
+  if (!selectedMeals.value.length || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  const previous = [...selectedMeals.value];
+  selectedMeals.value = [];
+  clearedSelection.value = previous;
+  await nextTick();
+  const focused = document.activeElement;
+  if (hadFocus && (!focused || focused === document.body || focused === source || !focused.isConnected)) undoClearButton.value?.focus();
+};
+const undoClearSelectedMeals = async event => {
+  if (!clearedSelection.value || selectedMeals.value.length || isInitializing.value || isSaving.value || loadError.value || saveUncertain.value) return;
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  const previous = clearedSelection.value;
+  selectedMeals.value = previous;
+  await nextTick();
+  const focused = document.activeElement;
+  if (hadFocus && (!focused || focused === document.body || focused === source || !focused.isConnected)) selectedMealContainer.value?.querySelector('.selected-meal-tag:not([disabled])')?.focus();
 };
 
 // 保存餐食安排
@@ -584,6 +609,7 @@ onBeforeUnmount(() => {
       </div>
       <p class="selection-status" role="status">{{ selectionStatus }}</p>
       <p class="selection-hint">点击菜品卡片选择或取消；切换分类、搜索或翻页不会清除已选菜品。可调整已选顺序，点击“保存安排”后才会更新日历。</p>
+      <div class="selection-bulk-actions"><button v-if="selectedMeals.length" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="clearSelectedMeals">清空本次选择</button><template v-if="clearedSelection"><span role="status">已暂时清空 {{ clearedSelection.length }} 道菜，尚未保存。</span><button ref="undoClearButton" type="button" :disabled="isInitializing || isSaving || loadError || saveUncertain" @click="undoClearSelectedMeals">撤销清空</button></template></div>
       
       <div class="selected-meals" ref="selectedMealContainer" v-if="selectedMeals.length > 0">
         <div v-for="(meal, index) in selectedMeals" :key="meal._id || meal.id" class="selected-meal-item" role="group" :aria-label="`第${index + 1}道：${meal.name}`">
@@ -965,6 +991,11 @@ onBeforeUnmount(() => {
 .active-filter-chip span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .active-filter-chip:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .selection-status, .selection-hint { margin: 0 0 10px; color: var(--text-primary); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.selection-bulk-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px; color: var(--text-primary); font-size: 13px; }
+.selection-bulk-actions:empty { display: none; }
+.selection-bulk-actions button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.selection-bulk-actions button:disabled { opacity: .6; cursor: not-allowed; }
+.selection-bulk-actions button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .selection-status { font-weight: 700; }
 .selection-hint { color: var(--text-secondary); }
 .selection-view :deep(.el-radio-button__inner) { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 44px; padding: 8px 12px; }
