@@ -237,6 +237,11 @@ const legacyDeleteWarning = computed(() => visibleMemories.value.some(item => !c
 const timelinePages = computed(() => Math.max(1, Math.ceil(timelineTotal.value / timelineLimit)));
 const resetFilters = () => { timelineSearch.value = ''; timelineMonth.value = ''; timelineMealType.value = 'all'; timelinePhotos.value = 'all'; };
 const clearEmptyFilters = () => { resetFilters(); timelineSearchInput.value?.focus(); };
+const returnToTimelineSearch = () => {
+  if (!timelineSearchInput.value || timelineSearchInput.value.disabled) return;
+  timelineSearchInput.value.scrollIntoView({ block: 'center', behavior: 'auto' });
+  timelineSearchInput.value.focus({ preventScroll: true });
+};
 const sameVersion = (left, right) => !!left && !!right && left.revision === right.revision && left.updatedAt === right.updatedAt;
 const mealOptions = computed(() => {
   const seen = new Set();
@@ -626,6 +631,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       </section>
     </div>
     <nav v-if="timelineCapable && !loadError && timelineTotal > timelineLimit" class="timeline-pagination" aria-label="回忆分页"><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage <= 1" @click="changeTimelinePage(timelinePage - 1, $event)">上一页</el-button><span ref="timelinePageStatus" tabindex="-1" aria-live="polite" aria-atomic="true">第 {{ timelinePage }} / {{ timelinePages }} 页</span><el-button :disabled="loading || !!deleteIssue || !!deletingId || checkingDelete || timelinePage >= timelinePages" @click="changeTimelinePage(timelinePage + 1, $event)">下一页</el-button></nav>
+    <div v-if="!loading && !loadError && visibleMemories.length" class="timeline-return"><button type="button" :disabled="!!deleteIssue || !!deletingId || checkingDelete" @click="returnToTimelineSearch">回到搜索和筛选 ↑</button><span>保留当前搜索、筛选和页码。</span></div>
 
     <el-dialog v-model="dialogVisible" :title="editing ? '编辑饭后回忆' : '记录饭后回忆'" width="min(560px, 92vw)" :close-on-click-modal="!saving && !confirmingMeals" :close-on-press-escape="!saving && !confirmingMeals" :show-close="!saving && !confirmingMeals">
       <CreateRecoveryNotice v-if="saveUncertain" label="回忆" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -729,6 +735,10 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 .timeline { display: flex; flex-direction: column; gap: 18px; }
 .timeline-pagination { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 16px; color: var(--text-secondary); }
+.timeline-return { display: flex; justify-content: center; align-items: center; flex-wrap: wrap; gap: 4px 12px; color: var(--text-primary); font-size: 13px; }
+.timeline-return button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.timeline-return button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.timeline-return button:disabled { opacity: .6; cursor: not-allowed; }
 .timeline-pagination :deep(.el-button) { min-height: 44px; }
 .timeline-pagination span:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 :global(html.dark .memory-filters) { --memory-accent: var(--secondary-color); }
