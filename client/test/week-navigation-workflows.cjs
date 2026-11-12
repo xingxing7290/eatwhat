@@ -16,7 +16,7 @@ async function main () {
       if (path === '/auth/household-scope') return route.fulfill({ json: { supportsHouseholdScope: true, householdId: 'h1' } })
       if (path === '/weekly-plans' && req.method() === 'GET') {
         const week = url.searchParams.get('weekStart'); reads.push(`weekly:${week}`)
-        return route.fulfill({ json: { weekStart: week, supportsConditionalApply: true, days: dates(week).map(date => ({ date, meals: empty(), scheduleExists: false, scheduleVersion: null })) } })
+        return route.fulfill({ json: { weekStart: week, supportsConditionalApply: true, days: dates(week).map((date, index) => week === '0100-01-04' && index === 0 ? { date, meals: { ...empty(), dinner: [{ meal: null }] }, scheduleExists: true, scheduleVersion: '2026-01-01T00:00:00.000Z' } : { date, meals: empty(), scheduleExists: false, scheduleVersion: null }) } })
       }
       if (path === '/weekly-plans/generate') {
         const week = req.postDataJSON().weekStart
@@ -107,11 +107,21 @@ async function main () {
     await page.getByText('2026-12-28 — 2027-01-03').waitFor()
     await page.goto(`${base}/weekly-plan?week=0100-01-04`)
     await page.getByText('0100-01-04 — 0100-01-10').waitFor()
+    await page.getByText('本周部分日期超出日历支持范围', { exact: false }).waitFor()
+    await page.getByText('部分日期超出日历支持范围，请联系管理员核对。').waitFor()
+    assert.equal(await page.getByRole('link', { name: '前往日历' }).count(), 0)
+    assert.equal(await page.locator('.day-calendar-link').count(), 0, 'unsupported dates must not link to a different calendar month')
     assert.equal(await weekly.getByRole('button', { name: '上一周' }).isDisabled(), true)
     await weekly.getByRole('button', { name: '下一周' }).click()
     await page.getByText('0100-01-11 — 0100-01-17').waitFor()
+    await page.goto(`${base}/weekly-plan?week=1999-12-27`)
+    await page.getByText('1999-12-27 — 2000-01-02').waitFor()
+    assert.equal(await page.locator('.day-calendar-link').count(), 2, 'a boundary week links only the supported dates')
+    assert.equal(await page.getByRole('link', { name: '查看 2000-01-01 的日历安排' }).getAttribute('href'), '/calendar?date=2000-01-01')
+    assert.equal(await page.getByRole('link', { name: '查看 1999-12-31 的日历安排' }).count(), 0)
     await page.goto(`${base}/weekly-plan?week=9998-12-21`)
     await page.getByText('9998-12-21 — 9998-12-27').waitFor()
+    assert.equal(await page.locator('.day-calendar-link').count(), 0)
     assert.equal(await weekly.getByRole('button', { name: '下一周' }).isDisabled(), true)
     await page.getByRole('button', { name: '生成草稿' }).click()
     await page.getByText('规则生成草稿').waitFor()
