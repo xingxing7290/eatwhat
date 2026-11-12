@@ -62,6 +62,33 @@ async function main () {
     assert.equal(await page.locator('.cover-button').getAttribute('aria-describedby'), 'cover-notice')
     await page.getByText('鸡蛋', { exact: true }).waitFor()
     await page.getByText('炒熟', { exact: true }).waitFor()
+    await page.getByText('本次已完成 0 / 2 步').waitFor()
+    await page.getByText('仅在当前页面保留，刷新后重置，不会修改菜谱。').waitFor()
+    const firstStep = page.getByRole('button', { name: '标记完成第 1 步' })
+    assert.ok((await firstStep.boundingBox()).height >= 44)
+    await firstStep.focus(); await page.keyboard.press('Enter')
+    await page.getByText('本次已完成 1 / 2 步').waitFor()
+    assert.equal(await page.getByRole('button', { name: '取消完成第 1 步' }).getAttribute('aria-pressed'), 'true')
+    await page.getByRole('button', { name: '标记完成第 2 步' }).click()
+    await page.getByText('本次已完成 2 / 2 步').waitFor()
+    await page.getByRole('button', { name: '重置进度' }).click()
+    await page.getByText('本次已完成 0 / 2 步').waitFor()
+    assert.equal(scheduleWrites, 0, 'cooking progress must not change the calendar')
+    assert.equal(reportWrites, 0, 'cooking progress must not submit feedback')
+    await page.getByRole('button', { name: '标记完成第 1 步' }).click()
+    await page.reload()
+    await page.getByText('本次已完成 0 / 2 步').waitFor()
+    for (const dark of [false, true]) {
+      await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
+      for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+        await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
+        for (const selector of ['.cooking-progress p', '.cooking-progress small', '.step-toggle']) {
+          const result = await contrast(page, selector)
+          assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
+        }
+      }
+    }
+    await page.evaluate(() => { document.documentElement.classList.remove('dark'); document.querySelector('.app-container').classList.remove('dark-mode'); document.documentElement.dataset.theme = 'cream' })
     await page.getByRole('button', { name: '查看第 1 张菜品照片' }).click()
     const viewer = page.getByRole('dialog', { name: '菜品照片' })
     await viewer.getByText('1 / 2').waitFor()

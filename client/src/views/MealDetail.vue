@@ -56,6 +56,13 @@ const noDraft = ref(false);
 useDraftGuard({ dirty: noDraft, busy: reportBusy, uncertain: reportUncertain, label: '图片反馈' });
 
 const totalTime = computed(() => Number(meal.value?.prepTime || 0) + Number(meal.value?.cookTime || 0));
+const completedSteps = ref(new Set());
+watch(() => JSON.stringify([route.params.id, meal.value?.steps]), () => { completedSteps.value = new Set(); });
+const toggleStep = index => {
+  const next = new Set(completedSteps.value);
+  if (next.has(index)) next.delete(index); else next.add(index);
+  completedSteps.value = next;
+};
 const memoryPages = computed(() => Math.max(1, Math.ceil(memoryTotal.value / memoryPageSize)));
 const difficultyText = computed(() => ({ easy: '简单', medium: '适中', hard: '费工夫' }[meal.value?.difficulty] || '未设置'));
 const imageFor = value => resolveUploadedImage(value) || defaultImage;
@@ -277,10 +284,12 @@ onBeforeUnmount(() => { loadSequence++; memorySequence++; reportSequence++; wind
           <template #header>做法步骤</template>
           <el-empty v-if="!meal.steps?.length" description="暂无做法"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充做法 →</router-link></el-empty>
           <div v-else class="steps-list">
+            <div class="cooking-progress"><p aria-live="polite">本次已完成 {{ completedSteps.size }} / {{ meal.steps.length }} 步</p><button v-if="completedSteps.size" type="button" @click="completedSteps = new Set()">重置进度</button><small>仅在当前页面保留，刷新后重置，不会修改菜谱。</small></div>
             <div v-for="(step, index) in meal.steps" :key="index" class="step-item" :class="{ 'no-image': !step?.imageUrl }">
               <div class="step-index">{{ index + 1 }}</div>
               <button v-if="step?.imageUrl" class="detail-photo" type="button" :aria-label="`查看第 ${index + 1} 步照片`" @click="showPhoto([step.imageUrl], 0, `第 ${index + 1} 步`, $event)" ><img :key="imageFor(step.imageUrl)" :src="imageFor(step.imageUrl)" :alt="`第 ${index + 1} 步照片`" @error="fallbackImage" /></button>
               <p>{{ typeof step === 'string' ? step : step?.description }}</p>
+              <button type="button" class="step-toggle" :aria-pressed="completedSteps.has(index)" :aria-label="`${completedSteps.has(index) ? '取消完成' : '标记完成'}第 ${index + 1} 步`" @click="toggleStep(index)">{{ completedSteps.has(index) ? '已完成 ✓' : '标记完成' }}</button>
             </div>
           </div>
         </el-card>
@@ -361,6 +370,13 @@ h1 { margin: 0; color: var(--text-primary); }
 .ingredient-row > span, .ingredient-row > strong { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .ingredient-row > strong { text-align: right; }
 .steps-list, .memory-list { display: flex; flex-direction: column; gap: 12px; }
+.cooking-progress { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
+.cooking-progress p { margin: 0; font-weight: 700; }
+.cooking-progress small { flex-basis: 100%; font-size: 12px; line-height: 1.5; }
+.cooking-progress button, .step-toggle { min-height: 44px; padding: 6px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); cursor: pointer; }
+.step-toggle { grid-column: 1 / -1; justify-self: start; }
+.step-toggle[aria-pressed="true"] { font-weight: 700; background: var(--bg-tertiary); }
+.cooking-progress button:focus-visible, .step-toggle:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .step-item { display: grid; grid-template-columns: 34px 96px 1fr; gap: 12px; align-items: start; }
 .step-item.no-image { grid-template-columns: 34px 1fr; }
 .step-index { width: 28px; height: 28px; border-radius: 50%; background: var(--primary-color); color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; }
