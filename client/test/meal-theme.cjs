@@ -54,6 +54,10 @@ async function main() {
         await page.setViewportSize({ width, height });
         assert.equal(await page.getByRole('radio', { name: '网格视图' }).count(), 1, 'view selector must retain its accessible name on mobile');
         if (width <= 390) {
+          for (const label of await page.locator('.view-switcher .view-label').all()) {
+            assert.equal(await label.isVisible(), true, 'mobile view controls must show their names');
+            assert.equal(await label.evaluate(node => { const parent = node.closest('.el-radio-button__inner').getBoundingClientRect(); const text = node.getBoundingClientRect(); return text.left >= parent.left && text.right <= parent.right }), true, 'view labels must fit their controls');
+          }
           if (mode === 'light' && width === 390 && process.env.EATWHAT_MEAL_COMPACT_SHOT) await page.screenshot({ path: process.env.EATWHAT_MEAL_COMPACT_SHOT, fullPage: true });
           const searchTop = await page.getByRole('textbox', { name: '搜索菜品' }).evaluate(element => element.getBoundingClientRect().top);
           assert.ok(searchTop < 510, `mobile search should remain easy to reach, got ${searchTop}`);

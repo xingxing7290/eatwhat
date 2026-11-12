@@ -1885,7 +1885,8 @@ onBeforeUnmount(() => {
   }
 
   .view-label {
-    display: none;
+    display: inline;
+    font-size: 12px;
   }
 
   .add-meal-btn {
@@ -2364,7 +2365,7 @@ onBeforeUnmount(() => {
   .catalog-content :deep(.meal-actions .el-button[aria-label^="编辑"])::after { content: '编辑'; }
   .catalog-content :deep(.meal-actions .el-button[aria-label^="移入回收站"])::after { content: '回收'; }
   :global(.meal-page .view-switcher .el-radio-button) { flex: 1; }
-  :global(.meal-page .view-switcher .el-radio-button__inner) { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+  :global(.meal-page .view-switcher .el-radio-button__inner) { min-height: 44px; display: flex; align-items: center; justify-content: center; gap: 3px; padding-inline: 2px; }
 }
 .results-summary { color: var(--text-secondary); font-size: 12px; padding-top: 10px; }
 .wish-recovery { margin-bottom: 12px; }
