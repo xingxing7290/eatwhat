@@ -52,6 +52,8 @@ const validateSummary = value => {
   const todayDate = new Date(`${value.today}T00:00:00Z`);
   const monday = new Date(todayDate.getTime() - ((todayDate.getUTCDay() + 6) % 7) * 86400000).toISOString().slice(0, 10);
   if (days[0] !== monday || (value.weekStart != null && value.weekStart !== monday) || days.some((day, index) => Date.parse(`${day}T00:00:00Z`) - Date.parse(`${monday}T00:00:00Z`) !== index * 86400000)) throw new Error('饭桌信息不完整，请重新加载');
+  const weekToday = value.week.days.find(day => day.date === value.today);
+  if (Object.keys(mealTypeText).some(type => weekToday.meals[type].length !== value.todaySchedule.meals[type].length)) throw new Error('今日安排与本周计划暂不一致，请重新加载后核对。');
   return { ...value, week: { ...value.week, days: [...value.week.days].sort((a, b) => a.date.localeCompare(b.date)) } };
 };
 const load = () => {
