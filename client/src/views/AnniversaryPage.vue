@@ -123,7 +123,7 @@ const refreshAndReview = async () => {
   finally { checkingDelete.value = false; }
 };
 watch([search, period, today], () => {
-  if (!boardMode.value) return;
+  if (!boardMode.value && !loading.value) return;
   boardPage.value = 1; menuSequence++; loading.value = true;
   if (filterTimer) clearTimeout(filterTimer);
   filterTimer = setTimeout(() => { filterTimer = null; load(); }, 180);
@@ -458,8 +458,8 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
     <el-alert v-if="deleteReviewMessage" type="info" show-icon :title="deleteReviewMessage" @close="deleteReviewMessage = ''" />
     <el-alert v-if="!loading && !loadError && legacyDeleteWarning" type="info" :closable="false" show-icon title="服务器未提供安全删除能力，暂不能删除部分纪念日菜单。" />
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法加载纪念日菜单：${loadError}`"><el-button link type="primary" @click="load">重新加载</el-button></el-alert>
-    <section v-if="!loadError && (menus.length || filtersActive || boardMode)" class="menu-filters" aria-label="查找纪念日菜单">
-      <div class="filter-heading"><div><span class="filter-kicker">YOUR SPECIAL DAYS</span><h2>寻找特别的一天</h2><p aria-live="polite">{{ boardMode ? (loading ? '正在更新菜单…' : `共 ${boardTotal} 份匹配菜单 · 第 ${boardPage} / ${boardPages} 页`) : `显示 ${filteredMenus.length} / ${menus.length} 份菜单` }}</p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" aria-label="搜索纪念日菜单" placeholder="搜索标题、主题、备注或菜品" :disabled="!!deletingId || !!deleteIssue" /></div>
+    <section v-if="!loadError && (loading || menus.length || filtersActive || boardMode)" class="menu-filters" aria-label="查找纪念日菜单">
+      <div class="filter-heading"><div><span class="filter-kicker">YOUR SPECIAL DAYS</span><h2>寻找特别的一天</h2><p aria-live="polite">{{ loading ? '正在更新菜单…' : boardMode ? `共 ${boardTotal} 份匹配菜单 · 第 ${boardPage} / ${boardPages} 页` : `显示 ${filteredMenus.length} / ${menus.length} 份菜单` }}</p></div><el-input ref="searchInput" v-model="search" clearable maxlength="100" aria-label="搜索纪念日菜单" placeholder="搜索标题、主题、备注或菜品" :disabled="!!deletingId || !!deleteIssue" /></div>
       <div ref="filterGroup" class="period-filters" role="group" aria-label="按日期筛选菜单"><button v-for="option in periodOptions" :key="option.key" type="button" :class="{ active: period === option.key }" :aria-pressed="period === option.key" :disabled="!!deletingId || !!deleteIssue" @click="period = option.key">{{ option.label }}</button><button v-if="filtersActive" type="button" class="reset-filter" :disabled="!!deletingId || !!deleteIssue" @click="resetFilters">清除筛选</button></div>
     </section>
     <div v-if="!loadError" v-loading="loading" class="menu-content" :aria-busy="loading ? 'true' : 'false'">

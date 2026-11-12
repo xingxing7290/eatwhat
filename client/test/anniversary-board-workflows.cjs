@@ -11,7 +11,7 @@ async function main () {
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ id: 'u1', householdId: 'h1' })) })
     const version = { revision: 'v1', updatedAt: '2026-10-28T08:00:00.000Z' }
     let menus = Array.from({ length: 25 }, (_, i) => ({ _id: `id${i}`, date: `2026-11-${String(i + 1).padStart(2, '0')}`, title: `菜单 ${String(i).padStart(2, '0')}`, theme: '', description: '', photos: [], meals: { breakfast: [], lunch: [], dinner: [] }, supportsConditionalEdit: true, supportsConditionalDelete: true, supportsUnavailableMealVisibility: true, editVersion: version }))
-    let directGets = 0; let broken = false; let wrongPeriod = false; let wrongCounts = false; const errors = []
+    let directGets = 0; let broken = false; let wrongPeriod = false; let wrongCounts = false; let holdInitial = true; let releaseInitial; const errors = []
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', async route => {
       const request = route.request(); const url = new URL(request.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -19,6 +19,7 @@ async function main () {
       if (path === '/anniversary-templates') return route.fulfill({ json: [] })
       if (path === '/anniversaries' && request.method() === 'GET') {
         const query = url.searchParams; const search = query.get('search') || ''; const period = query.get('period'); const today = query.get('today'); const current = Number(query.get('page')); const limit = Number(query.get('limit'))
+        if (holdInitial && !search) await new Promise(resolve => { releaseInitial = resolve })
         if (search === '慢结果') await new Promise(resolve => setTimeout(resolve, 700))
         const matching = menus.filter(item => [item.title, item.theme, item.description].some(value => value.toLowerCase().includes(search.toLowerCase())))
         const counts = { upcoming: matching.filter(item => item.date >= today).length, past: matching.filter(item => item.date < today).length, unknown: 0 }
@@ -40,6 +41,17 @@ async function main () {
       return route.fulfill({ json: {} })
     })
     await page.goto(`${base}/anniversaries`)
+    for (let i = 0; i < 100 && !releaseInitial; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseInitial, 'function')
+    await page.getByText('正在更新菜单…').waitFor()
+    assert.equal(await page.getByText('显示 0 / 0 份菜单').count(), 0)
+    const initialSearch = page.getByRole('textbox', { name: '搜索纪念日菜单' })
+    await initialSearch.fill('菜单 23')
+    await page.getByText('共 1 份匹配菜单 · 第 1 / 1 页').waitFor()
+    holdInitial = false; releaseInitial()
+    await page.waitForTimeout(250)
+    assert.equal(await page.locator('.menu-card').count(), 1, 'late initial results must not replace newer filters')
+    await initialSearch.fill('')
     await page.getByText('共 25 份匹配菜单 · 第 1 / 3 页').waitFor()
     wrongPeriod = true
     await page.getByRole('group', { name: '按日期筛选菜单' }).getByRole('button', { name: '即将到来' }).click()
