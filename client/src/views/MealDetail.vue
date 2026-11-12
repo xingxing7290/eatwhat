@@ -64,20 +64,27 @@ useDraftGuard({ dirty: noDraft, busy: reportBusy, uncertain: reportUncertain, la
 const totalTime = computed(() => Number(meal.value?.prepTime || 0) + Number(meal.value?.cookTime || 0));
 const completedSteps = ref(new Set());
 const timerMinutes = ref(5);
+const timerCustomMinutes = ref('2');
+const timerDuration = computed(() => {
+  if (timerMinutes.value !== 'custom') return timerMinutes.value;
+  const text = timerCustomMinutes.value.trim();
+  const value = /^\d+$/.test(text) ? Number(text) : NaN;
+  return Number.isSafeInteger(value) && value >= 1 && value <= 180 ? value : null;
+});
 const timerSeconds = ref(300);
 const timerState = ref('idle');
 let timerDeadline = 0; let cookingTimer = null;
-const timerDisplay = computed(() => `${String(Math.floor(timerSeconds.value / 60)).padStart(2, '0')}:${String(timerSeconds.value % 60).padStart(2, '0')}`);
+const timerDisplay = computed(() => timerState.value === 'idle' && timerDuration.value === null ? '--:--' : `${String(Math.floor(timerSeconds.value / 60)).padStart(2, '0')}:${String(timerSeconds.value % 60).padStart(2, '0')}`);
 const stopTimerInterval = () => { if (cookingTimer) clearInterval(cookingTimer); cookingTimer = null; };
-const resetCookingTimer = () => { stopTimerInterval(); timerDeadline = 0; timerSeconds.value = timerMinutes.value * 60; timerState.value = 'idle'; };
+const resetCookingTimer = () => { stopTimerInterval(); timerDeadline = 0; timerSeconds.value = (timerDuration.value || 0) * 60; timerState.value = 'idle'; };
 const updateCookingTimer = () => {
   if (timerState.value !== 'running') return;
   timerSeconds.value = Math.max(0, Math.ceil((timerDeadline - Date.now()) / 1000));
   if (!timerSeconds.value) { stopTimerInterval(); timerState.value = 'finished'; }
 };
 const startCookingTimer = () => {
-  if (timerState.value === 'running') return;
-  if (timerState.value === 'finished') timerSeconds.value = timerMinutes.value * 60;
+  if (timerState.value === 'running' || timerDuration.value === null) return;
+  if (timerState.value === 'finished') timerSeconds.value = timerDuration.value * 60;
   timerDeadline = Date.now() + timerSeconds.value * 1000; timerState.value = 'running';
   stopTimerInterval(); cookingTimer = setInterval(updateCookingTimer, 250);
 };
@@ -86,7 +93,7 @@ const pauseCookingTimer = () => {
   updateCookingTimer();
   if (timerState.value === 'running') { stopTimerInterval(); timerState.value = 'paused'; }
 };
-watch(timerMinutes, resetCookingTimer);
+watch([timerMinutes, timerCustomMinutes], resetCookingTimer);
 watch(() => route.params.id, resetCookingTimer);
 const cookingSteps = ref(null);
 const nextIncompleteStep = computed(() => (meal.value?.steps || []).findIndex((_, index) => !completedSteps.value.has(index)));
@@ -399,7 +406,7 @@ onBeforeUnmount(() => { stopTimerInterval(); loadSequence++; memorySequence++; r
 
         <el-card>
           <template #header>做法步骤</template>
-          <div class="cooking-timer" aria-label="烹饪计时器"><div><strong>烹饪计时器</strong><label>时长 <select v-model.number="timerMinutes" :disabled="timerState === 'running' || timerState === 'paused'" aria-label="计时时长"><option v-for="minutes in [1, 3, 5, 10, 15, 30, 60, 90]" :key="minutes" :value="minutes">{{ minutes }} 分钟</option></select></label><output class="timer-display" aria-live="off" :aria-label="`剩余 ${timerDisplay}`">{{ timerDisplay }}</output></div><div class="timer-actions"><button type="button" @click="timerState === 'running' ? pauseCookingTimer() : startCookingTimer()">{{ timerState === 'running' ? '暂停计时' : timerState === 'paused' ? '继续计时' : timerState === 'finished' ? '再次计时' : '开始计时' }}</button><button type="button" :aria-disabled="timerState === 'idle'" @click="resetCookingTimer">重置计时</button></div><p role="status" aria-live="polite">{{ timerState === 'finished' ? '计时结束，请检查食物。' : timerState === 'paused' ? '计时已暂停。' : timerState === 'running' ? '计时进行中。' : '选择时长后开始。' }}</p><small>仅在当前页面显示，不保证后台提醒，没有声音；离开或刷新页面后重置。</small></div>
+          <div class="cooking-timer" aria-label="烹饪计时器"><div><strong>烹饪计时器</strong><label>时长 <select v-model.number="timerMinutes" :disabled="timerState === 'running' || timerState === 'paused'" aria-label="计时时长"><option v-for="minutes in [1, 3, 5, 10, 15, 30, 60, 90]" :key="minutes" :value="minutes">{{ minutes }} 分钟</option><option value="custom">自定义</option></select></label><label v-if="timerMinutes === 'custom'">分钟 <input v-model="timerCustomMinutes" type="text" inputmode="numeric" pattern="[0-9]*" aria-label="自定义计时分钟数" :aria-invalid="timerDuration === null ? 'true' : undefined" aria-describedby="timer-duration-help" :disabled="timerState === 'running' || timerState === 'paused'" /></label><output class="timer-display" aria-live="off" :aria-label="timerDuration === null ? '时长无效' : `剩余 ${timerDisplay}`">{{ timerDisplay }}</output></div><small v-if="timerMinutes === 'custom'" id="timer-duration-help">请输入 1 至 180 的整数分钟。</small><div class="timer-actions"><button type="button" :aria-disabled="timerDuration === null" @click="timerState === 'running' ? pauseCookingTimer() : startCookingTimer()">{{ timerState === 'running' ? '暂停计时' : timerState === 'paused' ? '继续计时' : timerState === 'finished' ? '再次计时' : '开始计时' }}</button><button type="button" :aria-disabled="timerState === 'idle'" @click="resetCookingTimer">重置计时</button></div><p role="status" aria-live="polite">{{ timerDuration === null ? '请输入有效的计时时长。' : timerState === 'finished' ? '计时结束，请检查食物。' : timerState === 'paused' ? '计时已暂停。' : timerState === 'running' ? '计时进行中。' : '选择时长后开始。' }}</p><small>仅在当前页面显示，不保证后台提醒，没有声音；离开或刷新页面后重置。</small></div>
           <el-empty v-if="!meal.steps?.length" description="暂无做法"><router-link class="detail-empty-action" :to="{ name: 'MealEditor', params: { id: route.params.id }, query: editorQuery }">补充做法 →</router-link></el-empty>
           <div v-else ref="cookingSteps" class="steps-list">
             <div class="cooking-progress"><p aria-live="polite">本次已完成 {{ completedSteps.size }} / {{ meal.steps.length }} 步 · {{ nextIncompleteStep < 0 ? '全部完成' : `下一步：第 ${nextIncompleteStep + 1} 步` }}</p><button class="next-step" type="button" :disabled="nextIncompleteStep < 0" @click="focusNextStep">定位下一步</button><button v-if="completedSteps.size" type="button" @click="resetSteps">重置进度</button><small>仅在当前页面保留，刷新后重置，不会修改菜谱。</small></div>
@@ -511,10 +518,11 @@ h1 { margin: 0; color: var(--text-primary); }
 .cooking-timer { display: grid; gap: 8px; margin-bottom: 14px; padding: 12px; border: 1px solid var(--border-color); border-radius: 14px; background: var(--bg-secondary); color: var(--text-primary); font-size: 13px; }
 .cooking-timer > div { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .cooking-timer label { display: flex; align-items: center; gap: 6px; }
-.cooking-timer select, .cooking-timer button { min-height: 44px; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.cooking-timer select, .cooking-timer input, .cooking-timer button { min-height: 44px; padding: 6px 10px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
+.cooking-timer input { width: 70px; box-sizing: border-box; }
 .cooking-timer button { cursor: pointer; }
 .cooking-timer button[aria-disabled="true"] { opacity: .55; cursor: not-allowed; }
-.cooking-timer :is(button, select):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.cooking-timer :is(button, select, input):focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .timer-display { font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 700; }
 .cooking-timer p, .cooking-timer small { margin: 0; line-height: 1.5; }
 .step-toggle { grid-column: 1 / -1; justify-self: start; }

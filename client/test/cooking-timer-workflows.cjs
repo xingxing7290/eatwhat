@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict')
 const { chromium } = require('playwright')
+const { contrast } = require('./contrast-helpers.cjs')
 const base = process.env.EATWHAT_TEST_URL || 'http://127.0.0.1:5178'
 if (!/^http:\/\/127\.0\.0\.1:(5178|5179)$/.test(base)) throw new Error('Timer checks require a local server')
 
@@ -38,6 +39,31 @@ async function main () {
     await timer.getByRole('button', { name: '重置计时' }).focus(); await page.keyboard.press('Enter')
     assert.equal(await timer.getByRole('button', { name: '重置计时' }).evaluate(node => document.activeElement === node), true)
     assert.equal(await timer.locator('output').innerText(), '01:00')
+    await timer.getByLabel('计时时长').selectOption('custom')
+    const custom = timer.getByLabel('自定义计时分钟数')
+    assert.equal(await timer.locator('output').innerText(), '02:00')
+    for (const value of ['', '0', '181', '-1', '1.5']) {
+      await custom.fill(value)
+      await timer.getByText('请输入有效的计时时长。').waitFor()
+      assert.equal(await custom.getAttribute('aria-invalid'), 'true')
+      assert.equal(await timer.getByRole('button', { name: '开始计时' }).getAttribute('aria-disabled'), 'true')
+      await timer.getByRole('button', { name: '开始计时' }).focus(); await page.keyboard.press('Enter')
+      assert.equal(await timer.locator('output').innerText(), '--:--')
+    }
+    await custom.fill('180')
+    assert.equal(await timer.locator('output').innerText(), '180:00')
+    for (const dark of [false, true]) for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
+      await page.evaluate(({ dark, theme }) => { document.documentElement.classList.toggle('dark', dark); document.querySelector('.app-container').classList.toggle('dark-mode', dark); document.documentElement.dataset.theme = theme }, { dark, theme })
+      for (const selector of ['.cooking-timer input', '#timer-duration-help']) assert.ok((await contrast(page, selector)).ratio >= 4.5, `${dark} ${theme} ${selector}`)
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    }
+    await custom.fill('2')
+    await timer.getByRole('button', { name: '开始计时' }).click()
+    assert.equal(await custom.isDisabled(), true)
+    await timer.getByRole('button', { name: '暂停计时' }).click()
+    await timer.getByRole('button', { name: '重置计时' }).click()
+    assert.equal(await timer.locator('output').innerText(), '02:00')
+    assert.equal(await custom.isEnabled(), true)
     assert.equal(writes, 0, 'the timer must not write to the recipe or calendar')
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.reload()
