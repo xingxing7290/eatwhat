@@ -191,7 +191,10 @@ const changePage = async page => {
   }
 };
 watch([search, selectedStatus, selectedPriority], () => {
-  if (!boardMode.value || pendingView.value) return;
+  // While the first request is in flight we do not yet know whether the
+  // server supports board filtering. Invalidate that request as well, or its
+  // result can be displayed under newer restored/edited filter values.
+  if ((!boardMode.value && !loading.value) || pendingView.value) return;
   boardPage.value = 1;
   listSequence++;
   loading.value = true;

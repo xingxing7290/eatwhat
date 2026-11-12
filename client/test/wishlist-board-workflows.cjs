@@ -166,6 +166,17 @@ async function main () {
     await unknown.getByText('记录状态无法识别', { exact: false }).waitFor()
     assert.equal(await unknown.getByRole('button').count(), 0)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+    releaseSlow = null
+    await page.evaluate(() => history.replaceState({ ...history.state, eatwhatWishlistView: { search: '心愿01', status: 'all', priority: 'all', page: 1, userId: 'u1', householdId: 'h1' } }, ''))
+    await page.reload({ waitUntil: 'domcontentloaded' })
+    for (let i = 0; i < 100 && !releaseSlow; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseSlow, 'function', 'the restored initial search must be in flight')
+    await page.getByRole('textbox', { name: '搜索想吃记录' }).fill('心愿02')
+    await page.getByText('心愿02', { exact: true }).waitFor()
+    releaseSlow()
+    await page.waitForTimeout(300)
+    assert.equal(await page.getByText('心愿01', { exact: true }).count(), 0, 'the initial response must not overwrite changed filters')
+    assert.equal(await page.getByRole('textbox', { name: '搜索想吃记录' }).inputValue(), '心愿02')
     assert.deepEqual(errors, [])
     console.log('Wishlist board checks passed: pagination, stale searches and hidden pending recovery')
   } finally { await browser.close() }
