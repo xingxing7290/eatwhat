@@ -94,6 +94,11 @@ const dialogVisible = ref(false);
 const saving = ref(false);
 const photoFiles = ref([]);
 const viewedPhoto = ref(null);
+const previewUnavailable = ref(false);
+const previewRetrying = ref(false);
+const previewAttempt = ref(0);
+const previewImage = ref(null);
+const previewRetryButton = ref(null);
 const localToday = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const form = reactive({ date: localToday(), mealType: 'dinner', title: '', mood: '', rating: 0, note: '', actualCookTime: 0, nextImprovement: '', mealIds: [], existingPhotos: [] });
 const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
@@ -231,11 +236,29 @@ const searchMeals = query => {
 const openMealOptions = visible => { if (visible && !mealLoaded.value && !mealLoading.value) searchMeals(''); };
 const imageFor = photo => resolveUploadedImage(photo) || placeholder;
 const imageError = event => handleUploadedImageError(event, placeholder);
-const openMemoryPhoto = (item, index) => { viewedPhoto.value = { title: item.title || item.date || '饭后照片', photos: item.photos, index }; };
+const setPreviewState = photo => { previewUnavailable.value = imageFor(photo) === placeholder; previewRetrying.value = false; previewAttempt.value = 0; };
+const openMemoryPhoto = (item, index) => { setPreviewState(item.photos[index]); viewedPhoto.value = { title: item.title || item.date || '饭后照片', photos: item.photos, index }; };
+const previewError = event => {
+  const image = event.target;
+  if (!image?.isConnected || Number(image.dataset.attempt) !== previewAttempt.value) return;
+  handleUploadedImageError(event, placeholder);
+  if (image.dataset.placeholder === '1') { previewUnavailable.value = true; previewRetrying.value = false; }
+};
+const previewLoaded = async event => {
+  const image = event.target;
+  if (!image?.isConnected || image.dataset.placeholder === '1' || !viewedPhoto.value || imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]) === placeholder || Number(image.dataset.attempt) !== previewAttempt.value) return;
+  const restoreFocus = document.activeElement === previewRetryButton.value?.$el;
+  previewUnavailable.value = false; previewRetrying.value = false;
+  if (restoreFocus) { await nextTick(); if (viewedPhoto.value && (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected)) previewImage.value?.focus({ preventScroll: true }); }
+};
+const retryPreview = () => {
+  if (!viewedPhoto.value || previewRetrying.value || imageFor(viewedPhoto.value.photos[viewedPhoto.value.index]) === placeholder) return;
+  previewRetrying.value = true; previewAttempt.value++;
+};
 const moveMemoryPhoto = direction => {
   if (!viewedPhoto.value) return;
   const next = viewedPhoto.value.index + direction;
-  if (next >= 0 && next < viewedPhoto.value.photos.length) viewedPhoto.value.index = next;
+  if (next >= 0 && next < viewedPhoto.value.photos.length) { viewedPhoto.value.index = next; setPreviewState(viewedPhoto.value.photos[next]); }
 };
 const onPhotoKey = event => {
   if (!viewedPhoto.value || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
@@ -565,7 +588,7 @@ onBeforeUnmount(() => { alive = false; memorySequence++; mealSequence++; if (mea
       </el-form>
       <template #footer><span class="draft-hint">关闭后草稿会暂留在本页</span><el-button :disabled="saving || confirmingMeals" @click="dialogVisible = false">取消</el-button><el-button type="primary" :disabled="saveUncertain || !!editIssue || loading || !!loadError || !!deleteIssue || confirmingMeals" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
-    <el-dialog :model-value="!!viewedPhoto" title="饭后照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img :key="`${viewedPhoto.index}-${viewedPhoto.photos[viewedPhoto.index]}`" class="photo-preview" :src="imageFor(viewedPhoto.photos[viewedPhoto.index])" :alt="viewedPhoto.title" @error="imageError" /><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张回忆照片" @click="moveMemoryPhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.photos.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.photos.length - 1" aria-label="下一张回忆照片" @click="moveMemoryPhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
+    <el-dialog :model-value="!!viewedPhoto" title="饭后照片" width="min(680px, 92vw)" @update:model-value="value => { if (!value) viewedPhoto = null }"><template v-if="viewedPhoto"><img ref="previewImage" :key="`${viewedPhoto.index}-${viewedPhoto.photos[viewedPhoto.index]}-${previewAttempt}`" :data-attempt="previewAttempt" class="photo-preview" tabindex="-1" :src="imageFor(viewedPhoto.photos[viewedPhoto.index])" :alt="viewedPhoto.title" @load="previewLoaded" @error="previewError" /><el-alert v-if="previewUnavailable" class="photo-load-alert" type="warning" :closable="false" show-icon :title="previewRetrying ? '正在重试这张照片，回忆记录仍然保留。' : '照片暂时无法加载，回忆记录仍然保留。'"><el-button v-if="imageFor(viewedPhoto.photos[viewedPhoto.index]) !== placeholder" ref="previewRetryButton" link type="primary" :aria-disabled="previewRetrying" @click="retryPreview">{{ previewRetrying ? '正在重试…' : '重试这张照片' }}</el-button></el-alert><div class="photo-nav"><el-button :disabled="viewedPhoto.index === 0" aria-label="上一张回忆照片" @click="moveMemoryPhoto(-1)">上一张</el-button><span aria-live="polite">{{ viewedPhoto.index + 1 }} / {{ viewedPhoto.photos.length }}</span><el-button :disabled="viewedPhoto.index >= viewedPhoto.photos.length - 1" aria-label="下一张回忆照片" @click="moveMemoryPhoto(1)">下一张</el-button></div><h3>{{ viewedPhoto.title }}</h3></template></el-dialog>
   </div>
 </template>
 
@@ -600,6 +623,7 @@ h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px
 .memory-photo:focus-visible { outline: 2px solid var(--secondary-color); outline-offset: 3px; }
 .photos img { display: block; width: 100%; height: 90px; object-fit: cover; border-radius: 8px; }
 .photo-preview { display: block; width: 100%; max-height: 420px; object-fit: contain; border-radius: 16px; background: var(--bg-secondary); }
+.photo-load-alert { margin-top: 12px; }
 .photo-nav { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 12px 0; color: var(--text-secondary); font-size: 13px; }
 .photo-nav .el-button { margin: 0; min-height: 44px; }
 .meal-help { color: var(--text-secondary); line-height: 1.5; }

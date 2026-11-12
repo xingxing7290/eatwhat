@@ -11,9 +11,12 @@ async function main () {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 } })
     page.setDefaultTimeout(12000)
     await page.addInitScript(() => { localStorage.setItem('token', 'test-token'); localStorage.setItem('user', JSON.stringify({ username: 'test', householdId: 'home-a' })) })
-    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true; let detailFailure = false; let releaseSlow
+    const errors = []; const reads = []; let saved = ''; let deleted = false; let deleteMode = 'conflict'; let revision = 'v1'; let deleteSupported = true; let detailFailure = false; let releaseSlow; let imageAvailable = false; let holdImage = false; let releaseImage
     page.on('pageerror', error => errors.push(error.message))
-    await page.route('**/broken-memory.png', route => route.fulfill({ status: 404, body: '' }))
+    await page.route('**/broken-memory.png', async route => {
+      if (holdImage) await new Promise(resolve => { releaseImage = resolve })
+      return imageAvailable ? route.fulfill({ status: 200, contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"/>' }) : route.fulfill({ status: 404, body: '' })
+    })
     await page.route('**/api/**', async route => {
       if (new URL(route.request().url()).pathname.endsWith('/auth/household-scope')) return route.fulfill({ json: { supportsHouseholdScope: true, householdId: route.request().headers()['x-eatwhat-household'] } })
       const req = route.request(); const url = new URL(req.url()); const path = url.pathname.replace(/^\/api/, '')
@@ -64,6 +67,21 @@ async function main () {
     await page.keyboard.press('ArrowRight')
     await viewer.getByText('2 / 2').waitFor()
     await viewer.locator('img[alt="图片暂不可用"]').waitFor()
+    await viewer.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    holdImage = true
+    await viewer.getByRole('button', { name: '重试这张照片' }).focus(); await page.keyboard.press('Enter')
+    await viewer.getByText('正在重试这张照片，回忆记录仍然保留。').waitFor()
+    assert.equal(await viewer.getByRole('button', { name: '正在重试…' }).getAttribute('aria-disabled'), 'true')
+    for (let i = 0; i < 100 && !releaseImage; i++) await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(typeof releaseImage, 'function')
+    holdImage = false; releaseImage()
+    await viewer.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor()
+    assert.equal(await page.evaluate(() => document.activeElement.textContent.trim()), '重试这张照片')
+    imageAvailable = true
+    await page.keyboard.press('Enter')
+    await viewer.getByText('照片暂时无法加载，回忆记录仍然保留。').waitFor({ state: 'hidden' })
+    await page.waitForFunction(() => document.activeElement?.classList.contains('photo-preview'))
+    assert.equal(saved, '', 'retrying a photo must not write a memory')
     await page.keyboard.press('ArrowLeft')
     await viewer.getByText('1 / 2').waitFor()
     await page.keyboard.press('Escape')
