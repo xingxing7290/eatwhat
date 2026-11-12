@@ -2357,6 +2357,12 @@ onBeforeUnmount(() => {
   .category-list button { min-height: 44px; }
   .category-error { padding: 8px 4px 0; }
   .catalog-content .meals-grid { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .catalog-content :deep(.meal-actions .el-button.is-circle) { display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; width: 44px; min-width: 44px; min-height: 44px; padding: 4px; border-radius: 12px; }
+  .catalog-content :deep(.meal-actions .el-button.is-circle)::after { font-size: 10px; line-height: 1; white-space: nowrap; }
+  .catalog-content :deep(.meal-actions .el-button[aria-label^="查看"])::after { content: '查看'; }
+  .catalog-content :deep(.meal-actions .el-button[aria-label^="在详情反馈"])::after { content: '反馈'; }
+  .catalog-content :deep(.meal-actions .el-button[aria-label^="编辑"])::after { content: '编辑'; }
+  .catalog-content :deep(.meal-actions .el-button[aria-label^="移入回收站"])::after { content: '回收'; }
   :global(.meal-page .view-switcher .el-radio-button) { flex: 1; }
   :global(.meal-page .view-switcher .el-radio-button__inner) { min-height: 44px; display: flex; align-items: center; justify-content: center; }
 }

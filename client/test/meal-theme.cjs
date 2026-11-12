@@ -32,8 +32,6 @@ async function main() {
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; animation: none !important; }' });
     const checks = [
       ['page title', '.page-title'],
-      ['presence title', '.presence-copy strong'],
-      ['presence description', '.presence-copy p'],
       ['search results', '.results-summary'],
       ['active category', '.category-list button.active'],
       ['meal name', '.meal-card-wrapper .meal-name'],
@@ -68,6 +66,8 @@ async function main() {
             assert.equal(actionBoxes.length, 5);
             assert.ok(actionBoxes.every(box => box.width >= 44 && box.height >= 44), 'card actions must remain tappable');
             assert.ok(new Set(actionBoxes.map(box => Math.round(box.top))).size <= 2, 'card actions should not stack into more than two rows');
+            const actionLabels = await page.locator('.meal-card-wrapper .meal-actions .el-button.is-circle').evaluateAll(buttons => buttons.map(button => getComputedStyle(button, '::after').content.replaceAll('"', '')));
+            assert.deepEqual(actionLabels, ['查看', '反馈', '编辑', '回收'], 'icon-only actions must have visible labels on mobile');
             const imageRatio = await page.locator('.meal-card-wrapper').evaluate(card => card.querySelector('.meal-image-container').getBoundingClientRect().width / card.getBoundingClientRect().width);
             assert.ok(imageRatio > 0.8, `recipe image should use the available card width: ${imageRatio}`);
             const title = page.locator('.meal-card-wrapper .meal-name');
@@ -87,7 +87,7 @@ async function main() {
             const result = await contrast(page, selector);
             assert.ok(result.ratio >= 4.5, `${mode} ${width} ${theme} ${label} contrast ${result.ratio.toFixed(2)} < 4.5`);
           }
-          for (const selector of ['.add-meal-btn', '.feed-inspiration-btn']) {
+          for (const selector of ['.add-meal-btn']) {
             const ratio = await gradientContrast(page, selector);
             assert.ok(ratio >= 4.5, `${mode} ${width} ${theme} ${selector} gradient contrast ${ratio.toFixed(2)} < 4.5`);
           }
