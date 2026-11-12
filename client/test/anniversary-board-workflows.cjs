@@ -74,6 +74,13 @@ async function main () {
     await page.getByRole('button', { name: '下一页', exact: true }).click()
     await page.getByText('共 25 份匹配菜单 · 第 2 / 3 页').waitFor()
     await page.getByText('当前筛选或页面中未显示这份菜单。').waitFor()
+    menus[12].theme = '家人更新的主题'
+    const refresh = page.getByRole('button', { name: '刷新当前结果' })
+    assert.ok((await refresh.boundingBox()).height >= 44)
+    await refresh.focus(); await page.keyboard.press('Enter')
+    await page.getByText('家人更新的主题', { exact: false }).waitFor()
+    await page.getByText('共 25 份匹配菜单 · 第 2 / 3 页').waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent.trim() === '刷新当前结果')
     await page.getByRole('button', { name: '继续编辑', exact: true }).click()
     assert.equal(await editor.getByPlaceholder('比如：三周年晚餐').inputValue(), '未保存草稿')
     await editor.getByRole('button', { name: '保存', exact: true }).click()

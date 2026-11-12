@@ -64,6 +64,7 @@ const searchInput = ref(null);
 const period = ref('all');
 const filterGroup = ref(null);
 const addMenuButton = ref(null);
+const refreshMenuButton = ref(null);
 let midnightTimer = null;
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
 const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
@@ -392,6 +393,14 @@ const load = async () => {
   finally { if (alive && sequence === menuSequence) loading.value = false; }
 };
 const changePage = page => { if (loading.value || deleteIssue.value || page < 1 || page > boardPages.value || page === boardPage.value) return; boardPage.value = page; load(); };
+const refreshMenus = async () => {
+  if (loading.value || busy.value || dialogVisible.value || deleteIssue.value || editIssue.value || saveUncertain.value) return;
+  const origin = document.activeElement;
+  const hadFocus = origin === refreshMenuButton.value?.$el;
+  await load(); await nextTick();
+  const focused = document.activeElement;
+  if (alive && hadFocus && (!focused || focused === document.body || focused === origin || !focused.isConnected)) refreshMenuButton.value?.$el?.focus({ preventScroll: true });
+};
 const save = async () => {
   if (!form.title.trim() || !validDate(form.date)) return ElMessage.warning('请填写标题和有效日期');
   if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value || confirmingSlot.value) return;
@@ -453,7 +462,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
   <div class="anniversary-page">
     <div class="page-header">
       <div><span class="eyebrow">SPECIAL DAYS · 特别的日子</span><h1>纪念日菜单</h1><p>为生日、纪念日、节日和特别的周末，提前保存一份菜单。</p><p class="calendar-explanation">菜单不会自动写入日历；可查看当天安排后手动排餐。</p></div>
-      <el-button ref="addMenuButton" type="primary" :disabled="loading || !!loadError || !!deletingId || !!deleteIssue || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>新增菜单</el-button>
+      <div class="header-actions"><el-button ref="refreshMenuButton" :disabled="loading || busy || dialogVisible || !!deleteIssue || !!editIssue || saveUncertain" @click="refreshMenus">刷新当前结果</el-button><el-button ref="addMenuButton" type="primary" :disabled="loading || !!loadError || !!deletingId || !!deleteIssue || !!editIssue" @click="startCreate"><el-icon><Plus /></el-icon>新增菜单</el-button></div>
     </div>
 
     <CreateRecoveryNotice v-if="saveUncertain && !dialogVisible" label="纪念日菜单" :reviewed="reviewed" :reviewing="reviewing" :deciding="deciding" @review="review" @retry="allowRetry" @discard="discardDraft" />
@@ -532,6 +541,8 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
 .draft-hint { color: var(--text-secondary); font-size: 12px; margin-right: 12px; }
 .anniversary-page { display: flex; flex-direction: column; gap: 18px; }
 .page-header { display: flex; justify-content: space-between; gap: 16px; align-items: center; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
+.header-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.header-actions .el-button { min-height: 44px; margin: 0; }
 h1, h2 { margin: 0; color: var(--text-primary); }
 h1 { margin-top:8px; font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}.photo-hint{display:block;width:100%;color:var(--text-secondary);line-height:1.5;margin-top:8px}
 .page-header p, .card-top p, .desc, .empty { color: var(--text-secondary); }
