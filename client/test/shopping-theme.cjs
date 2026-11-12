@@ -21,6 +21,8 @@ async function main () {
     })
     await page.goto(`${base}/shopping-list`)
     await page.getByText('显示 2 / 2 项 · 本周待买 1 项').waitFor()
+    if (process.env.EATWHAT_SHOPPING_SHOT) await page.screenshot({ path: process.env.EATWHAT_SHOPPING_SHOT, fullPage: true })
+    await page.locator('.extra-tools summary').click()
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
@@ -36,7 +38,10 @@ async function main () {
             const box = await checkbox.boundingBox()
             assert.ok(box.width >= 44 && box.height >= 44, `${width} ingredient checkbox must have a usable touch target`)
           }
-          for (const selector of ['.group-jump > span', '.group-jump button']) {
+          for (const tag of await page.locator('.item-actions .el-tag').all()) {
+            assert.equal(await tag.evaluate(node => node.clientWidth >= node.scrollWidth && node.clientWidth >= 35), true, 'source labels must not be clipped')
+          }
+          for (const selector of ['.group-jump > span', '.group-jump button', '.extra-tools summary', '.item-actions .el-tag']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${width} ${theme} ${selector}: ${result.ratio}`)
           }
