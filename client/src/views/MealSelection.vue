@@ -308,7 +308,8 @@ const handleCancel = () => {
 };
 
 // 清除过滤
-const clearFilters = () => {
+const clearFilters = async () => {
+  const source = document.activeElement;
   searchQuery.value = '';
   selectedTag.value = '';
   selectedCategory.value = '';
@@ -316,6 +317,9 @@ const clearFilters = () => {
   selectedSubcategory.value = '';
   showAdvancedFilters.value = false;
   currentPage.value = 1;
+  await nextTick();
+  const focused = document.activeElement;
+  if (!focused || focused === document.body || focused === source || !focused.isConnected) selectionSearch.value?.focus();
 };
 
 // 页码变化处理
@@ -329,7 +333,7 @@ watch([searchQuery, selectedTag, selectedCategory, uncategorized, selectedSubcat
   restoreCatalogFocus = false;
   currentPage.value = 1;
   scheduleCatalogFetch();
-});
+}, { flush: 'sync' });
 
 watch(selectedCategory, () => {
   if (selectedCategory.value) uncategorized.value = false;

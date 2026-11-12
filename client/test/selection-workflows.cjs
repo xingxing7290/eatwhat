@@ -200,7 +200,11 @@ async function main () {
     await page.getByRole('button', { name: '选择测试菜19' }).click()
     await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('测试菜20')
     await page.getByRole('button', { name: '选择测试菜20' }).click()
-    await page.getByRole('textbox', { name: '搜索可选菜品' }).fill('')
+    await page.getByRole('button', { name: '清除', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '搜索可选菜品')
+    assert.equal(await page.getByRole('textbox', { name: '搜索可选菜品' }).inputValue(), '')
+    assert.equal(await page.getByRole('button', { name: '移除测试菜19' }).count(), 1, 'clearing filters must preserve selected dishes')
     await page.getByRole('button', { name: '移除测试菜20' }).waitFor()
     await page.getByText('分类或标签可能不完整').waitFor()
     failCategories = false
