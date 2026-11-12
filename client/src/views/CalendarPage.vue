@@ -141,7 +141,7 @@ const arrangeWishlistDinner = async (item) => {
   try {
     const fresh = await api.wishlist.get(wishId);
     if (!active || sequence !== monthSequence) return;
-    if (!fresh || String(fresh._id || fresh.id || '') !== wishId || typeof fresh.title !== 'string' || !['open', 'planned', 'done'].includes(fresh.status)) throw new Error('想吃信息不完整');
+    if (!fresh || String(fresh._id || fresh.id || '') !== wishId || typeof fresh.title !== 'string' || typeof fresh.partnerSignal !== 'boolean' || !['open', 'planned', 'done'].includes(fresh.status)) throw new Error('想吃信息不完整');
     const shown = partnerWishlist.value.find(wish => String(wish?._id || '') === wishId);
     if (!shown || shown !== item) return ElMessage.warning('提醒已刷新，请重新核对后再安排');
     if (fresh.status !== 'open' || fresh.partnerSignal === false) {

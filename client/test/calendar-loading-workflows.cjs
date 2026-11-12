@@ -105,6 +105,13 @@ async function main () {
     await page.getByText('无法核对最新的想吃内容', { exact: false }).waitFor()
     assert.equal(new URL(page.url()).pathname, '/calendar')
     wishReadFail = false
+    wishFresh = { _id: 'wish-linked', title: '番茄炒蛋', status: 'open', mealId: { _id: 'meal-b', name: '番茄炒蛋' } }
+    const missingSignalResponse = page.waitForResponse(response => new URL(response.url()).pathname === '/api/wishlist/wish-linked')
+    await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
+    await missingSignalResponse
+    await page.getByText('无法核对最新的想吃内容', { exact: false }).last().waitFor()
+    assert.equal(new URL(page.url()).pathname, '/calendar', 'missing family-origin signal must not navigate to scheduling')
+    assert.equal(await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).count(), 1, 'unverified reminder should remain available for retry')
     wishFresh = { _id: 'wish-linked', title: '新菜名', status: 'open', partnerSignal: true, mealId: { _id: 'meal-z', name: '新菜名' } }
     await page.getByRole('button', { name: '安排番茄炒蛋到今天晚餐' }).click()
     await page.getByText('日期或想吃内容已变化', { exact: false }).waitFor()
