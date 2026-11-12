@@ -88,6 +88,12 @@ const addMenuButton = ref(null);
 const refreshMenuButton = ref(null);
 let midnightTimer = null;
 const form = reactive({ title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
+const titleInput = ref(null);
+const dateInput = ref(null);
+const titleError = ref(false);
+const dateError = ref(false);
+watch(() => form.title, value => { if (value.trim()) titleError.value = false; });
+watch(() => form.date, value => { if (validDate(value)) dateError.value = false; });
 const { removedPhotos, existingPhotoGrid, undoPhotoButton, resetPhotoUndo, removeExistingPhoto, undoPhotoRemoval } = usePhotoRemovalUndo(form);
 const unavailableMeals = reactive({ breakfast: 0, lunch: 0, dinner: 0 });
 const clearedSlots = reactive({ breakfast: false, lunch: false, dinner: false });
@@ -278,6 +284,7 @@ const applyTemplate = async (tpl) => {
 };
 
 const reset = () => {
+  titleError.value = false; dateError.value = false;
   resetPhotoUndo();
   Object.assign(form, { title: '', date: localToday(), theme: '', description: '', meals: { breakfast: [], lunch: [], dinner: [] }, existingPhotos: [] });
   photoFiles.value = [];
@@ -294,6 +301,7 @@ const reset = () => {
 const fillEdit = item => {
   if (!(item?._id || item?.id) || !validVersion(item) || typeof item.title !== 'string' || typeof item.date !== 'string' || !Array.isArray(item.photos) || item.photos.some(photo => typeof photo !== 'string') || Object.keys(mealTypeText).some(key => !Array.isArray(item.meals?.[key]) || item.meals[key].some(meal => meal !== null && (!mealId(meal) || typeof meal.name !== 'string')))) throw new Error('菜单数据或版本不完整，请刷新后重试');
   resetPhotoUndo();
+  titleError.value = false; dateError.value = false;
   originalSlotMeals.value = Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].filter(Boolean)]));
   Object.assign(unavailableMeals, Object.fromEntries(Object.keys(mealTypeText).map(key => [key, item.meals[key].filter(meal => meal === null).length])));
   Object.assign(clearedSlots, { breakfast: false, lunch: false, dinner: false });
@@ -424,7 +432,8 @@ const refreshMenus = async () => {
   if (alive && hadFocus && (!focused || focused === document.body || focused === origin || !focused.isConnected)) refreshMenuButton.value?.$el?.focus({ preventScroll: true });
 };
 const save = async () => {
-  if (!form.title.trim() || !validDate(form.date)) return ElMessage.warning('请填写标题和有效日期');
+  titleError.value = !form.title.trim(); dateError.value = !validDate(form.date);
+  if (titleError.value || dateError.value) { await nextTick(); (titleError.value ? titleInput.value : dateInput.value)?.focus(); return; }
   if (saving.value || saveUncertain.value || editIssue.value || reviewing.value || loading.value || loadError.value || deleteIssue.value || confirmingSlot.value) return;
   if (editing.value) {
     const original = JSON.parse(initialForm.value);
@@ -537,8 +546,8 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
       <el-alert v-if="editing && !mealVisibilityVerified" class="meal-integrity-alert" type="warning" :closable="false" show-icon title="当前服务器未提供菜品完整性核验，暂不能修改餐次；标题、日期和照片仍可编辑。" />
       <el-form label-position="top" :disabled="saving || saveUncertain">
         <el-form-item label="菜单模板"><div class="template-list"><el-button v-for="tpl in templates" :key="tpl.key" size="small" @click="applyTemplate(tpl)">{{ tpl.title }}</el-button><span v-if="templateLoading" class="photo-hint">正在加载模板…</span><span v-else-if="!templateError && !templates.length" class="photo-hint">暂无模板，可以直接填写菜单。</span><el-alert v-if="templateError" type="warning" :closable="false" :title="`模板暂不可用：${templateError}`"><el-button link type="primary" @click="loadTemplates">重试</el-button></el-alert></div></el-form-item>
-        <el-form-item label="标题"><el-input v-model="form.title" maxlength="100" show-word-limit placeholder="比如：三周年晚餐" /></el-form-item>
-        <el-form-item label="日期"><el-date-picker v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" /></el-form-item>
+        <el-form-item label="标题"><el-input ref="titleInput" v-model="form.title" maxlength="100" show-word-limit placeholder="比如：三周年晚餐" :aria-invalid="titleError ? 'true' : undefined" :aria-describedby="titleError ? 'anniversary-title-error' : undefined" /><p v-if="titleError" id="anniversary-title-error" class="field-error" role="alert">请填写菜单标题，其他内容会保留。</p></el-form-item>
+        <el-form-item label="日期"><el-date-picker ref="dateInput" v-model="form.date" type="date" value-format="YYYY-MM-DD" :clearable="false" aria-label="菜单日期" :aria-invalid="dateError ? 'true' : undefined" :aria-describedby="dateError ? 'anniversary-date-error' : undefined" /><p v-if="dateError" id="anniversary-date-error" class="field-error" role="alert">请选择有效日期，其他内容会保留。</p></el-form-item>
         <el-form-item label="主题"><el-input v-model="form.theme" placeholder="家常、烛光、火锅、露营..." /></el-form-item>
         <el-form-item label="备注"><el-input v-model="form.description" type="textarea" rows="3" /></el-form-item>
         <el-form-item v-for="(label, key) in mealTypeText" :key="key" :label="label">
@@ -555,6 +564,7 @@ onBeforeUnmount(() => { alive = false; menuSequence++; mealSequence++; if (mealT
 </template>
 
 <style scoped>
+.field-error { width: 100%; margin: 6px 0 0; color: var(--text-primary); font-size: 13px; font-weight: 700; line-height: 1.5; }
 .empty-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
 .empty-actions .el-button, .empty-action { min-height: 44px; margin: 0; }
 .calendar-explanation { font-size: 13px; line-height: 1.6; }
