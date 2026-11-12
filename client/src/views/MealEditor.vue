@@ -465,11 +465,18 @@ watch(() => route.params.id, load, { immediate: true });
         <el-card><template #header>照片墙</template><div v-if="form.existingPhotos.length" ref="existingPhotoGrid" class="photo-grid"><div v-for="(photo, index) in form.existingPhotos" :key="`${index}-${photo}`" class="photo-item"><img :src="imageFor(photo)" :alt="`已有菜品照片 ${index + 1}`" @error="imageError" /><el-button size="small" type="danger" :aria-label="`移除已有菜品照片 ${index + 1}`" @click="removeExistingPhoto(index, $event)">移除</el-button></div></div><div v-if="removedPhotos.length" class="photo-undo" role="status"><span>已移除 {{ removedPhotos.length }} 张，保存后生效。</span><el-button ref="undoPhotoButton" link type="primary" @click="undoPhotoRemoval">撤销最近移除</el-button></div><el-upload action="#" :accept="photoAccept" :limit="12" :on-exceed="() => ElMessage.warning('每次最多上传 12 张照片')" :auto-upload="false" multiple list-type="picture-card" v-model:file-list="photoFiles" :on-change="onPhotosChange"><el-icon><Plus /></el-icon></el-upload><p class="photo-hint">每次最多上传 12 张，步骤图每次最多上传 20 张。</p></el-card>
       </aside>
     </el-form>
+    <section v-if="!loading && !loadError" class="editor-footer" aria-label="菜谱保存操作">
+      <p role="status">{{ saveUncertain || conflict ? '保存状态需要先核对，当前输入仍保留。' : dirty ? '有未保存的修改，请检查食材和步骤。' : '当前没有未保存的修改。' }}</p>
+      <el-button type="primary" :disabled="!!loadError || saveUncertain || conflict || !versionAvailable" :loading="submitting" @click="submit">保存菜谱</el-button>
+    </section>
   </div>
 </template>
 
 <style scoped>
 .meal-editor { display: flex; flex-direction: column; gap: 18px; }
+.editor-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px 16px; padding: 16px 20px; border: 1px solid var(--border-color); border-radius: 18px; background: var(--bg-primary); }
+.editor-footer p { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.editor-footer .el-button { min-height: 44px; margin: 0; }
 .page-header { display: flex; justify-content: space-between; align-items: center; gap: 16px; background: var(--bg-primary); border:1px solid var(--border-color); border-radius:26px; padding:clamp(22px,3vw,36px); box-shadow:0 12px 28px var(--shadow-color); }
 h1 { margin: 8px 0 0; color: var(--text-primary); font-family:Georgia,'Songti SC',serif; font-size:clamp(26px,3vw,36px); }.eyebrow{color:var(--secondary-color);font-size:11px;letter-spacing:.14em;font-weight:800}.page-header p,.photo-hint{color:var(--text-secondary)}.photo-hint{font-size:12px;line-height:1.5}.header-actions{display:flex;gap:8px;flex-shrink:0}.header-actions .el-button{margin:0}
 .editor-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 18px; align-items: start; }

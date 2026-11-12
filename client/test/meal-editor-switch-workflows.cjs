@@ -96,7 +96,13 @@ async function main () {
     await page.waitForURL('**/meals/editor')
     assert.equal(await input.inputValue(), '')
     assert.equal(await page.getByRole('button', { name: '保存', exact: true }).isDisabled(), false)
-    await page.getByRole('button', { name: '保存', exact: true }).click()
+    const footer = page.getByRole('region', { name: '菜谱保存操作' })
+    await footer.getByText('当前没有未保存的修改。').waitFor()
+    assert.ok((await footer.getByRole('button', { name: '保存菜谱' }).boundingBox()).height >= 44)
+    await input.fill('临时名称')
+    await footer.getByText('有未保存的修改，请检查食材和步骤。').waitFor()
+    await input.fill('')
+    await footer.getByRole('button', { name: '保存菜谱' }).click()
     await page.getByText('请输入菜品名称', { exact: true }).waitFor()
     await page.waitForFunction(() => document.activeElement?.getAttribute('placeholder') === '给这道菜起个名字')
     assert.equal(writes, 0, 'invalid recipe name must not be saved')
@@ -217,7 +223,7 @@ async function main () {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
       for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
         await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-        for (const selector of ['.ingredient-help', '.ingredient-item label span', '.cover-caption']) {
+        for (const selector of ['.ingredient-help', '.ingredient-item label span', '.cover-caption', '.editor-footer p']) {
           const result = await contrast(page, selector)
           assert.ok(result.ratio >= 4.5, `${dark ? 'dark' : 'light'} ${theme} ${selector}: ${JSON.stringify(result)}`)
         }
