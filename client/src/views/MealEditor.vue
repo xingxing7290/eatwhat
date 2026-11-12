@@ -33,6 +33,9 @@ const coverInput = ref(null);
 const imagePreview = ref('');
 const photoFiles = ref([]);
 const removedPhotos = ref([]);
+const removedIngredients = ref([]);
+const ingredientList = ref(null);
+const undoIngredientButton = ref(null);
 const existingPhotoGrid = ref(null);
 const undoPhotoButton = ref(null);
 const editMode = computed(() => !!route.params.id);
@@ -103,7 +106,23 @@ const addIngredient = () => {
   form.ingredients.push({ name: newIngredient.name.trim(), amount: newIngredient.amount.trim() });
   newIngredient.name = ''; newIngredient.amount = '';
 };
-const removeIngredient = (index) => form.ingredients.splice(index, 1);
+const removeIngredient = async (index, event) => {
+  const source = event.currentTarget;
+  const hadFocus = document.activeElement === source;
+  const [item] = form.ingredients.splice(index, 1);
+  if (!item) return;
+  removedIngredients.value.push({ item, index });
+  await nextTick();
+  if (hadFocus && (!document.activeElement || document.activeElement === document.body || document.activeElement === source || !document.activeElement.isConnected)) undoIngredientButton.value?.$el?.focus();
+};
+const undoIngredientRemoval = async () => {
+  const removed = removedIngredients.value.pop();
+  if (!removed) return;
+  const index = Math.min(removed.index, form.ingredients.length);
+  form.ingredients.splice(index, 0, removed.item);
+  await nextTick();
+  if (!document.activeElement || document.activeElement === document.body || !document.activeElement.isConnected) ingredientList.value?.querySelectorAll('.ingredient-item input[aria-label$="项食材名称"]')[index]?.focus();
+};
 const addStep = () => {
   if (!newStep.description.trim() && !newStep.imageFile) return ElMessage.warning('请输入做法步骤或选择步骤图');
   form.steps.push({ description: newStep.description.trim(), imageUrl: newStep.imagePreview || '', imageFile: newStep.imageFile || null });
@@ -194,7 +213,7 @@ const load = async () => {
   for (const url of previews) URL.revokeObjectURL(url);
   previews.clear();
   Object.assign(form, emptyForm());
-  removedPhotos.value = [];
+  removedPhotos.value = []; removedIngredients.value = [];
   Object.assign(newIngredient, { name: '', amount: '' });
   Object.assign(newStep, { description: '', imageFile: null, imagePreview: '' });
   imageFile.value = null; imagePreview.value = ''; photoFiles.value = [];
@@ -333,8 +352,9 @@ watch(() => route.params.id, load, { immediate: true });
         <el-card><template #header>食材</template>
           <p class="ingredient-help">可直接修改已有食材和用量。保存后，已生成的购物清单不会自动更新。</p>
           <div class="inline-form"><el-input v-model="newIngredient.name" placeholder="食材" aria-label="新食材名称" /><el-input v-model="newIngredient.amount" placeholder="用量" aria-label="新食材用量" /><el-button type="primary" aria-label="添加食材" @click="addIngredient"><el-icon><Plus /></el-icon></el-button></div>
-          <div v-if="form.ingredients.length" class="ingredient-list"><div v-for="(item, index) in form.ingredients" :key="index" class="ingredient-item"><label><span>食材 {{ index + 1 }}</span><el-input v-model="item.name" :aria-label="`第 ${index + 1} 项食材名称`" /></label><label><span>用量</span><el-input v-model="item.amount" :aria-label="`第 ${index + 1} 项食材用量`" placeholder="可选" /></label><el-button type="danger" circle :aria-label="`删除第 ${index + 1} 项食材`" @click="removeIngredient(index)"><el-icon><Delete /></el-icon></el-button></div></div>
+          <div v-if="form.ingredients.length" ref="ingredientList" class="ingredient-list"><div v-for="(item, index) in form.ingredients" :key="index" class="ingredient-item"><label><span>食材 {{ index + 1 }}</span><el-input v-model="item.name" :aria-label="`第 ${index + 1} 项食材名称`" /></label><label><span>用量</span><el-input v-model="item.amount" :aria-label="`第 ${index + 1} 项食材用量`" placeholder="可选" /></label><el-button type="danger" circle :aria-label="`删除第 ${index + 1} 项食材`" @click="removeIngredient(index, $event)"><el-icon><Delete /></el-icon></el-button></div></div>
           <el-empty v-else description="暂无食材" />
+          <div v-if="removedIngredients.length" class="photo-undo" role="status"><span>已移除 {{ removedIngredients.length }} 项食材，保存后生效。</span><el-button ref="undoIngredientButton" link type="primary" @click="undoIngredientRemoval">撤销最近移除的食材</el-button></div>
         </el-card>
 
         <el-card><template #header>做法步骤</template>

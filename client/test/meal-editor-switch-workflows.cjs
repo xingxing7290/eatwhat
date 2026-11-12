@@ -163,6 +163,16 @@ async function main () {
     const amount = page.getByRole('textbox', { name: '第 1 项食材用量' })
     assert.equal(await ingredient.inputValue(), '鸡蛋')
     assert.equal(await amount.inputValue(), '2个')
+    const writesBeforeUndo = writes
+    await page.getByRole('button', { name: '删除第 1 项食材' }).focus()
+    await page.keyboard.press('Enter')
+    await page.getByText('已移除 1 项食材，保存后生效。').waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent.trim() === '撤销最近移除的食材')
+    await page.keyboard.press('Enter')
+    await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '第 1 项食材名称')
+    assert.equal(await ingredient.inputValue(), '鸡蛋')
+    assert.equal(await amount.inputValue(), '2个')
+    assert.equal(writes, writesBeforeUndo, 'removal and undo must not save the recipe')
     for (const width of [320, 390, 1280]) {
       await page.setViewportSize({ width, height: 844 })
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
