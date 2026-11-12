@@ -20,6 +20,9 @@ const discarding = ref(false);
 const rebasing = ref(false);
 const current = ref(null);
 const draft = ref(null);
+const showChangedOnly = ref(false);
+const changedFilterButton = ref(null);
+watch(draft, () => { showChangedOnly.value = false; });
 const draftNeedsRebase = ref(false);
 const draftHadUncertainApply = ref(false);
 const slotEditor = ref(null);
@@ -140,6 +143,7 @@ const changesByDay = computed(() => {
     Object.keys(mealTypes).filter(type => classifySlot(day.meals[type], draft.value.days[index].meals[type]) !== 'same').length
   ]));
 });
+const changedOnlyActive = computed(() => showChangedOnly.value && !!changesByDay.value);
 const validateCurrent = (result, requestedWeek) => {
   const dates = datesFor(requestedWeek);
   if (!result || result.weekStart !== dates[0] || !Array.isArray(result.days) || result.days.length !== 7 ||
@@ -180,7 +184,7 @@ const editSlot = (date, type) => {
   if (!preview || !Array.isArray(preview.meals[type])) return;
   slotEditor.value = { date, type, meals: preview.meals[type].map(meal => ({ ...meal })) };
 };
-const saveSlot = meals => {
+const saveSlot = async meals => {
   const editor = slotEditor.value;
   if (!editor || !draft.value || !Array.isArray(meals)) return;
   const day = draft.value.days.find(item => item.date === editor.date);
@@ -194,6 +198,11 @@ const saveSlot = meals => {
     if (!editedDates.value.includes(editor.date)) editedDates.value = [...editedDates.value, editor.date];
   }
   slotEditor.value = null;
+  if (changedOnlyActive.value && !slotChange(editor.date, editor.type)) {
+    await nextTick();
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || !focused.isConnected) changedFilterButton.value?.focus({ preventScroll: true });
+  }
 };
 const load = async () => {
   if (!weekStart.value) return;
@@ -356,7 +365,8 @@ onBeforeUnmount(() => { active = false; loadSequence++; window.removeEventListen
       <p class="recipe-context">点击菜名可在新标签页查看菜谱，原标签页中的草稿会保留；关闭或刷新原页面会丢失草稿。菜谱的修改会直接保存到菜谱库；调整餐次请使用“调整”。</p>
       <el-alert v-if="draftNeedsRebase" class="unavailable-alert" type="warning" :closable="false" show-icon title="这份草稿保留供参考，不能直接应用。请先核对日历，再基于最新安排继续草稿或重新生成。"><el-button link type="primary" :disabled="!!applyIssue || loading || busy || !!loadError || !versionsAvailable || !!unavailableCount" @click="rebaseDraft">基于最新日历继续草稿</el-button></el-alert>
       <div v-if="draftImpact && !draftNeedsRebase" class="impact-summary" aria-label="草稿对当前安排的影响"><div><span>新增</span><strong>{{ draftImpact.added }}</strong><small>餐</small></div><div><span>替换</span><strong>{{ draftImpact.replaced }}</strong><small>餐</small></div><div :class="{ caution: draftImpact.cleared > 0 }"><span>清空</span><strong>{{ draftImpact.cleared }}</strong><small>餐</small></div><div><span>菜品相同</span><strong>{{ draftImpact.same }}</strong><small>餐</small></div><p>按当前读取的菜品和顺序比较，“菜品相同”包括均为空的餐次；应用仍会写入全部七天，其他排餐信息也可能变化。</p></div>
-<nav class="day-jump" aria-label="快速定位草稿日期"><span>快速定位</span><button v-for="day in draft.preview" :key="day.date" type="button" :aria-label="`定位草稿 ${day.date} ${weekdayLabel(day.date)}`" :aria-description="changesByDay ? `与当前读取的日历相比，${changesByDay[day.date]} 餐不同` : undefined" @click="jumpToDay(draftCard, day.date)">{{ weekdayLabel(day.date) }} <small>{{ day.date.slice(5) }}</small><small v-if="changesByDay" class="day-change">{{ changesByDay[day.date] ? `变动 ${changesByDay[day.date]} 餐` : '无变动' }}</small></button></nav><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card" :data-plan-date="day.date" tabindex="-1"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)" class="recipe-tag"><router-link v-if="recipeLinkId(meal)" class="recipe-link" :to="{ name: 'MealDetail', params: { id: recipeLinkId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看草稿中${day.date}${label}的${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal.name }}</span></el-tag><span v-if="!day.meals[type]?.length && (draftNeedsRebase || !slotChange(day.date, type))" class="muted">空</span><span v-if="!draftNeedsRebase && slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :disabled="draftNeedsRebase" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
+      <div v-if="changesByDay" class="draft-filter"><button ref="changedFilterButton" type="button" :aria-pressed="changedOnlyActive" @click="showChangedOnly = !showChangedOnly">仅看变化餐次{{ changedOnlyActive ? ' · 已开启' : '' }}</button><p>只改变草稿的显示方式；应用时仍会写入所有七天，包括隐藏餐次。</p></div>
+<nav class="day-jump" aria-label="快速定位草稿日期"><span>快速定位</span><button v-for="day in draft.preview" :key="day.date" type="button" :aria-label="`定位草稿 ${day.date} ${weekdayLabel(day.date)}`" :aria-description="changesByDay ? `与当前读取的日历相比，${changesByDay[day.date]} 餐不同` : undefined" @click="jumpToDay(draftCard, day.date)">{{ weekdayLabel(day.date) }} <small>{{ day.date.slice(5) }}</small><small v-if="changesByDay" class="day-change">{{ changesByDay[day.date] ? `变动 ${changesByDay[day.date]} 餐` : '无变动' }}</small></button></nav><div class="plan-grid"><div v-for="day in draft.preview" :key="day.date" class="day-card" :data-plan-date="day.date" tabindex="-1"><h3><span>{{ weekdayLabel(day.date) }}</span><small>{{ day.date }}</small></h3><div v-for="(label,type) in mealTypes" :key="type" v-show="!changedOnlyActive || !!slotChange(day.date, type)" class="slot draft-slot"><strong>{{ label }}</strong><div class="slot-meals"><el-tag v-for="meal in day.meals[type]" :key="mealId(meal)" class="recipe-tag"><router-link v-if="recipeLinkId(meal)" class="recipe-link" :to="{ name: 'MealDetail', params: { id: recipeLinkId(meal) } }" target="_blank" rel="noopener noreferrer" :aria-label="`在新标签页查看草稿中${day.date}${label}的${meal.name}菜谱`">{{ meal.name }}</router-link><span v-else>{{ meal.name }}</span></el-tag><span v-if="!day.meals[type]?.length && (draftNeedsRebase || !slotChange(day.date, type))" class="muted">空</span><span v-if="!draftNeedsRebase && slotChange(day.date, type)" class="change-note">{{ slotChange(day.date, type) }}</span></div><el-button link type="primary" class="edit-slot" :disabled="draftNeedsRebase" :aria-label="`调整${day.date}${label}`" @click="editSlot(day.date, type)">调整</el-button></div><p v-if="changedOnlyActive && !changesByDay[day.date]" class="no-changes">本日没有变化餐次。</p><div v-if="day.hints?.length" class="hints"><el-tag v-for="hint in day.hints" :key="hint" type="warning" size="small">{{ hint }}</el-tag></div><p v-if="editedDates.includes(day.date)" class="edited-note">已调整，请自行核对当天搭配。</p></div></div></el-card>
 
     <div v-if="draft" class="draft-footer"><p>检查完七天的餐次后，可在这里确认应用；正式写入前仍会显示影响范围。</p><el-button v-if="current && !loadError" @click="jumpToCard(currentCard)">查看当前日历安排 ↓</el-button><el-button type="primary" :disabled="draftNeedsRebase || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">确认并应用草稿</el-button></div>
     <el-alert v-if="loadError" type="error" :closable="false" show-icon :title="`无法读取当前日历安排：${loadError}`"><el-button ref="loadRetryButton" link type="primary" @click="refreshCurrentPlan">重新加载</el-button></el-alert>
@@ -415,6 +425,12 @@ h1, h3 { margin: 0; color: var(--text-primary); } h1 { margin-top: 8px; font-fam
 .impact-summary small, .impact-summary p { color: var(--text-secondary); font-size: 12px; }
 .impact-summary .caution { border-color: var(--weekly-accent); }
 .impact-summary p { grid-column: 1 / -1; margin: 2px 0 0; line-height: 1.6; }
+.draft-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 14px 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-secondary); color: var(--text-primary); }
+.draft-filter button { min-height: 44px; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 10px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-weight: 700; cursor: pointer; }
+.draft-filter button[aria-pressed="true"] { border-color: var(--weekly-accent); }
+.draft-filter button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.draft-filter p, .no-changes { margin: 0; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.no-changes { padding: 8px 0; }
 .change-note { color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .unavailable-alert { --notice-ink: #623a10; background: #fff1db; color: var(--notice-ink); }
 .unavailable-alert :deep(.el-alert__title), .unavailable-alert :deep(.el-alert__description), .unavailable-alert :deep(.el-alert__icon) { color: var(--notice-ink); }
