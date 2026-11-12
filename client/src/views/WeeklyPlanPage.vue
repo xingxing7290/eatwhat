@@ -59,7 +59,7 @@ const versionsAvailable = computed(() => current.value?.supportsConditionalApply
   Array.isArray(current.value.days) && current.value.days.length === 7 &&
   current.value.days.every(day => typeof day.scheduleExists === 'boolean' &&
     (day.scheduleExists ? typeof day.scheduleVersion === 'string' && Number.isFinite(Date.parse(day.scheduleVersion)) : day.scheduleVersion === null)));
-const dateKey = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const dateKey = d => `${String(d.getFullYear()).padStart(4, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 const monday = value => {
   const d = value ? new Date(...value.split('-').map((part, index) => index === 1 ? Number(part) - 1 : Number(part))) : new Date();
   const day = d.getDay() || 7;
@@ -73,6 +73,17 @@ const refreshCurrentWeek = () => { const now = new Date(); thisWeek.value = mond
 const datesFor = value => {
   const [year, month, day] = monday(value).split('-').map(Number);
   return Array.from({ length: 7 }, (_, index) => dateKey(new Date(year, month - 1, day + index)));
+};
+const supportedWeek = value => {
+  if (!validWeekLink(value)) return false;
+  const start = monday(value);
+  return validWeekLink(start) && datesFor(start).every(validWeekLink);
+};
+const disabledWeekDate = date => !supportedWeek(dateKey(date));
+const canMoveWeek = offset => {
+  if (!supportedWeek(weekStart.value)) return false;
+  const [year, month, day] = monday(weekStart.value).split('-').map(Number);
+  return supportedWeek(dateKey(new Date(year, month - 1, day + offset * 7)));
 };
 const weekdayLabel = value => {
   const [year, month, day] = value.split('-').map(Number);
@@ -275,6 +286,7 @@ const rebaseDraft = async () => {
 const syncWeekUrl = () => { const week = monday(weekStart.value); if (route.name === 'weeklyPlan' && route.query.week !== week) void router.replace({ name: 'weeklyPlan', query: { week } }); };
 const changeWeek = async (updateUrl = true) => {
   if (!weekChoice.value || changingWeek.value) return false;
+  if (!supportedWeek(weekChoice.value)) { weekChoice.value = weekStart.value; ElMessage.warning('请选择完整处于 0100 至 9998 年范围内的一周'); return false; }
   if (monday(weekChoice.value) === monday(weekStart.value)) { weekStart.value = weekChoice.value; weekLinkNotice.value = ''; if (updateUrl) syncWeekUrl(); return true; }
   changingWeek.value = true;
   try {
@@ -286,7 +298,7 @@ const changeWeek = async (updateUrl = true) => {
   } finally { changingWeek.value = false; }
 };
 const moveWeek = offset => {
-  if (loading.value || busy.value || !weekStart.value) return;
+  if (loading.value || busy.value || !canMoveWeek(offset)) return;
   const [year, month, day] = monday(weekStart.value).split('-').map(Number);
   weekChoice.value = dateKey(new Date(year, month - 1, day + offset * 7));
   changeWeek();
@@ -294,7 +306,7 @@ const moveWeek = offset => {
 const returnToCurrentWeek = () => { if (!loading.value && !busy.value) { weekChoice.value = monday(); changeWeek(); } };
 onBeforeRouteUpdate(async to => {
   if (to.name !== 'weeklyPlan' || to.query.week === route.query.week) return true;
-  if (to.query.week !== undefined && !validWeekLink(to.query.week)) { ElMessage.warning('周计划链接中的日期无效'); return false; }
+  if (to.query.week !== undefined && !supportedWeek(to.query.week)) { ElMessage.warning('周计划链接中的日期无效或超出完整周的支持范围'); return false; }
   const next = to.query.week === undefined ? monday() : monday(to.query.week);
   if (next === monday(weekStart.value)) return true;
   if (loading.value || busy.value || slotEditor.value) { ElMessage.warning('请先完成当前操作'); return false; }
@@ -306,12 +318,12 @@ onBeforeRouteUpdate(async to => {
   return true;
 });
 watch(() => route.query.week, value => {
-  if (route.name !== 'weeklyPlan' || (value !== undefined && !validWeekLink(value))) return;
+  if (route.name !== 'weeklyPlan' || (value !== undefined && !supportedWeek(value))) return;
   const next = value === undefined ? monday() : monday(value);
   if (next === monday(weekStart.value)) { weekLinkNotice.value = ''; return; }
   draft.value = null; draftNeedsRebase.value = false; draftHadUncertainApply.value = false; editedDates.value = []; applyIssue.value = ''; weekStart.value = next; weekChoice.value = next; weekLinkNotice.value = ''; load();
 }, { flush: 'sync' });
-onMounted(() => { const linked = route.query.week; weekStart.value = validWeekLink(linked) ? monday(linked) : monday(); if (linked !== undefined && !validWeekLink(linked)) weekLinkNotice.value = '周计划链接中的日期无效，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
+onMounted(() => { const linked = route.query.week; weekStart.value = supportedWeek(linked) ? monday(linked) : monday(); if (linked !== undefined && !supportedWeek(linked)) weekLinkNotice.value = '周计划链接中的日期无效或超出完整周的支持范围，已打开本周。'; weekChoice.value = weekStart.value; load(); window.addEventListener('focus', refreshCurrentWeek); document.addEventListener('visibilitychange', refreshCurrentWeek); weekClockTimer = setInterval(refreshCurrentWeek, 60000); });
 onBeforeUnmount(() => { active = false; loadSequence++; window.removeEventListener('focus', refreshCurrentWeek); document.removeEventListener('visibilitychange', refreshCurrentWeek); if (weekClockTimer) clearInterval(weekClockTimer); });
 </script>
 
@@ -319,10 +331,11 @@ onBeforeUnmount(() => { active = false; loadSequence++; window.removeEventListen
   <div class="weekly-page" v-loading="loading" element-loading-text="正在处理周计划" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header">
       <div><span class="eyebrow">WEEKLY TABLE · 一周饭桌</span><h1>一周饭桌计划</h1><p>选择一周内的任意日期，先生成草稿，再确认写入日历。</p><div v-if="displayedRange" class="week-summary"><span>{{ displayedRange }}</span><span>已安排 {{ scheduledSlots }} 餐</span></div><router-link v-if="current?.days.some(day => day.date === localToday)" class="today-link" :to="{ name: 'calendar', query: { date: localToday } }">本机今天 {{ localToday }} · 查看日历 →</router-link></div>
-      <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || draftNeedsRebase || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
+      <div class="actions"><el-date-picker v-model="weekChoice" type="date" value-format="YYYY-MM-DD" :clearable="false" :disabled-date="disabledWeekDate" :disabled="loading || busy" aria-label="选择周计划日期" @change="changeWeek" /><div class="week-navigation" role="group" aria-label="切换周计划日期"><el-button :disabled="loading || busy || !canMoveWeek(-1)" @click="moveWeek(-1)">上一周</el-button><el-button :disabled="loading || busy || monday(weekStart) === thisWeek" @click="returnToCurrentWeek">回到本周</el-button><el-button :disabled="loading || busy || !canMoveWeek(1)" @click="moveWeek(1)">下一周</el-button></div><el-button type="primary" :disabled="loading || busy || !!loadError || !!applyIssue || !current" @click="generate">生成草稿</el-button><el-button :disabled="!draft || draftNeedsRebase || loading || busy || !!loadError || !!applyIssue || !versionsAvailable || !!unavailableCount" :loading="applying" @click="applyDraft">应用到日历</el-button></div>
     </div>
 
     <el-alert v-if="weekLinkNotice" type="warning" :closable="false" show-icon :title="weekLinkNotice" />
+    <el-alert v-if="weekStart && (!canMoveWeek(-1) || !canMoveWeek(1))" type="info" :closable="false" show-icon title="已到达完整周的日期边界，可返回本周。" />
     <div v-if="weekStart" class="shopping-context"><router-link class="week-link" :to="{ name: 'shoppingList', query: { week: monday(weekStart) } }">查看所选周购物清单 →</router-link><p>购物清单不会随排餐变动自动更新，请在清单中点击“从排餐生成”。<span v-if="draftHadUncertainApply">先前应用可能已写入部分日期，请核对日历。</span><span v-else-if="draft">草稿尚未写入日历，不会计入生成结果。</span></p></div>
 
     <el-alert v-if="applyIssue" type="warning" :closable="false" show-icon :title="applyIssue"><el-button link type="primary" :disabled="loading || !!loadError || !current" @click="applyIssue = ''">已核对，继续</el-button></el-alert>
