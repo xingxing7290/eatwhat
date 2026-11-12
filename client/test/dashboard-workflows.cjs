@@ -83,8 +83,10 @@ async function main () {
     await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('家人想吃的菜').waitFor()
     mode = 'invalid'
-    await page.getByRole('button', { name: '刷新饭桌' }).click()
+    await page.getByRole('button', { name: '刷新饭桌' }).focus()
+    await page.keyboard.press('Enter')
     await page.getByText('饭桌信息不完整，请重新加载').waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent.trim() === '重新加载')
     assert.equal(await page.locator('.dashboard-grid').count(), 0, 'missing counts must not be displayed as zero')
     mode = 'badweek'
     await page.getByRole('button', { name: '重新加载' }).click()
@@ -100,8 +102,10 @@ async function main () {
       assert.equal(await page.locator('.load-error').isVisible(), true)
     }
     mode = 'valid'; suggested = ''
-    await page.getByRole('button', { name: '重新加载' }).click()
+    await page.getByRole('button', { name: '重新加载' }).focus()
+    await page.keyboard.press('Enter')
     await page.getByRole('button', { name: '查看心愿' }).waitFor()
+    await page.waitForFunction(() => document.activeElement?.textContent.trim() === '刷新饭桌')
     await page.getByText('尚无法安排，请在想吃清单中核对菜品').waitFor()
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
     await page.getByRole('button', { name: '查看心愿' }).click()

@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { Calendar, ShoppingCart, Picture, Star, Warning, Food } from '@element-plus/icons-vue';
@@ -10,6 +10,8 @@ const router = useRouter();
 const loading = ref(false);
 const summary = ref(null);
 const arranging = ref('');
+const refreshButton = ref(null);
+const retryButton = ref(null);
 const failedPhotos = reactive(new Set());
 const photoError = (event, photo, index) => { if (!retryLocalUpload(event)) failedPhotos.add(photoKey(photo, index)); };
 const mealTypeText = { breakfast: '早餐', lunch: '午餐', dinner: '晚餐' };
@@ -62,6 +64,17 @@ const load = () => {
     finally { loading.value = false; loadRequest = null; }
   })();
   return loadRequest;
+};
+const refreshDashboard = async () => {
+  if (loading.value || arranging.value) return;
+  const origin = document.activeElement;
+  const initiatedFromButton = origin === refreshButton.value?.$el || origin === retryButton.value?.$el;
+  await load();
+  await nextTick();
+  const focused = document.activeElement;
+  if (active && initiatedFromButton && (!focused || focused === document.body || focused === origin || !focused.isConnected)) {
+    (loadError.value ? retryButton.value : refreshButton.value)?.$el?.focus({ preventScroll: true });
+  }
 };
 const arrangeWishlistDinner = async (item) => {
   if (arranging.value || loading.value) return;
@@ -157,9 +170,9 @@ onBeforeUnmount(() => { active = false; window.removeEventListener('focus', onRe
       <div class="hero-image" role="img" aria-label="家常菜照片"><span>日常的味道，值得被记住</span></div>
     </section>
 
-    <div v-if="loadError && !loading" class="load-error" role="alert"><div><strong>暂时没有加载出饭桌信息</strong><p>{{ loadError }}</p></div><el-button @click="load">重新加载</el-button></div>
+    <div v-if="loadError && !loading" class="load-error" role="alert"><div><strong>暂时没有加载出饭桌信息</strong><p>{{ loadError }}</p></div><el-button ref="retryButton" @click="refreshDashboard">重新加载</el-button></div>
     <div v-if="summary && !loadError && dateMismatch" class="date-notice" role="status">首页按服务器日期 {{ summary.today }} 显示，本机日期为 {{ localToday }}。时区或设备时间可能不同，安排前请确认日期。</div>
-    <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><div class="summary-controls"><span>{{ summary.today }}（服务器日期）</span><el-button size="small" plain :disabled="loading || !!arranging" @click="load">刷新饭桌</el-button></div></div>
+    <div v-if="summary && !loadError" class="section-heading"><div><small>TODAY & THIS WEEK</small><h2>你的饭桌，一目了然</h2></div><div class="summary-controls"><span>{{ summary.today }}（服务器日期）</span><el-button ref="refreshButton" size="small" plain :disabled="loading || !!arranging" @click="refreshDashboard">刷新饭桌</el-button></div></div>
     <section class="dashboard-grid" v-if="summary && !loadError">
       <el-card class="today-card">
         <template #header><div class="card-title"><el-icon><Food /></el-icon><span>今天吃什么</span><el-tag>{{ summary.today }}</el-tag></div></template>
