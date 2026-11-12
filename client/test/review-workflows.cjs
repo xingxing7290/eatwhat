@@ -62,6 +62,11 @@ async function main () {
         if (scenario === 'meal-count') data.topMeals[0].count = 4
         if (scenario === 'meal-duplicate') data.topMeals.push({ ...data.topMeals[0] })
         if (scenario === 'meal-order') data.topMeals.push({ id: 'meal-b', name: '另一道菜', count: 4, scheduleCount: 4, memoryCount: 0 })
+        if (scenario === 'favorite-overflow') data.summary.favoriteTotal = data.summary.mealTotal + 1
+        if (scenario === 'day-overflow') data.summary.reviewedDayCount = 32
+        if (scenario === 'photo-overflow') data.summary.photoCount = 0
+        if (scenario === 'memory-overflow') data.summary.memoryCount = 0
+        if (scenario === 'best-without-memory') { data.summary.memoryCount = 0; data.recentMemories = [] }
         if (scenario === 'oldphoto') { delete data.photos[0].photoIndex; delete data.photos[0].fingerprint }
         if (scenario === 'invalidphoto') data.photos[0].date = `${label}-02-31`
         if (scenario === 'long') { data.categoryStats[0].category = 'LongCategory'.repeat(20); data.moodStats[0].mood = 'LongMood'.repeat(20); data.healthTagStats[0].tag = 'LongTag'.repeat(20); data.topMeals[0].name = 'LongRecipe'.repeat(20); data.bestMemory.title = 'LongTitle'.repeat(20); data.recentMemories[0].title = 'LongTitle'.repeat(20) }
@@ -75,6 +80,15 @@ async function main () {
     await page.getByRole('heading', { name: '这一段日常，值得回味' }).waitFor()
     await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
     await page.getByText('统计来自所选期间的排餐和回忆，是读取时的快照', { exact: false }).waitFor()
+    for (const fault of ['favorite-overflow', 'day-overflow', 'photo-overflow', 'memory-overflow', 'best-without-memory']) {
+      scenario = fault
+      await page.getByRole('button', { name: '刷新本期' }).click()
+      await page.getByText('回顾统计与明细不一致，请重新加载').waitFor()
+      assert.equal(await page.locator('.metrics').count(), 0, `${fault} must not be presented as valid statistics`)
+      scenario = 'normal'
+      await page.getByRole('button', { name: '重新加载' }).click()
+      await page.getByText('记录了 2 条排餐和 1 条回忆', { exact: false }).waitFor()
+    }
     await page.evaluate(() => {
       window.__clipboardMode = 'ok'; window.__copiedLinks = []
       Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async text => {

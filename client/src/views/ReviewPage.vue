@@ -91,6 +91,10 @@ function acceptReview(data, type, label) {
   if (!Array.isArray(data.photos) || data.photos.some(item => !item || typeof item.photo !== 'string' || !item.photo || typeof item.memoryId !== 'string' || !item.memoryId || !validDate(item.date) || item.date < range.start || item.date > range.end)) throw new Error('回顾照片数据不完整');
   if (!Array.isArray(data.recentMemories) || data.recentMemories.some(item => !item || !idOf(item) || !validDate(item.date) || item.date < range.start || item.date > range.end)) throw new Error('回忆记录不完整');
   if (data.bestMemory && (!idOf(data.bestMemory) || !validDate(data.bestMemory.date) || data.bestMemory.date < range.start || data.bestMemory.date > range.end)) throw new Error('精选回忆数据不完整');
+  const daysInRange = (Date.parse(`${range.end}T00:00:00Z`) - Date.parse(`${range.start}T00:00:00Z`)) / 86400000 + 1;
+  if (data.summary.favoriteTotal > data.summary.mealTotal || data.summary.reviewedDayCount > daysInRange ||
+      data.photos.length > data.summary.photoCount || data.recentMemories.length > data.summary.memoryCount ||
+      (data.bestMemory && data.summary.memoryCount === 0)) throw new Error('回顾统计与明细不一致，请重新加载');
   return data;
 }
 async function load() {
