@@ -72,8 +72,10 @@
             :prefix-icon="Lock"
             class="custom-input"
             autocomplete="new-password"
+            aria-describedby="registration-password-hint"
           />
         </el-form-item>
+        <p id="registration-password-hint" class="password-hint">密码至少 6 个字符，UTF-8 编码不超过 72 字节；中文和表情可能占多个字节。</p>
 
         <el-form-item label="确认密码" prop="confirmPassword">
           <el-input
@@ -245,7 +247,8 @@ const rules = {
   ],
   password: [
     { required: true, message: '请输入密码', trigger: 'blur' },
-    { min: 6, message: '密码长度不能少于 6 个字符', trigger: 'blur' }
+    { min: 6, message: '密码长度不能少于 6 个字符', trigger: 'blur' },
+    { validator: (_, value, callback) => typeof value !== 'string' || new TextEncoder().encode(value).length <= 72 ? callback() : callback(new Error('密码的 UTF-8 编码不能超过 72 字节')), trigger: 'blur' }
   ],
   confirmPassword: [
     { required: true, message: '请再次输入密码', trigger: 'blur' },
@@ -364,6 +367,7 @@ const rules = {
 .mode-picker :deep(.el-radio-button__inner) { width: 100%; }
 .mode-picker :deep(.el-radio-button.is-active .el-radio-button__inner) { color: var(--text-primary); background: var(--bg-secondary); border-color: var(--text-primary); box-shadow: -1px 0 0 0 var(--text-primary); font-weight: 700; }
 .mode-hint { margin: 10px 0 18px; color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+.password-hint { margin: -8px 0 18px; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
 .uncertain-alert { margin-bottom: 20px; }
 .uncertain-alert { background: var(--bg-secondary); border: 1px solid var(--border-color); }
 .uncertain-alert :deep(.el-alert__title), .uncertain-alert :deep(.el-alert__description), .uncertain-alert :deep(.el-alert__icon), .uncertain-alert :deep(.el-button) { color: var(--text-primary); }

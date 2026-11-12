@@ -32,6 +32,21 @@ async function main () {
     await page.waitForFunction(() => document.activeElement?.getAttribute('autocomplete') === 'username')
     assert.equal(calls, 0, 'invalid form must not submit a registration request')
     await page.getByLabel('用户名', { exact: true }).fill('tester')
+    await page.getByText('密码至少 6 个字符，UTF-8 编码不超过 72 字节', { exact: false }).waitFor()
+    assert.match(await page.getByLabel('密码', { exact: true }).getAttribute('aria-describedby'), /registration-password-hint/)
+    for (const password of ['a'.repeat(73), '中'.repeat(25)]) {
+      await page.getByLabel('密码', { exact: true }).fill(password)
+      await page.getByLabel('确认密码', { exact: true }).fill(password)
+      await page.getByRole('button', { name: '创建账号', exact: true }).click()
+      await page.getByText('密码的 UTF-8 编码不能超过 72 字节').waitFor()
+      await page.waitForFunction(() => document.activeElement?.getAttribute('autocomplete') === 'new-password')
+      assert.equal(calls, 0, 'a password above the bcrypt byte limit must not be submitted')
+    }
+    await page.getByLabel('密码', { exact: true }).fill('中'.repeat(24))
+    await page.getByLabel('确认密码', { exact: true }).fill('中'.repeat(24))
+    await page.getByRole('button', { name: '创建账号', exact: true }).click()
+    await page.locator('.registration-error').getByText('邀请码无效').waitFor()
+    assert.equal(calls, 1, 'a 72-byte password must pass the client byte-length check')
     await page.getByLabel('密码', { exact: true }).fill('password123')
     await page.getByLabel('确认密码', { exact: true }).fill('password123')
     assert.equal(await page.evaluate(() => { const event = new Event('beforeunload', { cancelable: true }); window.dispatchEvent(event); return event.defaultPrevented }), true)
@@ -42,7 +57,7 @@ async function main () {
     await page.getByLabel('确认密码', { exact: true }).press('Enter')
     await page.locator('.registration-error').getByText('邀请码无效').waitFor()
     await page.waitForFunction(() => document.activeElement?.getAttribute('placeholder') === '请输入家人的邀请码')
-    assert.equal(calls, 1)
+    assert.equal(calls, 2)
     assert.equal(await page.locator('.el-message--error').count(), 0)
     assert.equal(await page.getByLabel('密码', { exact: true }).inputValue(), 'password123')
     await page.getByPlaceholder('请输入家人的邀请码').fill('HOMEB1')
@@ -58,7 +73,7 @@ async function main () {
         await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
         for (const theme of ['cream', 'peach', 'caramel', 'matcha', 'azuki', 'mist']) {
           await page.evaluate(value => { document.documentElement.dataset.theme = value }, theme)
-          for (const selector of ['.page-subtitle', '.mode-heading', '.mode-hint', '.apply-form .el-form-item__label', '.registration-error .el-alert__title', '.mode-picker .el-radio-button:nth-child(1) .el-radio-button__inner', '.mode-picker .el-radio-button:nth-child(2) .el-radio-button__inner']) {
+          for (const selector of ['.page-subtitle', '.mode-heading', '.mode-hint', '.password-hint', '.apply-form .el-form-item__label', '.registration-error .el-alert__title', '.mode-picker .el-radio-button:nth-child(1) .el-radio-button__inner', '.mode-picker .el-radio-button:nth-child(2) .el-radio-button__inner']) {
             const result = await contrast(page, selector)
             assert.ok(result.ratio >= 4.5, `${width} ${dark ? 'dark' : 'light'} ${theme} ${selector}: ${result.ratio}`)
           }
@@ -70,7 +85,7 @@ async function main () {
     mode = 'uncertain'; await page.getByLabel('确认密码', { exact: true }).press('Enter')
     await page.getByText('注册结果未确认').waitFor()
     assert.equal(await page.getByRole('button', { name: '创建账号', exact: true }).isDisabled(), true)
-    assert.equal(calls, 3)
+    assert.equal(calls, 4)
     assert.equal(await page.locator('.el-message--error').count(), 0)
     for (const dark of [false, true]) {
       await page.evaluate(value => { document.documentElement.classList.toggle('dark', value); document.querySelector('.app-container').classList.toggle('dark-mode', value) }, dark)
