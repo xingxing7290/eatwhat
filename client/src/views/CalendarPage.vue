@@ -107,6 +107,12 @@ const getDateSchedule = (date) => {
   const formattedDate = format(date, 'yyyy-MM-dd');
   return scheduleStore.getScheduleByDate(formattedDate);
 };
+const mobileJumpPlannedOnly = ref(false);
+const plannedSlotCount = date => {
+  const schedule = getDateSchedule(date);
+  return mealTypes.filter(type => schedule?.meals?.[type.key]?.length).length;
+};
+const mobileJumpDates = computed(() => calendarDays.value.filter(day => day && (!mobileJumpPlannedOnly.value || plannedSlotCount(day) > 0)));
 const monthSummary = computed(() => calendarDays.value.reduce((summary, date) => {
   if (!date) return summary;
   const schedule = getDateSchedule(date);
@@ -593,11 +599,13 @@ onBeforeUnmount(() => {
         </el-button>
       </div>
       <div class="mobile-date-tools"><label class="mobile-date-jump"><span>日期</span>
-        <select aria-label="跳转到本月日期" :disabled="isLoading || blocked || !!loadError" @change="jumpToMobileDate">
-          <option value="">选择日期</option>
-          <option v-for="day in calendarDays.filter(Boolean)" :key="format(day, 'yyyy-MM-dd')" :value="format(day, 'yyyy-MM-dd')">{{ format(day, 'M月d日') }} · 周{{ weekDays[getDay(day)] }}</option>
+        <select aria-label="跳转到本月日期" :disabled="isLoading || blocked || !!loadError || !mobileJumpDates.length" @change="jumpToMobileDate">
+          <option value="">{{ mobileJumpDates.length ? '选择日期' : '本月没有已安排日期' }}</option>
+          <option v-for="day in mobileJumpDates" :key="format(day, 'yyyy-MM-dd')" :value="format(day, 'yyyy-MM-dd')">{{ format(day, 'M月d日') }} · 周{{ weekDays[getDay(day)] }} · {{ plannedSlotCount(day) ? `已安排 ${plannedSlotCount(day)} 餐` : '未安排' }}</option>
         </select>
       </label>
+      <button type="button" class="mobile-jump-filter" :disabled="isLoading || blocked || !!loadError" :aria-pressed="mobileJumpPlannedOnly" @click="mobileJumpPlannedOnly = !mobileJumpPlannedOnly">{{ mobileJumpPlannedOnly ? '显示全部日期' : '只列已安排日期' }}</button>
+      <small class="mobile-jump-hint">仅筛选上方日期选项，日历内容不变。</small>
       <el-button class="mobile-refresh" :disabled="isLoading || blocked || !!arrangingWish" @click="refreshMonth">刷新所选月</el-button></div>
     </div>
     
@@ -974,9 +982,15 @@ onBeforeUnmount(() => {
 }
 
 .mobile-date-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 8px; }
+.mobile-date-jump { grid-column: 1 / -1; }
+.mobile-jump-filter { grid-column: 1; grid-row: 2; min-height: 44px; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.mobile-jump-filter[aria-pressed="true"] { border-color: var(--primary-color); }
+.mobile-jump-filter:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
+.mobile-jump-filter:disabled { opacity: .6; cursor: not-allowed; }
+.mobile-jump-hint { grid-column: 1 / -1; grid-row: 3; color: var(--text-primary); font-size: 12px; line-height: 1.5; }
 .mobile-date-jump { display: flex; min-width: 0; align-items: center; gap: 6px; color: var(--text-primary); font-size: 13px; }
 .mobile-date-jump span { flex: none; white-space: nowrap; }
-.mobile-refresh { min-height: 44px; margin: 0; flex-shrink: 0; }
+.mobile-refresh { grid-column: 2; grid-row: 2; min-height: 44px; margin: 0; flex-shrink: 0; }
 .mobile-date-jump select { flex: 1; min-height: 44px; min-width: 0; width: 100%; padding: 0 10px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--bg-primary); color: var(--text-primary); font: inherit; }
 .mobile-date-jump select:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 
