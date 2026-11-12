@@ -238,6 +238,9 @@
     .order-warning { margin: 14px 0; padding: 14px; border: 1px solid #e7b49c; border-radius: 17px; color: #803d2c; background: #fff0e7; line-height: 1.5; }
     .order-warning p { margin: 0 0 10px; }
     .order-warning button, .remove-unavailable { border: 0; border-radius: 11px; padding: 9px 12px; color: #803d2c; background: #ffddd0; font-weight: 800; cursor: pointer; }
+    .remove-dish { grid-column: 1 / -1; justify-self: start; min-height: 44px; padding: 8px 12px; border: 1px solid #c98c79; border-radius: 11px; color: #803d2c; background: #fff7f2; font: inherit; font-weight: 800; cursor: pointer; }
+    .remove-dish:focus-visible { outline: 3px solid #9b4a34; outline-offset: 2px; }
+    .remove-dish:disabled { opacity: .55; cursor: not-allowed; }
     .cart-row.unavailable { border-color: #e7a88f; background: #fff0e7; }
     .cart-row.unavailable small { color: #803d2c; }
     .toast { position: fixed; z-index: 80; left: 50%; top: 24px; max-width: calc(100% - 32px); transform: translate(-50%, -20px); opacity: 0; pointer-events: none; padding: 12px 16px; border-radius: 15px; color: white; background: rgba(76,45,35,.96); box-shadow: var(--shadow); font-weight: 800; transition: .2s ease; }
@@ -661,6 +664,7 @@
           itemNote.addEventListener('input', event => { item.note = event.target.value; renderDraftStatus(); });
           stepper.append(minus, quantity, plus); row.append(copy, stepper, itemNote);
           if (unavailable) { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-unavailable'; remove.dataset.focusRole = 'remove'; remove.textContent = `移除${item.meal.name}`; remove.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder(); remove.addEventListener('click', () => setQuantity(item.meal, 0)); row.append(remove); }
+          else { const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove-dish'; remove.dataset.focusRole = 'remove'; remove.textContent = '移除这道菜'; remove.setAttribute('aria-label', `移除${item.meal.name}的全部份数`); remove.disabled = state.busy || !!state.pending || state.accessReadBlocked || state.uncertainReadBlocked || !canOrder(); remove.addEventListener('click', () => { if ((item.quantity > 1 || String(item.note || '').trim()) && !confirm(`将移除“${item.meal.name}”的全部 ${item.quantity} 份及该菜备注。此操作只修改本页，提交后才会通知主人。确定移除吗？`)) return; setQuantity(item.meal, 0); }); row.append(remove); }
           return row;
         });
         if (!rows.length) {
