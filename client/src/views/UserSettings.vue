@@ -138,7 +138,7 @@
       <el-form label-width="90px" :disabled="profileLoading || !profileReady || !!profileError || profileUncertain || joinUncertain || inviteUncertain || nameChecking || saving || avatarUploading || householdSaving || refreshing || joining" @submit.prevent>
         <el-form-item label="小家名称"><el-input v-model="householdName" aria-label="小家名称" placeholder="给你们的小家取个名字" maxlength="40" show-word-limit /></el-form-item>
         <el-form-item label="邀请码">
-          <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" aria-label="当前小家的邀请码" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small></div>
+          <div class="invite-row"><el-input :model-value="inviteUncertain ? '' : household.inviteCode" aria-label="当前小家的邀请码" :placeholder="inviteUncertain ? '请先重新核对' : ''" readonly /><el-button :disabled="!household.inviteCode" @click="copyInvite">复制邀请码</el-button><el-button :disabled="!household.inviteCode" @click="copyInviteLink">复制邀请链接</el-button><el-button :disabled="!!nameIssue" :loading="refreshing" @click="refreshInvite">刷新</el-button><small>邀请码和链接用于加入当前小家，请只分享给信任的人。刷新后旧邀请码和链接均失效。</small><div v-if="manualCopyValid && !manualCopyOpen" class="manual-copy-pending" role="status"><span>自动复制未完成，可手动复制当前小家的{{ manualCopy.kind === 'link' ? '邀请链接' : '邀请码' }}。</span><el-button link type="primary" @click="manualCopyOpen = true">打开手动复制</el-button></div></div>
         </el-form-item>
         <el-form-item label="加入小家">
           <div class="invite-row"><el-input v-model="joinCode" aria-label="要加入的小家邀请码" placeholder="输入家人的邀请码" maxlength="20" @input="invalidInviteLink = false" /><el-button type="primary" :disabled="!!nameIssue || defaultUncertain || issueUncertain" :loading="joining" @click="joinHousehold">加入</el-button><small>加入前无法预览目标小家，请先与家人核对邀请码。切换后，原小家的数据不会自动转移。</small><small v-if="defaultUncertain || issueUncertain">请先核对上方未确认的菜品管理操作，再切换小家。</small></div>
@@ -205,6 +205,7 @@ const syncThemeFromStorage = event => {
 const user = ref({ id: '', username: '', displayName: '', avatarUrl: '' });
 const household = ref({ name: '', inviteCode: '', members: [] });
 const manualCopy = ref(null); const manualCopyOpen = ref(false); const manualCopyInput = ref(null);
+let settingsAlive = true;
 const displayName = ref('');
 const householdName = ref('');
 const hashParams = new URLSearchParams(route.hash.startsWith('#') ? route.hash.slice(1) : '');
@@ -473,15 +474,18 @@ const joinHousehold = async () => {
 };
 const copyInvitation = async kind => {
   if (!profileReady.value || profileLoading.value || profileError.value || profileUncertain.value || inviteUncertain.value || joinUncertain.value || refreshing.value || joining.value || !household.value.inviteCode || !sessionIsCurrent()) return;
-  const code = household.value.inviteCode; const home = household.value.id; const scope = currentSessionScope();
+  const code = household.value.inviteCode; const home = household.value.id; const scope = currentSessionScope(); const source = document.activeElement;
   // URL fragments are not sent in the HTTP request or server access logs.
   const href = router.resolve({ name: 'accountApply', hash: `#invite=${encodeURIComponent(code)}` }).href;
   const value = kind === 'link' ? new URL(href, window.location.origin).href : code;
   const isCurrent = () => profileReady.value && !profileLoading.value && !profileError.value && !profileUncertain.value && !inviteUncertain.value && !joinUncertain.value && !refreshing.value && !joining.value && household.value.id === home && household.value.inviteCode === code && sessionIsCurrent(scope);
-  try { await navigator.clipboard.writeText(value); if (isCurrent()) ElMessage.success(kind === 'link' ? '邀请链接已复制' : '邀请码已复制'); else ElMessage.warning('复制期间家庭操作正在进行或状态已变化，请重新核对。'); }
+  try { await navigator.clipboard.writeText(value); if (!settingsAlive) return; if (isCurrent()) ElMessage.success(kind === 'link' ? '邀请链接已复制' : '邀请码已复制'); else ElMessage.warning('复制期间家庭操作正在进行或状态已变化，请重新核对。'); }
   catch (_) {
+    if (!settingsAlive) return;
     if (!isCurrent()) return ElMessage.warning('复制期间家庭操作正在进行或状态已变化，请重新核对。');
-    manualCopy.value = { kind, value, code, home, scope }; manualCopyOpen.value = true;
+    manualCopy.value = { kind, value, code, home, scope };
+    const focused = document.activeElement;
+    manualCopyOpen.value = !focused || focused === document.body || focused === source || !focused.isConnected;
   }
 };
 const copyInvite = () => copyInvitation('code');
@@ -584,7 +588,7 @@ onBeforeRouteLeave(async () => {
 });
 watch(() => route.query.section, jumpFromRoute);
 onMounted(() => { window.addEventListener('beforeunload', warnBeforeUnload); window.addEventListener('storage', syncThemeFromStorage); window.addEventListener('eatwhat-session-changed', invalidateManualCopy); window.addEventListener('eatwhat-session-expired', invalidateManualCopy); void jumpFromRoute(route.query.section); reload(); });
-onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnload); window.removeEventListener('storage', syncThemeFromStorage); window.removeEventListener('eatwhat-session-changed', invalidateManualCopy); window.removeEventListener('eatwhat-session-expired', invalidateManualCopy); clearAvatarFile(); });
+onBeforeUnmount(() => { settingsAlive = false; window.removeEventListener('beforeunload', warnBeforeUnload); window.removeEventListener('storage', syncThemeFromStorage); window.removeEventListener('eatwhat-session-changed', invalidateManualCopy); window.removeEventListener('eatwhat-session-expired', invalidateManualCopy); clearAvatarFile(); });
 </script>
 
 <style scoped>
@@ -593,6 +597,8 @@ onBeforeUnmount(() => { window.removeEventListener('beforeunload', warnBeforeUnl
 .settings-intro h1 { margin: 8px 0; font: 700 clamp(26px, 3vw, 36px) Georgia, 'Songti SC', serif; }
 .settings-intro p, .status-note, .invite-row small, .file-name { margin: 0; color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
 .manual-copy-note { margin: 0 0 12px; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.manual-copy-pending { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 12px; width: 100%; color: var(--text-primary); font-size: 13px; line-height: 1.5; }
+.manual-copy-pending .el-button { min-height: 44px; margin: 0; }
 .eyebrow { color: var(--secondary-color); font-size: 11px; letter-spacing: .14em; font-weight: 800; }
 .intro-badge { flex-shrink: 0; padding: 8px 12px; border: 1px solid var(--border-color); border-radius: 999px; color: var(--text-secondary); font-size: 12px; }
 .settings-card { border-radius: 20px; border-color: var(--border-color); background: var(--bg-primary); }
