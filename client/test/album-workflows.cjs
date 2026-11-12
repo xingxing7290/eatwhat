@@ -19,7 +19,7 @@ async function main () {
     let legacy = false; let legacyTotal = null
     let photoUnavailable = true; let photoHold = false; let releasePhotos = []
     let malformed = false; let invalidPhoto = ''
-    let failPage = false
+    let failPage = false; let failRefresh = false
     let holdPage = false; let releasePage; let noPhotos = false
     const reads = []
     await page.route('**/broken-photo.png', async route => {
@@ -39,6 +39,7 @@ async function main () {
         const current = Number(url.searchParams.get('page') || 1)
         const limit = Number(url.searchParams.get('limit') || 24)
         reads.push({ month, page: current, limit })
+        if (failRefresh) return route.fulfill({ status: 503, json: { error: '刷新暂不可用' } })
         if (holdPage && current === 2) await new Promise(resolve => { releasePage = resolve })
         if (failPage && current === 2) return route.fulfill({ status: 503, json: { error: '相册读取失败' } })
         const rows = month === '2026-10' && !noPhotos ? photos : []
@@ -48,6 +49,21 @@ async function main () {
       await route.fulfill({ status: 200, json: data })
     })
     await page.goto(`${base}/photo-album`)
+    await page.getByText('2026-10 · 30 张照片').waitFor()
+    const refresh = page.getByRole('button', { name: '刷新当前相册' })
+    assert.ok((await refresh.boundingBox()).height >= 44)
+    const originalUrl = page.url(); const previousReads = reads.length
+    photos[0].title = '家人更新的照片'
+    await refresh.focus(); await page.keyboard.press('Enter')
+    await page.getByRole('button', { name: /家人更新的照片/ }).waitFor()
+    assert.equal(reads.length, previousReads + 1)
+    assert.equal(page.url(), originalUrl, 'refresh must preserve the current month and page')
+    await page.waitForFunction(() => document.activeElement?.textContent.trim() === '刷新当前相册')
+    photos[0].title = '照片1'
+    failRefresh = true; await refresh.click()
+    await page.getByText('相册暂时无法加载：刷新暂不可用', { exact: false }).waitFor()
+    assert.equal(await page.locator('.photo-card').count(), 0, 'failed refresh must not present old photos as current')
+    failRefresh = false; await page.getByRole('button', { name: '重新加载' }).click()
     await page.getByText('2026-10 · 30 张照片').waitFor()
     const related = page.getByRole('navigation', { name: '查看相册月份的其他内容' })
     assert.equal(await related.getByRole('link', { name: '查看 2026-10 回忆 →' }).getAttribute('href'), '/memories?month=2026-10')
@@ -155,6 +171,11 @@ async function main () {
     await page.waitForURL(/month=2026-10.*page=2/)
     await page.getByRole('status').filter({ hasText: '2026-10，共 30 张照片，第 2 / 2 页' }).waitFor()
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 25 张'))
+    const pageTwoUrl = page.url()
+    await refresh.click()
+    await page.getByRole('button', { name: /第 25 张/ }).waitFor()
+    assert.equal(reads.at(-1).page, 2, 'refresh should request the current page')
+    assert.equal(page.url(), pageTwoUrl, 'refresh should preserve a page-specific link')
     await page.getByRole('button', { name: '上一页' }).click()
     await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label')?.includes('第 1 张'))
     holdPage = true; releasePage = null

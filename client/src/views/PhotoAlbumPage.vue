@@ -35,6 +35,7 @@ const selectedIndex = ref(null);
 const photoGrid = ref(null);
 const viewerPreview = ref(null);
 const retryButton = ref(null);
+const refreshButton = ref(null);
 const previousMonthButton = ref(null);
 const returnFocusIndex = ref(null);
 let viewerEpoch = 0;
@@ -118,6 +119,15 @@ const load = async (openAt = null, viewerToken = null) => {
 };
 const clearLocationLink = () => { locateNotice.value = ''; locateRetry.value = false; locatedTarget = null; syncAlbumLocation(); };
 const changeMonth = () => { page.value = 1; clearLocationLink(); selectedIndex.value = null; data.value = { photos: [], total: 0 }; load(); };
+const refreshAlbum = async () => {
+  if (loading.value || selectedIndex.value !== null) return;
+  const origin = document.activeElement;
+  const hadFocus = origin === refreshButton.value?.$el;
+  await load();
+  await nextTick();
+  const focused = document.activeElement;
+  if (hadFocus && (!focused || focused === document.body || focused === origin || !focused.isConnected)) (loadError.value ? retryButton.value : refreshButton.value)?.$el?.focus({ preventScroll: true });
+};
 const moveMonth = offset => {
   if (loading.value || !canMoveMonth(offset)) return;
   const [year, currentMonth] = month.value.split('-').map(Number);
@@ -275,6 +285,7 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', on
 <template>
   <div class="album-page" v-loading="loading" element-loading-text="正在加载照片" :aria-busy="loading ? 'true' : 'false'">
     <div class="page-header"><div><span class="eyebrow">TABLE STORIES · 饭桌故事</span><h1>饭桌相册</h1><p>把饭后回忆里的照片按月份收起来。</p><span v-if="!loading && !loadError" class="photo-count">{{ month }} · {{ data.total }} 张照片</span></div><div class="month-actions"><el-button ref="previousMonthButton" :disabled="loading || !canMoveMonth(-1)" aria-label="上个月" @click="moveMonth(-1)">上个月</el-button><el-date-picker v-model="month" type="month" value-format="YYYY-MM" :clearable="false" :disabled="loading" :disabled-date="disabledMonth" aria-label="选择相册月份" @change="changeMonth" /><el-button :disabled="loading || !validAlbumMonth(currentMonth) || month === currentMonth" @click="goCurrentMonth">回到本月</el-button><el-button :disabled="loading || !canMoveMonth(1)" aria-label="下个月" @click="moveMonth(1)">下个月</el-button></div></div>
+    <div class="album-refresh"><el-button ref="refreshButton" :disabled="loading" @click="refreshAlbum">刷新当前相册</el-button><span>重新读取所选月份和页码，不会修改照片。</span></div>
     <p class="sr-only" role="status" aria-atomic="true">{{ loading ? '正在加载相册' : loadError ? '相册加载失败' : `${month}，共 ${data.total} 张照片，第 ${loadedPage} / ${lastPage} 页` }}</p>
     <nav v-if="!loading && month" class="related-period" aria-label="查看相册月份的其他内容"><router-link :to="{ name: 'memories', query: { month } }">查看 {{ month }} 回忆 →</router-link><router-link v-if="reviewMonth" :to="{ name: 'review', query: { month: reviewMonth } }">查看 {{ reviewMonth }} 饭桌回顾 →</router-link><span v-else>饭桌回顾支持 2000 至 2100 年。</span></nav>
     <el-alert v-if="locateNotice" type="warning" :closable="false" show-icon :title="locateNotice"><el-button v-if="locateRetry" link type="primary" :loading="loading" @click="loadLocation">重新定位</el-button></el-alert>
@@ -295,6 +306,8 @@ onBeforeUnmount(() => { loadSequence++; window.removeEventListener('keydown', on
 .related-period a { display: inline-flex; align-items: center; min-height: 44px; color: var(--text-primary); font-size: 13px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .related-period a:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 2px; }
 .album-empty-hint { margin: 0 0 8px; color: var(--text-primary); font-size: 13px; line-height: 1.6; }
+.album-refresh { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; color: var(--text-primary); font-size: 13px; }
+.album-refresh .el-button { min-height: 44px; margin: 0; }
 .album-empty-link { display: inline-flex; min-height: 44px; align-items: center; color: var(--text-primary); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
 .album-empty-link:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
 .related-period span { color: var(--text-primary); font-size: 13px; line-height: 1.5; }
