@@ -21,6 +21,17 @@ async function main () {
     })
     await page.goto(`${base}/shopping-list`)
     await page.getByText('显示 2 / 2 项 · 本周待买 1 项').waitFor()
+    const firstRow = page.locator('.item-row').first()
+    const shortCheckbox = await firstRow.locator('.el-checkbox').boundingBox()
+    const shortActions = await firstRow.locator('.item-actions').boundingBox()
+    assert.ok(Math.abs(shortCheckbox.y - shortActions.y) < 5, 'short items should use one compact row at 390px')
+    assert.equal(await firstRow.evaluate(row => {
+      const text = row.querySelector('.el-checkbox__label strong'); const original = text.textContent
+      text.textContent = '很长的食材名称需要在手机屏幕内完整换行'.repeat(4)
+      const label = row.querySelector('.el-checkbox').getBoundingClientRect(); const actions = row.querySelector('.item-actions').getBoundingClientRect()
+      const fits = label.right <= actions.left && document.documentElement.scrollWidth <= innerWidth
+      text.textContent = original; return fits
+    }), true, 'long names must wrap without colliding with actions')
     if (process.env.EATWHAT_SHOPPING_SHOT) await page.screenshot({ path: process.env.EATWHAT_SHOPPING_SHOT, fullPage: true })
     await page.locator('.extra-tools summary').click()
     await page.addStyleTag({ content: '*, *::before, *::after { transition: none !important; }' })
