@@ -25,7 +25,7 @@ async function main() {
   try {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
-    await page.clock.setFixedTime(new Date(2026, 9, 30, 12));
+    await page.clock.setFixedTime(new Date(2026, 10, 2, 12));
     let failSummary = false;
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
@@ -84,14 +84,18 @@ async function main() {
       }
     }
     const shortcuts = page.locator('.quick-links a');
-    assert.deepEqual(await shortcuts.evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/weekly-plan', '/shopping-list', '/meals', '/review']);
-    assert.match(await shortcuts.first().innerText(), /查看周计划.*查看安排，按需生成草稿/s, 'the shortcut must describe navigation rather than imply automatic generation');
+    assert.deepEqual(await shortcuts.evaluateAll(links => links.map(link => link.getAttribute('href'))), ['/weekly-plan?week=2026-10-26', '/shopping-list?week=2026-10-26', '/meals', '/review']);
+    assert.match(await shortcuts.first().innerText(), /查看周计划.*查看首页所示周，按需生成草稿/s, 'the shortcut must describe navigation rather than imply automatic generation');
     for (const link of await shortcuts.all()) assert.ok((await link.boundingBox()).height >= 44, 'shortcut touch target');
     await page.keyboard.press('Tab');
     await shortcuts.first().focus();
     assert.equal(await shortcuts.first().evaluate(link => link.matches(':focus-visible')), true, 'shortcuts retain a visible keyboard focus state');
     await page.keyboard.press('Enter');
-    await page.waitForURL('**/weekly-plan');
+    await page.waitForURL('**/weekly-plan?week=2026-10-26');
+    await page.goto(`${base}/dashboard`);
+    await page.getByText('照片暂不可用').waitFor();
+    await page.getByRole('button', { name: '查看这一周的计划' }).click();
+    await page.waitForURL('**/weekly-plan?week=2026-10-26');
     await page.goto(`${base}/dashboard`);
     await page.getByText('照片暂不可用').waitFor();
     await page.getByRole('button', { name: '打开导航菜单' }).click();
